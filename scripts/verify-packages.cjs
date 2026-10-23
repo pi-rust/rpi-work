@@ -1,0 +1,60 @@
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path.resolve('../rpi-package/packages/rpi-web/frontend')]}));
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'C:/Users/bigfish/scoop/apps/googlechrome/current/chrome.exe'}),page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true}),results=[],errors=[],external=[];
+ page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:4173/'))external.push(r.url());});
+ const pass=t=>{results.push(t);console.log('PASS '+t);},close=()=>page.locator('#modal .modal-header [data-close-modal]').click();
+ const session=async view=>{await page.locator(`#session-resources [data-view="${view}"]`).click();};
+ const card=key=>page.locator(`[data-package-key="${key}"]`),library=()=>page.locator('.primary-nav [data-nav="packages"]').click();
+ const download=async(key)=>{const event=page.waitForEvent('download');await card(key).locator('[data-package="download"]').click();const d=await event;const dest=path.resolve('artifacts',d.suggestedFilename());await d.saveAs(dest);return JSON.parse(fs.readFileSync(dest,'utf8'));};
+ const importFile=async data=>{const event=page.waitForEvent('filechooser');await page.locator('#page-view [data-package="import"]').click();const c=await event;await c.setFiles({name:'package.rpi-package.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});};
+ await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:4173/prototype/');
+ const layout=await page.locator('#session-resources').evaluate(e=>({bottom:e.getBoundingClientRect().bottom,tabs:document.querySelector('.tabs').getBoundingClientRect().top}));assert.ok(layout.bottom<=layout.tabs);
+ assert.equal(await page.getByRole('tab').count(),2);assert.equal(await page.locator('#session-resources .session-package-chips button').count(),2);assert.equal(await page.locator('#skills-context').count(),0);
+ assert.equal(await page.locator('.composer [data-harness="tool-settings"]').count(),0);assert.equal(await page.locator('.composer [data-capability="skill-picker"]').count(),1);
+ pass('session resources sit above the conversation; composer retains Skills and task tabs remain conversation/changes');
+ await session('skills');await page.locator('[data-package="skill-toggle"][data-id="global-review"]').uncheck();await close();
+ await page.locator('#composer-capabilities [data-capability="skill-picker"]').click();assert.equal(await page.locator('#modal [data-capability="skill-pin"][data-id="global-review"]').count(),0);await close();
+ await session('skills');await page.locator('[data-package="skill-toggle"][data-id="global-review"]').check();await close();
+ await session('tools');assert.equal(await page.locator('[data-package="tool-toggle"][data-id="browser"]').isDisabled(),true);await page.locator('[data-package="tool-toggle"][data-id="powershell"]').uncheck();await close();
+ pass('session skill/tool switches affect availability; unavailable node tools cannot be enabled');
+ await session('prompts');await page.locator('#session-instructions').fill('回复用中文，优先解释验证结果。');await page.locator('[data-package="save-instructions"]').click();await close();
+ await page.locator('#prompt').fill('保留当前草稿');await session('prompts');await page.locator('[data-package="use-prompt"][data-id="rpi.rust-workbench:review"]').click();assert.match(await page.locator('#prompt').inputValue(),/保留当前草稿.*请审阅/s);assert.equal(await page.locator('.stream-message').count(),0);
+ pass('session instructions save independently; applying a prompt template only appends to an unsent draft');
+ await page.locator('#approve').click();await page.locator('#send-button').click();
+ await session('tools');assert.equal(await page.locator('[data-package="tool-toggle"][data-id="read"]').isDisabled(),true);await close();
+ await page.getByRole('button',{name:'发送消息',exact:true}).waitFor();assert.equal(await page.locator('.stream-message [data-block-id="verify"]').count(),0);
+ await page.locator('.message-resource-snapshot > summary').click();assert.match(await page.locator('.message-resource-snapshot').innerText(),/Rust Workbench @1.2.0/);
+ pass('running configuration is locked; the round snapshots package versions and omits disabled tools');
+
+ await library();const mobile='rpi.mobile-review@0.3.0';assert.equal(await card(mobile).locator('[data-package="install"]').isDisabled(),true);
+ const exported=await download(mobile);assert.equal(exported.resources.skills[0].name,'mobile-audit');assert.match(exported.resources.skills[0].content,/# Mobile audit/);assert.equal(exported.resources.prompts.length,1);assert.equal(await card(mobile).locator('[data-package="bind"]').count(),0);
+ await importFile(exported);await page.getByText('资源包已导入，尚未模拟安装或用于会话',{exact:true}).waitFor();assert.equal(await card(mobile).count(),1);
+ await importFile({...exported,description:'同版本不同内容'});await page.getByText('同一 ID 和版本的内容不一致，请使用新版本号。',{exact:true}).waitFor();
+ await card(mobile).locator('[data-package="install"]').click();assert.match(await card(mobile).innerText(),/已安装/);assert.doesNotMatch(await page.locator('#session-resources').innerText(),/Mobile Review/);
+ await card(mobile).locator('[data-package="bind"]').click();await page.locator('#page-view [data-package="return"]').click();assert.match(await page.locator('#session-resources').innerText(),/Mobile Review/);
+ await page.locator('#composer-capabilities [data-capability="skill-picker"]').click();assert.equal(await page.locator('#modal [data-capability="skill-pin"][data-id="mobile-audit"]').count(),1);await close();
+ pass('download contains skill/prompt bodies; downloading, installing and binding are three explicit steps');
+ await library();await download('rpi.rust-workbench@1.3.0');await card('rpi.rust-workbench@1.3.0').locator('[data-package="install"]').click();assert.match(await page.locator('#session-resources').innerText(),/1.2.0/);
+ await card('rpi.rust-workbench@1.3.0').locator('[data-package="bind"]').click();assert.match(await page.locator('#session-resources').innerText(),/1.3.0/);assert.doesNotMatch(await page.locator('#session-resources').innerText(),/1.2.0/);
+ pass('installing an update preserves the current pin until the session explicitly switches version');
+
+ const imported={...exported,id:'team.mobile',name:'Team Mobile',author:'Local Team'};await importFile(imported);await card('team.mobile@0.3.0').waitFor();await card('team.mobile@0.3.0').locator('[data-package="detail"]').click();assert.match(await page.locator('.package-detail-content').innerText(),/mobile-audit/);await close();
+ await card('team.mobile@0.3.0').locator('[data-package="install"]').click();await card('team.mobile@0.3.0').locator('[data-package="bind"]').click();
+ const roundtrip=await download('team.mobile@0.3.0');assert.equal(roundtrip.resources.skills[0].id,'mobile-audit');assert.equal(roundtrip.resources.skills[0].content,exported.resources.skills[0].content);
+ const before=await page.locator('.package-card').count();await importFile({...imported,id:'invalid.tool',resources:{...imported.resources,tools:['unregistered_tool']}});await page.getByText('包中有未知工具声明；当前原型只支持目录中已有的工具。',{exact:true}).waitFor();assert.equal(await page.locator('.package-card').count(),before);
+ await importFile({...imported,id:'safe.text',name:'<img src=x onerror=alert(1)>'});await card('safe.text@0.3.0').waitFor();assert.equal(await card('safe.text@0.3.0').locator('img').count(),0);
+ pass('local JSON import/export preserves resources, rejects unknown tools and renders package metadata as text');
+ await page.locator('#page-view [data-package="return"]').click();if(!await page.locator('.message-resource-snapshot').evaluate(e=>e.open))await page.locator('.message-resource-snapshot > summary').click();assert.match(await page.locator('.message-resource-snapshot').innerText(),/Rust Workbench @1.2.0/);
+ await page.locator('[data-session="architecture"]').click();assert.doesNotMatch(await page.locator('#session-resources').innerText(),/Team Mobile|Mobile Review|1.3.0/);await session('prompts');assert.equal(await page.locator('#session-instructions').inputValue(),'');await close();
+ await page.locator('[data-session="dark"]').click();assert.match(await page.locator('#session-resources').innerText(),/Team Mobile|1.3.0/);
+ pass('bindings and instructions are isolated by session; historical round snapshots preserve the old version');
+
+ await page.screenshot({path:'artifacts/prototype-packages-session-desktop.png',animations:'disabled'});
+ await library();await page.screenshot({path:'artifacts/prototype-packages-library-desktop.png',animations:'disabled'});await page.locator('#page-view [data-package="return"]').click();
+ for(const width of [1440,1024,768,390,375]){await page.setViewportSize({width,height:900});const d=await page.evaluate(()=>({w:innerWidth,s:document.documentElement.scrollWidth}));assert.ok(d.s<=d.w,`session overflow at ${width}`);await session('tools');const m=await page.locator('#modal').evaluate(e=>({width:e.scrollWidth,client:e.clientWidth}));assert.ok(m.width<=m.client+1,`modal overflow at ${width}`);await close();}
+ await page.setViewportSize({width:390,height:900});await page.screenshot({path:'artifacts/prototype-packages-session-mobile.png',animations:'disabled'});await session('prompts');await page.screenshot({path:'artifacts/prototype-packages-prompts-mobile.png',animations:'disabled'});
+ pass('session header and resource dialogs fit 375–1440px layouts');
+ assert.deepEqual(errors,[]);assert.deepEqual(external,[]);pass('no JavaScript errors, remote downloads, node installations or model requests');
+ fs.writeFileSync('artifacts/packages-validation.json',JSON.stringify({date:'2026-10-24',browser:await browser.version(),results,errors,externalRequests:external},null,2));await browser.close();
+})().catch(e=>{console.error(e);process.exit(1);});

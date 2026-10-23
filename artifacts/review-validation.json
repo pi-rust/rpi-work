@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-23",
+  "browser": "146.0.7680.178",
+  "results": [
+    "only conversation/changes tabs; plans, tools and shell logs remain inline",
+    "120 files use grouped file browser and one selected diff",
+    "path search, empty results, status filters, renames and binary placeholder",
+    "turn scope, reviewed filtering, next unreviewed, keyboard navigation and folder folding",
+    "file feedback returns to the same conversation with a path reference",
+    "375–1440px layout, mobile list/detail navigation and inline tool output",
+    "no JavaScript or console errors"
+  ],
+  "errors": []
+}

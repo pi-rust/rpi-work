@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.svg text eol=lf
+*.png binary
+# Preserve the exact upstream bytes and their documented SHA-256 hashes.
+prototype/vendor/*.js -text -whitespace
+prototype/vendor/*LICENSE.txt -text -whitespace

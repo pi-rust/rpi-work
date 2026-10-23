@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-24",
+  "browser": "146.0.7680.178",
+  "results": [
+    "desktop/server and mobile/client roles are explicit; QR pixels independently decode to the current invitation URL",
+    "camera denial offers image/manual fallback without pairing or losing input",
+    "uploading a QR image requests pairing; approval requires explicit code verification and records project/access scope",
+    "reconnection uses the existing authorized device and restores a cursor without a new pairing invitation",
+    "revocation removes authorized access and requires a fresh pairing instead of automatic reconnect",
+    "advanced address/code validation rejects loopback and invalid codes; PC rejection grants no access",
+    "expired invitations can be refreshed; old QR URLs are invalidated and fresh links still require PC approval",
+    "phone disconnect/revoke never aborts the PC task; revocation suppresses a late reconnect callback",
+    "address setup is only a demo; PC pages, QR dialogs and advanced mobile forms fit 375–1440px",
+    "a new pairing attempt cannot inherit the late success callback of an older reconnect",
+    "Chrome simulated camera frames are processed locally; stop and navigation release media tracks",
+    "no JavaScript errors, remote QR services, model calls or pairing network requests"
+  ],
+  "errors": [],
+  "externalRequests": []
+}

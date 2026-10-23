@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-24",
+  "browser": "146.0.7680.178",
+  "results": [
+    "single-choice ask requires explicit answer; submitted answers become immutable",
+    "multiple choice and safely rendered freeform ask answers",
+    "ask cancellation, timeout and another-device response never invent a local answer",
+    "skill provenance filters, duplicate precedence and parsing diagnostics",
+    "skill source/history; draft selection is distinct from simulated full-content loading",
+    "queued skill references remain unloaded until simulated delivery",
+    "goal status stays a sample; todo links back into the conversation",
+    "BTW cancellation/hide/queue are isolated; explicit reference preserves unsent main draft",
+    "session switching clears BTW history, isolates drafts and prevents late updates",
+    "375–1440px layouts and mobile ask/BTW interaction",
+    "no JavaScript errors, external plugin calls or uploads"
+  ],
+  "errors": [],
+  "externalRequests": []
+}

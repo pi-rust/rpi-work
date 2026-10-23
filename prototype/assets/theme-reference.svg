@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600">
+<rect width="960" height="600" rx="18" fill="#e7e9e1"/>
+<g font-family="Arial,sans-serif"><text x="44" y="53" fill="#707b61" font-size="13" letter-spacing="3">RPI WORK / THEME REFERENCE</text><text x="44" y="108" fill="#2d3825" font-size="30">One workspace. Two ways to focus.</text>
+<rect x="44" y="151" width="420" height="347" rx="12" fill="#fcfcfa"/><rect x="496" y="151" width="420" height="347" rx="12" fill="#22261f"/>
+<rect x="44" y="151" width="98" height="347" rx="12" fill="#f0f2e9"/><rect x="496" y="151" width="98" height="347" rx="12" fill="#1c2118"/>
+<rect x="65" y="178" width="28" height="28" rx="7" fill="#b14b2a"/><rect x="517" y="178" width="28" height="28" rx="7" fill="#e89c78"/>
+<g fill="#d7ddcc"><rect x="65" y="235" width="56" height="7" rx="3"/><rect x="65" y="265" width="42" height="7" rx="3"/><rect x="65" y="295" width="52" height="7" rx="3"/></g>
+<g fill="#4b5840"><rect x="517" y="235" width="56" height="7" rx="3"/><rect x="517" y="265" width="42" height="7" rx="3"/><rect x="517" y="295" width="52" height="7" rx="3"/></g>
+<text x="166" y="202" font-size="17" fill="#3f4b35">Light, naturally.</text><text x="618" y="202" font-size="17" fill="#dce3d2">Quiet after hours.</text>
+<g fill="#dfe4d6"><rect x="166" y="227" width="230" height="7" rx="3"/><rect x="166" y="244" width="186" height="7" rx="3"/><rect x="166" y="283" width="265" height="81" rx="7"/></g>
+<g fill="#35422c"><rect x="618" y="227" width="230" height="7" rx="3"/><rect x="618" y="244" width="186" height="7" rx="3"/><rect x="618" y="283" width="265" height="81" rx="7"/></g>
+<rect x="166" y="414" width="265" height="55" rx="8" fill="#f3f5ee" stroke="#dfe4d6"/><rect x="618" y="414" width="265" height="55" rx="8" fill="#2a3423" stroke="#3d4b33"/>
+<rect x="399" y="432" width="20" height="20" rx="5" fill="#b14b2a"/><rect x="851" y="432" width="20" height="20" rx="5" fill="#e89c78"/>
+<text x="44" y="548" fill="#7d8870" font-size="13">Semantic colors / Shared layout / System appearance</text><text x="44" y="573" fill="#929b86" font-size="11">Built-in design sample. No user file or model output.</text></g></svg>
