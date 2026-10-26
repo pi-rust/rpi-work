@@ -1,0 +1,244 @@
+{
+  "scope": "diagnostic screenshots and structural measurements of current review bundle versus reference; data/availability differences require manual review",
+  "capturedAt": "2026-10-25T17:50:17.722Z",
+  "build": {
+    "profile": "release",
+    "builtAt": "2026-10-25T17:49:32.2571473Z",
+    "sourceHashes": {
+      "Cargo.lock": "6AC0BD444171B15ED26BE460C8F8CED1CA30564F8CA3AD6EC47F160C6868ACA2",
+      "Cargo.toml": "62566D6739526A36ADD6FADD7932C70700A64ACB0896667DC069AA2F6DF420E8",
+      "apps/work-cli/Cargo.toml": "BC8F529EEDDD0E60494A89E2B5191AB0F22FDB2AFC2B30C12390ECEA5692A481",
+      "apps/work-cli/src/main.rs": "5BB7D97C05A5E5FB8C13ED8E1B6A51E38AD5D96EFADE120ABDBA5F0317808739",
+      "apps/work-ui/Cargo.toml": "CB0D1B4335E21D1FC6434EC3E74F419A6599AA3EB1A98BA99B44FFB4F03C313E",
+      "apps/work-ui/src/appearance.rs": "A3F03EB3B652F67D651867335B86CD4EBDCBBE55FEF62707D9935EC8BD3CD14D",
+      "apps/work-ui/src/components.rs": "9135D9B6F17B0B7661BEF1D7C1751C427996B8BA0F0984FC737A4DF7D1DE5489",
+      "apps/work-ui/src/composer_extras.css": "5990798D4E6F3ED2124D89495623D6BB290B8DFACE2E5E59E4641C6ACE6CC5B2",
+      "apps/work-ui/src/composer_extras.rs": "A53AC290C5FCCA0451E0955DB067E9B77AADC335F56F4E999AFCD251937396ED",
+      "apps/work-ui/src/conversation.css": "8D347F454D8B51719D9594138209E1297C02E31A0C8C21074DE1BB6BEA081465",
+      "apps/work-ui/src/conversation.rs": "5FCB36D95BF41F57814BED0ACEF8B21E20E1C1D518BD09088110397840A8AECC",
+      "apps/work-ui/src/devices.css": "1C1CBCE43FAB7402882F5C12C5F263089246E1AEE517E2EFE4440D99D3938CBC",
+      "apps/work-ui/src/devices.rs": "EA7AC827D208499F506EDF5A3D821704D4641CC91C8EA012514F717D4415B69B",
+      "apps/work-ui/src/main.rs": "579D70EA2AE4B50D8F0C3890F3220680BE8512F3B2110FC5777CA4996BE660DB",
+      "apps/work-ui/src/message_queue.css": "223CD67C9283D6CA87FB36F54C07216B4F6C18188348FF27BA58B6A9919A1B40",
+      "apps/work-ui/src/message_queue.rs": "04DEA4C119FE841A9AB262C11E758F8CBE212A811AEA0DB23754E29DE817CBBF",
+      "apps/work-ui/src/meta_agent.css": "332313D5118CE4BE3FC3544FDB63928A54A984BA5694B6F2772A307975E942EF",
+      "apps/work-ui/src/meta_agent.rs": "E495D85B03ADE3D5B5081CFADEACA977A5FF3DF11E983F0FF685807E5F599B31",
+      "apps/work-ui/src/metrics_tests.rs": "36118B40D6B2E9276838A06B50AF31F1E1ED21DB36FD2114730167B5A3FB8FCD",
+      "apps/work-ui/src/project_picker.css": "ED7399A86A5623E86F12CCD6B3F305E2BC3562B509E0E68F1124ADD3821C430A",
+      "apps/work-ui/src/project_picker.rs": "66D9BC4E3A3AC6DB90DE8E2B6F83B3E1E374AC2024A783F90D10A2E1F3AB3A9F",
+      "apps/work-ui/src/resources.css": "7C9E3F2170D180BB512EF711000AD30BD8139698BDB7C3C0E0E4C79694D18E1F",
+      "apps/work-ui/src/resources.rs": "461B73B65A488A41A3464427ACF7946CE6AE17EFBD4344C2D6601E3F8BD135F4",
+      "apps/work-ui/src/runtime_stats.css": "CBA8CEDE6BF4C0384F45AC5984ED4DFDF37260050DEC2A3CCBD1DACFE8BD9505",
+      "apps/work-ui/src/runtime_stats.rs": "D675DCA6D7A3AB7EF34FB2FFC64098F238DCBD26DA51136180EA0A7DF51AFA29",
+      "apps/work-ui/src/scroll_follow.css": "4819D08312CA8210EA953518F1E1E8531AFBBAF4915732641E7C6C3A05E0355E",
+      "apps/work-ui/src/scroll_follow.rs": "B8BACEBAA82A4C086A46C81F08A2BC218E3DC599905528E96836EF3747FBA2AA",
+      "apps/work-ui/src/session_config.rs": "0103459627BC2FF57D5D3755CC6E762C4B3809C7FF5EE4A6374938E35F68F47D",
+      "apps/work-ui/src/settings.css": "1F355B5CBC687621DF154B208B73F3D5B1561924B54073FDD900BD04839E587E",
+      "apps/work-ui/src/settings.rs": "A601967223D5836024DE9F9E41CF3C4341A70283F742661DC8E051A21655FA59",
+      "apps/work-ui/src/state.rs": "A5A4BB1CF58961905E102CBB700E2DEBE18CB9ABFE962BE38CE67D649A854F90",
+      "apps/work-ui/src/styles.css": "C7AE9653426FB737482312C044BBC707D862431C1740A279B03C057A23004A21",
+      "apps/work-ui/src/theme_contract.rs": "5E49C5E7ECCEA3C7C8967D85023CBA3A632806710578FBBB96551684CFB09A94",
+      "apps/work-ui/src/themes.css": "5362DBA37904A9636486CC32D9C07D519436BCF48AA3463436331B0849D73A75",
+      "apps/work-ui/src/traces.css": "0D1018291D09C6A8C7D756DAFBF2A66DEB95749E723BC8559F90E79C27395BC9",
+      "apps/work-ui/src/traces.rs": "4140C56E84C0D6DF7AD9C5A1E74D83D9BC64B6BABA674A19ACB8229D4D29435E",
+      "crates/work-client/Cargo.toml": "F3A3BF74F8450F4C4C5467696B5B669615083ABF06B587C961BA1D8CC78A1593",
+      "crates/work-client/src/lib.rs": "47809289F9B762979FA6B663675D26AB4AF6EC4A9AFFB807AC627AAFFB18095A",
+      "crates/work-core/Cargo.toml": "239D69E129044A564C5EF4E5CDDD60494193919AEC833FC619661B1393D5CA92",
+      "crates/work-core/src/lib.rs": "54DC1BB43A712BA236324C259223117F1D444FAD3D79954CCA4B8FD5C84BBDDF",
+      "crates/work-core/tests/streaming.rs": "3C312E657CB501C99A5B1063974E71C3216C3936EC13DB4A6F7784DC13882EEB",
+      "crates/work-node/Cargo.toml": "547DDFAB6776F55C413D4580F44A61C41E92EEEC17D786C2A867B695E84B1155",
+      "crates/work-node/src/lib.rs": "CD4330716041D3D629896ECF70AE322B30C03CC45554760D9F9F86BF45AF7112"
+    },
+    "wasmSha256": "673517C9FCD3DB000235B3BC8CA12D6A5300D8A4446E33D7BFCC8FFBB10BB10D"
+  },
+  "results": [
+    {
+      "name": "project-add",
+      "width": 1440,
+      "actual": {
+        "headerText": [
+          "为工作台添加深色模式"
+        ],
+        "header": {
+          "x": 236,
+          "y": 34,
+          "w": 904,
+          "h": 52,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px 22px",
+          "radius": "0px"
+        },
+        "modal": {
+          "x": 455,
+          "y": 193.3125,
+          "w": 530,
+          "h": 613.359375,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px",
+          "radius": "12px"
+        },
+        "modalHeader": {
+          "x": 456,
+          "y": 194.3125,
+          "w": 528,
+          "h": 69,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "21px 23px 15px",
+          "radius": "0px"
+        },
+        "modalBody": {
+          "x": 456,
+          "y": 263.3125,
+          "w": 528,
+          "h": 470.96875,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "23px",
+          "radius": "0px"
+        }
+      },
+      "reference": {
+        "headerText": [
+          "为工作台添加深色模式"
+        ],
+        "header": {
+          "x": 236,
+          "y": 34,
+          "w": 904,
+          "h": 52,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px 22px",
+          "radius": "0px"
+        },
+        "modal": {
+          "x": 455,
+          "y": 182.125,
+          "w": 530,
+          "h": 635.734375,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px",
+          "radius": "12px"
+        },
+        "modalHeader": {
+          "x": 456,
+          "y": 183.125,
+          "w": 528,
+          "h": 69,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "21px 23px 15px",
+          "radius": "0px"
+        },
+        "modalBody": {
+          "x": 456,
+          "y": 252.125,
+          "w": 528,
+          "h": 498.734375,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "23px",
+          "radius": "0px"
+        }
+      }
+    },
+    {
+      "name": "project-add",
+      "width": 390,
+      "actual": {
+        "headerText": [
+          "为工作台添加深色模式"
+        ],
+        "header": {
+          "x": 0,
+          "y": 30,
+          "w": 390,
+          "h": 52,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px 10px",
+          "radius": "0px"
+        },
+        "modal": {
+          "x": 15,
+          "y": 78.015625,
+          "w": 360,
+          "h": 687.96875,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px",
+          "radius": "12px"
+        },
+        "modalHeader": {
+          "x": 16,
+          "y": 79.015625,
+          "w": 358,
+          "h": 73,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "21px 23px 15px",
+          "radius": "0px"
+        },
+        "modalBody": {
+          "x": 16,
+          "y": 152.015625,
+          "w": 358,
+          "h": 537.96875,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "20px",
+          "radius": "0px"
+        }
+      },
+      "reference": {
+        "headerText": [
+          "为工作台添加深色模式"
+        ],
+        "header": {
+          "x": 0,
+          "y": 30,
+          "w": 390,
+          "h": 52,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px 10px",
+          "radius": "0px"
+        },
+        "modal": {
+          "x": 15,
+          "y": 48.734375,
+          "w": 360,
+          "h": 746.53125,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "0px",
+          "radius": "12px"
+        },
+        "modalHeader": {
+          "x": 16,
+          "y": 49.734375,
+          "w": 358,
+          "h": 73,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "21px 23px 15px",
+          "radius": "0px"
+        },
+        "modalBody": {
+          "x": 16,
+          "y": 122.734375,
+          "w": 358,
+          "h": 605.53125,
+          "font": "14px",
+          "line": "22.4px",
+          "padding": "20px",
+          "radius": "0px"
+        }
+      }
+    }
+  ]
+}

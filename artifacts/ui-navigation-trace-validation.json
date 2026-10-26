@@ -1,0 +1,13 @@
+{
+  "results": [
+    "Open registers unlisted existing directory with alias and blocks duplicate submit",
+    "canonical duplicate directory reuses project and retains its existing alias",
+    "Create uses node root/basename API and keeps display alias separate from folder name",
+    "project errors remain visible in dialog and preserve user input",
+    "new task resumes its created session after rename failure instead of duplicating it",
+    "formal trace hooks distinguish unknown history from live events and redact tool credentials",
+    "integrated trace footer and modal remain bounded at 390/320",
+    "no application JavaScript errors"
+  ],
+  "errors": []
+}

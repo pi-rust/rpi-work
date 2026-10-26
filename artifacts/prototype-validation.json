@@ -11,6 +11,7 @@
     "search, extension toggles, pairing and revocation simulations",
     "light/dark settings",
     "no document overflow at 375, 390, 768, 1024, 1440px",
+    "conversation navigation and configuration use at most 100px above the timeline on desktop and mobile",
     "mobile navigation and context drawer",
     "desktop phone-preview toggle",
     "standalone file:// opening without a dev server",

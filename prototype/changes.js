@@ -10,7 +10,7 @@ const additionalChanges=Array.from({length:117},(_,i)=>{
 const allChangeFixtures=[...files.map(f=>({...f,status:'M',origin:'turn'})),...additionalChanges];
 const changeState={sessions:{}};
 function reviewState(){return changeState.sessions[state.session]||=( {scope:'workspace',query:'',status:'all',unreviewed:false,reviewed:new Set(),collapsed:new Set(),mobileDiff:false,onlyDiff:false} );}
-function availableChanges(){return state.session==='dark'?allChangeFixtures:[];}
+function availableChanges(){return state.session==='dark'?allChangeFixtures:typeof metaSessionChanges==='function'?metaSessionChanges():[];}
 function currentChangeFile(){return availableChanges()[state.selectedFile];}
 function filteredChanges(){
   const r=reviewState(),groups=new Map();

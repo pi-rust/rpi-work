@@ -1,0 +1,14 @@
+{
+  "results": [
+    "context retains a real switch and slider without treating a reported threshold as enabled automation",
+    "keyboard changes are local, preserve reported usage and survive closing the same session dialog",
+    "local automation proposals reset when session identity changes",
+    "missing node context stays unknown while the explicitly local proposal receives a usable default",
+    "automation controls remain usable and bounded on both narrow mobile widths",
+    "Provider title, real status, capabilities, two-column metadata and actions follow reference hierarchy",
+    "resource headings and working search receive full width at 390/320 instead of crushed columns",
+    "Meta content and editor focus scroll internally while document and app header stay fixed",
+    "control fidelity changes trigger no model prompt or browser errors"
+  ],
+  "errors": []
+}

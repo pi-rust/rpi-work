@@ -10,7 +10,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
  const ready=()=>page.getByRole('button',{name:'发送消息',exact:true}).waitFor();
  const controls=async()=>{if(!await latest().locator('.stream-controls').evaluate(e=>e.open))await latest().locator('.stream-controls > summary').click();};
  await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:4173/prototype/');
- await page.locator('#stream-demo-entry').click();
+ await page.locator('#session-options').click();await page.locator('#stream-demo-entry').click();
  await page.waitForFunction(()=>latestStream().blocks.some(b=>b.id==='intro'&&b.text.length>0&&!b.done));
  const partial=(await stateOf()).blocks.find(b=>b.id==='intro').text;assert.ok(partial.length<43);
  await page.locator('#prompt').fill('流式期间保留的草稿');const input=await page.locator('#prompt').elementHandle();
@@ -47,18 +47,18 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
  await controls();const rebuilt=await stateOf();assert.equal(rebuilt.blocks.filter(b=>b.id==='intro').length,1);assert.equal(rebuilt.blocks.filter(b=>b.id==='answer').length,1);assert.equal((rebuilt.blocks.find(b=>b.id==='read').text.match(/读取主题配置/g)||[]).length,1);
  await latest().locator('[data-stream="settle"]').click();await ready();pass('resync replaces the transcript projection from a mock snapshot without repeating prompts or output');
 
- await page.locator('#stream-demo-entry').click();await page.waitForFunction(()=>latestStream().blocks.some(b=>b.id==='intro'&&b.text.length>0&&!b.done));
+ await page.locator('#session-options').click();await page.locator('#stream-demo-entry').click();await page.waitForFunction(()=>latestStream().blocks.some(b=>b.id==='intro'&&b.text.length>0&&!b.done));
  const stopId=(await stateOf()).id;await page.getByRole('button',{name:'停止生成',exact:true}).click();
  assert.match(await latest().locator('.stream-result').innerText(),/等待模拟宿主确认/);await ready();
  const stopped=await stateOf();assert.equal(stopped.phase,'interrupted');assert.ok(stopped.blocks.find(b=>b.id==='intro').text.length>0);
  await page.waitForTimeout(700);assert.equal((await stateOf()).lastSeq,stopped.lastSeq);assert.equal((await stateOf()).id,stopId);
  pass('stop waits for acknowledgement, retains partial text and prevents late timer callbacks');
 
- await page.locator('#stream-demo-entry').click();await controls();await page.waitForFunction(()=>latestStream().blocks.some(b=>b.id==='read'&&b.text.length));
+ await page.locator('#session-options').click();await page.locator('#stream-demo-entry').click();await controls();await page.waitForFunction(()=>latestStream().blocks.some(b=>b.id==='read'&&b.text.length));
  await latest().locator('[data-stream="fail"]').click();await ready();assert.equal((await stateOf()).phase,'failed');assert.equal((await stateOf()).blocks.find(b=>b.id==='read').status,'failed');
  pass('failure preserves partial output and marks an unfinished tool failed without automatic retry');
 
- await page.locator('#stream-demo-entry').click();await page.locator('#task-body').evaluate(el=>el.scrollTop=0);const top=await page.locator('#task-body').evaluate(e=>e.scrollTop);
+ await page.locator('#session-options').click();await page.locator('#stream-demo-entry').click();await page.locator('#task-body').evaluate(el=>el.scrollTop=0);const top=await page.locator('#task-body').evaluate(e=>e.scrollTop);
  await page.waitForFunction(()=>streams.unread>0);assert.equal(await page.locator('#task-body').evaluate(e=>e.scrollTop),top);
  await page.locator('#stream-livebar [data-stream="follow"]').click();assert.equal(await page.evaluate(()=>streams.unread),0);
  assert.ok(await page.locator('#task-body').evaluate(e=>e.scrollHeight-e.clientHeight-e.scrollTop<64));
@@ -77,7 +77,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
  await page.waitForTimeout(250);assert.equal(await page.locator('.btw-answer').innerText(),answer);
  pass('375–1440px streaming layout; BTW streams independently and preserves partial output on cancellation');
  await page.locator('[data-capability="btw-hide"]').click();
- await page.locator('#stream-demo-entry').click();await page.locator('#session-options').click();await page.locator('#reset-demo').click();
+ await page.locator('#session-options').click();await page.locator('#stream-demo-entry').click();await page.locator('#session-options').click();await page.locator('#reset-demo').click();
  await page.waitForTimeout(750);assert.equal(await page.locator('.stream-message').count(),0);assert.equal(await page.locator('#stream-livebar').isVisible(),false);
  pass('reset disposes all stream timers and old run state');
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);pass('no JavaScript errors or external model/tool requests');

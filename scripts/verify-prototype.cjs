@@ -57,13 +57,13 @@ const { chromium } = require(require.resolve('playwright', { paths: [process.cwd
   await page.locator('.search-result').click();
   await page.locator('.primary-nav [data-nav="extensions"]').click();
   const toggle=page.getByRole('switch',{name:'切换 rpi-mcp-adapter',exact:true});
-  await toggle.click();assert.equal(await toggle.getAttribute('aria-checked'),'true');
-  await page.locator('.primary-nav [data-nav="devices"]').click();
+  assert.equal(await toggle.isDisabled(),true);await page.locator('[data-extension-card="rpi-mcp-adapter"] [data-resource-action="download"]').click();await page.locator('[data-extension-card="rpi-mcp-adapter"] [data-resource-action="install"]').click();await toggle.click();assert.equal(await toggle.getAttribute('aria-checked'),'true');
+  await page.locator('#settings-button').click();await page.locator('#settings-navigation [data-settings-page="devices"]').click();
   await page.locator('#pair-device').click();await page.locator('.pair-invite-demo > summary').click();await page.locator('#simulate-pair').click();await page.locator('#pair-verified').check();await page.locator('#approve-pair').click();
   await page.getByRole('heading',{name:'我的手机',exact:true}).waitFor();
   await page.locator('#unpair').click();assert.equal(await page.getByRole('heading',{name:'我的手机',exact:true}).count(),0);
   pass('search, extension toggles, pairing and revocation simulations');
-  await page.locator('#settings-button').click();await page.locator('#theme-select').selectOption('dark');
+  await page.locator('#settings-button').click();assert.equal(await page.locator('.sidebar [data-nav="devices"],.sidebar [data-nav="providers"],.sidebar .node-mini').count(),0);await page.locator('[data-settings-action="appearance"]').click();await page.locator('#theme-select').selectOption('dark');
   assert.equal(await page.locator('body').evaluate(e=>e.classList.contains('theme-dark')),true);
   await page.locator('#theme-select').selectOption('light');await page.getByRole('button',{name:'完成',exact:true}).click();
   pass('light/dark settings');
@@ -73,15 +73,18 @@ const { chromium } = require(require.resolve('playwright', { paths: [process.cwd
     await page.setViewportSize({width,height:900});
     const dimensions=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth}));
     assert.ok(dimensions.scroll<=dimensions.viewport,`horizontal overflow at ${width}`);
+    const chromeHeight=await page.evaluate(()=>document.querySelector('#task-body').getBoundingClientRect().top-document.querySelector('.main').getBoundingClientRect().top);
+    assert.ok(chromeHeight<=100,`conversation header takes ${chromeHeight}px at ${width}`);
   }
   pass('no document overflow at 375, 390, 768, 1024, 1440px');
+  pass('conversation navigation and configuration use at most 100px above the timeline on desktop and mobile');
   await page.setViewportSize({width:390,height:844});
   await page.reload();
   await page.locator('#approve').scrollIntoViewIfNeeded();
   await page.screenshot({path:'artifacts/prototype-mobile.png',animations:'disabled'});
   const sidebarRight=await page.locator('.sidebar').evaluate(e=>e.getBoundingClientRect().right);
   assert.ok(sidebarRight<=0,'mobile sidebar is fully offscreen when closed');
-  await page.locator('#menu-toggle').click();await page.locator('.primary-nav [data-nav="devices"]').click();
+  await page.locator('#menu-toggle').click();await page.locator('#settings-button').click();await page.locator('#settings-navigation [data-settings-page="devices"]').click();
   assert.equal(await page.locator('.sidebar').evaluate(e=>e.classList.contains('open')),false);
   await page.locator('#menu-toggle').click();await page.locator('.primary-nav [data-nav="workspace"]').click();
   await page.locator('#context-toggle').click();assert.equal(await page.locator('#inspector').isVisible(),true);await page.locator('#context-close').click();

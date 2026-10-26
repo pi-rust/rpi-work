@@ -2,14 +2,15 @@
  * These are normalized UI events, not the rpi wire protocol. See docs/streaming.md.
  */
 const streams={active:new Map(),unread:0};
-const streamPhases={accepted:'请求已接收',preparing:'准备上下文',text:'正在生成',tool:'工具执行中',awaiting_settlement:'等待运行时结算',cancelling:'正在请求停止',completed:'本轮已完成',interrupted:'已停止演示生成',failed:'本轮失败'};
+const streamPhases={accepted:'请求已接收',preparing:'准备上下文',text:'正在生成',tool:'工具执行中',awaiting_settlement:'等待运行时结算',cancelling:'正在请求停止',completed:'本轮已完成',interrupted:'已停止演示生成',failed:'本轮失败',suspended:'已挂起，等待恢复',declined:'本轮未执行',settled_unknown:'结果待核对'};
 function latestStream(){return (state.messages[state.session]||[]).findLast(m=>m.role==='stream');}
-function streamTerminal(run){return ['completed','interrupted','failed'].includes(run.phase);}
+function streamTerminal(run){return ['completed','interrupted','failed','suspended','declined','settled_unknown'].includes(run.phase);}
+function normalizeSettlement(outcome){if(['completed','compacted'].includes(outcome))return 'completed';if(['aborted','interrupted'].includes(outcome))return 'interrupted';if(outcome==='failed')return 'failed';if(outcome==='suspended')return 'suspended';if(['declined','skipped'].includes(outcome))return 'declined';return 'settled_unknown';}
 function streamStatus(run){return streamPhases[run.phase]||run.phase;}
 function streamById(id){for(const messages of Object.values(state.messages)){const r=messages.find(m=>m.role==='stream'&&m.id===id);if(r)return r;}}
 function streamButton(action,label,disabled=false){return `<button data-stream="${action}" ${disabled?'disabled':''}>${label}</button>`;}
 function renderStreamMessage(run){
-  return `<article class="message stream-message" id="${run.id}" data-run-id="${run.id}"><div class="message-avatar agent">r↗</div><div class="message-content"><div class="message-author">rpi <span class="via">${escapeHTML(run.provider)} · 本地流式演示</span></div><div class="stream-run-state" data-phase="${run.phase}" role="status">${escapeHTML(streamStatus(run))}</div><div class="stream-blocks">${run.blocks.map(renderStreamBlock).join('')}</div><div class="stream-result">${streamResult(run)}</div><details class="stream-controls" ${run.controlsOpen?'open':''}><summary>流式演示控制 <span>本地事件，不调用工具</span></summary><div>${streamButton('disconnect','模拟断线',streamTerminal(run)||run.transport!=='online')}${streamButton('reconnect','立即重连',streamTerminal(run)||run.transport==='online')}${streamButton('fail','模拟运行失败',streamTerminal(run)||run.phase==='cancelling')}${streamButton('resync','模拟恢复失效',streamTerminal(run))}<label><input type="checkbox" data-stream="hold" ${run.hold?'checked':''} ${streamTerminal(run)?'disabled':''}>暂缓最终结算</label>${streamButton('settle','接收结算',run.phase!=='awaiting_settlement'||!run.held)}</div><small>断线只影响接收；停止需等待模拟宿主确认。恢复失效会重建快照，不重发原指令。</small></details></div></article>`;
+  return `<article class="message stream-message" id="${run.id}" data-run-id="${run.id}"><div class="message-avatar agent">r↗</div><div class="message-content"><div class="message-author">rpi <span class="via">${escapeHTML(run.provider)} · 本地流式演示</span></div><div class="stream-run-state" data-phase="${run.phase}" role="status">${escapeHTML(streamStatus(run))}</div><button class="run-trace-link" data-trace-run="${escapeHTML(run.id)}" aria-label="查看本轮追踪与耗时">${icon('chart')}<span>追踪</span></button><div class="stream-blocks">${run.blocks.map(renderStreamBlock).join('')}</div><div class="stream-result">${streamResult(run)}</div><details class="stream-controls" ${run.controlsOpen?'open':''}><summary>流式演示控制 <span>本地事件，不调用工具</span></summary><div>${streamButton('disconnect','模拟断线',streamTerminal(run)||run.transport!=='online')}${streamButton('reconnect','立即重连',streamTerminal(run)||run.transport==='online')}${streamButton('fail','模拟运行失败',streamTerminal(run)||run.phase==='cancelling')}${streamButton('resync','模拟恢复失效',streamTerminal(run))}<label><input type="checkbox" data-stream="hold" ${run.hold?'checked':''} ${streamTerminal(run)?'disabled':''}>暂缓最终结算</label>${streamButton('settle','接收结算',run.phase!=='awaiting_settlement'||!run.held)}</div><small>断线只影响接收；停止需等待模拟宿主确认。恢复失效会重建快照，不重发原指令。</small></details></div></article>`;
 }
 function renderStreamBlock(block){
   if(block.kind==='text')return `<div class="stream-text ${block.done?'':'is-streaming'}" data-block-id="${block.id}">${escapeHTML(block.text)}</div>`;
@@ -17,12 +18,12 @@ function renderStreamBlock(block){
   return `<details class="stream-tool" data-block-id="${block.id}" ${block.open?'open':''}><summary>${icon('terminal')}<strong>${escapeHTML(block.name)}</strong><span class="stream-tool-status">${block.status==='done'?'已完成':block.status==='cancelled'?'已取消':block.status==='failed'?'失败':'输出接收中'}</span>${icon('chevron-down')}</summary><div class="stream-tool-body"><code>${escapeHTML(block.args)}</code><pre>${escapeHTML(block.text)}</pre><small>演示输出 · 不执行命令</small></div></details>`;
 }
 function streamResult(run){
-  const note=run.phase==='completed'?'已收到 agent_settled · completed。Token / 缓存 / 费用尚未上报，显示 —；页脚保留此前已结算样例。':run.phase==='interrupted'?'已停止演示生成。部分正文与工具输出已保留；未完成的工具已标记取消。':run.phase==='failed'?'模拟宿主返回失败，部分内容已保留。可补充指令后发起新一轮；不会自动重试工具。':run.phase==='awaiting_settlement'?'已收到 agent_end；等待 agent_settled 确认本轮结果。':run.phase==='cancelling'?'停止请求已发出，等待模拟宿主确认。':'';
-  return note?`<p>${note}</p>`:'';
+  const note=run.phase==='completed'?`已收到 agent_settled · ${run.outcome==='compacted'?'compacted':'completed'}。Token / 缓存 / 费用尚未上报，显示 —；页脚保留此前已结算样例。`:run.phase==='interrupted'?'已停止演示生成。部分正文与工具输出已保留；未完成的工具已标记取消。':run.phase==='failed'?'模拟宿主返回失败，部分内容已保留。可补充指令后发起新一轮；不会自动重试工具。':run.phase==='awaiting_settlement'?'已收到 agent_end；等待 agent_settled 确认本轮结果。':run.phase==='cancelling'?'停止请求已发出，等待模拟宿主确认。':'';
+  const extra=run.phase==='suspended'?'本轮已挂起；不会自动重发原指令。':run.phase==='declined'?'宿主未执行此操作，可能是压缩未获采纳或无需恢复。':run.phase==='settled_unknown'?'宿主返回了未识别的结果，需要同步状态后核对。':run.outcome==='compacted'?'上下文压缩已结算。':run.pendingResume?'宿主标记此轮存在可恢复工作；尚未自动恢复。':'';
+  return (note?`<p>${note}</p>`:'')+(extra?`<p>${extra}</p>`:'');
 }
 function renderStreamChrome(){
   if(!$('#stream-livebar'))$('#queue-shelf').insertAdjacentHTML('beforebegin','<div id="stream-livebar" class="stream-livebar" hidden></div>');
-  if(!$('#stream-demo-entry'))$('.task-meta').insertAdjacentHTML('beforeend',`<button id="stream-demo-entry" data-stream="demo">${icon('play')}流式演示</button>`);
   const run=latestStream(),bar=$('#stream-livebar');bar.hidden=!run||state.tab!=='conversation';
   if(!run)return;
   const transport=run.transport==='online'?'已连接':run.transport==='resyncing'?'正在同步快照':'连接中断 · 正在重连';
@@ -76,10 +77,11 @@ function reduceStream(run,envelope){
     const block=run.blocks.find(b=>b.id===e.id);block.status=e.failed?'failed':'done';
   }else if(e.type==='agent_end')run.phase='awaiting_settlement';
   else if(e.type==='agent_settled'){
-    run.phase=e.outcome==='completed'?'completed':e.outcome==='interrupted'?'interrupted':'failed';
+    run.outcome=e.outcome;run.pendingResume=e.pendingResume===true;run.error=e.error||null;run.phase=normalizeSettlement(e.outcome);
     run.blocks.forEach(b=>{b.done=true;if(b.kind==='tool'&&b.status==='running')b.status=run.phase==='failed'?'failed':'cancelled';});
     run.finishedAt=performance.now();if(run.session===state.session)state.running=false;
   }
+  if(typeof recordTraceEnvelope==='function')recordTraceEnvelope(run,envelope);
   return true;
 }
 function receiveStream(run,envelope){
@@ -119,8 +121,9 @@ function buildStreamScript(mode,tools){
 }
 function startStreamRun(){
   const run={role:'stream',id:'run-'+crypto.randomUUID(),session:state.session,provider:state.model,resourceSnapshot:captureSessionResources(),phase:'accepted',transport:'online',blocks:[],lastSeq:0,chunks:0,applied:[],pending:[],timers:new Set(),history:[],hold:false,held:null,recovered:false};
+  traceStreamStart(run);
   (state.messages[state.session]||=[]).push(run);streams.active.set(run.id,run);streams.unread=0;state.tab='conversation';state.running=true;renderTab();followStream();
-  buildStreamScript(state.mode,run.resourceSnapshot.tools).forEach(({at,event},i)=>streamSchedule(run,()=>{const envelope={runId:run.id,seq:i+1,event};run.history.push(envelope);receiveStream(run,envelope);},at));
+  buildStreamScript(state.mode,run.resourceSnapshot.tools).forEach(({at,event},i)=>streamSchedule(run,()=>{const envelope={runId:run.id,seq:i+1,event,at:performance.now()};run.history.push(envelope);receiveStream(run,envelope);},at));
   return run;
 }
 function startStreamDemo(){
@@ -132,7 +135,7 @@ function stopStream(){
   const run=latestStream();if(!run||streamTerminal(run)||run.phase==='cancelling')return;
   clearStreamTimers(run);run.pending=[];run.held=null;run.transport='online';run.phase='cancelling';paintStream(run);
   streamSchedule(run,()=>{
-    reduceStream(run,{runId:run.id,seq:run.lastSeq+1,event:{type:'agent_settled',outcome:'interrupted'}});
+    reduceStream(run,{runId:run.id,seq:run.lastSeq+1,event:{type:'agent_settled',outcome:'aborted'}});
     streams.active.delete(run.id);renderRuntimeFooter();renderQueueShelf();paintStream(run);
   },240);
 }
@@ -165,7 +168,7 @@ function resyncStream(run){
 document.addEventListener('click',event=>{
   const button=event.target.closest('button[data-stream]');if(!button||button.disabled)return;
   const action=button.dataset.stream,run=streamById(button.closest('[data-run-id]')?.dataset.runId)||latestStream();
-  if(action==='demo'){startStreamDemo();return;}if(action==='follow'){followStream();return;}if(!run)return;
+  if(action==='demo'){if($('#modal').open)$('#modal').close();startStreamDemo();return;}if(action==='follow'){followStream();return;}if(!run)return;
   if(action==='disconnect')disconnectStream(run);
   if(action==='reconnect')reconnectStream(run);
   if(action==='resync')resyncStream(run);

@@ -1,0 +1,52 @@
+.scroll-follow {
+    display: contents;
+    pointer-events: none;
+}
+
+.scroll-follow-button {
+    --scroll-follow-bg: var(--surface-raised, #242832);
+    --scroll-follow-fg: var(--text-primary, #f7f8fb);
+    --scroll-follow-border: var(--border-subtle, rgba(255, 255, 255, 0.18));
+    position: fixed;
+    z-index: 20;
+    min-width: 40px;
+    min-height: 40px;
+    max-width: min(320px, calc(100vw - 16px));
+    padding: 9px 14px;
+    border: 1px solid var(--scroll-follow-border);
+    border-radius: 999px;
+    background: var(--scroll-follow-bg);
+    color: var(--scroll-follow-fg);
+    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.22);
+    font: inherit;
+    font-size: 0.875rem;
+    line-height: 1.25;
+    text-align: center;
+    white-space: normal;
+    transform: translate(-50%, -100%);
+    pointer-events: auto;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.scroll-follow-button:hover {
+    filter: brightness(1.08);
+}
+
+.scroll-follow-button:focus-visible {
+    outline: 2px solid var(--focus-ring, #8ab4ff);
+    outline-offset: 2px;
+}
+
+@media (max-width: 390px) {
+    .scroll-follow-button {
+        max-width: calc(100vw - 16px);
+        padding-inline: 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scroll-follow-button {
+        scroll-behavior: auto;
+    }
+}

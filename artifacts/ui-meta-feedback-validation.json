@@ -1,0 +1,11 @@
+{
+  "results": [
+    "invalid resource input is visible inside its modal, persists and preserves the exact fields",
+    "a newer success toast survives the older toast deadline",
+    "success feedback expires while a duplicate-ID error stays visible and recoverable",
+    "manifest is first in both source lists and remains the actual selected source",
+    "leaving the Meta Agent page cancels and removes its live browser timeout",
+    "feedback and local source selection invoke no model and produce no JavaScript errors"
+  ],
+  "errors": []
+}

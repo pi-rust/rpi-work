@@ -1,0 +1,25 @@
+[package]
+name = "parity-module-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+default = ["meta", "resources"]
+meta = []
+resources = []
+trace = []
+project = []
+extras = []
+conversation = []
+settings = []
+queue = []
+scroll = []
+
+[dependencies]
+dioxus = { version = "0.7", features = ["web"] }
+serde_json = "1"
+work-client = { path = "../../crates/work-client" }
+work-core = { path = "../../crates/work-core" }

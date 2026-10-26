@@ -9,6 +9,9 @@
 | 纸与苔绿 `paper` | 暖白 / 深苔绿，赤陶强调色 | 人文无衬线、柔和圆角 |
 | 海湾蓝 `ocean` | 冷白 / 深海蓝，海蓝强调色 | 系统无衬线、利落轮廓 |
 | 石墨紫 `graphite` | 中性灰 / 深石墨，紫色强调 | 系统正文、等宽标题、方正轮廓 |
+| Reddit 橙 `reddit` | 橙红强调、冷灰 / 炭黑表面 | 系统无衬线、柔和卡片 |
+
+Reddit 橙参考 [Reddit 官方品牌页](https://redditinc.com/brand) 的 OrangeRed `#FF4500`，用于品牌图形；正文操作色在浅色中加深、深色中提亮，保证主要文本对比度。中性表面为本原型设计，并非对 Reddit 全站 CSS 的逐项复制。没有引入 Reddit 标识或远程字体。可下载 [主题 JSON](../artifacts/rpi-work-theme-reddit.json)，查看 [浅色](../artifacts/prototype-theme-reddit-light.png)、[深色](../artifacts/prototype-theme-reddit-dark.png) 和 [手机](../artifacts/prototype-theme-reddit-mobile.png) 截图。
 
 每套主题都提供浅色和深色配色。**主题风格、明暗模式、界面密度分别选择**：例如海湾蓝 + 跟随系统 + 紧凑，不需要维护成另一个独立主题。
 
@@ -35,7 +38,7 @@ AppearanceConfig
 └─ density: standard | compact
 ```
 
-每个 palette 有 `bg / side / panel / card / text / muted / line / code / accent / accentBg / selected`。由 `buildThemeTokens` 生成边框、焦点、阴影、状态、diff、终端、提示消息、图表及其他组件变量。
+每个 palette 有 `bg / side / panel / card / text / muted / line / code / accent / accentBg / selected`。主题还可以提供独立的 `brand` 色，和正文/按钮的 `accent` 分开。由 `buildThemeTokens` 生成边框、焦点、阴影、状态、diff、终端、提示消息、图表及其他组件变量。
 
 字体使用系统字体栈，没有远程字体请求。新增主题可以选择字体栈和轮廓方案，不需要重写业务组件。密度统一影响常用间距、消息字号/行高和导航行高；移动端表单和主题操作保持适合触控的尺寸。
 
@@ -104,7 +107,7 @@ AppearanceConfig
 
 ## 7. 验证
 
-`node scripts/verify-themes.cjs` 验证：生成文件一致、组件无固定 palette 色值、主要文字对比度、预览/取消/Esc/关闭恢复、对话和草稿节点保留、偏好保存、系统明暗响应、三主题 × 两模式在 375/390/768/1440px 的布局、Package 与 diff 主题覆盖、JSON 下载导入、自定义主题持久化、非法颜色和低对比度拒绝、旧偏好迁移，以及无外部请求。
+`node scripts/verify-themes.cjs` 验证：生成文件一致、组件无固定 palette 色值、主要文字对比度、预览/取消/Esc/关闭恢复、对话和草稿节点保留、偏好保存、系统明暗响应、四主题 × 两模式在 375/390/768/1440px 的布局、Package 与 diff 主题覆盖、JSON 下载导入、自定义主题持久化、非法颜色和低对比度拒绝、旧偏好迁移，以及无外部请求。
 
 原有六组浏览器交互回归也已通过。记录：[themes-validation.json](../artifacts/themes-validation.json)。截图：[石墨紫深色](../artifacts/prototype-theme-graphite-dark.png)、[海湾蓝变更页](../artifacts/prototype-theme-ocean-changes.png)、[手机主题选择](../artifacts/prototype-theme-picker-mobile.png)、[手机海湾蓝](../artifacts/prototype-theme-ocean-mobile.png)。
 

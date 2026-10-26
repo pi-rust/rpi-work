@@ -1,0 +1,95 @@
+.composer-extras {color:var(--text);min-width:0}
+.composer-extras.attachment-picker {display:block}
+.composer-extras .extras-add {position:relative;display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer}
+.composer-extras .extras-add input {position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.composer-extras .draft-attachments {display:flex;gap:var(--space-7);flex-wrap:wrap;margin-top:var(--space-8)}
+.composer-extras .draft-chip {display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);max-width:240px;min-width:0}
+.composer-extras .draft-chip>button:first-child {display:flex;align-items:center;gap:var(--space-7);padding:var(--space-6) var(--space-7);min-width:0;justify-content:flex-start;color:var(--text);background:transparent;border:0}
+.composer-extras .draft-chip img {width:31px;height:31px;object-fit:cover;border-radius:var(--radius-xs);flex:none}
+.composer-extras .draft-chip>button>span {display:grid;gap:var(--space-2);font:10px var(--mono);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.composer-extras .draft-chip small {font:8px var(--sans);color:var(--muted)}
+.composer-extras .draft-chip svg {width:16px;color:var(--muted);flex:none}
+.composer-extras .attachment-remove {width:27px;height:31px;flex-shrink:0;padding:0;color:var(--muted);background:transparent;border:0}
+.composer-extras .attachment-remove svg {width:12px}
+.composer-extras .extras-local-note, .composer-extras .extras-help {display:block;color:var(--muted);font-size:9px;line-height:1.8;margin-top:var(--space-7)}
+.composer-extras .extras-error {color:var(--danger);font-size:10px;line-height:1.7;margin:var(--space-7) 0;overflow-wrap:anywhere}
+.composer-extras .extras-add>svg, .composer-extras.composer-extra-dialog svg {width:15px;height:15px}
+.composer-extras.composer-extra-dialog {width:min(610px,calc(100vw - 24px));max-height:90dvh;padding:0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--card);color:var(--text);box-shadow:var(--shadow)}
+.composer-extras.composer-extra-dialog::backdrop {background:color-mix(in srgb,var(--bg) 55%,transparent)}
+.composer-extras.composer-extra-dialog header {display:flex;align-items:center;justify-content:space-between;gap:var(--space-10);padding:var(--space-12) var(--space-16);border-bottom:1px solid var(--line)}
+.composer-extras.composer-extra-dialog h2 {font-size:14px;font-weight:500;overflow-wrap:anywhere}
+.composer-extras .extras-dialog-body {max-height:calc(90dvh - 80px);overflow:auto;padding:var(--space-16)}
+.composer-extras .image-preview {display:flex;align-items:center;justify-content:center;min-height:180px;max-height:390px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel)}
+.composer-extras .image-preview img {height:auto;object-fit:contain;transform-origin:center}
+.composer-extras .image-controls {display:flex;justify-content:center;gap:var(--space-7);margin-top:var(--space-12)}
+.composer-extras .document-preview {font:11px/1.9 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:380px;overflow:auto;padding:var(--space-14);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);color:var(--text)}
+.composer-extras .extras-binary {text-align:center;padding:var(--space-24) var(--space-8);color:var(--muted)}
+.composer-extras .extras-binary svg {width:28px;height:28px}
+.composer-extras .extras-binary p {font-size:11px;margin:var(--space-8) 0}
+.composer-extras.btw-panel {display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--panel);border-left:1px solid var(--line);z-index:60}
+.composer-extras .btw-header {min-height:67px;display:flex;align-items:center;justify-content:space-between;padding:var(--space-12) var(--space-18);border-bottom:1px solid var(--line);gap:var(--space-10)}
+.composer-extras .btw-header>div {display:grid;gap:var(--space-3)}
+.composer-extras .btw-header strong {font-size:16px;font-weight:550;color:var(--accent)}
+.composer-extras .btw-header strong span {font-size:11px;color:var(--text);margin-left:var(--space-5);font-weight:400}
+.composer-extras .btw-header small {font-size:9px;color:var(--muted)}
+.composer-extras .btw-boundary-summary {display:flex;align-items:center;gap:var(--space-7);padding:var(--space-7) var(--space-17);font-size:9px;color:var(--muted);line-height:1.4;border-bottom:1px solid var(--line)}
+.composer-extras .btw-boundary-summary svg {width:13px;height:13px;flex-shrink:0;color:var(--success)}
+.composer-extras .btw-settings {border-bottom:1px solid var(--line)}
+.composer-extras .btw-settings > summary {cursor:pointer;padding:var(--space-8) var(--space-17);font-size:10px;color:var(--text);list-style-position:inside}
+.composer-extras .btw-settings[open] > summary {color:var(--accent)}
+.composer-extras .btw-boundary {display:flex;align-items:flex-start;gap:var(--space-7);font-size:9px;color:var(--muted);padding:var(--space-8) var(--space-17) var(--space-10);line-height:1.65}
+.composer-extras .btw-boundary svg {width:13px;height:13px;flex-shrink:0;margin-top:var(--space-2);color:var(--success)}
+.composer-extras .btw-actions {display:flex;align-items:center;gap:var(--space-7);padding:0 var(--space-17) var(--space-12);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.composer-extras .btw-actions button, .composer-extras .btw-sessions button {font-size:9px;padding:var(--space-5) var(--space-8);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--text)}
+.composer-extras .btw-actions>span {margin-left:auto;font-size:9px;color:var(--muted)}
+.composer-extras .btw-config {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-7);align-items:end;padding:var(--space-7) var(--space-17) var(--space-10);border-bottom:0}
+.composer-extras .btw-config label {display:grid;gap:var(--space-3);font-size:9px;color:var(--muted);min-width:0}
+.composer-extras .btw-config select {display:block;min-width:0;width:100%;max-width:100%;padding:var(--space-5);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--text);font-size:10px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+.composer-extras .btw-config small {grid-column:1 / -1}
+.composer-extras .btw-config small {font-size:9px;color:var(--muted);line-height:1.6}
+.composer-extras .btw-sessions {padding:var(--space-7) var(--space-17);border-bottom:1px solid var(--line)}
+.composer-extras .btw-sessions summary {cursor:pointer;font-size:9px;color:var(--muted)}
+.composer-extras .btw-sessions p {font-size:9px;color:var(--muted);line-height:1.7;margin:var(--space-6) 0}
+.composer-extras .btw-sessions button {display:flex;width:100%;justify-content:space-between;text-align:left;margin-top:var(--space-5);gap:var(--space-6)}
+.composer-extras .btw-sessions button.active {border-color:var(--accent-line);color:var(--accent)}
+.composer-extras .btw-sessions button span {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.composer-extras .btw-sessions button small {color:var(--muted);font:8px var(--mono);white-space:nowrap}
+.composer-extras .btw-session-id {font:8px var(--mono);color:var(--muted);padding:var(--space-5) var(--space-17);overflow-wrap:anywhere}
+.composer-extras .btw-history {overflow:auto;flex:1;min-height:0;padding:var(--space-18) var(--space-17);scrollbar-width:thin}
+.composer-extras .btw-turn {margin-bottom:var(--space-25)}
+.composer-extras .btw-question {font-size:12px;color:var(--text);background:var(--card);padding:var(--space-11) var(--space-13);border:1px solid var(--line);border-radius:var(--radius-md);line-height:1.8;overflow-wrap:anywhere}
+.composer-extras .btw-answer {font-size:12px;line-height:1.9;color:var(--text);padding:var(--space-13) var(--space-3) var(--space-8);overflow-wrap:anywhere;white-space:pre-wrap}
+.composer-extras .btw-turn-meta {font-size:8px;color:var(--muted);display:flex;align-items:center;gap:var(--space-5);flex-wrap:wrap}
+.composer-extras .btw-turn-meta button {font-size:9px;color:var(--accent);padding:0;margin-left:auto;background:transparent;border:0}
+.composer-extras .btw-tool-status, .composer-extras .btw-status {font-size:9px;color:var(--muted);line-height:1.7;padding:var(--space-5) 0}
+.composer-extras .btw-composer {padding:var(--space-12) var(--space-14) var(--space-15);background:var(--panel);border-top:1px solid var(--line)}
+.composer-extras .btw-composer textarea {display:block;width:100%;box-sizing:border-box;resize:vertical;border:1px solid var(--line);border-radius:var(--radius-md);padding:var(--space-10);background:var(--card);color:var(--text);font-size:12px;min-height:73px}
+.composer-extras .btw-composer>div {display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-top:var(--space-8)}
+.composer-extras .btw-composer small {font-size:8px;color:var(--muted);line-height:1.7}
+.composer-extras .btw-empty {text-align:center;color:var(--text);padding:var(--space-32) var(--space-7);font-size:14px}
+.composer-extras .btw-empty p {font-size:11px;color:var(--muted);margin:var(--space-10) 0 var(--space-20);line-height:1.9}
+.composer-extras .btw-empty .button {font-size:10px}
+.composer-extras .small-link {color:var(--accent);background:transparent;border:0;font-size:9px}
+.composer-extras .send-button {width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:var(--radius-sm);background:var(--accent);color:var(--bg)}
+.composer-extras .send-button svg {width:15px;height:15px}
+@media(max-width:1040px){.composer-extras.btw-panel{position:absolute;right:0;top:0;bottom:0;width:min(420px,100%);box-shadow:var(--shadow)}
+}
+@media(max-width:700px){.composer-extras.btw-panel{width:100%;border-left:0}
+.composer-extras .btw-header {padding:var(--space-14) var(--space-18);min-height:74px}
+.composer-extras .btw-header strong {font-size:19px}
+.composer-extras .btw-boundary {font-size:11px;padding:var(--space-16) var(--space-18)}
+.composer-extras .btw-actions {padding-left:var(--space-18);padding-right:var(--space-18)}
+.composer-extras .btw-actions button {font-size:11px;min-height:36px}
+.composer-extras .btw-actions>span {font-size:10px}
+.composer-extras .btw-question, .composer-extras .btw-answer {font-size:14px}
+.composer-extras .btw-history {padding:var(--space-20) var(--space-18)}
+.composer-extras .btw-composer textarea {font-size:16px;min-height:85px}
+.composer-extras .btw-composer small {font-size:9px}
+.composer-extras .btw-empty p {font-size:12px}
+.composer-extras .draft-chip {max-width:100%;min-height:44px}
+.composer-extras .draft-chip>button:first-child {min-height:42px}
+.composer-extras .attachment-remove {min-width:34px;height:42px}
+.composer-extras .extras-dialog-body {padding:var(--space-14)}
+.composer-extras.composer-extra-dialog {width:calc(100vw - 16px)}
+}
+

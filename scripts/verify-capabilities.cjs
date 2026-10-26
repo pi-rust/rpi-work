@@ -26,8 +26,8 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
  await common('ask-single');await latest().locator('.ask-demo-controls > summary').click();await latest().locator('[data-capability="ask-expire"]').click();assert.match(await latest().innerText(),/已超时/);
  await common('ask-single');await latest().locator('.ask-demo-controls > summary').click();await latest().locator('[data-capability="ask-external"]').click();assert.match(await latest().innerText(),/其他设备已处理/);
  pass('ask cancellation, timeout and another-device response never invent a local answer');
- await page.locator('.primary-nav [data-nav="skills"]').click();assert.equal(await page.locator('.skill-catalogue-card').count(),6);
- await page.locator('#skill-scope').selectOption('global');assert.equal(await page.locator('.skill-catalogue-card').count(),4);
+ await page.locator('.primary-nav [data-nav="skills"]').click();assert.equal(await page.locator('.skill-catalogue-card').count(),7);
+ await page.locator('#skill-scope').selectOption('global');assert.equal(await page.locator('.skill-catalogue-card').count(),5);
  const shadow=page.locator('.skill-catalogue-card').filter({hasText:'被项目覆盖'});assert.equal(await shadow.locator('[data-capability="skill-pin"]').isDisabled(),true);
  await page.locator('[data-capability="skill-detail"][data-id="broken"]').click();assert.match(await page.locator('#modal').innerText(),/parse_failed/);await page.locator('#modal .modal-header [data-close-modal]').click();
  await page.locator('#skill-scope').selectOption('all');await page.locator('#skill-search').fill('responsive');assert.equal(await page.locator('.skill-catalogue-card').count(),1);await page.locator('#skill-search').fill('');

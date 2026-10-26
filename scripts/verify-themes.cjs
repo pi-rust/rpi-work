@@ -10,7 +10,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
  execFileSync(process.execPath,['scripts/sync-theme-tokens.cjs','--check'],{stdio:'pipe'});
  const sandbox=vm.createContext({});vm.runInContext(fs.readFileSync('prototype/theme-catalog.js','utf8')+';globalThis.result={themes:THEME_PRESETS,contrast:themeContrast};',sandbox);
  for(const theme of sandbox.result.themes)for(const palette of Object.values(theme.palettes))for(const bg of ['bg','side','panel','card','code'])for(const fg of ['text','muted'])assert.ok(sandbox.result.contrast(palette[fg],palette[bg])>=4.5,`${theme.id} ${fg}/${bg}`);
- for(const name of ['styles','runtime','conversation','capabilities','packages','streaming','themes','devices'])assert.doesNotMatch(fs.readFileSync(`prototype/${name}.css`,'utf8'),/#[\da-fA-F]{3,8}\b/,'component CSS must not hard-code palette colors');
+ for(const name of ['styles','runtime','conversation','capabilities','packages','streaming','themes','devices','sessions','workspace','project-files','settings','traces','resources','meta-agent','project-picker'])assert.doesNotMatch(fs.readFileSync(`prototype/${name}.css`,'utf8'),/#[\da-fA-F]{3,8}\b/,'component CSS must not hard-code palette colors');
  pass('generated fallback matches the catalog; component CSS has no fixed palette colors and default text contrast is at least 4.5:1');
  await page.goto(url);assert.equal((await current()).theme,'paper');assert.equal((await current()).mode,'light');
  await page.locator('#prompt').fill('主题切换期间保留的草稿');const input=await page.locator('#prompt').elementHandle(),message=await page.locator('#task-body .message').first().elementHandle();
@@ -31,7 +31,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
  await open();await page.locator('#theme-select').selectOption('light');await save();await page.emulateMedia({colorScheme:'dark'});assert.equal((await current()).resolved,'light');
  pass('system mode reacts to OS appearance changes; explicit light mode remains fixed');
 
- for(const theme of ['paper','ocean','graphite'])for(const mode of ['light','dark']){
+ for(const theme of sandbox.result.themes.map(t=>t.id))for(const mode of ['light','dark']){
   await open();await choose(theme);await page.locator('#theme-select').selectOption(mode);await page.locator('#density-select').selectOption('standard');await save();
   for(const width of [1440,768,390,375]){await page.setViewportSize({width,height:900});const dimensions=await page.evaluate(()=>({w:innerWidth,s:document.documentElement.scrollWidth}));assert.ok(dimensions.s<=dimensions.w,`${theme}/${mode}/${width}`);}
  }
@@ -39,8 +39,10 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
  const diff=await page.locator('.diff-line.add').first().evaluate(e=>({foreground:getComputedStyle(e).color,background:getComputedStyle(e).backgroundColor}));assert.notEqual(diff.foreground,diff.background);
  await page.getByRole('tab',{name:'对话',exact:true}).click();await page.locator('#session-resources [data-view="packages"]').click();assert.equal(await page.locator('.package-card').count(),2);await page.locator('#modal .modal-header [data-close-modal]').click();
  await page.setViewportSize({width:390,height:900});await open();await page.locator('#theme-select').selectOption('dark');await page.screenshot({path:'artifacts/prototype-theme-picker-mobile.png',animations:'disabled'});await save();await page.screenshot({path:'artifacts/prototype-theme-ocean-mobile.png',animations:'disabled'});
- pass('all six preset/mode combinations fit desktop and phone widths; changes, Package dialogs and the mobile picker use the same theme');
+ pass('all eight preset/mode combinations fit desktop and phone widths; changes, Package dialogs and the mobile picker use the same theme');
 
+ await page.setViewportSize({width:1440,height:1000});await open();await choose('reddit');await page.locator('#theme-select').selectOption('light');await save();assert.equal(await page.locator('.brand-mark').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 69, 0)');await page.screenshot({path:'artifacts/prototype-theme-reddit-light.png',animations:'disabled'});
+ await open();await page.locator('#theme-select').selectOption('dark');await save();await page.screenshot({path:'artifacts/prototype-theme-reddit-dark.png',animations:'disabled'});await page.setViewportSize({width:390,height:900});await page.screenshot({path:'artifacts/prototype-theme-reddit-mobile.png',animations:'disabled'});await open();const redditDownload=page.waitForEvent('download');await page.locator('[data-appearance="export"]').click();const redditFile=await redditDownload,redditPath=path.resolve('artifacts',redditFile.suggestedFilename());await redditFile.saveAs(redditPath);const redditPayload=JSON.parse(fs.readFileSync(redditPath,'utf8'));assert.equal(redditPayload.theme.brand,'#ff4500');await importTheme(redditPayload);assert.equal(await page.locator('#theme-error').innerText(),'');await choose('ocean');await save();
  await open();const downloadEvent=page.waitForEvent('download');await page.locator('[data-appearance="export"]').click();const download=await downloadEvent,exportPath=path.resolve('artifacts',download.suggestedFilename());await download.saveAs(exportPath);const payload=JSON.parse(fs.readFileSync(exportPath,'utf8'));assert.equal(payload.kind,'rpi-work-theme');assert.ok(payload.theme.palettes.light.accent);assert.ok(payload.theme.palettes.dark.accent);
  await importTheme(payload);assert.equal(await page.locator('#theme-error').innerText(),'');
  const custom={...payload,theme:{...payload.theme,id:'team-ocean',name:'团队海湾'}};await importTheme(custom);await page.waitForFunction(()=>appearance.current.theme==='team-ocean');await save();await page.reload();assert.equal((await current()).theme,'team-ocean');

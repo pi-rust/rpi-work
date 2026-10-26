@@ -1,0 +1,18 @@
+{
+  "results": [
+    "Inspector displays the actual node context window and usage",
+    "Inspector plan comes from actual public tool events",
+    "Packages Inspector opens one global dialog and reads the latest public branch summary without compacting",
+    "a branch without compaction clears the previously displayed summary",
+    "unsupported and transient branch failures have truthful recovery and retry reads the real summary",
+    "a late branch response cannot overwrite a newer compaction revision",
+    "native automatic compaction blocks overlapping manual work and invalidates reads across its end boundary",
+    "queue opens and closes from a non-conversation page without hidden or duplicate dialogs",
+    "Provider navigation retains usable Inspector context controls",
+    "Inspector change summary opens the real full file list",
+    "statistics scope resets for the newly selected session",
+    "late summary reads cannot cross session scope or overwrite the new session summary",
+    "no application JavaScript errors"
+  ],
+  "errors": []
+}

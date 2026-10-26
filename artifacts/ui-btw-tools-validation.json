@@ -1,0 +1,10 @@
+{
+  "results": [
+    "rejected tool initialization sends no prompt and preserves the side draft",
+    "a success acknowledgement with nonempty tool readback does not permit a prompt",
+    "missing tool state is unknown rather than proof of an empty tool list",
+    "verified side-only empty tools precede prompt while main tools and draft remain unchanged",
+    "no application JavaScript errors"
+  ],
+  "errors": []
+}

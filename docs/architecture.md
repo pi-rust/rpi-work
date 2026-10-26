@@ -1,6 +1,6 @@
-# RPI Work · 框架讨论稿 v0.1
+# RPI Work · 框架与实现说明 v0.9
 
-2026-10-23。**提案，不是已实现功能。** 用户提出 Dioxus 后，将其列为优先验证方案；最终技术决策待讨论与 PoC。
+当前结论：**Dioxus 共享 UI + rpi-http API 服务（兼容 rpi-web）+ rpi 原生 RPC 宿主**。本文件保留早期设计取舍，同时标注已经落地的真实 transport 与客户端能力。
 
 v0.2 数据投影与协议补充见 [常见 Agent 能力设计](runtime-interactions.md)：尤其注意 token 统计归一化、队列编辑竞争条件、图片/附件尚需扩展 RPC/HTTP 传输。
 
@@ -16,9 +16,9 @@ v0.8：[手机连接 PC](mobile-connection.md) 明确 PC 服务端 / 手机客�
 
 ## 1. 推荐组合
 
-**Dioxus 共享 UI + rpi-web Rust 服务 + rpi 原生 RPC 宿主**。
+**Dioxus 共享 UI + rpi-http API 服务（兼容 rpi-web）+ rpi 原生 RPC 宿主**。
 
-首版依然采用现有进程边界，避免先重写宿主能力。Dioxus 负责客户端，rpi-web 负责项目/会话与传输，rpi 负责工具和模型执行。
+首版采用现有进程边界，避免重写宿主能力。Dioxus 负责客户端，rpi-http 负责 API-only 项目/会话与传输；rpi-web 是包含浏览器前端的兼容服务入口，rpi 负责工具和模型执行。
 
 ```mermaid
 flowchart TB
@@ -31,7 +31,8 @@ flowchart TB
   W -->|同源 HTTPS + SSE| B
   M -->|HTTPS + SSE| B
   subgraph Node[电脑或服务器：执行节点]
-    B[rpi-web / Axum 服务]
+    B[rpi-http / Axum API]
+    B -.兼容入口.-> BW[rpi-web / API + 浏览器前端]
     B -->|JSONL stdio RPC| R1[rpi 会话进程 A]
     B -->|JSONL stdio RPC| R2[rpi 会话进程 B]
     R1 --> P[rpi-ai provider / DeepSeek 等]
@@ -49,7 +50,7 @@ flowchart TB
 
 参考：[平台能力](https://dioxuslabs.com/learn/0.7/guides/platforms/)、[移动端](https://dioxuslabs.com/learn/0.7/guides/platforms/mobile/)、[桌面渲染器](https://github.com/DioxusLabs/dioxus/blob/main/packages/desktop/README.md)。实现阶段再核对当前稳定依赖和平台 SDK，并锁定版本；不依赖主分支实验 API。
 
-| 维度 | Dioxus + rpi-web | Tauri + 现有 React |
+| 维度 | Dioxus + rpi-http | Tauri + 现有 React |
 | --- | --- | --- |
 | 客户端语言 | Rust / RSX / CSS | TypeScript / React / CSS + Rust 壳 |
 | 与现有 UI 的关系 | 组件与状态管理需要重新实现 | 可以大量沿用现有 React 界面 |
@@ -65,21 +66,21 @@ HTML 原型中的结构、CSS token、间距与交互可以移植到 RSX；原�
 
 ## 3. 本机仓库核对结果
 
-只读检查位置：
+2026-10-24 重新核对的只读基线：
 
-- `D:/Projects/pi-rust`，观察提交 `90190f6`。
-- `D:/Projects/rpi-package`，观察提交 `3409c30`。
-- `packages/rpi-web` 的 Cargo 版本为 `0.1.5`；README 使用 `rpi 0.7.0` 说明宿主。以这些检出文件为本次设计依据，未做版本兼容运行验证。
+- `D:/Projects/pi-rust`，提交 `daaa3cc`，workspace 版本 `0.8.3`。
+- `D:/Projects/rpi-package`，提交 `450587a`，rpi-web 版本 `0.1.7`。
+- 本次以工作区检出的源码为依据，两个上游工作区检查时均干净，未做 Rust 运行时兼容验证。最新结论与证据见 [功能审阅](upstream-functional-review.md)，替代此前 `90190f6 / 3409c30` 的旧基线判断。
 
 ### 可以复用的实现
 
 | 来源 | 已观察到的能力 | 对本项目的影响 |
 | --- | --- | --- |
-| `rpi-web/README.md` | 扩展 `rpi --web` 和 standalone 共用实现；每个打开的会话有原生宿主进程 | 优先接现成 bridge，不自行组装底层 agent loop |
-| `rpi-web/src/server.rs` | Axum HTTP API、项目/会话/文件/Git、snapshot 和 SSE | Dioxus 按现有 API 接入 |
+| `rpi-http` / `rpi-web` | `rpi-http` 提供 API-only HTTP/SSE；`rpi-web` 在同一协议上附带浏览器 workspace | Dioxus 默认连接 `rpi-http`，需要浏览器备用界面时保留 `rpi-web` |
+| `rpi-http` / `rpi-web` server | Axum HTTP API、项目/会话/文件/Git、snapshot 和 SSE | Dioxus 按同一 `/api/v1` 协议接入 |
 | `rpi-web/src/protocol.rs` | capability discovery、prompt、queue、abort、模型/工具设置、dialog response | UI 用 capabilities 控制按钮 |
 | `rpi-web/src/host.rs` | 原生进程桥接、事件序号、挂起 dialog、结算投影 | 客户端恢复使用 snapshot + cursor |
-| `rpi-web/src/security.rs` | Host/Origin 校验、共享密码登录、cookie 会话 | 同源 Web 接入可用；逐设备授权需新增 |
+| `rpi-http` / `rpi-web` security | Host/Origin 校验、共享密码登录、cookie 会话 | 同源 Web 接入可用；逐设备授权需新增 |
 | `rpi-web/frontend/package.json` | 现有 React/TS/Vite、Markdown/highlight 组件 | 可做交互参考，不能直接转成 Dioxus Rust 组件 |
 | `rpi-web/src/lib.rs` | 导出 `run` 与 `AppConfig`；内部 `run_until` 非公共接口 | 暂不假设能直接内嵌并控制完整服务生命周期 |
 | `pi-rust` 各库 | provider、agent loop、tools、harness、扩展 ABI | 留在现有 rpi 宿主，后续按需求增量开放 |
@@ -107,13 +108,13 @@ HTML 原型中的结构、CSS token、间距与交互可以移植到 RSX；原�
 
 把原生 HTTP 与浏览器请求封装到同一业务 API。原生端可用 Rust HTTP client 和 SSE parser；Web/WASM 使用浏览器能力。对外提供请求、快照、订阅和重连；UI 不直接处理 JSONL stdio。
 
-生产 Web 构建通过 rpi-web 的外部 assets 配置供给，保证 UI 与 API 同源。Dioxus 桌面进程的 Rust transport 直接连接 bridge，使用自己的 cookie jar/登录流程；不要把不受信任远程页面挂入一个具有本机工具能力的 WebView。
+生产 Web 构建如需与 API 同源，可以使用 rpi-web 的外部 assets 配置；Dioxus desktop 或独立 API-only 部署默认连接 rpi-http。Dioxus 桌面进程的 Rust transport 直接连接节点，使用自己的 cookie jar/登录流程；不要把不受信任远程页面挂入一个具有本机工具能力的 WebView。
 
 先确认现有鉴权在原生客户端下可用，不通过放开所有 CORS/Origin 绕过边界。不要从用户现有 Codex/RPI 会话文件偷取凭据。
 
-### rpi-web
+### rpi-http / rpi-web
 
-现有服务拥有项目注册、打开/关闭会话宿主、HTTP/SSE、快照、文件与 diff 投影。第一阶段客户端遵循其协议；需要增加的接口回到 rpi-package 上游，以独立改动处理，不在新产品中复制一份 server.rs。
+`rpi-http` 是首选的 API-only 节点，拥有项目注册、打开/关闭会话宿主、HTTP/SSE、快照、文件与 diff 投影；`rpi-web` 复用同一 API 协议并额外提供浏览器前端。第一阶段客户端遵循这套协议；需要增加的接口回到 rpi-package 上游，以独立改动处理，不在新产品中复制 server 实现。
 
 ### rpi 宿主
 
@@ -127,7 +128,7 @@ HTML 原型中的结构、CSS token、间距与交互可以移植到 RSX；原�
 
 ## 5. 提议的代码组织
 
-以下是确认后再建立的目录，**当前仓库没有生成这些 Rust crates**。
+以下是目标代码组织；当前已建立 `crates/work-core`、`crates/work-client`、`crates/work-node`、`apps/work-cli` 与 `apps/work-ui`。Dioxus UI 已具备真实节点连接和纵向 MVP，后续继续拆分组件与平台适配。
 
 ```text
 rpi-work/
@@ -138,7 +139,7 @@ rpi-work/
 │       ├── views/
 │       └── platform/     # desktop/web/mobile 能力适配
 ├── crates/work-core/     # DTO、状态投影、命令/连接状态
-├── crates/work-client/   # rpi-web HTTP/SSE，native + wasm transport
+├── crates/work-client/   # rpi-http/rpi-web HTTP/SSE，native + wasm transport
 ├── crates/work-node/     # desktop feature：服务进程监管与健康检查
 ├── prototype/            # 独立 HTML 交互稿
 └── docs/
@@ -219,9 +220,9 @@ Codex app-server 是面向自定义客户端的集成面，具有独立的线程
 
 手机连接默认采用 [扫码或高级手工配对](mobile-connection.md)。PC 需要另行提供手机可达的受保护服务入口；下面的默认回环监听仍用于本机模式，不能仅显示二维码就认为网络服务已开放。
 
-桌面本地模式先监管 rpi-web standalone 子进程。启动时配置回环地址与合适端口，核对启动身份、就绪、退出码；优先新增结构化 ready 信息，而不是解析面向人的终端输出。不要用固定端口假设“响应的是自己启动的服务”。
+桌面本地模式优先监管 rpi-http standalone 子进程；需要浏览器备用界面时监管 rpi-web standalone。启动时配置回环地址与合适端口，核对启动身份、就绪、退出码；不要用固定端口假设“响应的是自己启动的服务”。
 
-本地扩展方式 `rpi --web` 继续受支持，客户端也可连接用户手动启动的节点。打包应绑定兼容版本的 rpi/rpi-web 和资源校验。
+本地扩展方式 `rpi --webserver` 继续受支持，客户端也可连接用户手动启动的 rpi-http/rpi-web 节点。打包应绑定兼容版本的 rpi/rpi-http 和资源校验；只有使用浏览器 workspace 时才需要 rpi-web 前端资源。
 
 关闭窗口与停止服务分开设计：
 
@@ -251,6 +252,6 @@ Windows + Web PoC 通过后，再用 Android 验证共享 UI 的平台差异；i
 
 流式呈现按 [流式消息设计](streaming.md) 增补：传输连接与任务状态分开，原始消息快照/差量在 client 层归一化，core 维护有序内容块和游标，UI 增量渲染正文与工具输出。只有 `agent_settled` 决定本轮结果；断线不重发指令，恢复失效重取快照。
 
-优先验证 Dioxus，以适配“Rust 全栈 + 多端”的长期目标；**复用 rpi-web 服务而非重写 agent harness**。先做一个节点和同会话接续，再扩展到设备配对与多运行时。
+优先验证 Dioxus，以适配“Rust 全栈 + 多端”的长期目标；**复用 rpi-http/rpi-web 服务而非重写 agent harness**。先做一个节点和同会话接续，再扩展到设备配对与多运行时。
 
-本次交付为 HTML 交互设计与框架定义；未安装 Dioxus、未建立 Rust workspace、未修改上游仓库、未运行任何真实 Agent 任务。
+本次 UI 专项在保留真实 transport 的前提下，重排了 Dioxus 工作空间骨架以贴近 `prototype/index.html`：项目/会话导航进入 sidebar，主区使用对话 tab、消息时间线、队列 shelf 和 composer，右侧使用任务上下文 Inspector；移动端提供 sidebar drawer、quick session switcher 和文件 modal 的单列浏览。这里的“对齐”指结构、布局、视觉 token 和已有真实状态的呈现，不代表原型中尚未由服务端提供的设备、附件、Packages、Skills 或移动原生能力已经可用。

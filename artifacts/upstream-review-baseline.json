@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-24",
+  "method": "read-only source inspection; no Rust integration execution",
+  "repositories": {
+    "pi-rust": {
+      "path": "D:\\Projects\\pi-rust",
+      "head": "72c08e1268ec28b97f60e34d70a45e3990eac28b",
+      "dirty": false,
+      "files": {
+        "crates/rpi-cli/src/modes.rs": "071d5ac57ba8eafdaaf299826fae2968fc3e92d846e310ca037e33667d3c96db",
+        "crates/rpi-cli/src/packages.rs": "9972d8f2adc0841871db119ad66ae4c5c86b981329cd0aa1b75195d7b730ed26",
+        "crates/rpi-cli/src/resource_dirs.rs": "6d46ccc4a2502ea117d69226951b6c3343846912844040eacdb700a42d94784b",
+        "crates/rpi-cli/src/rpc/protocol.rs": "1fd17a5d844deac66c774138bd22aead8a40398543e020546443af7ee7f04606",
+        "crates/rpi-harness/src/agent_harness.rs": "f3bf85b17d1c84ee642f786b2e246f43587676fb7e8f17d3c58c6890d5bb315b",
+        "crates/rpi-tools/src/tools/powershell.rs": "fd5b948f6a25ddc31ee2aec183a50771bf5aa9c55049ce9f603344f0909cf899"
+      },
+      "version": "0.8.3"
+    },
+    "rpi-package": {
+      "path": "D:\\Projects\\rpi-package",
+      "head": "450587ab84b16f1b46bb29e2a8d7be40e13131ab",
+      "dirty": false,
+      "files": {
+        "packages/rpi-web/src/protocol.rs": "2e235e9ccff21bdf94174facb0853311bd2dfae5c7e7b9a153ae55974376192d",
+        "packages/rpi-web/src/server.rs": "722c8f6d4ee66516912cd06f8fdddd0bb79295da05c3c7e502f270d0bef54052",
+        "packages/rpi-web/src/host.rs": "81e57a48e908afb1249ed4958ee507fd6e96210643a6c8173924e2546c0ef82d",
+        "packages/rpi-web/src/security.rs": "bebd1d36b1988896c01fb8b418d34c9a75f6054beb9505b4145ec6caf5970a4a",
+        "packages/rpi-permission-gate/src/lib.rs": "f715c378eee280bc56305dc530eaf24930df91a51da5c7f6f8d4f5dc27d23938",
+        "packages/rpi-permissions/README.md": "c6057e515d427211368da3eb36dad84f9faf1c504886d25c10309093f9bb022b",
+        "packages/rpi-btw/README.md": "e197980052e7b794d9eaa0da91907c186a9677cf682d148d4c16293a9ef6ccc9",
+        "packages/rpi-plan-mode/README.md": "37a28476d2a6215f659daf908b8359b6ad5c54d0a8f4d0ef9869f631efd6a62a"
+      },
+      "rpiWebVersion": "0.1.7"
+    }
+  }
+}

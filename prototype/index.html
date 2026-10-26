@@ -17,16 +17,32 @@
   <link rel="stylesheet" href="packages.css">
   <link rel="stylesheet" href="themes.css">
   <link rel="stylesheet" href="devices.css">
+  <link rel="stylesheet" href="sessions.css">
+  <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="project-files.css">
+  <link rel="stylesheet" href="settings.css">
+  <link rel="stylesheet" href="traces.css">
+  <link rel="stylesheet" href="resources.css">
+  <link rel="stylesheet" href="meta-agent.css">
+  <link rel="stylesheet" href="project-picker.css">
   <script src="app.js" defer></script>
+  <script src="settings.js" defer></script>
+  <script src="sessions.js" defer></script>
   <script src="runtime.js" defer></script>
   <script src="conversation.js" defer></script>
   <script src="changes.js" defer></script>
   <script src="capabilities.js" defer></script>
   <script src="streaming.js" defer></script>
   <script src="packages.js" defer></script>
+  <script src="resources.js" defer></script>
   <script src="vendor/qrcode.js" defer></script>
   <script src="vendor/jsQR.js" defer></script>
   <script src="devices.js" defer></script>
+  <script src="project-files-data.js" defer></script>
+  <script src="project-files.js" defer></script>
+  <script src="traces.js" defer></script>
+  <script src="meta-agent.js" defer></script>
+  <script src="project-picker.js" defer></script>
 </head>
 <body>
   <div class="prototype-bar"><span><span class="mini-dot"></span> RPI WORK / 交互设计稿 01</span><span>演示数据 · 不连接模型或真实设备</span><button id="preview-toggle" aria-label="切换手机预览">手机预览 <span>↗</span></button></div>
@@ -40,8 +56,6 @@
         <button data-nav="extensions" class="nav-item"><span data-icon="blocks"></span>扩展<span class="subtle-dot"></span></button>
         <button data-nav="packages" class="nav-item"><span data-icon="blocks"></span>Packages</button>
         <button data-nav="skills" class="nav-item"><span data-icon="checklist"></span>技能库</button>
-        <button data-nav="devices" class="nav-item"><span data-icon="monitor"></span>执行节点</button>
-        <button data-nav="providers" class="nav-item"><span data-icon="server"></span>Providers</button>
       </nav>
       <div class="section-label">项目 <button class="icon-button" id="add-project" aria-label="添加项目"><span data-icon="plus"></span></button></div>
       <button class="project-row selected" data-project="rpi-work"><span class="project-initial">W</span><span>rpi-work</span><span data-icon="chevron-down"></span></button>
@@ -50,15 +64,12 @@
       <button class="project-row" data-project="rpi-package"><span class="project-initial lavender">R</span><span>rpi-package</span><span class="project-count">5</span></button>
       <button class="new-task" id="new-task"><span data-icon="plus"></span>新建任务<span class="shortcut">⌘ N</span></button>
       <div class="sidebar-spacer"></div>
-      <div class="node-mini"><span class="node-symbol" data-icon="monitor"></span><div><strong>这台电脑</strong><span><i class="status-dot"></i>本地执行节点 · 演示</span></div><button data-nav="devices" class="icon-button" aria-label="管理执行节点"><span data-icon="chevrons"></span></button></div>
-      <button class="profile" id="settings-button"><span class="avatar">B</span><span><strong>Bigfish</strong><small>个人工作空间</small></span><span data-icon="settings"></span></button>
+      <button class="profile" id="settings-button" aria-label="打开设置"><span class="avatar">B</span><span><strong>设置</strong><small>Bigfish · 个人工作空间</small></span><span data-icon="settings"></span></button>
     </aside>
     <main class="main">
-      <header class="topbar"><button id="menu-toggle" class="icon-button mobile-only" aria-label="打开项目导航"><span data-icon="menu"></span></button><div class="breadcrumb"><span data-icon="folder"></span><span id="breadcrumb-project">rpi-work</span><span class="slash">/</span><span id="breadcrumb-title">为工作台添加深色模式</span></div><div class="top-actions"><span class="local-pill"><i class="status-dot"></i>本地</span><button id="context-toggle" class="icon-button" aria-label="查看任务上下文"><span data-icon="panel"></span></button></div></header>
+      <header class="topbar"><button id="menu-toggle" class="icon-button mobile-only" aria-label="打开项目导航"><span data-icon="menu"></span></button><div class="breadcrumb"><span data-icon="folder"></span><span id="breadcrumb-project">rpi-work</span><span class="slash">/</span><h1 id="task-title"><span id="breadcrumb-title">为工作台添加深色模式</span></h1></div><button id="quick-session-trigger" class="quick-session-trigger" aria-label="切换会话" aria-haspopup="dialog" aria-expanded="false" aria-controls="modal"><span><small id="quick-session-project">rpi-work</small><strong id="quick-session-title" role="heading" aria-level="1">为工作台添加深色模式</strong></span><span data-icon="chevron-down"></span></button><div class="top-actions"><button id="session-options" class="session-status-control" aria-label="会话详情与操作"><span id="task-status" class="status-badge waiting"><i></i>等待你的确认</span><span data-icon="chevron-down"></span></button><button id="context-toggle" class="icon-button" aria-label="查看任务上下文"><span data-icon="panel"></span></button></div></header>
       <section class="workspace-view" id="workspace-view">
-        <div class="task-heading"><div class="eyebrow">LET’S BUILD SOMETHING GOOD.</div><div class="task-title-row"><h1 id="task-title">为工作台添加深色模式</h1><button id="session-options" class="icon-button" aria-label="任务选项"><span data-icon="more"></span></button></div><div class="task-meta"><span id="task-status" class="status-badge waiting"><i></i>等待你的确认</span><span>今天 14:32 创建</span><span class="meta-separator">·</span><span data-icon="branch"></span><span id="task-branch">feature/dark-mode</span></div></div>
-        <section id="session-resources" class="session-resources" aria-label="当前会话的 Package 与能力"></section>
-        <div class="tabs" role="tablist" aria-label="任务视图"><button class="tab active" data-tab="conversation" role="tab" aria-selected="true"><span data-icon="message"></span>对话</button><button class="tab" data-tab="changes" role="tab" aria-selected="false"><span data-icon="diff"></span>变更 <span class="count">3</span></button></div>
+        <div class="conversation-toolbar"><div class="tabs" role="tablist" aria-label="任务视图"><button class="tab active" data-tab="conversation" role="tab" aria-selected="true"><span data-icon="message"></span>对话</button><button class="tab" data-tab="changes" role="tab" aria-selected="false"><span data-icon="diff"></span>变更 <span class="count">3</span></button></div><section id="session-resources" class="session-resources" aria-label="当前会话的 Package 与能力"></section></div>
         <div class="task-body" id="task-body"></div>
         <div id="queue-shelf"></div>
         <div class="composer-area"><div class="composer"><textarea id="prompt" aria-label="发送给 agent 的消息" placeholder="继续描述你的想法，或输入 / 使用命令…" rows="2"></textarea><div class="composer-bottom"><div class="composer-options"><button id="attach-button" class="icon-button" aria-label="添加上下文文件"><span data-icon="plus"></span></button><button id="model-button" class="model-button"><span class="model-logo">D</span><span id="model-label">DeepSeek</span><span data-icon="chevron-down"></span></button><span class="option-divider"></span><button id="mode-button" class="mode-button"><span data-icon="sparkles"></span><span id="mode-label">执行</span></button></div><button id="send-button" class="send-button" aria-label="发送消息"><span data-icon="arrow-up"></span></button></div></div><div class="composer-foot"><span><i class="status-dot"></i>在这台电脑运行 <span class="foot-dot">·</span> Dioxus + rpi</span><span>Enter 发送 <span class="foot-dot">·</span> Shift + Enter 换行</span></div></div>
@@ -68,6 +79,9 @@
     <aside class="inspector" id="inspector" aria-label="任务上下文"><div class="inspector-top">任务上下文<button class="icon-button" id="context-close" aria-label="关闭任务上下文"><span data-icon="x"></span></button></div><div id="inspector-content"></div><div class="inspector-footer"><span class="tiny-logomark">r↗</span><span>你的工具。你的模型。<br>你的工作方式。</span></div></aside>
   </div>
   <dialog id="modal"><div id="modal-content"></div></dialog>
+  <dialog id="project-files-dialog" class="project-files-dialog" aria-labelledby="project-files-heading"></dialog>
+  <dialog id="trace-dialog" class="trace-dialog" aria-labelledby="trace-heading"></dialog>
+  <dialog id="project-folder-dialog" class="project-folder-dialog" aria-labelledby="project-folder-heading"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <input id="file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,.pdf,.txt,.md,.csv,.json,.rs,.ts,.js,.log" hidden>
   <input id="package-input" type="file" accept=".json,application/json" hidden>

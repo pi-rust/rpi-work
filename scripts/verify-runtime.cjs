@@ -82,7 +82,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path
   await page.locator('#prompt').fill('/queue');await page.locator('#send-button').click();
   assert.match(await page.locator('.queue-item').innerText(),/运行中排队的补充/);await close();
   pass('enqueue while running and slash command routing');
-  await page.locator('.primary-nav [data-nav="providers"]').click();
+  await page.locator('#settings-button').click();await page.locator('#settings-navigation [data-settings-page="providers"]').click();
   await page.locator('[data-harness="provider-config"][data-provider="DeepSeek"]').click();
   await page.locator('[data-harness="provider-test"]').click();assert.match(await page.locator('#connection-result').innerText(),/连接成功/);
   await page.locator('[data-harness="provider-fail"]').click();assert.match(await page.locator('#connection-result').innerText(),/429/);await close();

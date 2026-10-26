@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "name": "brand mark and wordmark spacing match the reference",
+      "passed": true
+    },
+    {
+      "name": "Inspector renders actual context progress and compact shortcut typography",
+      "passed": true
+    },
+    {
+      "name": "Inspector header and horizontal logo footer remain outside the scrolling body",
+      "passed": true
+    },
+    {
+      "name": "file preview has separate title/path, a right-aligned quote and an independent long-content scroller",
+      "passed": true
+    },
+    {
+      "name": "queue card headers show complete type labels and the remove action aligns right on phones",
+      "passed": true
+    },
+    {
+      "name": "no application JavaScript errors",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

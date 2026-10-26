@@ -1,0 +1,7 @@
+{
+  "results": [
+    "editing an address without connecting sends no password to either node",
+    "sparse login acknowledgement is followed by authoritative cookie authentication on the selected node",
+    "reconnecting retains the shared client cookie for protected project requests"
+  ]
+}

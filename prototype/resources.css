@@ -1,0 +1,15 @@
+.resource-steps{display:flex;align-items:center;gap:var(--space-10);padding:var(--space-10) 0;margin:0;list-style:none;font-size:10px;color:var(--muted);flex-wrap:wrap}
+.resource-steps>li{display:flex;align-items:center;gap:var(--space-5)}
+.resource-steps i{width:18px;height:18px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;font:9px var(--mono);font-style:normal;background:var(--panel)}
+.resource-steps i svg{width:11px;height:11px}
+.resource-steps .done{color:var(--green)}
+.resource-steps .done i{background:var(--green-bg);border-color:transparent}
+.resource-actions{display:flex;align-items:center;gap:var(--space-6);flex-wrap:wrap;padding-top:var(--space-12);border-top:1px solid var(--line);margin-top:var(--space-12)}
+.resource-actions .button{font-size:10px;min-height:36px;padding:var(--space-7) var(--space-10)}
+.resource-ready,.skill-acquisition-state{font-size:10px;color:var(--muted)}
+.skill-acquisition-state{margin:var(--space-12) 0 0;line-height:1.8}
+.skill-state.unavailable{color:var(--muted);background:var(--panel)}
+.skill-card-actions{flex-wrap:wrap}
+.extension-card .extension-card-footer{gap:var(--space-8);flex-wrap:wrap}
+.extension-card .extension-card-footer>span{overflow-wrap:anywhere}
+@media(max-width:700px){.resource-actions .button{min-height:44px;font-size:11px}.resource-steps{gap:var(--space-14);font-size:11px}.skill-card-actions .button{min-height:44px}.skill-acquisition-state{font-size:11px}}

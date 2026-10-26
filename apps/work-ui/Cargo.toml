@@ -1,0 +1,24 @@
+[package]
+name = "work-ui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dioxus = { version = "0.7", features = ["desktop"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dioxus = { version = "0.7", features = ["web"] }
+
+[dependencies]
+serde_json = "1"
+work-client = { path = "../../crates/work-client" }
+work-core = { path = "../../crates/work-core" }

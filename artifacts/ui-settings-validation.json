@@ -1,0 +1,14 @@
+{
+  "scope": "test-only settings module; camera uses synthetic MediaStream, not real hardware",
+  "results": [
+    "computer role retains real execution-node address and connection",
+    "actual QR raster decodes to a versioned address payload without credentials",
+    "scanner result crosses JavaScript/Rust boundary and closes fake camera tracks",
+    "late permission response cannot reactivate a closed camera",
+    "provider uses declared real model/key commands and preserves requiresRestart boundary",
+    "preference import/export is strict, invalid data is inert, and Escape rolls preview back",
+    "node, provider and general pages remain bounded at 390/320",
+    "no application JavaScript errors"
+  ],
+  "errors": []
+}

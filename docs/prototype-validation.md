@@ -93,6 +93,8 @@
 
 ## 复现
 
+功能语义审阅回归：`node scripts/verify-runtime-semantics.cjs`。验证原生 aborted/suspended/compacted/declined 等结算结果、pendingResume、模型/thinking/模式按会话隔离、follow-up 文案和权限 gate/规则存储区别。源码基线和未接通项见 [功能审阅](upstream-functional-review.md)。主题回归已扩展到 Reddit 橙，共四套风格、八种浅深色组合。
+
 连接验证：`node scripts/verify-connections.cjs`。覆盖独立解码实际 QR 截图、二维码图片识别、相机拒绝回退和模拟媒体轨道释放、手工地址/配对码、PC 确认与权限范围、邀请刷新失效、撤销、重连、Agent 任务隔离和 375–1440px 布局。没有接入真实配对 API 或跨设备通信；相机真机扫描尚未验证。记录见 [手机连接 PC](mobile-connection.md)。
 
 主题系统验证：`node scripts/verify-themes.cjs`。覆盖三套主题的浅深色布局、主要文本对比度、预览恢复、系统模式、偏好迁移、JSON 导入导出与状态保留；原有六组交互脚本继续通过。记录及截图见 [主题系统](themes.md)。
@@ -100,6 +102,26 @@
 一个终端运行 `python -m http.server 4173 --bind 127.0.0.1`，另一个运行 `node scripts/verify-prototype.cjs`。
 
 脚本会优先查找本项目或相邻 rpi-web 前端已安装的 Playwright。默认 Chrome 路径对应本机 Scoop 安装；换机器可通过 `CHROME_PATH` 指定浏览器，通过 `PROTOTYPE_URL` 指定原型地址。
+
+## 移动端快速切换会话
+
+`node scripts/verify-session-switcher.cjs` 验证手机顶部会话入口、跨项目选择、最近访问排序、草稿恢复、搜索空状态、新建会话、Escape 关闭和焦点恢复。320–430px 窄屏的长名称不横向溢出，会话列表较长时独立纵向滚动；桌面的手机预览使用同一入口。正式桌面保留原面包屑和侧栏。
+
+原型沿用当前演示的运行限制：生成中需先停止或完成，才能切换或新建会话。机器结果见 [session-switcher-validation.json](../artifacts/session-switcher-validation.json)，截图见 [移动端首页](../artifacts/prototype-session-switcher-mobile-home.png) 和 [会话列表](../artifacts/prototype-session-switcher-mobile.png)。
+
+会话空间补充：`verify-prototype.cjs` 在 375–1440px 验证导航与配置总高度不超过 100px；`verify-packages.cjs` 验证统一配置入口和手机能力分段切换。桌面与手机截图见 [桌面](../artifacts/prototype-conversation-space-desktop.png) 和 [手机](../artifacts/prototype-conversation-space-mobile.png)。
+
+项目文件补充：`node scripts/verify-project-files.cjs` 验证按需打开的目录与预览、各类文件、项目隔离、引用到草稿及手机返回路径，详见 [项目文件与预览](project-files.md)。顶部仍保持两行，不增加常驻文件区。
+
+设置导航补充：执行节点和 Providers 从侧边栏移至设置。原型交互、运行能力、连接配对及主题验证脚本已改为通过新入口验证。截图见 [桌面设置](../artifacts/prototype-settings-desktop.png)、[手机设置](../artifacts/prototype-settings-mobile.png)。
+
+追踪补充：`node scripts/verify-traces.cjs` 验证回合与步骤的分层瀑布图、耗时、失败详情、流式与结算状态、重放去重、会话隔离及手机布局，见 [会话追踪与耗时](session-tracing.md)。
+
+资源生命周期补充：`node scripts/verify-resource-lifecycle.cjs` 验证扩展、独立 Skills、Package 的下载/安装/启用前置与获取目标区分，见 [资源下载前置](resource-acquisition.md)。
+
+元Agent 补充：类型选择位于「添加项目」表单，创建后与普通项目并列。`node scripts/verify-meta-agent.cjs` 覆盖两类项目创建、源码、校验、测试快照、个人发布与资源获取，以及 320–1440px 和手机预览。详见 [元Agent](meta-agent.md)。
+
+项目打开补充：`node scripts/verify-project-opening.cjs` 验证打开已有目录、自定义显示名称、重复目录复用、新建目录模式、元Agent用途，以及目录选择和手机布局，见 [项目打开](project-opening.md)。
 
 ## 未验证范围
 

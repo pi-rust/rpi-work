@@ -1,0 +1,10 @@
+{
+  "results": [
+    "desktop BTW occupies third column and main conversation stays interactive",
+    "responsive BTW keeps one state and mobile Escape restores main draft",
+    "formal transcript follows new content while reading latest",
+    "new progress preserves older reading position and explicit latest button resumes following",
+    "no application JavaScript errors"
+  ],
+  "errors": []
+}

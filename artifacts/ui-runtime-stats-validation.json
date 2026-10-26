@@ -1,0 +1,14 @@
+{
+  "results": [
+    "footer uses real session totals, authoritative cache ratio, cost and deduplicated tool count",
+    "statistics distinguish unavailable last-turn usage from known session totals",
+    "context uses the node window and threshold and does not invent a summary",
+    "real compact failure retains instructions and closing/reopening does not repeat an accepted request",
+    "native compact settlement unlocks the action; full summary comes from the actual branch entry",
+    "declined compaction releases pending state without reporting completion",
+    "context modal and footer remain bounded at 390/320",
+    "explicit per-turn usage is displayed only for its actual reported settlement",
+    "no application JavaScript errors"
+  ],
+  "errors": []
+}

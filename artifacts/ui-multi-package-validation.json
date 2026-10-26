@@ -1,0 +1,15 @@
+{
+  "results": [
+    "two different package IDs remain selected together",
+    "merged prompt owners have independent switches and session instruction editing",
+    "package skill rows are unique and switching A does not change B",
+    "session header shortcuts open aggregate Tools, Skills and prompt configuration directly",
+    "importing a version preserves pins; switching A or removing B affects only its own ID",
+    "pins and local instruction proposals persist without secretly modifying the model prompt",
+    "all four session shortcuts remain visible and usable at 390/320",
+    "library binding controls and desired badges use the current session rather than any session",
+    "no application JavaScript errors"
+  ],
+  "errors": [],
+  "failures": []
+}

@@ -1,0 +1,46 @@
+{
+  "checkedAt": "2026-10-26T15:55:08.5761516Z",
+  "passed": true,
+  "checks": [
+    {
+      "name": "fmt",
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0,
+      "passed": true,
+      "elapsedMs": 376,
+      "log": "D:\\Projects\\rpi-work\\target\\final-rust-validation\\fmt.log"
+    },
+    {
+      "name": "test",
+      "command": "cargo test --workspace --locked",
+      "exitCode": 0,
+      "passed": true,
+      "elapsedMs": 1130,
+      "log": "D:\\Projects\\rpi-work\\target\\final-rust-validation\\test.log"
+    },
+    {
+      "name": "clippy-native",
+      "command": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "exitCode": 0,
+      "passed": true,
+      "elapsedMs": 592,
+      "log": "D:\\Projects\\rpi-work\\target\\final-rust-validation\\clippy-native.log"
+    },
+    {
+      "name": "clippy-wasm",
+      "command": "cargo clippy -p work-ui --target wasm32-unknown-unknown --all-targets --locked -- -D warnings",
+      "exitCode": 0,
+      "passed": true,
+      "elapsedMs": 453,
+      "log": "D:\\Projects\\rpi-work\\target\\final-rust-validation\\clippy-wasm.log"
+    },
+    {
+      "name": "build-native",
+      "command": "cargo build --locked -p work-ui -p work-cli",
+      "exitCode": 0,
+      "passed": true,
+      "elapsedMs": 18537,
+      "log": "D:\\Projects\\rpi-work\\target\\final-rust-validation\\build-native.log"
+    }
+  ]
+}

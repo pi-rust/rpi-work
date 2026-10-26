@@ -31,7 +31,7 @@ function themeSettingsBody(){
  const theme=appearance.themes.find(t=>t.id===appearance.current.theme);
  return `<p class="theme-settings-intro">主题统一控制整个工作台。预览期间保留对话、草稿与会话资源配置。</p><div class="theme-preset-grid">${appearance.themes.map(themePresetButton).join('')}</div><div class="theme-setting-fields"><div class="field"><label for="theme-select">明暗模式</label><select id="theme-select"><option value="light" ${appearance.current.mode==='light'?'selected':''}>浅色</option><option value="dark" ${appearance.current.mode==='dark'?'selected':''}>深色</option><option value="system" ${appearance.current.mode==='system'?'selected':''}>跟随系统</option></select></div><div class="field"><label for="density-select">界面密度</label><select id="density-select"><option value="standard" ${appearance.current.density==='standard'?'selected':''}>标准 · 舒展阅读</option><option value="compact" ${appearance.current.density==='compact'?'selected':''}>紧凑 · 展示更多内容</option></select></div></div><div class="theme-contract-preview"><span><i style="background:var(--accent)"></i>品牌强调</span><span><i style="background:var(--success)"></i>成功 / 新增</span><span><i style="background:var(--danger)"></i>失败 / 删除</span><span><i style="background:var(--info)"></i>运行状态</span></div><div class="theme-token-summary"><span>字体 <b>${theme.font==='humanist'?'人文无衬线':'系统无衬线'}${theme.headingFont==='code'?' · 等宽标题':''}</b></span><span>轮廓 <b>${{soft:'柔和',crisp:'利落',square:'方正'}[theme.shape]}</b></span><span>范围 <b>整个工作台 · 本设备</b></span></div><div class="theme-portable"><button class="button" data-appearance="export">导出主题 JSON</button><button class="button" data-appearance="import">导入主题</button><span>预览中 · 完成后保存</span></div><p class="theme-error" id="theme-error" role="status"></p>`;
 }
-function settingsModal(){
+function appearanceSettingsModal(){
  if(!appearance.preview){appearance.preview={...appearance.current};appearance.previewThemes=[...appearance.themes];}
  showModal('外观与主题',`<div id="theme-settings-body">${themeSettingsBody()}</div>`,`<button class="button" data-appearance="cancel">取消</button><button class="button primary" data-appearance="save">完成</button>`);
  document.querySelector('#modal').classList.add('theme-dialog');
@@ -57,7 +57,8 @@ function validateAppearanceTheme(data){
  for(const [mode,palette] of Object.entries(palettes)){
   if(['bg','side','panel','card','code'].some(bg=>['text','muted'].some(fg=>themeContrast(palette[fg],palette[bg])<4.5))||themeContrast(palette.accent,palette.card)<4.5||themeContrast(palette.accent,mode==='dark'?'#1c1c20':'#ffffff')<4.5)throw Error('主题文字对比度不足，请调整文字、强调色和背景色至至少 4.5:1。');
  }
- return {id:p.id,name:p.name,description:p.description,font:p.font,headingFont:p.headingFont,shape:p.shape,palettes};
+ if(p.brand!==undefined&&!/^#[0-9a-fA-F]{6}$/.test(p.brand))throw Error('品牌色必须是六位十六进制颜色。');
+ return {id:p.id,name:p.name,description:p.description,font:p.font,headingFont:p.headingFont,shape:p.shape,palettes,...(p.brand?{brand:p.brand}:{})};
 }
 async function importAppearanceTheme(file){
  if(!file)return;const preview=appearance.preview;
@@ -75,7 +76,7 @@ document.addEventListener('DOMContentLoaded',()=>{
  document.querySelector('#modal').addEventListener('close',()=>{if(appearance.preview&&!appearance.committing){appearance.themes=appearance.previewThemes||appearance.themes;applyAppearance(appearance.preview);appearance.preview=null;appearance.previewThemes=null;}document.querySelector('#modal').classList.remove('theme-dialog');});
 });
 document.addEventListener('click',event=>{
- const b=event.target.closest('button');if(!b||b.disabled)return;if(b.id==='theme-trigger'){settingsModal();return;}
+ const b=event.target.closest('button');if(!b||b.disabled)return;if(b.id==='theme-trigger'){appearanceSettingsModal();return;}
  if(b.dataset.appearance==='preset'){applyAppearance({...appearance.current,theme:b.dataset.id});repaintThemeSettings();}
  if(b.dataset.appearance==='save')closeThemePreview(true);
  if(b.dataset.appearance==='cancel')closeThemePreview(false);

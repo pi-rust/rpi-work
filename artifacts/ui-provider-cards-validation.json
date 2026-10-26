@@ -1,0 +1,13 @@
+{
+  "results": [
+    "one flat card per actual provider, stacked layout and truthful local credential readiness",
+    "per-provider multi-model selection uses actual set_model and authoritative state without a model prompt",
+    "card-preselected connection dialog clears secrets on Escape and provider switches without submitting",
+    "a closed provider credential request cannot report its result inside another provider dialog",
+    "key failure is visible in the dialog, clears the secret and real retry preserves requiresRestart",
+    "provider readiness read failure clears stale claims, retains models and refresh recovers",
+    "provider cards and connection modal remain bounded at 390/320",
+    "no application JavaScript errors"
+  ],
+  "errors": []
+}

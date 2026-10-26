@@ -7,7 +7,7 @@
     "Escape and the dialog close control both discard uncommitted previews",
     "theme, mode and density persist across reload; presets also control heading typography and component shape",
     "system mode reacts to OS appearance changes; explicit light mode remains fixed",
-    "all six preset/mode combinations fit desktop and phone widths; changes, Package dialogs and the mobile picker use the same theme",
+    "all eight preset/mode combinations fit desktop and phone widths; changes, Package dialogs and the mobile picker use the same theme",
     "theme JSON round-trips; custom themes persist, canceled imports are discarded, invalid colors and unreadable contrast are rejected",
     "legacy light/dark preference migrates without requiring a new setting",
     "no JavaScript errors, external fonts, theme scripts or model requests"
