@@ -14,10 +14,16 @@ try {
     return $hashes
   }
   $sourceHashesBefore = Read-SourceHashes
+  . (Join-Path $PSScriptRoot 'ci/wasm-bindgen-version.ps1')
+  $bindgenVersion = Get-LockedWasmBindgenVersion -RepositoryRoot $repoRoot
   if (-not $BindgenPath) {
-    $cachedBindgen = Join-Path $env:TEMP 'rpi-work-bindgen/wasm-bindgen-0.2.129-x86_64-pc-windows-msvc/wasm-bindgen.exe'
+    $cachedBindgen = Join-Path ([System.IO.Path]::GetTempPath()) "rpi-work-bindgen/wasm-bindgen-$bindgenVersion-x86_64-pc-windows-msvc/wasm-bindgen.exe"
     if (Test-Path -LiteralPath $cachedBindgen) { $BindgenPath = $cachedBindgen }
     else { $BindgenPath = (Get-Command wasm-bindgen -ErrorAction Stop).Source }
+  }
+  $reportedBindgenVersion = & $BindgenPath --version
+  if ($LASTEXITCODE -ne 0 -or "$reportedBindgenVersion".Trim() -ne "wasm-bindgen $bindgenVersion") {
+    throw "wasm-bindgen CLI must match Cargo.lock ($bindgenVersion). Run scripts/ci/install-wasm-bindgen.ps1."
   }
   $buildArguments = @('build', '--locked', '--target', 'wasm32-unknown-unknown', '-p', 'work-ui')
   $buildProfile = 'debug'
