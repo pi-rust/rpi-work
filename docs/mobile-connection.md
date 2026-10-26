@@ -1,5 +1,7 @@
 # 手机扫码连接 PC · v0.8
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 2026-10-24。默认拓扑明确为 **PC 是服务端，手机是客户端**。PC 保存项目、运行 rpi 与工具、管理模型凭据并持续执行任务；手机连接 PC 的 HTTP API 和事件流，查看进展、发送消息、查看变更或回答确认。
 
 ## 1. 两种入口，共用一条配对流程
@@ -119,4 +121,4 @@ HTML 原型已实现：
 
 `node scripts/verify-connections.cjs` 独立解码 QR 截图，验证图片识别、手工输入、确认与权限范围、拒绝、过期/旧链接失效、撤销、重连、任务隔离、陈旧回调与 375–1440px 布局；未发生外部 QR、配对或模型网络请求。原有七组浏览器检查继续通过。
 
-记录：[connections-validation.json](../artifacts/connections-validation.json)。截图：[PC 二维码](../artifacts/prototype-connect-qr-desktop.png)、[手机等待确认](../artifacts/prototype-connect-await-mobile.png)、[手机客户端](../artifacts/prototype-connect-client-mobile.png)、[高级模式](../artifacts/prototype-connect-advanced-mobile.png)。
+记录：`artifacts/connections-validation.json`。截图：PC 二维码（本地生成：`artifacts/prototype-connect-qr-desktop.png`）、手机等待确认（本地生成：`artifacts/prototype-connect-await-mobile.png`）、手机客户端（本地生成：`artifacts/prototype-connect-client-mobile.png`）、高级模式（本地生成：`artifacts/prototype-connect-advanced-mobile.png`）。

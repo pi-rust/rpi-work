@@ -1,5 +1,7 @@
 # 项目文件与预览
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 工具栏的文件夹按钮打开独立文件浏览器，与「对话 / 变更」并列使用，不增加常驻顶部行。变更展示 Git 差异；项目文件可浏览包含未变更文件的目录与内容。
 
 桌面在弹窗中同时展示文件树和预览，手机使用全屏目录 → 文件预览 → 返回目录。关闭后保留原会话、消息滚动位置、草稿与运行状态。每个项目单独记忆搜索、目录展开及当前文件。
@@ -12,4 +14,4 @@
 
 重新生成原型快照：`node scripts/build-project-files.cjs`。
 
-验证：`node scripts/verify-project-files.cjs`，覆盖目录、搜索、源码与预览、HTML 沙箱、跨项目隔离、未发送草稿与滚动位置保留、320–768px 和桌面手机预览。记录见 [project-files-validation.json](../artifacts/project-files-validation.json)，截图见 [桌面文件预览](../artifacts/prototype-project-files-desktop.png)、[手机目录](../artifacts/prototype-project-files-mobile-tree.png)、[手机 HTML 预览](../artifacts/prototype-project-files-mobile-html.png)。
+验证：`node scripts/verify-project-files.cjs`，覆盖目录、搜索、源码与预览、HTML 沙箱、跨项目隔离、未发送草稿与滚动位置保留、320–768px 和桌面手机预览。记录见 `artifacts/project-files-validation.json`，截图见 桌面文件预览（本地生成：`artifacts/prototype-project-files-desktop.png`）、手机目录（本地生成：`artifacts/prototype-project-files-mobile-tree.png`）、手机 HTML 预览（本地生成：`artifacts/prototype-project-files-mobile-html.png`）。

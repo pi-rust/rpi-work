@@ -1,5 +1,7 @@
 # 添加项目：目录与显示名称
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 「添加项目」默认打开执行节点上的已有目录，也提供单独的「新建项目目录」模式。项目目录和显示名称是独立字段：名称默认使用目录名，可在添加时自定义，也可从会话菜单中的「项目名称与目录」修改。修改名称不会重命名文件夹、复制源码或更改会话和资源绑定。
 
 流程为：选择打开/新建 → 浏览或输入项目目录 → 确认显示名称 → 选择普通项目或元Agent用途 → 打开/创建。用途仍在添加流程内选择，不出现在项目列表的切换操作中。
@@ -17,4 +19,4 @@
 
 项目记录建议包含 `project_id / node_id / canonical_path / display_name / kind / origin`。身份由节点与规范目录决定，显示名只用于展示。登记已有目录不等于授予新客户端访问权限；移动端仍沿用执行节点的项目授权流程。
 
-验证：`node scripts/verify-project-opening.cjs` 覆盖目录自动命名、自定义名称保留、重复目录复用、改名不改路径、草稿保留、新建模式、元Agent用途、目录选择取消和 320–1440px。结果见 [project-opening-validation.json](../artifacts/project-opening-validation.json)，截图见 [桌面](../artifacts/prototype-open-project-desktop.png)、[手机](../artifacts/prototype-open-project-mobile.png)、[目录选择](../artifacts/prototype-project-folder-picker-mobile.png)。
+验证：`node scripts/verify-project-opening.cjs` 覆盖目录自动命名、自定义名称保留、重复目录复用、改名不改路径、草稿保留、新建模式、元Agent用途、目录选择取消和 320–1440px。结果见 `artifacts/project-opening-validation.json`，截图见 桌面（本地生成：`artifacts/prototype-open-project-desktop.png`）、手机（本地生成：`artifacts/prototype-open-project-mobile.png`）、目录选择（本地生成：`artifacts/prototype-project-folder-picker-mobile.png`）。

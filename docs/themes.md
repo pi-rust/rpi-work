@@ -1,5 +1,7 @@
 # 工作台主题系统 · v0.7
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 2026-10-24。把整体视觉设计抽象为「主题定义 → 语义变量 → 组件」三层，主题切换覆盖会话、工具、Skills、Package、队列、Provider、统计、变更、弹窗和手机布局。
 
 ## 1. 可切换的主题
@@ -11,7 +13,7 @@
 | 石墨紫 `graphite` | 中性灰 / 深石墨，紫色强调 | 系统正文、等宽标题、方正轮廓 |
 | Reddit 橙 `reddit` | 橙红强调、冷灰 / 炭黑表面 | 系统无衬线、柔和卡片 |
 
-Reddit 橙参考 [Reddit 官方品牌页](https://redditinc.com/brand) 的 OrangeRed `#FF4500`，用于品牌图形；正文操作色在浅色中加深、深色中提亮，保证主要文本对比度。中性表面为本原型设计，并非对 Reddit 全站 CSS 的逐项复制。没有引入 Reddit 标识或远程字体。可下载 [主题 JSON](../artifacts/rpi-work-theme-reddit.json)，查看 [浅色](../artifacts/prototype-theme-reddit-light.png)、[深色](../artifacts/prototype-theme-reddit-dark.png) 和 [手机](../artifacts/prototype-theme-reddit-mobile.png) 截图。
+Reddit 橙参考 [Reddit 官方品牌页](https://redditinc.com/brand) 的 OrangeRed `#FF4500`，用于品牌图形；正文操作色在浅色中加深、深色中提亮，保证主要文本对比度。中性表面为本原型设计，并非对 Reddit 全站 CSS 的逐项复制。没有引入 Reddit 标识或远程字体。主题 JSON 可从外观设置导出。本地截图：浅色（本地生成：`artifacts/prototype-theme-reddit-light.png`）、深色（本地生成：`artifacts/prototype-theme-reddit-dark.png`） 和 手机（本地生成：`artifacts/prototype-theme-reddit-mobile.png`） 截图。
 
 每套主题都提供浅色和深色配色。**主题风格、明暗模式、界面密度分别选择**：例如海湾蓝 + 跟随系统 + 紧凑，不需要维护成另一个独立主题。
 
@@ -109,6 +111,6 @@ AppearanceConfig
 
 `node scripts/verify-themes.cjs` 验证：生成文件一致、组件无固定 palette 色值、主要文字对比度、预览/取消/Esc/关闭恢复、对话和草稿节点保留、偏好保存、系统明暗响应、四主题 × 两模式在 375/390/768/1440px 的布局、Package 与 diff 主题覆盖、JSON 下载导入、自定义主题持久化、非法颜色和低对比度拒绝、旧偏好迁移，以及无外部请求。
 
-原有六组浏览器交互回归也已通过。记录：[themes-validation.json](../artifacts/themes-validation.json)。截图：[石墨紫深色](../artifacts/prototype-theme-graphite-dark.png)、[海湾蓝变更页](../artifacts/prototype-theme-ocean-changes.png)、[手机主题选择](../artifacts/prototype-theme-picker-mobile.png)、[手机海湾蓝](../artifacts/prototype-theme-ocean-mobile.png)。
+原有六组浏览器交互回归也已通过。记录：`artifacts/themes-validation.json`。截图：石墨紫深色（本地生成：`artifacts/prototype-theme-graphite-dark.png`）、海湾蓝变更页（本地生成：`artifacts/prototype-theme-ocean-changes.png`）、手机主题选择（本地生成：`artifacts/prototype-theme-picker-mobile.png`）、手机海湾蓝（本地生成：`artifacts/prototype-theme-ocean-mobile.png`）。
 
 自动对比度检查覆盖主要文本和关键表面，不能替代所有状态、视觉障碍场景与真机检查。

@@ -1,6 +1,8 @@
 # 原型还原验收
 
-2026-10-27（Asia/Shanghai）。rpi CLI 编写生产 Rust / CSS，Codex 独立审查、退回修复、冻结源码后重新构建并验收。最后冻结点为 `target/parity-checkpoints/queue-proposals-frozen`；没有修改只读原型基准，也没有提交或推送代码。
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
+2026-10-27（Asia/Shanghai）。rpi CLI 编写生产 Rust / CSS，Codex 独立审查、退回修复、冻结源码后重新构建并验收。最后冻结点为 `target/parity-checkpoints/queue-proposals-frozen`；没有修改只读原型基准。验收阶段未提交或推送代码；实现与CI随后已分别提交。
 
 本次按 [原始目标](ui-parity-goal.md) 完成正式 Dioxus 原型迁移与还原验收，覆盖桌面和响应式手机 Web。逐项结果见 [验收矩阵](ui-parity-matrix.md)。这不等于宣称原型演示中的所有服务端能力已经在上游实现，或移动原生发行版已经验证。
 
@@ -28,12 +30,12 @@
 
 视口：1440×1000、1280×800、768×1024、390×844、320×740。不是将整幅页面宣称为零像素差异：真实模型/会话/文件/用量、空态和协议可用性不同于样例，模态框内容高度随真实内容变化。对新增与关键桌面/手机状态做了截图人工复核；固定布局的63处有精确断言。
 
-- [完成审计数据](../artifacts/ui-completion-audit.json)
-- [行为检查结果](../artifacts/ui-final-validation.json)
-- [Rust检查结果](../artifacts/engineering-validation.json)
-- [125组图片对照](../artifacts/ui-review-gallery.html)
-- [真实模型结果](../artifacts/real-model-validation.json)
-- [实际摘要协议兼容性](../artifacts/real-context-summary-validation.json)
+- 完成审计数据（本地生成：`artifacts/ui-completion-audit.json`）
+- 行为检查结果（本地生成：`artifacts/ui-final-validation.json`）
+- Rust检查结果（本地生成：`artifacts/engineering-validation.json`）
+- 125组图片对照（本地生成：`artifacts/ui-review-gallery.html`）
+- 真实模型结果（本地生成：`artifacts/real-model-validation.json`）
+- 实际摘要协议兼容性（本地生成：`artifacts/real-context-summary-validation.json`）
 
 复验：
 

@@ -1,5 +1,7 @@
 # HTML 原型验证记录
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 2026-10-23，Windows，Chrome 146.0.7680.178，Playwright 无头浏览器。本机未提供 Chrome DevTools MCP，因此使用实际 Chrome + Playwright 验证。
 
 ## 已执行
@@ -23,10 +25,10 @@
 
 已人工查看以下浏览器截图：
 
-- [桌面](../artifacts/prototype-desktop.png)
-- [手机](../artifacts/prototype-mobile.png)
+- 桌面（本地生成：`artifacts/prototype-desktop.png`）
+- 手机（本地生成：`artifacts/prototype-mobile.png`）
 
-机器可读结果：[prototype-validation.json](../artifacts/prototype-validation.json)。
+机器可读结果：`artifacts/prototype-validation.json`。
 
 ## v0.2 运行能力补充
 
@@ -42,7 +44,7 @@
 - 新会话队列/附件/用量隔离，375–1440px 布局。
 - 没有观察到外部上传/模型连接请求或 JavaScript 错误。
 
-机器记录：[runtime-validation.json](../artifacts/runtime-validation.json)。已查看 [工具详情](../artifacts/prototype-tools.png)、[手机统计](../artifacts/prototype-stats-mobile.png) 和 [手机上下文](../artifacts/prototype-context-mobile.png) 截图。
+机器记录：`artifacts/runtime-validation.json`。已查看 工具详情（本地生成：`artifacts/prototype-tools.png`）、手机统计（本地生成：`artifacts/prototype-stats-mobile.png`） 和 手机上下文（本地生成：`artifacts/prototype-context-mobile.png`） 截图。
 
 ## v0.3 单一对话与多文件审阅
 
@@ -58,7 +60,7 @@
 - 375–1440px 无文档横向溢出，手机列表/详情/返回流程。
 - 没有观察到 JavaScript 或 console 错误。
 
-记录：[review-validation.json](../artifacts/review-validation.json)。已查看 [桌面多文件](../artifacts/prototype-changes-desktop.png)、[手机文件列表](../artifacts/prototype-changes-mobile-list.png)、[手机 diff](../artifacts/prototype-changes-mobile-diff.png) 和 [内联工具](../artifacts/prototype-conversation-inline.png)。
+记录：`artifacts/review-validation.json`。已查看 桌面多文件（本地生成：`artifacts/prototype-changes-desktop.png`）、手机文件列表（本地生成：`artifacts/prototype-changes-mobile-list.png`）、手机 diff（本地生成：`artifacts/prototype-changes-mobile-diff.png`） 和 内联工具（本地生成：`artifacts/prototype-conversation-inline.png`）。
 
 ## v0.4 Skills 与交互工具
 
@@ -75,7 +77,7 @@
 
 当前默认时间线包含 11 条样例调用，包括技能 read、历史 ask_user 和 todo。旧稿中的 8 条是此前版本的样例数量。
 
-记录：[capabilities-validation.json](../artifacts/capabilities-validation.json)。截图：[Skills 目录](../artifacts/prototype-skills-desktop.png)、[手机提问](../artifacts/prototype-ask-mobile.png)、[手机旁问](../artifacts/prototype-btw-mobile.png)。
+记录：`artifacts/capabilities-validation.json`。截图：Skills 目录（本地生成：`artifacts/prototype-skills-desktop.png`）、手机提问（本地生成：`artifacts/prototype-ask-mobile.png`）、手机旁问（本地生成：`artifacts/prototype-btw-mobile.png`）。
 
 ## 流式消息增补
 
@@ -83,7 +85,7 @@
 
 回归脚本对发送/停止的等待改为等待运行结算；已出现第一段正文不再等同于回复完成。
 
-记录：[streaming-validation.json](../artifacts/streaming-validation.json)。截图：[桌面流式消息](../artifacts/prototype-streaming-desktop.png)、[手机流式消息](../artifacts/prototype-streaming-mobile.png)。这验证的是本地事件模拟器，真实 SSE 和 Dioxus 尚未接入。
+记录：`artifacts/streaming-validation.json`。截图：桌面流式消息（本地生成：`artifacts/prototype-streaming-desktop.png`）、手机流式消息（本地生成：`artifacts/prototype-streaming-mobile.png`）。这验证的是本地事件模拟器，真实 SSE 和 Dioxus 尚未接入。
 
 ## 会话 Package 增补
 
@@ -107,13 +109,13 @@
 
 `node scripts/verify-session-switcher.cjs` 验证手机顶部会话入口、跨项目选择、最近访问排序、草稿恢复、搜索空状态、新建会话、Escape 关闭和焦点恢复。320–430px 窄屏的长名称不横向溢出，会话列表较长时独立纵向滚动；桌面的手机预览使用同一入口。正式桌面保留原面包屑和侧栏。
 
-原型沿用当前演示的运行限制：生成中需先停止或完成，才能切换或新建会话。机器结果见 [session-switcher-validation.json](../artifacts/session-switcher-validation.json)，截图见 [移动端首页](../artifacts/prototype-session-switcher-mobile-home.png) 和 [会话列表](../artifacts/prototype-session-switcher-mobile.png)。
+原型沿用当前演示的运行限制：生成中需先停止或完成，才能切换或新建会话。机器结果见 `artifacts/session-switcher-validation.json`，截图见 移动端首页（本地生成：`artifacts/prototype-session-switcher-mobile-home.png`） 和 会话列表（本地生成：`artifacts/prototype-session-switcher-mobile.png`）。
 
-会话空间补充：`verify-prototype.cjs` 在 375–1440px 验证导航与配置总高度不超过 100px；`verify-packages.cjs` 验证统一配置入口和手机能力分段切换。桌面与手机截图见 [桌面](../artifacts/prototype-conversation-space-desktop.png) 和 [手机](../artifacts/prototype-conversation-space-mobile.png)。
+会话空间补充：`verify-prototype.cjs` 在 375–1440px 验证导航与配置总高度不超过 100px；`verify-packages.cjs` 验证统一配置入口和手机能力分段切换。桌面与手机截图见 桌面（本地生成：`artifacts/prototype-conversation-space-desktop.png`） 和 手机（本地生成：`artifacts/prototype-conversation-space-mobile.png`）。
 
 项目文件补充：`node scripts/verify-project-files.cjs` 验证按需打开的目录与预览、各类文件、项目隔离、引用到草稿及手机返回路径，详见 [项目文件与预览](project-files.md)。顶部仍保持两行，不增加常驻文件区。
 
-设置导航补充：执行节点和 Providers 从侧边栏移至设置。原型交互、运行能力、连接配对及主题验证脚本已改为通过新入口验证。截图见 [桌面设置](../artifacts/prototype-settings-desktop.png)、[手机设置](../artifacts/prototype-settings-mobile.png)。
+设置导航补充：执行节点和 Providers 从侧边栏移至设置。原型交互、运行能力、连接配对及主题验证脚本已改为通过新入口验证。截图见 桌面设置（本地生成：`artifacts/prototype-settings-desktop.png`）、手机设置（本地生成：`artifacts/prototype-settings-mobile.png`）。
 
 追踪补充：`node scripts/verify-traces.cjs` 验证回合与步骤的分层瀑布图、耗时、失败详情、流式与结算状态、重放去重、会话隔离及手机布局，见 [会话追踪与耗时](session-tracing.md)。
 

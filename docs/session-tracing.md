@@ -1,5 +1,7 @@
 # 会话追踪与耗时
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 结构参考 [Langfuse 的会话、Trace 与 Observation 数据模型](https://langfuse.com/docs/observability/data-model)：一个会话包含多个回合，一次请求对应一个 Trace，模型调用、工具、上下文准备和运行时结算等步骤形成有父子关系的 Observation。
 
 ## 交互
@@ -29,4 +31,4 @@ PC 的 rpi 原生宿主应产生真实模型请求、工具和压缩的起止事
 
 ## 验证
 
-`node scripts/verify-traces.cjs` 覆盖分层和并行时间线、用量汇总、失败详情、原文转义、流式更新、重放去重、等待结算、停止/失败、本地压缩、会话隔离、320–1440px、手机预览与焦点恢复。结果：[traces-validation.json](../artifacts/traces-validation.json)；截图：[桌面](../artifacts/prototype-session-trace-desktop.png)、[手机](../artifacts/prototype-session-trace-mobile.png)。
+`node scripts/verify-traces.cjs` 覆盖分层和并行时间线、用量汇总、失败详情、原文转义、流式更新、重放去重、等待结算、停止/失败、本地压缩、会话隔离、320–1440px、手机预览与焦点恢复。结果：`artifacts/traces-validation.json`；截图：桌面（本地生成：`artifacts/prototype-session-trace-desktop.png`）、手机（本地生成：`artifacts/prototype-session-trace-mobile.png`）。

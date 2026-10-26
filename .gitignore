@@ -15,18 +15,8 @@ Thumbs.db
 .rpi/
 /docs/rpi-*.md
 
-# Keep final review evidence; intermediate captures remain available locally.
+# Generated screenshots, downloads and machine-specific reports stay local.
+# These two source-review baselines are inputs, not generated run results.
 /artifacts/*
 !/artifacts/prototype-review-baseline.json
 !/artifacts/upstream-review-baseline.json
-!/artifacts/ui-*-validation.json
-!/artifacts/ui-*-review.json
-!/artifacts/ui-pages-review-all.json
-!/artifacts/ui-completion-audit.json
-!/artifacts/engineering-validation.json
-!/artifacts/real-*-validation.json
-!/artifacts/page-review-*.png
-!/artifacts/ui-review-gallery.html
-!/artifacts/ui-real-*.png
-!/artifacts/ui-queue-proposals-320.png
-!/artifacts/ui-queue-proposals-390.png

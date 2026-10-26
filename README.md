@@ -1,6 +1,6 @@
 # RPI Work
 
-当前审查状态（2026-10-27）：正式 Rust / Dioxus 客户端已完成本轮原型还原验收。最终冻结版本通过29套198个行为检查、5种视口63处主布局/排版对照、125组页面配对，以及真实 rpi-web 资源/认证/模型流式结算。原型39个基准文件未改。见[验收结论与边界](docs/ui-parity-acceptance.md)、[逐项矩阵](docs/ui-parity-matrix.md)和[图片对照](artifacts/ui-review-gallery.html)。
+当前审查状态（2026-10-27）：正式 Rust / Dioxus 客户端已完成本轮原型还原验收。最终冻结版本通过29套198个行为检查、5种视口63处主布局/排版对照、125组页面配对，以及真实 rpi-web 资源/认证/模型流式结算。原型39个基准文件未改。见[验收结论与边界](docs/ui-parity-acceptance.md)、[逐项矩阵](docs/ui-parity-matrix.md)和[测试源码与本地产物说明](docs/testing-artifacts.md)。
 
 Rust Agent 工作台的功能设计、交互原型与正式实现。真实 rpi-web 已直接提供Dioxus资源与HTTP/SSE API，同源密码登录及一次真实模型流式回答/完成结算已验证（测试关闭全部工具）。设备ACL、原生RPC多模态输入、节点资源安装仍有接口缺口，移动原生打包和真机摄像头尚未验证。
 

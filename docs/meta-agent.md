@@ -1,5 +1,7 @@
 # 元Agent · 个人能力开发项目
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 元Agent 是添加项目时可选的一种项目类型，面向个人编写、试用和复用自己的 Agent 能力。与普通项目共用对话、文件预览、变更、用量和追踪；名称统一为「元Agent」。此阶段没有团队协作、公共市场、审核或收费机制。
 
 ## 入口与布局
@@ -56,6 +58,6 @@
 
 `node scripts/verify-meta-agent.cjs` 覆盖非法源码阻断、源码差异、旧快照独立、发布前置、三类产物进入目录、跨项目获取/安装/绑定、版本保留、添加项目类型及 320–1440px 与手机预览。
 
-记录：[meta-agent-validation.json](../artifacts/meta-agent-validation.json)。截图：[桌面](../artifacts/prototype-meta-agent-desktop.png)、[个人资源库](../artifacts/prototype-meta-agent-library-desktop.png)、[手机](../artifacts/prototype-meta-agent-mobile.png)、[手机源码编辑](../artifacts/prototype-meta-agent-editor-mobile.png)。
+记录：`artifacts/meta-agent-validation.json`。截图：桌面（本地生成：`artifacts/prototype-meta-agent-desktop.png`）、个人资源库（本地生成：`artifacts/prototype-meta-agent-library-desktop.png`）、手机（本地生成：`artifacts/prototype-meta-agent-mobile.png`）、手机源码编辑（本地生成：`artifacts/prototype-meta-agent-editor-mobile.png`）。
 
-添加入口：[桌面项目类型选择](../artifacts/prototype-add-meta-agent-project-desktop.png)、[手机项目类型选择](../artifacts/prototype-add-meta-agent-project-mobile.png)。项目列表只用于进入已有项目。
+添加入口：桌面项目类型选择（本地生成：`artifacts/prototype-add-meta-agent-project-desktop.png`）、手机项目类型选择（本地生成：`artifacts/prototype-add-meta-agent-project-mobile.png`）。项目列表只用于进入已有项目。

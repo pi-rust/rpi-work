@@ -1,5 +1,7 @@
 # 会话资源与可下载 Package · v0.6
 
+> 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](testing-artifacts.md)。
+
 2026-10-24。Skills、Tools、提示词作为**会话配置**，入口位于对话内容上方的紧凑工具栏。输入框继续保留 Skills 选择，用于给某一条消息指定技能。
 
 Package 是有名字、稳定 ID 和版本的资源组合，可以包含一个或多个 Skills、工具声明、会话指令和消息模板，也可以只包含其中一种。安装目录属于执行节点；启用哪些包、绑定哪个版本以及单项开关属于会话。
@@ -131,6 +133,6 @@ HTML 原型使用单个可携带文件，便于验证下载和导入，不解析
 
 `node scripts/verify-packages.cjs` 验证会话顶部位置、Skills 快捷选择保留、会话级开关、提示词保存/套用、运行配置锁定、禁用工具与本轮快照、实际浏览器文件下载、重新导入、安装/启用分离、版本固定、跨会话隔离和 375–1440px 布局。
 
-结果：[packages-validation.json](../artifacts/packages-validation.json)。截图：[桌面会话顶部](../artifacts/prototype-packages-session-desktop.png)、[Package 资源库](../artifacts/prototype-packages-library-desktop.png)、[手机会话顶部](../artifacts/prototype-packages-session-mobile.png)、[手机提示词](../artifacts/prototype-packages-prompts-mobile.png)。
+结果：`artifacts/packages-validation.json`。截图：桌面会话顶部（本地生成：`artifacts/prototype-packages-session-desktop.png`）、Package 资源库（本地生成：`artifacts/prototype-packages-library-desktop.png`）、手机会话顶部（本地生成：`artifacts/prototype-packages-session-mobile.png`）、手机提示词（本地生成：`artifacts/prototype-packages-prompts-mobile.png`）。
 
 真实下载服务、签名/校验链、依赖解析、原生安装、宿主资源注入、Dioxus 与多端同步仍属于后续实现。
