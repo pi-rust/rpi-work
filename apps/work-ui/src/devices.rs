@@ -193,7 +193,13 @@ pub fn DevicesPage(
     onconnect: EventHandler<MouseEvent>,
     onlogin: EventHandler<MouseEvent>,
 ) -> Element {
-    let mut role = use_signal(|| DeviceRole::Pc);
+    let mut role = use_signal(|| {
+        if cfg!(target_os = "android") {
+            DeviceRole::Phone
+        } else {
+            DeviceRole::Pc
+        }
+    });
     let mut qr_open = use_signal(|| false);
     let mut phone_address = use_signal(String::new);
     let mut pasted = use_signal(String::new);

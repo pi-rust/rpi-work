@@ -1,0 +1,21 @@
+[application]
+name = "RPI Work"
+
+[bundle]
+identifier = "com.pirust.rpiwork"
+publisher = "pi-rust"
+short_description = "Connect to your computer's agent workspace"
+
+[android]
+min_sdk = 24
+target_sdk = 35
+compile_sdk = 35
+
+[android.application]
+uses_cleartext_traffic = true
+
+[android.permissions."android.permission.INTERNET"]
+description = "Connect to the user's rpi-http or rpi-web node"
+
+[permissions.camera]
+description = "Scan the connection QR code displayed on your computer"

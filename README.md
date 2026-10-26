@@ -2,7 +2,7 @@
 
 当前审查状态（2026-10-27）：正式 Rust / Dioxus 客户端已完成本轮原型还原验收。最终冻结版本通过29套198个行为检查、5种视口63处主布局/排版对照、125组页面配对，以及真实 rpi-web 资源/认证/模型流式结算。原型39个基准文件未改。见[验收结论与边界](docs/ui-parity-acceptance.md)、[逐项矩阵](docs/ui-parity-matrix.md)和[测试源码与本地产物说明](docs/testing-artifacts.md)。
 
-Rust Agent 工作台的功能设计、交互原型与正式实现。真实 rpi-web 已直接提供Dioxus资源与HTTP/SSE API，同源密码登录及一次真实模型流式回答/完成结算已验证（测试关闭全部工具）。设备ACL、原生RPC多模态输入、节点资源安装仍有接口缺口，移动原生打包和真机摄像头尚未验证。
+Rust Agent 工作台的功能设计、交互原型与正式实现。真实 rpi-web 已直接提供Dioxus资源与HTTP/SSE API，同源密码登录及一次真实模型流式回答/完成结算已验证（测试关闭全部工具）。设备ACL、原生RPC多模态输入、节点资源安装仍有接口缺口。Android已接入原生APK构建；iOS原生包与真机摄像头尚未验证。
 
 - [打开 HTML 原型](prototype/index.html)
 - [功能与交互设计](docs/product-design.md)
@@ -25,7 +25,7 @@ Rust Agent 工作台的功能设计、交互原型与正式实现。真实 rpi-w
 
 ## 自动编译
 
-GitHub Actions 会在主分支推送、PR、`v*` 标签和手动触发时，执行 Rust 检查并编译 Windows / macOS / Linux 的 x64 与 ARM64，以及 Web。运行完成后可下载带 SHA-256 的版本化制品；macOS 包含未签名 `.app`，手机目前使用 Web。触发方式、依赖和本地复现见 [多平台编译说明](docs/ci-builds.md)。
+GitHub Actions 会在主分支推送、PR、`v*` 标签和手动触发时，执行 Rust 检查并编译 Windows / macOS / Linux 的 x64 与 ARM64、Web，以及 Android ARM64 APK。运行完成后可下载带 SHA-256 的版本化制品；macOS 包含未签名 `.app`，Android为可安装的开发签名测试包。触发方式、依赖和本地复现见 [多平台编译说明](docs/ci-builds.md)。
 
 ## 本地预览
 

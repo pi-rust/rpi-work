@@ -70,7 +70,7 @@ fn set_meta_notice(
     notice_task.set(Some(task));
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 const STORAGE_KEY: &str = "rpi-work-meta-agent-v1";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -271,7 +271,7 @@ async fn validate_with_duration(resource: MetaResource) -> (bool, Vec<MetaCheck>
     (ok, checks, duration_ms)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn data_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     let root = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
@@ -290,7 +290,7 @@ fn data_path() -> Option<std::path::PathBuf> {
     root.map(|p| p.join("rpi-work").join("meta-agent.json"))
 }
 fn load_store() -> MetaStore {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     if let Some(store) = data_path()
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
@@ -304,7 +304,7 @@ fn load_store() -> MetaStore {
 
 pub fn use_meta_store() -> Signal<MetaStore> {
     let store = use_signal(load_store);
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         let mut ready = use_signal(|| false);
         use_effect(move || {
@@ -328,7 +328,7 @@ pub fn use_meta_store() -> Signal<MetaStore> {
             }
         });
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     use_effect(move || {
         let serialized = store.read().to_json().to_string();
         if let Some(path) = data_path() {

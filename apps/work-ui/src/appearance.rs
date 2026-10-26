@@ -163,7 +163,7 @@ fn restored(value: &Value) -> (AppearanceSettings, ThemeLibrary) {
     (settings, library)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn preference_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     let root = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
@@ -177,7 +177,7 @@ fn preference_path() -> Option<std::path::PathBuf> {
     root.map(|p| p.join("rpi-work").join("appearance.json"))
 }
 fn load() -> (AppearanceSettings, ThemeLibrary) {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     if let Some(value) = preference_path()
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
@@ -189,7 +189,7 @@ fn load() -> (AppearanceSettings, ThemeLibrary) {
 fn preference_value(settings: AppearanceSettings, library: &ThemeLibrary) -> Value {
     json!({"theme":library.resolve(settings.theme).id,"mode":settings.mode,"density":settings.density,"customThemes":library.0.iter().map(theme_contract::theme_value).collect::<Vec<_>>()})
 }
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn persist_native(settings: AppearanceSettings, library: &ThemeLibrary) -> Result<(), String> {
     let path = preference_path().ok_or("无法定位本设备的偏好目录。")?;
     if let Some(parent) = path.parent() {
@@ -201,7 +201,7 @@ fn persist_native(settings: AppearanceSettings, library: &ThemeLibrary) -> Resul
         .map_err(|_| "无法保存外观偏好。")?;
     std::fs::rename(&temporary, &path).map_err(|_| "无法替换已保存的外观偏好。".into())
 }
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 fn persist_script(settings: AppearanceSettings, library: &ThemeLibrary) -> String {
     let literal = serde_json::to_string(&preference_value(settings, library).to_string()).unwrap();
     format!(
@@ -324,8 +324,8 @@ pub fn use_appearance() -> Signal<AppearanceSettings> {
     let settings = use_signal(|| initial.0);
     let library = use_signal(|| initial.1);
     use_context_provider(|| library);
-    let ready = use_signal(|| cfg!(not(target_arch = "wasm32")));
-    #[cfg(target_arch = "wasm32")]
+    let ready = use_signal(|| cfg!(not(any(target_arch = "wasm32", target_os = "android"))));
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         let (mut settings, mut library, mut ready) = (settings, library, ready);
         use_effect(move || {
@@ -421,7 +421,7 @@ pub fn AppearancePicker(
             epoch.set(epoch.get() + 1);
             let value = *settings.peek();
             let themes = library.peek().clone();
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
             match persist_native(value, &themes) {
                 Ok(()) => {
                     saved.set(true);
@@ -430,7 +430,7 @@ pub fn AppearancePicker(
                 }
                 Err(message) => error.set(message),
             }
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(any(target_arch = "wasm32", target_os = "android"))]
             {
                 let mut saving = saving;
                 let (session, saved) = (session.clone(), saved.clone());

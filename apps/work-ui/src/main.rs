@@ -2980,13 +2980,13 @@ fn history_has_block(messages: &[Value], block: &MessageBlock) -> bool {
 }
 
 fn default_node_url() -> String {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
-        // The browser-hosted app is served by the node in production. Do not
-        // default to 127.0.0.1:3030: on a phone that points back to the phone.
+        // Web discovers its serving node; Android asks for the computer's
+        // address. Phone loopback would point back to the phone itself.
         "about:blank".to_owned()
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         "http://127.0.0.1:3030/".to_owned()
     }

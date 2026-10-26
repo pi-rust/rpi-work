@@ -12,8 +12,17 @@ unsafe_code = "warn"
 all = "warn"
 pedantic = "warn"
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[features]
+default = []
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+web = ["dioxus/web"]
+
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
 dioxus = { version = "0.7", features = ["desktop"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+dioxus = { version = "0.7", features = ["mobile"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 dioxus = { version = "0.7", features = ["web"] }

@@ -17,13 +17,26 @@
 | macOS | Apple Silicon / `aarch64-apple-darwin` | `macos-15` | tar.gz：`RPI Work.app`、`work-cli` |
 | Linux | x64 / `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | tar.gz：`work-ui`、`work-cli` |
 | Linux | ARM64 / `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | tar.gz：`work-ui`、`work-cli` |
+| Android | ARM64 / `aarch64-linux-android` | `ubuntu-24.04` | 开发签名APK及SHA-256 |
 | Web / 手机浏览器 | `wasm32-unknown-unknown` | `ubuntu-24.04` | ZIP：独立静态资源与 rpi-web assets 两种目录 |
 
-从 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) 选择成功运行，在 **Artifacts** 下载对应平台。每份 Artifact 包含版本化压缩包及 `.sha256`；包内 `build-info.json` 记录版本、target、profile、Git commit、Rust 版本和打包时间。macOS/Linux 的内层 tar.gz 保留可执行权限。
+从 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) 选择成功运行，在 **Artifacts** 下载对应平台。桌面与Web制品包含版本化压缩包及 `.sha256`，包内 `build-info.json` 记录版本、target、profile、Git commit、Rust 版本和打包时间；Android提供APK及 `.sha256`。macOS/Linux 的内层 tar.gz 保留可执行权限。
 
-这些是未签名的编译包，不是 Windows MSI、macOS DMG 或应用商店发行包。Windows 需要 WebView2；Linux 动态依赖 GTK 3、WebKitGTK 4.1、libxdo 和兼容 glibc，当前基线为 Ubuntu 24.04。macOS `.app` 未配置 Apple 签名或公证。
+桌面包未配置发行签名，也不是 Windows MSI 或 macOS DMG。Windows 需要 WebView2；Linux 动态依赖 GTK 3、WebKitGTK 4.1、libxdo 和兼容 glibc，当前基线为 Ubuntu 24.04。macOS `.app` 未配置 Apple 签名或公证。
 
-当前手机入口为响应式 Web。工程尚未接入 Dioxus Android/iOS 原生构建，因此不会输出 APK/IPA。桌面包也不捆绑相邻仓库的 `rpi-http` / `rpi-web` 或模型凭据，需要连接另行运行的兼容节点。
+手机可以使用响应式Web或Android原生APK；iOS原生IPA尚未接入。客户端不捆绑相邻仓库的 `rpi-http` / `rpi-web` 或模型凭据，需要连接另行运行的兼容节点。
+
+## Android APK
+
+Actions制品名称为 `rpi-work-android-arm64-apk`，包含 `rpi-work-<version>-aarch64-linux-android-dev.apk` 与SHA-256。包名 `com.pirust.rpiwork`，最低Android 7.0/API 24，compile/target SDK 35；面向ARM64手机。APK复用正式Rust/Dioxus界面与原生HTTP/SSE客户端，不是静态原型包装。
+
+工具链固定Dioxus CLI 0.7.10、JDK 17、Android SDK 35与NDK 28.2.13676358，CLI下载校验官方release SHA-256。`scripts/ci/build-android.ps1` 只从新的输出目录收集APK，并执行 `apksigner verify`，缺少APK或签名无效都会使任务失败。
+
+Rust代码使用release优化；未配置发行证书时，Dioxus 0.7.10会调用Gradle `assembleDebug`，输出Android开发签名包。因此文件名明确包含 `dev`，不能将它称为商店正式签名版本。不同构建环境的开发签名可能不同；正式连续分发需要配置固定发行证书。
+
+Android默认进入手机客户端连接模式，不把手机的 `127.0.0.1` 当作电脑；通过电脑地址二维码或高级模式输入可访问的节点地址。清单声明网络和扫码相机权限，允许连接局域网HTTP节点；主题、资源与元Agent草稿使用应用WebView本地存储。真机摄像头授权和其他硬件行为仍需设备验证。
+
+本机已验证ARM64 APK签名、原生库架构，并在支持ARM转换的Android 14 x86_64模拟器完成安装和启动；这不等同于ARM64真机验证。
 
 ## Web 构建
 
@@ -51,8 +64,13 @@ rustup target add wasm32-unknown-unknown
 pwsh -File scripts/ci/install-wasm-bindgen.ps1
 pwsh -File scripts/build-ui-web.ps1
 pwsh -File scripts/ci/package-build.ps1 -Target wasm32-unknown-unknown
+
+# Android：先安装上述SDK/NDK、JDK 17和Dioxus CLI 0.7.10，
+# 设置JAVA_HOME、ANDROID_HOME、NDK_HOME，再执行：
+rustup target add aarch64-linux-android
+pwsh -File scripts/ci/build-android.ps1
 ```
 
 输出目录为 `target/ci-dist/`。所有二进制位置从 `cargo metadata` 取得，兼容自定义 `CARGO_TARGET_DIR`，不依赖作者电脑的 Cargo 路径。
 
-配置依据：[GitHub runner 列表](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[Dioxus 0.7 平台依赖](https://dioxuslabs.com/learn/0.7/getting_started/)、[wasm-bindgen CLI](https://wasm-bindgen.github.io/wasm-bindgen/reference/cli.html)。
+配置依据：[GitHub runner 列表](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[Dioxus 0.7 平台依赖](https://dioxuslabs.com/learn/0.7/getting_started/)、[Dioxus Android](https://dioxuslabs.com/learn/0.7/guides/platforms/mobile/)、[wasm-bindgen CLI](https://wasm-bindgen.github.io/wasm-bindgen/reference/cli.html)。

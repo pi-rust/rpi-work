@@ -6,7 +6,7 @@ use work_client::{RuntimeState, WorkClient};
 
 pub const CSS: &str = include_str!("resources.css");
 const MAX_PACKAGE_BYTES: usize = 200 * 1024;
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 const STORAGE_KEY: &str = "rpi-work-resources-v1";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -175,7 +175,7 @@ impl ResourceLibrary {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn resource_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     let root = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
@@ -191,7 +191,7 @@ fn resource_path() -> Option<std::path::PathBuf> {
     root.map(|path| path.join("rpi-work").join("resources.json"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn load_library() -> ResourceLibrary {
     let result = (|| {
         let path = resource_path().ok_or("无法确定本地存储路径".to_owned())?;
@@ -221,22 +221,22 @@ fn set_storage_error(mut library: Signal<ResourceLibrary>, error: Option<String>
 
 pub fn use_resource_library() -> Signal<ResourceLibrary> {
     let library = use_signal(|| {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
             load_library()
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
         {
             ResourceLibrary::default()
         }
     });
     // Error reporting must not trigger another save of identical content.
     let serialized = use_memo(move || library.read().to_value().to_string());
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     let mut loaded = use_signal(|| false);
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     let mut save_revision = use_signal(|| 0_u64);
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     use_effect(move || {
         let mut library = library;
         spawn(async move {
@@ -274,7 +274,7 @@ pub fn use_resource_library() -> Signal<ResourceLibrary> {
     });
     use_effect(move || {
         let text = serialized.read().clone();
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
             // Preserve unreadable data for recovery instead of overwriting it with samples.
             if library
@@ -296,7 +296,7 @@ pub fn use_resource_library() -> Signal<ResourceLibrary> {
                 result.err().map(|error| format!("资源库保存失败：{error}")),
             );
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
         if *loaded.read() {
             let revision = *save_revision.peek() + 1;
             save_revision.set(revision);
