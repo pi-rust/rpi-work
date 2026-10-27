@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $repoRoot
 try {
-  $sourcePaths = @('Cargo.toml', 'Cargo.lock') + @(Get-ChildItem -Path (Join-Path $repoRoot 'apps'),(Join-Path $repoRoot 'crates') -Recurse -File | Where-Object { $_.Extension -in '.rs','.css','.toml' } | ForEach-Object { $_.FullName })
+  $sourcePaths = @('Cargo.toml', 'Cargo.lock') + @(Get-ChildItem -Path (Join-Path $repoRoot 'apps'),(Join-Path $repoRoot 'crates') -Recurse -File | Where-Object { $_.Extension -in '.rs','.css','.toml','.txt' } | ForEach-Object { $_.FullName })
   function Read-SourceHashes {
     $hashes = [ordered]@{}
     foreach ($sourcePath in ($sourcePaths | Sort-Object)) {

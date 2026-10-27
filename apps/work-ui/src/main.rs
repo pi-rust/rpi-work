@@ -22,6 +22,7 @@ mod scroll_follow;
 mod session_config;
 mod state;
 mod traces;
+mod updates;
 
 use appearance::{AppearancePicker, use_appearance};
 mod settings;
@@ -40,12 +41,25 @@ const EXTRAS_CSS: &str = composer_extras::CSS;
 const QUEUE_CSS: &str = message_queue::CSS;
 
 fn main() {
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    if std::env::args().nth(1).as_deref() == Some("--apply-update") {
+        let result = std::env::args_os()
+            .nth(2)
+            .ok_or_else(|| "缺少更新计划".to_owned())
+            .and_then(|path| work_update::native::run_helper(std::path::Path::new(&path)));
+        if let Err(error) = result {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     dioxus::launch(App);
 }
 
 #[component]
 fn App() -> Element {
     let appearance = use_appearance();
+    updates::use_updates();
     let initial_node_url = default_node_url();
     #[allow(unused_mut)] // Mutated only by the browser's same-origin initialization.
     let mut base_url = use_signal(|| initial_node_url.clone());
@@ -1651,6 +1665,7 @@ fn App() -> Element {
         "settings" => match settings_section.read().as_str() {
             "devices" => "执行节点",
             "providers" => "Providers",
+            "updates" => "应用更新",
             _ => "通用",
         },
         _ => "工作空间",
@@ -1699,6 +1714,7 @@ fn App() -> Element {
     });
 
     rsx! {
+        updates::UpdateNotice { onopen: move |()| { active_page.set("settings".to_owned()); settings_section.set("updates".to_owned()); } }
             style { "{THEMES}" }
             style { "{CSS}" }
             style { "{RESOURCES_CSS}" }
@@ -1983,6 +1999,7 @@ fn App() -> Element {
                 }
                 if active_page.read().as_str() == "settings" {
                     SettingsPage { shared_client, requests, active_page, settings_section, base_url, status, auth_state, password, runtime_state, capabilities, selected_session, session_generation,
+                        update_busy: !sending.read().is_empty() || projection.read().as_ref().is_some_and(|run| !matches!(run.phase, RunPhase::Ready | RunPhase::Settled(_))) || drafts.read().values().any(|draft| !draft.text.trim().is_empty()) || attachment_store.read().has_pending_content() || btw_store.read().has_pending_content() || queue_drafts.read().has_pending_content(),
                         onconnect: connect, onlogin: login, onappearance: move |()| appearance_open.set(true)
                     }
                 }

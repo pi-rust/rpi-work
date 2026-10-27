@@ -5,7 +5,7 @@
 - 推送到 `main` / `master`、推送 `v*` 标签、PR，以及 Actions 的 **Run workflow** 都会触发。
 - 先检查格式、执行 locked workspace tests 和严格 Clippy，再编译各平台 release。
 - Cargo 缓存按架构与用途隔离；同分支新提交会取消旧任务；单个平台失败不会取消其他平台。
-- 只需要仓库读取权限，不需要模型密钥、签名证书或额外 GitHub Token。不调用真实模型，不自动创建 Release 或部署。
+- 编译任务只需仓库读取权限，不调用真实模型。Android固定签名与更新清单使用仓库Secrets；`v*` 标签的发布任务在全部构建成功后，以最小写权限创建签名Release，不部署服务端。
 
 ## 平台和制品
 
@@ -17,7 +17,7 @@
 | macOS | Apple Silicon / `aarch64-apple-darwin` | `macos-15` | tar.gz：`RPI Work.app`、`work-cli` |
 | Linux | x64 / `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | tar.gz：`work-ui`、`work-cli` |
 | Linux | ARM64 / `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | tar.gz：`work-ui`、`work-cli` |
-| Android | ARM64 / `aarch64-linux-android` | `ubuntu-24.04` | 开发签名APK及SHA-256 |
+| Android | ARM64 / `aarch64-linux-android` | `ubuntu-24.04` | 固定签名APK及SHA-256；无密钥的PR为dev包 |
 | Web / 手机浏览器 | `wasm32-unknown-unknown` | `ubuntu-24.04` | ZIP：独立静态资源与 rpi-web assets 两种目录 |
 
 从 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) 选择成功运行，在 **Artifacts** 下载对应平台。桌面与Web制品包含版本化压缩包及 `.sha256`，包内 `build-info.json` 记录版本、target、profile、Git commit、Rust 版本和打包时间；Android提供APK及 `.sha256`。macOS/Linux 的内层 tar.gz 保留可执行权限。
@@ -28,11 +28,11 @@
 
 ## Android APK
 
-Actions制品名称为 `rpi-work-android-arm64-apk`，包含 `rpi-work-<version>-aarch64-linux-android-dev.apk` 与SHA-256。包名 `com.pirust.rpiwork`，最低Android 7.0/API 24，compile/target SDK 35；面向ARM64手机。APK复用正式Rust/Dioxus界面与原生HTTP/SSE客户端，不是静态原型包装。
+Actions制品名称为 `rpi-work-android-arm64-apk`，包含 `rpi-work-<version>-aarch64-linux-android.apk` 与SHA-256；无固定签名密钥的本地/PR构建文件名带 `-dev`，不用于更新发布。包名 `com.pirust.rpiwork`，最低Android 7.0/API 24，compile/target SDK 35；面向ARM64手机。APK复用正式Rust/Dioxus界面与原生HTTP/SSE客户端。
 
 工具链固定Dioxus CLI 0.7.10、JDK 17、Android SDK 35与NDK 28.2.13676358，CLI下载校验官方release SHA-256。`scripts/ci/build-android.ps1` 只从新的输出目录收集APK，并执行 `apksigner verify`，缺少APK或签名无效都会使任务失败。
 
-Rust代码使用release优化；未配置发行证书时，Dioxus 0.7.10会调用Gradle `assembleDebug`，输出Android开发签名包。因此文件名明确包含 `dev`，不能将它称为商店正式签名版本。不同构建环境的开发签名可能不同；正式连续分发需要配置固定发行证书。
+脚本在Dioxus生成项目后修正递增versionCode，调用Gradle `assembleRelease`，再通过 `apksigner` 使用固定证书签名并验证。仓库Secrets已经配置Android证书和Ed25519更新签名密钥；私钥不进入源码。此前0.1.0临时开发签名包需卸载后安装固定签名版。发布、密钥备份与覆盖升级说明见 [应用更新](automatic-updates.md)。这不是应用商店发行配置。
 
 Android默认进入手机客户端连接模式，不把手机的 `127.0.0.1` 当作电脑；通过电脑地址二维码或高级模式输入可访问的节点地址。清单声明网络和扫码相机权限，允许连接局域网HTTP节点；主题、资源与元Agent草稿使用应用WebView本地存储。真机摄像头授权和其他硬件行为仍需设备验证。
 

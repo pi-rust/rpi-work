@@ -146,14 +146,54 @@ jobs:
           "NDK_HOME=$ndk" >> $env:GITHUB_ENV
           "ANDROID_NDK_HOME=$ndk" >> $env:GITHUB_ENV
       - name: Compile and verify installable APK
-        run: ./scripts/ci/build-android.ps1
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if ($env:ANDROID_KEYSTORE_BASE64) {
+            $keyFile = Join-Path $env:RUNNER_TEMP 'rpi-work-signing.p12'
+            [IO.File]::WriteAllBytes($keyFile, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+            $env:ANDROID_KEYSTORE = $keyFile
+          }
+          try { ./scripts/ci/build-android.ps1 } finally {
+            if ($keyFile -and (Test-Path -LiteralPath $keyFile)) { Remove-Item -LiteralPath $keyFile }
+          }
       - uses: actions/upload-artifact@v7
         with:
           name: rpi-work-android-arm64-apk
-          path: target/ci-dist/*aarch64-linux-android-dev.apk*
+          path: target/ci-dist/*aarch64-linux-android*.apk*
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  release:
+    name: Publish signed update release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [checks, desktop, android, web]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Download this run's verified packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir target/release-artifacts
+      - name: Create and sign update manifest
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: python3 scripts/ci/create-update-manifest.py --artifacts target/release-artifacts --output target/release-upload --tag "$GITHUB_REF_NAME" --notes docs/release-notes.md
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify signatures and packages with the client implementation
+        run: cargo run --locked -p work-update --bin verify-update -- target/release-upload
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/publish-release.py
 
   web:
     name: Web / wasm32

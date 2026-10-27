@@ -22,6 +22,13 @@ pub struct AttachmentStore {
     scopes: BTreeMap<String, AttachmentScopeState>,
     next_id: u64,
 }
+impl AttachmentStore {
+    pub fn has_pending_content(&self) -> bool {
+        self.scopes
+            .values()
+            .any(|scope| scope.loading || !scope.files.is_empty())
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AttachmentPresentation {
     All,
@@ -371,6 +378,19 @@ fn ExtrasDialog(title: String, onclose: EventHandler<()>, children: Element) -> 
 #[derive(Clone, PartialEq, Default)]
 pub struct BtwStore {
     scopes: BTreeMap<String, BtwScope>,
+}
+impl BtwStore {
+    pub fn has_pending_content(&self) -> bool {
+        self.scopes
+            .values()
+            .flat_map(|scope| &scope.threads)
+            .any(|thread| {
+                !thread.draft.trim().is_empty()
+                    || thread.activity.busy
+                    || thread.activity.cancelling
+                    || thread.activity.operation
+            })
+    }
 }
 #[derive(Clone, PartialEq)]
 struct BtwScope {

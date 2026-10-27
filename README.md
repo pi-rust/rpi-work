@@ -22,10 +22,11 @@ Rust Agent 工作台的功能设计、交互原型与正式实现。真实 rpi-w
 - [基于当前 pi-rust / rpi-web 的功能审阅](docs/upstream-functional-review.md)
 - [验证记录](docs/prototype-validation.md)
 - [GitHub 多平台编译与下载](docs/ci-builds.md)
+- [应用自动更新与签名发布](docs/automatic-updates.md)
 
 ## 自动编译
 
-GitHub Actions 会在主分支推送、PR、`v*` 标签和手动触发时，执行 Rust 检查并编译 Windows / macOS / Linux 的 x64 与 ARM64、Web，以及 Android ARM64 APK。运行完成后可下载带 SHA-256 的版本化制品；macOS 包含未签名 `.app`，Android为可安装的开发签名测试包。触发方式、依赖和本地复现见 [多平台编译说明](docs/ci-builds.md)。
+GitHub Actions 会在主分支推送、PR、`v*` 标签和手动触发时，执行 Rust 检查并编译 Windows / macOS / Linux 的 x64 与 ARM64、Web，以及 Android ARM64 APK。运行完成后可下载带 SHA-256 的版本化制品；macOS 包含未签名 `.app`，Android配置固定签名以支持覆盖升级。`v*` 标签构建成功后发布带Ed25519签名清单的GitHub Release，供应用自动检查、校验下载与安装。触发方式、依赖和本地复现见 [多平台编译说明](docs/ci-builds.md)。
 
 ## 本地预览
 

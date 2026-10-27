@@ -1,5 +1,7 @@
 [application]
 name = "RPI Work"
+android_main_activity = "android/MainActivity.kt"
+android_manifest = "android/AndroidManifest.xml"
 
 [bundle]
 identifier = "com.pirust.rpiwork"
@@ -16,6 +18,9 @@ uses_cleartext_traffic = true
 
 [android.permissions."android.permission.INTERNET"]
 description = "Connect to the user's rpi-http or rpi-web node"
+
+[android.permissions."android.permission.REQUEST_INSTALL_PACKAGES"]
+description = "Ask Android to install a verified app update"
 
 [permissions.camera]
 description = "Scan the connection QR code displayed on your computer"

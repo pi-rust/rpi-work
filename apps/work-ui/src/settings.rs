@@ -24,6 +24,7 @@ pub fn SettingsPage(
     onconnect: EventHandler<MouseEvent>,
     onlogin: EventHandler<MouseEvent>,
     onappearance: EventHandler<()>,
+    update_busy: bool,
 ) -> Element {
     let section = settings_section.read().clone();
     rsx! {
@@ -31,7 +32,7 @@ pub fn SettingsPage(
         section { class: "page-view settings-page",
             div { class: "settings-navigation",
                 nav { aria_label: "设置分类",
-                    for (id, icon, title) in [("settings", "settings", "通用"), ("devices", "monitor", "执行节点"), ("providers", "server", "Providers")] {
+                    for (id, icon, title) in [("settings", "settings", "通用"), ("devices", "monitor", "执行节点"), ("providers", "server", "Providers"), ("updates", "download", "应用更新")] {
                         button { class: if section == id { "active" } else { "" }, aria_current: if section == id { "page" } else { "" },
                             onclick: move |_| settings_section.set(id.to_owned()), Icon { name: icon.to_owned() } "{title}" }
                     }
@@ -53,7 +54,13 @@ pub fn SettingsPage(
                         span { class: "settings-card-icon", Icon { name: "server" } }
                         strong { "Providers" } p { "管理模型服务连接、认证与可用模型。" } small { "连接配置" } Icon { name: "chevron-right" }
                     }
+                    button { class: "settings-card", onclick: move |_| settings_section.set("updates".to_owned()),
+                        span { class: "settings-card-icon", Icon { name: "download" } }
+                        strong { "应用更新" } p { "检查新版本、下载更新与安装。" } small { "当前版本 " {env!("CARGO_PKG_VERSION")} } Icon { name: "chevron-right" }
+                    }
                 }
+            } else if section == "updates" {
+                crate::updates::UpdatePage { busy: update_busy }
             } else if section == "devices" {
                 DevicesPage { shared_client, requests, base_url, status, auth_state, password, capabilities, onconnect, onlogin }
             } else {

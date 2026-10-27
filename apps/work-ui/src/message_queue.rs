@@ -62,6 +62,11 @@ pub struct QueueDraftStore {
 }
 
 impl QueueDraftStore {
+    pub fn has_pending_content(&self) -> bool {
+        self.scopes
+            .values()
+            .any(|draft| !draft.text.trim().is_empty())
+    }
     fn get(&self, scope: &str) -> QueueDraft {
         self.scopes
             .get(scope)
