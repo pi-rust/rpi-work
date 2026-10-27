@@ -1,130 +1,145 @@
 # RPI Work
 
-当前审查状态（2026-10-27）：正式 Rust / Dioxus 客户端已完成本轮原型还原验收。最终冻结版本通过29套198个行为检查、5种视口63处主布局/排版对照、125组页面配对，以及真实 rpi-web 资源/认证/模型流式结算。原型39个基准文件未改。见[验收结论与边界](docs/ui-parity-acceptance.md)、[逐项矩阵](docs/ui-parity-matrix.md)和[测试源码与本地产物说明](docs/testing-artifacts.md)。
+用 Rust + Dioxus 构建的个人 Agent 工作台。在桌面和手机上访问同一个执行节点，围绕项目完成对话、工具执行、文件预览和代码审阅。
 
-Rust Agent 工作台的功能设计、交互原型与正式实现。真实 rpi-web 已直接提供Dioxus资源与HTTP/SSE API，同源密码登录及一次真实模型流式回答/完成结算已验证（测试关闭全部工具）。设备ACL、原生RPC多模态输入、节点资源安装仍有接口缺口。Android已接入原生APK构建；iOS原生包与真机摄像头尚未验证。
+[下载最新版](https://github.com/pi-rust/rpi-work/releases/latest) · [全部版本](https://github.com/pi-rust/rpi-work/releases) · [构建状态](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [开发与设计文档](#文档)
 
-- [打开 HTML 原型](prototype/index.html)
-- [功能与交互设计](docs/product-design.md)
-- [框架与复用方案：Dioxus / rpi-web / rpi](docs/architecture.md)
-- [工具、队列、Provider、上下文、用量与附件设计](docs/runtime-interactions.md)
-- [单一对话与多文件审阅（最新交互）](docs/conversation-and-review.md)
-- [项目文件树与内容预览](docs/project-files.md)
-- [会话追踪、耗时瀑布图与调用详情](docs/session-tracing.md)
-- [扩展、Skills 与 Package 的下载前置](docs/resource-acquisition.md)
-- [元Agent · 个人能力开发项目](docs/meta-agent.md)
-- [打开已有项目与自定义显示名称](docs/project-opening.md)
-- [Skills、ask_user、BTW 与常见交互工具](docs/skills-and-interactive-tools.md)
-- [流式消息、工具输出、停止与断线恢复](docs/streaming.md)
-- [会话顶部资源与可下载 Package](docs/session-packages.md)
-- [整体主题抽象与切换](docs/themes.md)
-- [手机扫码 / 高级手工连接 PC](docs/mobile-connection.md)
-- [基于当前 pi-rust / rpi-web 的功能审阅](docs/upstream-functional-review.md)
-- [验证记录](docs/prototype-validation.md)
-- [GitHub 多平台编译与下载](docs/ci-builds.md)
-- [应用自动更新与签名发布](docs/automatic-updates.md)
+![桌面工作台：项目导航、对话内工具调用、任务上下文和用量统计](docs/images/workspace-desktop.png)
 
-## 自动编译
+<details>
+<summary>查看手机界面</summary>
 
-GitHub Actions 会在主分支推送、PR、`v*` 标签和手动触发时，执行 Rust 检查并编译 Windows / macOS / Linux 的 x64 与 ARM64、Web，以及 Android ARM64 APK。运行完成后可下载带 SHA-256 的版本化制品；macOS 包含未签名 `.app`，Android配置固定签名以支持覆盖升级。`v*` 标签构建成功后发布带Ed25519签名清单的GitHub Release，供应用自动检查、校验下载与安装。触发方式、依赖和本地复现见 [多平台编译说明](docs/ci-builds.md)。
+<img src="docs/images/workspace-mobile.png" alt="手机端会话与工具调用" width="390">
 
-## 本地预览
+</details>
 
-`prototype/index.html` 可以直接用浏览器打开，无第三方字体、脚本或 CDN 依赖。也可以在仓库根目录运行：
+界面截图来自正式 Dioxus 客户端的验收环境，使用示例会话、文件和统计数据。
 
-```powershell
-python -m http.server 4173 --bind 127.0.0.1
-```
+## 下载与安装
 
-然后打开 <http://127.0.0.1:4173/prototype/>。
+在 [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest) 的 **Assets** 中选择对应平台：
 
-右上角主题按钮或个人设置可切换「纸与苔绿 / 海湾蓝 / 石墨紫 / Reddit 橙」，分别选择浅色、深色或跟随系统，以及标准/紧凑密度。支持即时预览、取消恢复、保存偏好和主题 JSON 导入导出；会话、工具、Package 与变更共享同一套主题变量。
-
-可体验：项目/会话、对话、diff、计划、工具调用详情/失败重试/子任务取消、消息队列、Provider 设置、上下文压缩、token/缓存/费用/速度统计、图片与文档附件、扩展、节点配对、主题和手机布局。
-
-任务只有「对话 / 变更」两个标签：计划、工具与命令输出都在对话内。变更页提供 120 文件样例、目录/搜索/类型/未审阅筛选、本轮范围、单文件 diff 和移动端列表/详情。
-
-会话顶部统一展示具名 Package、固定版本，以及本会话 Skills、Tools、提示词配置；输入框保留 Skills 快捷选择。Packages 资源库支持导出包含正文的 JSON 设计包、重新导入、模拟安装与显式启用；安装更新不会自动替换会话版本。每轮消息保存配置快照。
-
-输入区的「常用能力」可体验 ask_user 单选/多选/自由回答、BTW 旁问、todo 和 goal 状态。侧栏「技能库」展示示例目录、来源与全文载入证据；BTW 使用独立旁路面板，显式引用才进入主草稿。
-
-正常发送即逐段显示回复与工具输出，BTW 也支持流式回答。点击标题旁「流式演示」或输入 `/stream`，展开对话内的「流式演示控制」，可模拟断线恢复、快照重建、停止、失败与等待最终结算。阅读历史时保持滚动位置，点击「新进展」继续跟随。
-
-「执行节点」展示 PC 服务端 / 手机客户端：PC 生成二维码，手机可用相机入口、二维码图片或链接识别；高级模式可手工填写服务地址和配对码。两种模式均经过电脑确认和项目授权，并可体验过期、拒绝、撤销和断线重连。QR 与本地图片解码可用，实际配对和同步仍是模拟，没有开放电脑网络端口。
-
-原型不主动读取项目文件、不执行 shell、不收集密钥，也不连接设备或模型。用户主动选择/粘贴/拖入附件后做本地预览；主动打开相机或选择二维码图片后在本机识别，不上传图像。主题偏好保存在浏览器本地，任务、附件和配对状态刷新后重置。页面中的代码、测试结果、时间、设备与统计都是交互样例。
-
-## Rust 核心实现
-
-已建立最小 Cargo workspace：
-
-- `crates/work-core`：UI/网络无关的运行状态 reducer，处理稳定消息块、工具输出、游标去重、结算语义与重同步。
-- `crates/work-client`：对接现有 rpi-http/rpi-web `/api/v1` 的 HTTP/SSE transport，包含认证、项目/目录/会话管理（创建、打开、重命名、fork/clone/delete）、项目文件和文件夹创建、Git status/diff、prompt/abort、队列、确认、历史/runtime/model/tool/compact 命令、快照、SSE 解码与事件归一化；断线按游标重建快照，不重发业务 prompt。
-- `crates/work-node`：桌面本地 rpi-http/rpi-web 进程监管、参数组装、端口就绪检测和退出清理；就绪检测先确认受管子进程，避免把外部占用端口误认成自身节点。
-
-运行验证：
-
-```powershell
-cargo test --workspace
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-```
-
-另有一个最小真实 transport 入口 `apps/work-cli`，可在已运行的 rpi-http 或 rpi-web 上检查节点并订阅会话。默认地址是 `http://127.0.0.1:3030/`，也可通过 `RPI_WORK_URL` 覆盖：
-
-```powershell
-cargo run -p work-cli -- health
-cargo run -p work-cli -- capabilities
-cargo run -p work-cli -- projects
-cargo run -p work-cli -- folders src
-cargo run -p work-cli -- sessions
-cargo run -p work-cli -- state <session-id>
-$env:RPI_WORK_URL = 'http://127.0.0.1:3030/'
-cargo run -p work-cli -- watch <session-id>
-```
-
-## 真实节点快速验证
-
-使用现有 rpi-http API-only 服务启动节点（在 `rpi-package` 根目录可执行 `cargo run --locked -p rpi-http -- --project <project> --rpi-bin <rpi> --port 3030`）；如需浏览器备用界面，也可以使用 rpi-web standalone 或 `rpi --webserver`。确保允许客户端使用的 Host（例如 `127.0.0.1:3030`）出现在 `allowedHosts` 中；受保护节点还需要先通过 UI 登录。然后执行：
-
-```powershell
-$env:RPI_WORK_URL = 'http://127.0.0.1:3030/'
-cargo run -p work-cli -- health
-cargo run -p work-cli -- capabilities
-cargo run -p work-cli -- projects
-cargo run -p work-cli -- sessions
-cargo run -p work-cli -- watch <session-id>
-```
-
-`health` 对 rpi-http/rpi-web 的 `service`/`protocol` 响应和带 `ok` 响应都兼容；`watch` 会先恢复 snapshot，再从 `lastSeq` 之后订阅 SSE，发送 `Last-Event-ID`，断线时按 snapshot 重建，不把连接关闭或 `agent_end` 当作最终成功。
-
-## 首版历史验证（不能代替当前源码验收）
-
-| 验收项 | 状态 | 证据/边界 |
+| 平台 | 架构 | 安装包与启动方式 |
 | --- | --- | --- |
-| reducer 稳定顺序、去重、重同步、失败/中断保留内容、最终结算 | 通过 | `cargo test --workspace` |
-| rpi-http HTTP/SSE | 通过 | 已实测 health、capabilities、projects、sessions、create、snapshot、queue、SSE |
-| rpi-web HTTP/SSE 兼容 | 通过 | 已实测同一套 CLI/API 流程 |
-| 项目文件、Git status/diff、队列、dialog | 通过 | client 测试 + 真实节点路由探测 |
-| Dioxus native 启动 | 首版历史通过 | 曾启动 `work-ui.exe`；当前源码需重新构建，不能用旧进程作为证明 |
-| Dioxus WASM 编译 | 通过 | `cargo check --target wasm32-unknown-unknown -p work-ui` |
-| 完整真实模型回合、工具执行和实际 dialog 触发 | 待凭据/交互 | 需要配置 provider 并由用户在运行节点中发送 prompt |
-| 设备配对、附件传输、移动原生打包 | 未纳入首版 | 需要新增协议和平台环境，不用模拟状态宣称完成 |
+| Windows | x64 / ARM64 | 解压 ZIP，运行 work-ui.exe；需要 WebView2 Runtime |
+| macOS | Intel / Apple Silicon | 解压 tar.gz，打开 RPI Work.app；当前未配置 Apple 签名与公证 |
+| Linux | x64 / ARM64 | 解压 tar.gz，运行 work-ui；基于 Ubuntu 24.04，依赖 GTK 3 / WebKitGTK 4.1 / libxdo |
+| Android | ARM64 | 安装 APK；最低 Android 7.0，使用固定签名以支持后续覆盖升级 |
+| Web | WASM | 解压 Web ZIP，由静态服务器或兼容的 rpi-web 托管 |
 
-`apps/work-ui` 是首个 Dioxus 客户端壳，使用 `work-client` 真实读取节点健康、认证状态、能力、会话和项目。当前 UI 已按 `prototype/index.html` 的工作空间骨架对齐：桌面为项目导航 / 对话工作区 / 任务上下文三层结构，移动端提供导航抽屉、会话切换和单列 composer；支持项目搜索/添加、会话搜索与管理、快照历史恢复、SSE 实时事件、断线恢复、发送 prompt、停止请求、队列/dialog、项目文件 modal、文件内容、Git 状态和单文件 diff。视觉对齐包括 prototype bar、面包屑、状态徽章、tab、消息时间线、底部 composer、Inspector 分区、响应式断点和触摸焦点状态。仍未伪造附件上传、设备配对、Packages/Skills 协议或移动原生打包能力。可执行：
+每个平台提供 SHA-256 校验文件；Release 另含供客户端验证的 update.json 和 update.json.sig。桌面包同时包含 work-cli。详细依赖与打包方式见 [多平台编译说明](docs/ci-builds.md)。
 
-```powershell
-cargo run -p work-ui
-```
+Android 0.1.0 使用临时开发签名，首次迁移到固定签名版需要卸载重装，手机本地偏好会清除；电脑节点上的项目和会话保留。iOS 尚未提供安装包。
 
-它目前是纵向 MVP 的节点连接/认证、项目搜索与创建、会话创建/搜索/重命名/fork/clone/delete、历史快照和断线恢复、原型同构侧栏/对话区/Inspector、真实 projection 消息和工具块、审批/dialog、队列 composer、Project Files modal、Changes 文件列表与单文件预览、项目目录/文件内容、Git 变更文件与 diff。完整变更写回、逐设备配对授权、直接图片模型输入和移动原生打包仍未完成。rpi-http 已有项目文件上传路由；当前客户端未接入该路由，上传文件也不等于原生RPC多模态输入。原型中的这些功能仍明确标为模拟，不会由客户端伪造完成状态。
+## 快速开始
 
+### 1. 在电脑上启动执行节点
 
-## 当前推荐
+RPI Work 是客户端，安装包不包含 rpi 执行宿主、rpi-http / rpi-web 或模型凭据。先在电脑或服务器安装并配置兼容节点，例如在项目目录运行：
 
-以 **Dioxus 客户端 + rpi-http API 服务（兼容 rpi-web）+ rpi RPC 宿主** 为首版纵向闭环。手机先通过响应式 Web 使用电脑/服务器上的 Agent，再验证 Dioxus Android/iOS 包装。Tauri + 现有 React 前端保留为更快复用 UI 的备选。
+~~~shell
+rpi-http --project . --rpi-bin rpi --port 3030
+~~~
 
-此仓库包含设计材料、静态原型和已接入真实服务的 Rust workspace；未修改相邻 `pi-rust`、`rpi-package` 仓库。
+从源码启动节点时，在 rpi-package 仓库执行：
 
+~~~shell
+cargo run --locked -p rpi-http -- --project <项目目录> --rpi-bin <rpi可执行文件> --port 3030
+~~~
 
+也可使用兼容的 rpi-web 服务；模型 Provider、凭据和工具在执行节点配置。
 
+### 2. 连接并打开项目
+
+1. 启动 RPI Work，进入 **设置 → 执行节点**。
+2. 桌面本地节点填写 http://127.0.0.1:3030，受保护的节点需登录。
+3. 打开或添加已有项目，可自定义显示名称；选择会话或新建任务，开始对话。
+
+手机使用电脑可访问的局域网地址，通过电脑显示的地址二维码或高级模式手工填写；手机的 127.0.0.1 指向手机自身。节点需正确配置监听地址、允许的 Host 和认证。当前支持地址二维码识别与节点登录，逐设备配对和项目 ACL 尚需上游协议支持。
+
+### 3. 更新客户端
+
+**设置 → 应用更新** 默认在启动时及每 6 小时检查最新稳定 Release，可关闭自动检查或手动检查。下载后验证清单签名、文件大小和 SHA-256：
+
+- 桌面：安装并重启，失败时尝试回滚。
+- Android：校验包名、版本和签名证书后，由系统确认安装。
+- Web：电脑服务端部署新版本后重新加载页面。
+
+会话运行中或保留未发送草稿、附件时暂停安装。详见 [自动更新与签名发布](docs/automatic-updates.md)。
+
+## 主要能力
+
+- **项目与会话**：打开已有项目、显示名称、会话搜索与切换、创建、重命名、fork / clone、历史恢复。
+- **单一对话**：流式回复、工具调用和输出、计划、ask 确认、BTW 旁问、停止与断线恢复。
+- **文件与变更**：项目文件树、内容预览、Git 状态与 diff、多文件搜索和筛选、移动端列表与详情。
+- **运行信息**：队列、上下文压缩、会话追踪与耗时，以及节点报告的 token、缓存、费用等统计。
+- **会话能力**：统一展示 Skills、Tools、提示词和具名 Package；支持版本配置、设计包导入导出。
+- **元Agent**：个人能力开发项目，用于编写和整理 Skills、Package 与扩展草稿。
+- **外观与移动布局**：四种预设主题，浅色 / 深色 / 跟随系统、界面密度和主题 JSON 导入导出。
+
+当前版本已接入真实 HTTP/SSE 节点。节点资源安装、逐设备授权、直接向模型发送图片等能力仍有协议缺口；附件本地预览不等于模型多模态输入。HTML 原型中的演示状态不代表后端已实现。功能边界见 [上游功能审阅](docs/upstream-functional-review.md)。
+
+## 从源码运行
+
+安装 stable Rust 和对应平台依赖，克隆仓库后执行：
+
+~~~shell
+cargo run --locked -p work-ui
+~~~
+
+检查代码：
+
+~~~shell
+cargo fmt --all -- --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+~~~
+
+CLI 可用于检查已运行的节点：
+
+~~~shell
+cargo run --locked -p work-cli -- health
+cargo run --locked -p work-cli -- capabilities
+cargo run --locked -p work-cli -- sessions
+cargo run --locked -p work-cli -- watch <session-id>
+~~~
+
+默认节点为 http://127.0.0.1:3030/，CLI 可通过 RPI_WORK_URL 覆盖。Web / Android 构建使用 scripts/ 中的 PowerShell 7 脚本，见 [本机构建步骤](docs/ci-builds.md#本机复现)。
+
+### 代码结构
+
+| 目录 | 职责 |
+| --- | --- |
+| apps/work-ui | Dioxus 桌面、Android 与 Web 客户端 |
+| apps/work-cli | 节点诊断与会话订阅命令行 |
+| crates/work-core | 消息、运行状态与事件投影 |
+| crates/work-client | rpi-http / rpi-web HTTP/SSE 传输 |
+| crates/work-node | 本地节点进程监管 |
+| crates/work-update | 更新发现、签名验证、下载与安装助手 |
+| prototype | 可独立打开的 HTML 交互原型 |
+
+## 构建与版本发布
+
+| 触发方式 | 结果 |
+| --- | --- |
+| 推送 main / master、PR、手动 Run workflow | 检查并构建八个平台制品，上传 **Actions → Artifacts**，保留 14 天 |
+| 推送与 UI 版本一致的 v* 标签 | 全部构建成功后，上传安装包、校验文件和签名清单到 **GitHub Release** |
+
+主分支构建成功不会自动创建 Release。发布稳定版本时，先更新 apps/work-ui/Cargo.toml 和 docs/release-notes.md，提交后打标签：
+
+~~~shell
+git tag -a v0.1.1 -m "RPI Work v0.1.1"
+git push origin v0.1.1
+~~~
+
+标签中的版本必须与 UI 包版本一致。发布任务先创建草稿，上传完整制品并验证签名，最后公开 Release，供客户端下载和自动检查更新。签名配置、失败排查和密钥备份见 [发布说明](docs/automatic-updates.md#发布流程)。
+
+## 文档
+
+- **产品与架构**：[功能设计](docs/product-design.md) · [Dioxus / rpi 框架](docs/architecture.md) · [上游功能边界](docs/upstream-functional-review.md)
+- **对话与项目**：[流式消息](docs/streaming.md) · [多文件审阅](docs/conversation-and-review.md) · [项目文件](docs/project-files.md) · [会话追踪](docs/session-tracing.md)
+- **能力与扩展**：[Skills 与交互工具](docs/skills-and-interactive-tools.md) · [会话 Package](docs/session-packages.md) · [元Agent](docs/meta-agent.md)
+- **设备与外观**：[手机连接](docs/mobile-connection.md) · [主题](docs/themes.md)
+- **构建与验收**：[多平台编译](docs/ci-builds.md) · [自动更新](docs/automatic-updates.md) · [原型还原验收](docs/ui-parity-acceptance.md) · [本地测试产物](docs/testing-artifacts.md)
+
+查看 HTML 原型：在仓库根目录运行 python -m http.server 4173 --bind 127.0.0.1，打开 <http://127.0.0.1:4173/prototype/>。原型使用示例数据，设计稿与历史验收记录单独保留在文档中。
