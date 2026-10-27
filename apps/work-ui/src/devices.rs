@@ -4,12 +4,18 @@ use dioxus::prelude::*;
 use work_client::{AuthState, Capabilities, WorkClient};
 
 const QR_LIBRARY: &str = include_str!("../../../prototype/vendor/qrcode.js");
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DeviceRole {
-    Pc,
-    Phone,
-}
+const QR_DECODER: &str = include_str!("../../../prototype/vendor/jsQR.js");
+const QR_FRAME_DECODER: &str = r"
+const decodeFrame=source=>{
+    const w=source.videoWidth||source.width,h=source.videoHeight||source.height;
+    if(!w||!h)return '';
+    const scale=Math.min(1,1200/Math.max(w,h)),canvas=document.createElement('canvas');
+    canvas.width=Math.round(w*scale);canvas.height=Math.round(h*scale);
+    const context=canvas.getContext('2d',{willReadFrequently:true});
+    context.drawImage(source,0,0,canvas.width,canvas.height);
+    const pixels=context.getImageData(0,0,canvas.width,canvas.height);
+    return window.jsQR(pixels.data,canvas.width,canvas.height)?.data||'';
+};";
 
 fn normalize_address(raw: &str, phone: bool) -> Result<String, String> {
     let value = raw.trim();
@@ -124,7 +130,8 @@ fn stop_camera_script() -> String {
 
 fn start_camera_script() -> String {
     format!(
-        r"{CAMERA_CLEANUP}
+        r"{QR_DECODER};{QR_FRAME_DECODER}
+{CAMERA_CLEANUP}
 const epoch=window.__rpiWorkCameraEpoch;
 const video=document.getElementById('device-camera');
 let sent=false;
@@ -150,8 +157,7 @@ document.addEventListener('visibilitychange',hidden);
 window.addEventListener('pagehide',close);
 c.observer=new MutationObserver(()=>{{if(!video?.isConnected)close();}});
 c.observer.observe(document.documentElement,{{childList:true,subtree:true}});
-if(!window.BarcodeDetector){{c.finish('ERR:此浏览器不支持相机识别，请粘贴连接信息或手工输入地址。');}}
-else if(!valid()||!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){{c.finish('ERR:当前环境不能打开相机，请粘贴连接信息。');}}
+if(!valid()||!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){{c.finish('ERR:当前环境不能打开相机，请使用相册扫码。');}}
 else{{try{{
     const permission=navigator.mediaDevices.getUserMedia({{video:{{facingMode:{{ideal:'environment'}}}},audio:false}}).then(stream=>{{
         if(!valid()){{stream.getTracks().forEach(t=>t.stop());return null;}}
@@ -164,19 +170,20 @@ else{{try{{
         await video.play();
         if(!valid()){{c.finish('');}}
         else{{
-            const detector=new BarcodeDetector({{formats:['qr_code']}});
+            let detector;try{{if(window.BarcodeDetector)detector=new BarcodeDetector({{formats:['qr_code']}});}}catch(_){{}}
             const loop=async()=>{{
                 if(!valid()){{c.finish('');return;}}
-                try{{const codes=await detector.detect(video);
+                try{{let value='';if(detector){{try{{value=(await detector.detect(video))[0]?.rawValue||'';}}catch(_){{}}}}
                     if(!valid()){{c.finish('');return;}}
-                    if(codes[0]?.rawValue){{c.finish(codes[0].rawValue);return;}}
+                    if(!value)value=decodeFrame(video);
+                    if(value){{c.finish(value);return;}}
                 }}catch(_){{if(!valid()){{c.finish('');return;}}}}
                 c.frame=requestAnimationFrame(loop);
             }};
             c.frame=requestAnimationFrame(loop);
         }}
     }}
-}}catch(e){{c.finish(valid()?'ERR:'+(e.name==='NotAllowedError'?'未获得相机权限，请粘贴地址。':'无法打开相机，请检查设备或粘贴地址。'):'');}}}}
+}}catch(e){{c.finish(valid()?'ERR:'+(e.name==='NotAllowedError'?'未获得相机权限，请重试或使用相册扫码。':'无法打开相机，请检查设备或使用相册扫码。'):'');}}}}
 "
     )
 }
@@ -192,47 +199,37 @@ pub fn DevicesPage(
     capabilities: Signal<Option<Capabilities>>,
     onconnect: EventHandler<MouseEvent>,
     onlogin: EventHandler<MouseEvent>,
+    mobile_client: bool,
 ) -> Element {
-    let mut role = use_signal(|| {
-        if cfg!(target_os = "android") {
-            DeviceRole::Phone
-        } else {
-            DeviceRole::Pc
-        }
-    });
     let mut qr_open = use_signal(|| false);
+    let mut remote_open = use_signal(|| false);
     let mut phone_address = use_signal(String::new);
-    let mut pasted = use_signal(String::new);
     let mut error = use_signal(String::new);
     let mut scanner_status = use_signal(String::new);
     let mut scanning = use_signal(|| false);
     let mut camera_epoch = use_signal(|| 0u64);
-    let mut advanced = use_signal(|| false);
     let mut copy_status = use_signal(String::new);
     let mut advertised_address =
         use_signal(|| base_url.read().trim().trim_end_matches('/').to_owned());
-
     let address = advertised_address
         .read()
         .trim()
         .trim_end_matches('/')
         .to_owned();
-    let is_phone = *role.read() == DeviceRole::Phone;
-    let mut set_role = move |next: DeviceRole| {
-        role.set(next);
+    let current_address = base_url.read().clone();
+    let local_node = normalize_address(&current_address, false).is_ok()
+        && normalize_address(&current_address, true).is_err();
+    use_effect(use_reactive((&mobile_client,), move |(_mobile,)| {
+        qr_open.set(false);
         scanning.set(false);
         camera_epoch += 1;
+        phone_address.set(String::new());
+        scanner_status.set(String::new());
         error.set(String::new());
-        spawn(async move {
-            let _ = document::eval(&stop_camera_script()).recv::<bool>().await;
-        });
-    };
+        let _ = document::eval(CAMERA_CLEANUP);
+    }));
     let connect_address = move |event: MouseEvent| {
-        let candidate = if *advanced.read() {
-            phone_address.read().clone()
-        } else {
-            pasted.read().clone()
-        };
+        let candidate = phone_address.read().clone();
         match connection_address(&candidate) {
             Ok(value) => {
                 base_url.set(format!("{value}/"));
@@ -242,7 +239,6 @@ pub fn DevicesPage(
             Err(message) => error.set(message),
         }
     };
-
     use_drop(move || {
         let _ = document::eval(CAMERA_CLEANUP);
     });
@@ -275,94 +271,55 @@ pub fn DevicesPage(
     rsx! {
         style { {include_str!("devices.css")} }
         div { class: "devices-page",
-            div { class: "overline", "YOUR COMPUTER. YOUR AGENT. EVERYWHERE." }
             div { class: "page-heading",
-                div { h1 { if is_phone { "连接你的电脑" } else { "电脑运行，手机接续" } }
-                    p { if is_phone { "扫描或粘贴电脑地址，然后使用真实节点密码登录。" } else { "查看当前节点地址并为手机提供地址二维码；本客户端不会启动电脑服务。" } }
+                div {
+                    h1 { if mobile_client { "连接我的电脑" } else { "执行节点" } }
+                    p { if mobile_client { "扫描电脑上的地址二维码，连接项目与会话。" } else { "默认使用本机执行节点，也可以连接其他节点。" } }
                 }
-                if !is_phone { button { class: "button primary", onclick: move |_| qr_open.set(true), Icon { name: "phone".to_owned() } "显示地址二维码" } }
+                if !mobile_client { button { class: "button", onclick: move |_| qr_open.set(true), Icon { name: "phone".to_owned() } "手机连接这台电脑" } }
             }
-            div { class: "connection-role-switch", aria_label: "连接角色",
-                button { class: if is_phone { "" } else { "active" }, onclick: move |_| set_role(DeviceRole::Pc), Icon { name: "monitor".to_owned() } "电脑 · 服务端" }
-                button { class: if is_phone { "active" } else { "" }, onclick: move |_| set_role(DeviceRole::Phone), Icon { name: "phone".to_owned() } "手机 · 客户端" }
-                span { "选择此设备的连接方式" }
-            }
-            div { class: "connection-demo-note", role: "note", Icon { name: "info".to_owned() }
-                span { "地址二维码，仍需节点密码。当前不支持单独设备授权。" }
-            }
-            if !is_phone {
-                div { class: "connection-layout",
-                    section { class: "server-overview",
-                        div { class: "server-identity",
-                            span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
-                            div { h2 { "这台电脑" } p { "当前浏览器客户端 · rpi-web" } }
-                            span { class: "status-badge stopped", i {}, "本客户端未启动服务" }
-                        }
-                        div { class: "connection-topology",
-                            span { Icon { name: "monitor".to_owned() } "PC 节点" small { "模型 / 工具 / 项目" } }
-                            i { "HTTP + SSE" }
-                            span { Icon { name: "phone".to_owned() } "手机客户端" small { "连接后使用节点 API" } }
-                        }
-                        div { class: "node-address",
-                            label { "手机可访问的节点地址" }
-                            code { if address.is_empty() { "未设置分享地址" } else { "{address}" } }
-                            small { "只读展示；分享地址不会更改真实服务监听。" }
-                        }
-                        div { class: "server-details",
-                            div { span { "服务状态" } strong { "依赖外部 rpi-web" } }
-                            div { span { "密码" } strong { "连接时验证" } }
-                            div { span { "设备授权" } strong { "未支持" } }
-                        }
-                        div { class: "connection-server-actions",
-                            button { class: "button", onclick: move |_| qr_open.set(true), "设置服务地址" }
-                            button { class: "button", onclick: move |_| { advanced.set(true); set_role(DeviceRole::Phone); }, "手工连接 · 高级" }
-                        }
-                        p { class: "connection-help", "二维码只编码版本化节点地址和类型，不编码密码。手机必须能够访问该地址；localhost / 127.0.0.1 只代表当前设备。" }
+            if !mobile_client {
+                section { class: "device-status-panel desktop-node-panel",
+                    div { class: "server-identity",
+                        span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
+                        div { h2 { if local_node { "本机执行节点" } else { "当前执行节点" } } code { "{current_address}" } }
                     }
-                    aside { class: "connection-steps",
-                        h3 { "连接只需三步" }
-                        div { b { "1" } span { "电脑显示地址二维码" small { "二维码不代表授权或邀请" } } }
-                        div { b { "2" } span { "手机扫码或粘贴地址" small { "先验证协议、主机和端口" } } }
-                        div { b { "3" } span { "连接节点并输入密码" small { "真实登录由节点处理" } } }
-                    }
-                }
-                div { class: "device-status-panel",
-                    h2 { "当前节点连接" }
-                    div { class: "form-field",
-                        label { r#for: "node-url", "节点地址" }
-                        input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "http://localhost:3030/", oninput: move |event| base_url.set(event.value()) }
-                    }
-                    p { class: "meta", "此电脑客户端实际连接的执行节点，与提供给手机的分享地址分别设置。" }
-                    button { class: "button primary", onclick: move |event| onconnect.call(event), "连接节点" }
                     p { class: "meta", role: "status", "{status}" }
+                    div { class: "connection-server-actions",
+                        button { class: "button primary", onclick: move |event| {
+                            if !local_node { base_url.set("http://127.0.0.1:3030/".into()); }
+                            remote_open.set(false);
+                            onconnect.call(event);
+                        }, if local_node { "连接本机节点" } else { "切回本机节点" } }
+                        button { class: "button", onclick: move |_| remote_open.set(!remote_open()), "连接其他节点" }
+                    }
+                    if *remote_open.read() {
+                        div { class: "remote-node-form",
+                            div { class: "form-field",
+                                label { r#for: "node-url", "节点地址" }
+                                input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:3030/", oninput: move |event| base_url.set(event.value()) }
+                            }
+                            button { class: "button primary", onclick: move |event| onconnect.call(event), "连接节点" }
+                        }
+                    }
                     if let Some(auth) = auth_state.read().as_ref() {
-                        p { class: "meta", if auth.required && !auth.authenticated { "节点需要密码认证。" } else if auth.authenticated { "节点已认证。" } else { "节点无需密码认证。" } }
                         if auth.required && !auth.authenticated {
                             div { class: "form-field", label { r#for: "device-node-password", "节点密码" } input { id: "device-node-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) } }
                             button { class: "button primary", onclick: move |event| onlogin.call(event), "登录" }
-                        }
+                        } else if auth.authenticated { p { class: "meta", "节点已认证。" } }
                     }
                     if let Some(caps) = capabilities.read().as_ref() { p { class: "meta", "协议 {caps.protocol} · {caps.supported_commands.len()} 个命令 · {caps.supported_actions.len()} 个动作" } }
                 }
             } else {
                 section { class: "mobile-connect-form",
-                    div { class: "mobile-connect-tabs",
-                        button { class: if *advanced.read() { "" } else { "active" }, onclick: move |_| advanced.set(false), "扫码 / 粘贴连接信息" }
-                        button { class: if *advanced.read() { "active" } else { "" }, onclick: move |_| {
-                            advanced.set(true); scanning.set(false); camera_epoch += 1;
-                            spawn(async move { let _ = document::eval(&stop_camera_script()).recv::<bool>().await; });
-                        }, "高级 · 手工地址" }
-                    }
-                    if *advanced.read() {
-                        div { class: "field", label { r#for: "phone-address", "电脑节点地址" } input { id: "phone-address", value: "{phone_address}", inputmode: "url", autocomplete: "url", placeholder: "https://电脑地址:3030", oninput: move |event| phone_address.set(event.value()) } }
-                    } else {
                         div { class: "pair-scanner",
                             video { id: "device-camera", playsinline: true, muted: true, hidden: true }
                             if !*scanning.read() { div { id: "scanner-placeholder", Icon { name: "image".to_owned() } strong { "扫描电脑屏幕上的地址二维码" } span { "仅在你点击打开相机后申请权限" } } }
                             p { id: "scanner-status", role: "status", "{scanner_status}" }
                         }
                         div { class: "connection-server-actions",
-                            button { class: "button", disabled: *scanning.read(), onclick: move |_| {
+                            button { class: "button primary", disabled: *scanning.read(), onclick: move |_| {
+                                phone_address.set(String::new());
                                 scanning.set(true);
                                 camera_epoch += 1;
                                 let epoch = *camera_epoch.read();
@@ -375,35 +332,36 @@ pub fn DevicesPage(
                                     match result {
                                         Ok(value) if value.starts_with("ERR:") => scanner_status.set(value[4..].to_owned()),
                                         Ok(value) if !value.is_empty() => match connection_address(&value) {
-                                            Ok(address) => { phone_address.set(address); pasted.set(value); scanner_status.set("已读取地址，请核对连接信息后连接。".into()); }
+                                            Ok(address) => { phone_address.set(address);  scanner_status.set("已读取地址，请核对连接信息后连接。".into()); }
                                             Err(message) => scanner_status.set(message),
                                         },
-                                        Ok(_) => scanner_status.set("相机已关闭，可粘贴连接信息或重新打开。".into()),
-                                        Err(_) => scanner_status.set("相机识别失败，请粘贴连接信息。".into()),
+                                        Ok(_) => scanner_status.set("相机已关闭，可以重新扫码。".into()),
+                                        Err(_) => scanner_status.set("相机识别失败，请重新扫描或从图片识别。".into()),
                                     }
                                 });
                             }, if *scanning.read() { "正在扫描 / 等待权限" } else { "打开相机" } }
-                            button { class: "button", onclick: move |_| {
+                            if *scanning.read() { button { class: "button", onclick: move |_| {
                                 scanning.set(false); camera_epoch += 1; scanner_status.set("相机已关闭。".into());
                                 spawn(async move { let _ = document::eval(&stop_camera_script()).recv::<bool>().await; });
-                            }, "关闭相机" }
+                            }, "关闭相机" } }
                         }
                         div { class: "form-field",
-                            label { r#for: "device-qr-image", "从图片识别" }
-                            input { id: "device-qr-image", class: "qr-image-input", r#type: "file", accept: "image/*", onchange: move |_| {
+                            label { r#for: "device-qr-image", class: "button album-scan", "相册扫码" }
+                            input { id: "device-qr-image", hidden: true, r#type: "file", accept: "image/*", onchange: move |_| {
+                                phone_address.set(String::new());
                                 scanning.set(false); camera_epoch += 1;
                                 let epoch = *camera_epoch.read();
                                 scanner_status.set("正在识别图片…".into());
-                                let script = format!(r"{CAMERA_CLEANUP}
+                                let script = format!(r"{QR_DECODER};{QR_FRAME_DECODER}
+                                    {CAMERA_CLEANUP}
                                     const file=document.getElementById('device-qr-image')?.files?.[0];
                                     let bitmap;
                                     try {{
                                         if(!file) {{ dioxus.send(''); }}
-                                        else if(!window.BarcodeDetector) {{ dioxus.send('ERR:此浏览器不支持图片识别，请粘贴连接信息。'); }}
                                         else {{
+                                            if(file.size>10*1024*1024)throw new Error('image too large');
                                             bitmap=await createImageBitmap(file);
-                                            const codes=await new BarcodeDetector({{formats:['qr_code']}}).detect(bitmap);
-                                            dioxus.send(codes[0]?.rawValue||'ERR:图片中未找到二维码，请重新选择或粘贴地址。');
+                                            dioxus.send(decodeFrame(bitmap)||'ERR:图片中未找到二维码，请重新选择或重新扫码。');
                                         }}
                                     }} catch(_) {{ dioxus.send('ERR:无法识别图片，请选择清晰的地址二维码。'); }}
                                     finally {{ bitmap?.close(); }}");
@@ -414,26 +372,30 @@ pub fn DevicesPage(
                                     match result {
                                         Ok(value) if value.starts_with("ERR:") => scanner_status.set(value[4..].to_owned()),
                                         Ok(value) if !value.is_empty() => match connection_address(&value) {
-                                            Ok(address) => { phone_address.set(address); pasted.set(value); scanner_status.set("已读取图片地址，请核对后连接。".into()); }
+                                            Ok(address) => { phone_address.set(address);  scanner_status.set("已读取图片地址，请核对后连接。".into()); }
                                             Err(message) => scanner_status.set(message),
                                         },
                                         Ok(_) => scanner_status.set("未选择图片。".into()),
-                                        Err(_) => scanner_status.set("图片识别失败，请粘贴连接信息。".into()),
+                                        Err(_) => scanner_status.set("图片识别失败，请重新扫描或从图片识别。".into()),
                                     }
                                 });
                             } }
                         }
-                        details { class: "pair-link-entry", open: true, summary { "粘贴连接信息" }, textarea { rows: "3", value: "{pasted}", placeholder: "粘贴地址二维码中的 JSON 或节点地址…", oninput: move |event| pasted.set(event.value()) } }
+
+                    if !phone_address.read().is_empty() {
+                        div { class: "scanned-computer",
+                            strong { "已识别电脑" }
+                            code { "{phone_address}" }
+                            button { class: "button primary", onclick: connect_address, "连接这台电脑" }
+                        }
                     }
-                    div { class: "connection-server-actions", button { class: "button primary", onclick: connect_address, "验证地址并连接" } }
                     p { class: "meta", role: "status", "{status}" }
                     if let Some(auth) = auth_state.read().as_ref() {
                         if auth.required && !auth.authenticated {
-                            div { class: "form-field", label { r#for: "phone-node-password", "节点密码" } input { id: "phone-node-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) } }
-                            button { class: "button primary", onclick: move |event| onlogin.call(event), "登录节点" }
-                        } else if auth.authenticated { p { class: "meta", "节点已认证。" } }
+                            div { class: "form-field", label { r#for: "phone-node-password", "电脑节点密码" } input { id: "phone-node-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) } }
+                            button { class: "button primary", onclick: move |event| onlogin.call(event), "登录电脑" }
+                        } else if auth.authenticated { p { class: "meta", "电脑已连接并认证。" } }
                     }
-                    p { class: "connection-help", "手机上的 localhost 指向手机本机，请使用电脑可达地址。连接后仍需节点密码。" }
                     p { class: "connection-form-error", role: "alert", "{error}" }
                 }
             }

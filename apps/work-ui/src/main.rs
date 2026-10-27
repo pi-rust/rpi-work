@@ -12,6 +12,7 @@ mod appearance;
 mod components;
 mod composer_extras;
 mod conversation;
+mod device_mode;
 mod message_queue;
 mod meta_agent;
 mod project_files;
@@ -59,6 +60,7 @@ fn main() {
 #[component]
 fn App() -> Element {
     let appearance = use_appearance();
+    let device_mode = device_mode::use_device_mode();
     updates::use_updates();
     let initial_node_url = default_node_url();
     #[allow(unused_mut)] // Mutated only by the browser's same-origin initialization.
@@ -1663,7 +1665,13 @@ fn App() -> Element {
         "extensions" => "扩展",
         "meta-agent" => "元Agent",
         "settings" => match settings_section.read().as_str() {
-            "devices" => "执行节点",
+            "devices" => {
+                if device_mode.read().is_mobile() {
+                    "连接我的电脑"
+                } else {
+                    "执行节点"
+                }
+            }
             "providers" => "Providers",
             "updates" => "应用更新",
             _ => "通用",
@@ -1999,6 +2007,7 @@ fn App() -> Element {
                 }
                 if active_page.read().as_str() == "settings" {
                     SettingsPage { shared_client, requests, active_page, settings_section, base_url, status, auth_state, password, runtime_state, capabilities, selected_session, session_generation,
+                        mobile_client: device_mode.read().is_mobile(),
                         update_busy: !sending.read().is_empty() || projection.read().as_ref().is_some_and(|run| !matches!(run.phase, RunPhase::Ready | RunPhase::Settled(_))) || drafts.read().values().any(|draft| !draft.text.trim().is_empty()) || attachment_store.read().has_pending_content() || btw_store.read().has_pending_content() || queue_drafts.read().has_pending_content(),
                         onconnect: connect, onlogin: login, onappearance: move |()| appearance_open.set(true)
                     }
@@ -2138,8 +2147,8 @@ fn App() -> Element {
                             }
                             div { class: "transcript", "data-session-scope": selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),
                                 if pending_dialogs.read().is_empty() && transcript.read().is_empty() && projection.read().is_none() {
-                                    div { class: "empty-state", strong { "开始一个真实任务" } p { "先连接执行节点，再从项目侧栏打开或新建会话。" }
-                                        button { class: "button primary", onclick: move |_| { active_page.set("settings".to_owned()); settings_section.set("devices".to_owned()); }, "连接执行节点" }
+                                    div { class: "empty-state", strong { "开始一个真实任务" } p { if device_mode.read().is_mobile() { "连接我的电脑，继续项目与会话。" } else { "使用本机执行节点，从项目侧栏打开或新建会话。也可以连接其他节点。" } }
+                                        button { class: "button primary", onclick: move |_| { active_page.set("settings".to_owned()); settings_section.set("devices".to_owned()); }, if device_mode.read().is_mobile() { "连接我的电脑" } else { "节点设置" } }
                                     }
                                 } else {
                                     for (index, message) in transcript.read().iter().enumerate() {
@@ -2318,7 +2327,7 @@ fn App() -> Element {
                             small { "rpi-http · {node_url}" }
                             small { "{selected_project_path.read().as_deref().unwrap_or(\"未选择项目\")}" }
                             div { class: "runtime-shortcuts",
-                                button { onclick: move |_| { active_page.set("settings".into()); settings_section.set("devices".into()); }, Icon { name: "settings".to_owned() } "节点设置" }
+                                button { onclick: move |_| { active_page.set("settings".into()); settings_section.set("devices".into()); }, Icon { name: "settings".to_owned() } if device_mode.read().is_mobile() { "连接我的电脑" } else { "节点设置" } }
                             }
                         }
                         div { class: "inspector-card",

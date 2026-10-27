@@ -25,6 +25,7 @@ pub fn SettingsPage(
     onlogin: EventHandler<MouseEvent>,
     onappearance: EventHandler<()>,
     update_busy: bool,
+    mobile_client: bool,
 ) -> Element {
     let section = settings_section.read().clone();
     rsx! {
@@ -32,7 +33,7 @@ pub fn SettingsPage(
         section { class: "page-view settings-page",
             div { class: "settings-navigation",
                 nav { aria_label: "设置分类",
-                    for (id, icon, title) in [("settings", "settings", "通用"), ("devices", "monitor", "执行节点"), ("providers", "server", "Providers"), ("updates", "download", "应用更新")] {
+                    for (id, icon, title) in [("settings", "settings", "通用"), ("devices", "monitor", if mobile_client { "连接我的电脑" } else { "执行节点" }), ("providers", "server", "Providers"), ("updates", "download", "应用更新")] {
                         button { class: if section == id { "active" } else { "" }, aria_current: if section == id { "page" } else { "" },
                             onclick: move |_| settings_section.set(id.to_owned()), Icon { name: icon.to_owned() } "{title}" }
                     }
@@ -40,7 +41,7 @@ pub fn SettingsPage(
                 button { class: "settings-return", onclick: move |_| active_page.set("workspace".to_owned()), Icon { name: "chevron-right" } "返回会话" }
             }
             if section == "settings" {
-                div { class: "page-heading", div { h1 { "设置" } p { "管理工作空间偏好、执行节点与模型连接。" } } }
+                div { class: "page-heading", div { h1 { "设置" } p { if mobile_client { "管理工作空间偏好、电脑连接与模型设置。" } else { "管理工作空间偏好、执行节点与模型连接。" } } } }
                 div { class: "settings-cards",
                     button { class: "settings-card", onclick: move |_| onappearance.call(()),
                         span { class: "settings-card-icon", Icon { name: "sparkles" } }
@@ -48,7 +49,7 @@ pub fn SettingsPage(
                     }
                     button { class: "settings-card", onclick: move |_| settings_section.set("devices".to_owned()),
                         span { class: "settings-card-icon", Icon { name: "monitor" } }
-                        strong { "执行节点" } p { "电脑服务端、手机客户端与节点连接。" } small { "电脑与手机连接" } Icon { name: "chevron-right" }
+                        strong { if mobile_client { "连接我的电脑" } else { "执行节点" } } p { if mobile_client { "扫描电脑二维码，连接项目与会话。" } else { "使用本机执行节点，或连接其他节点。" } } small { if mobile_client { "扫码连接" } else { "本机与其他节点" } } Icon { name: "chevron-right" }
                     }
                     button { class: "settings-card", onclick: move |_| settings_section.set("providers".to_owned()),
                         span { class: "settings-card-icon", Icon { name: "server" } }
@@ -62,7 +63,7 @@ pub fn SettingsPage(
             } else if section == "updates" {
                 crate::updates::UpdatePage { busy: update_busy }
             } else if section == "devices" {
-                DevicesPage { shared_client, requests, base_url, status, auth_state, password, capabilities, onconnect, onlogin }
+                DevicesPage { shared_client, requests, base_url, status, auth_state, password, capabilities, onconnect, onlogin, mobile_client }
             } else {
                 ProviderSettings { shared_client, requests, runtime_state, capabilities, selected_session, session_generation, status, onreturn: move |_| active_page.set("workspace".to_owned()) }
             }
