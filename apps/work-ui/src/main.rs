@@ -3,14 +3,15 @@ use dioxus::prelude::*;
 use runtime_stats::CompactResult;
 use serde_json::{Value, json};
 use work_client::{
-    AuthState, Capabilities, Diff, FileListing, GitStatus, PendingDialog, Project, QueueSnapshot,
-    RuntimeState, SessionSummary, WorkClient,
+    AuthState, Capabilities, Diff, FileListing, GitStatus, ModelDescriptor, PendingDialog, Project,
+    QueueSnapshot, RuntimeState, SessionSummary, WorkClient,
 };
 use work_core::{ConnectionState, MessageBlock, RunPhase, RunProjection, SettlementOutcome};
 
 mod appearance;
 mod components;
 mod composer_extras;
+mod connections;
 mod conversation;
 mod device_mode;
 mod message_queue;
@@ -63,6 +64,8 @@ fn App() -> Element {
     let device_mode = device_mode::use_device_mode();
     updates::use_updates();
     let initial_node_url = default_node_url();
+    let mut node_connection = connections::use_connections(&initial_node_url);
+    let connection_requests = use_signal(Vec::<Task>::new);
     #[allow(unused_mut)] // Mutated only by the browser's same-origin initialization.
     let mut base_url = use_signal(|| initial_node_url.clone());
     let mut shared_client = use_signal(|| WorkClient::new(&initial_node_url).ok());
@@ -101,6 +104,7 @@ fn App() -> Element {
     let requests = use_signal(Vec::<Task>::new);
     let submissions = use_signal(Vec::<Task>::new);
     let mut pending_open = use_signal(|| None::<(bool, String)>);
+    let mut startup_session = use_signal(|| None::<String>);
     let mut node_url = use_signal(|| initial_node_url.clone());
     let mut active_view = use_signal(|| "conversation".to_owned());
     let mut sidebar_open = use_signal(|| false);
@@ -168,6 +172,8 @@ fn App() -> Element {
     let attachment_store = composer_extras::use_attachment_store();
     let btw_store = composer_extras::use_btw_store();
     let mut runtime_state = use_signal(|| None::<RuntimeState>);
+    let mut available_models = use_signal(Vec::<ModelDescriptor>::new);
+    let mut available_thinking_levels = use_signal(Vec::<String>::new);
     let mut last_turn_usage = use_signal(|| None::<(String, Value)>);
     let mut context_open = use_signal(|| false);
     let mut stats_open = use_signal(|| false);
@@ -176,6 +182,29 @@ fn App() -> Element {
     let mut compact_operation_accepted = use_signal(|| false);
     let mut node_compacting = use_signal(|| false);
     let mut compact_result = use_signal(|| None::<CompactResult>);
+    use_effect(move || {
+        let generation = *session_generation.read();
+        let session_id = selected_session.read().clone();
+        let client = shared_client.read().clone();
+        available_models.set(Vec::new());
+        available_thinking_levels.set(Vec::new());
+        let (Some(session_id), Some(client)) = (session_id, client) else {
+            return;
+        };
+        state::scoped_spawn(requests, async move {
+            let models = client.models(&session_id).await.ok();
+            let levels = client.thinking_levels(&session_id).await.ok();
+            if *session_generation.read() != generation {
+                return;
+            }
+            if let Some(models) = models {
+                available_models.set(models);
+            }
+            if let Some(levels) = levels {
+                available_thinking_levels.set(levels);
+            }
+        });
+    });
     use_effect(move || {
         let _ = *session_generation.read();
         context_open.set(false);
@@ -191,7 +220,7 @@ fn App() -> Element {
     let mut dialog_errors = use_signal(std::collections::HashMap::<String, String>::new);
     let mut answered_dialogs = use_signal(std::collections::HashSet::<String>::new);
     let mut btw_open = use_signal(|| false);
-    let mut queue_delivery = use_signal(|| "followUp".to_owned());
+    let queue_delivery = use_signal(|| "followUp".to_owned());
     let mut delete_confirmation = use_signal(|| false);
     let mut show_project_form = use_signal(|| false);
     let mut project_busy = use_signal(|| false);
@@ -216,21 +245,6 @@ fn App() -> Element {
     let development_associations = use_signal(std::collections::HashMap::<String, String>::new);
     let traces = traces::use_trace_store();
     let mut project_purposes_loaded = use_signal(|| false);
-    #[cfg(target_arch = "wasm32")]
-    use_effect(move || {
-        spawn(async move {
-            let origin = document::eval("dioxus.send(window.location.origin + '/')")
-                .recv::<String>()
-                .await;
-            if let Ok(origin) = origin {
-                if !*node_address_touched.read() && base_url.read().as_str() == "about:blank" {
-                    base_url.set(origin.clone());
-                    node_url.set(origin.clone());
-                    shared_client.set(WorkClient::new(&origin).ok());
-                }
-            }
-        });
-    });
 
     use_effect(move || {
         spawn(async move {
@@ -279,9 +293,86 @@ fn App() -> Element {
         });
     });
 
-    let connect = move |_| {
+    let finish_connection =
+        move |client: WorkClient, secret: Option<String>, attempt: u64, url: String| {
+            state::scoped_spawn(connection_requests, async move {
+                let result = connections::open(client, secret).await;
+                if *node_connection.epoch.peek() != attempt {
+                    return;
+                }
+                match result {
+                    Ok(connections::ConnectionOutcome::PasswordRequired(auth)) => {
+                        auth_state.set(Some(auth));
+                        node_connection
+                            .phase
+                            .set(connections::Phase::PasswordRequired);
+                        status.set("节点需要密码认证".into());
+                        if startup_session.peek().is_some() {
+                            active_page.set("settings".into());
+                            settings_section.set("devices".into());
+                        }
+                    }
+                    Ok(connections::ConnectionOutcome::Ready(workspace)) => {
+                        let requested = startup_session.write().take();
+                        let can_open = requested.as_ref().is_some_and(|id| {
+                            workspace
+                                .sessions
+                                .iter()
+                                .any(|session| &session.session_id == id)
+                        });
+                        auth_state.set(Some(workspace.auth));
+                        capabilities.set(Some(workspace.capabilities));
+                        sessions.set(workspace.sessions);
+                        projects.set(workspace.projects);
+                        password.set(String::new());
+                        node_connection.history.write().remember(&url);
+                        node_connection.phase.set(connections::Phase::Online);
+                        status.set("在线 · 可选择会话或项目".into());
+                        if let Some(id) = requested {
+                            if can_open {
+                                pending_open.set(Some((false, id)));
+                            } else {
+                                status.set("节点已连接，但会话链接不存在或已被删除。".into());
+                            }
+                        }
+                    }
+                    Err(message) => {
+                        node_connection
+                            .phase
+                            .set(connections::Phase::Failed(message.clone()));
+                        status.set(message);
+                    }
+                }
+            });
+        };
+    let mut connect_node = move || {
         node_address_touched.set(true);
-        let url = base_url.read().trim().to_owned();
+        let url = match connections::normalize_address(
+            &base_url.read(),
+            device_mode.read().is_mobile(),
+        ) {
+            Ok(address) => format!("{address}/"),
+            Err(message) => {
+                status.set(format!("地址无效：{message}"));
+                return;
+            }
+        };
+        let existing_client = if *node_url.peek() == url {
+            shared_client.peek().clone()
+        } else {
+            None
+        };
+        let candidate = match existing_client.map_or_else(|| WorkClient::new(&url), Ok) {
+            Ok(client) => client,
+            Err(error) => {
+                status.set(format!("地址无效：{error}"));
+                return;
+            }
+        };
+        state::cancel_requests(connection_requests);
+        node_connection.epoch += 1;
+        let attempt = *node_connection.epoch.peek();
+        base_url.set(url.clone());
         if *node_url.read() != url {
             state::cancel_requests(requests);
             state::cancel_requests(project_requests);
@@ -324,80 +415,95 @@ fn App() -> Element {
             node_url.set(url.clone());
         }
         if shared_client.read().is_none() {
-            match WorkClient::new(&url) {
-                Ok(value) => shared_client.set(Some(value)),
-                Err(error) => {
-                    status.set(format!("地址无效：{error}"));
+            shared_client.set(Some(candidate.clone()));
+        }
+        node_connection.address.set(url.clone());
+        node_connection.phase.set(connections::Phase::Connecting);
+        status.set("连接中…".into());
+        finish_connection(candidate, None, attempt, url);
+    };
+    let connect = move |_: MouseEvent| connect_node();
+
+    // Restore only successfully connected addresses. No secrets are persisted.
+    use_effect(move || {
+        if !*node_connection.ready.read() || *node_address_touched.read() {
+            return;
+        }
+        let saved = node_connection.history.peek().recent.first().cloned();
+        spawn(async move {
+            #[cfg(target_arch = "wasm32")]
+            let location = document::eval("const id=new URL(location.href).searchParams.get('session');dioxus.send([location.origin+'/',id]);")
+                .recv::<(String, Option<String>)>()
+                .await
+                .ok();
+            #[cfg(target_arch = "wasm32")]
+            let fallback = location.as_ref().map(|(origin, _)| origin.clone());
+            #[cfg(not(target_arch = "wasm32"))]
+            let fallback = None::<String>;
+            if *node_address_touched.peek() {
+                return;
+            }
+            #[cfg(target_arch = "wasm32")]
+            if let Some((origin, Some(id))) = location {
+                if !id.is_empty()
+                    && id.len() <= 128
+                    && id
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                {
+                    // A session link is scoped to its serving node, never to a
+                    // different node remembered on this device.
+                    startup_session.set(Some(id));
+                    base_url.set(origin);
+                    connect_node();
                     return;
                 }
             }
-        }
-        let client_result = shared_client
-            .read()
-            .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
-        state::scoped_spawn(requests, async move {
-            status.set("连接中…".into());
-            match client_result {
-                Ok(client) => match client.health().await {
-                    Ok(health) if health.ok => match client.auth().await {
-                        Ok(auth) if auth.required && !auth.authenticated => {
-                            auth_state.set(Some(auth));
-                            status.set("节点需要密码认证".into());
-                        }
-                        Ok(auth) => {
-                            auth_state.set(Some(auth));
-                            match (client.capabilities().await, client.sessions().await) {
-                                (Ok(caps), Ok(items)) => {
-                                    let project_items = client.projects().await.unwrap_or_default();
-                                    capabilities.set(Some(caps));
-                                    sessions.set(items);
-                                    projects.set(project_items);
-                                    status.set("在线 · 可选择会话或项目".into());
-                                }
-                                (Err(error), _) | (_, Err(error)) => {
-                                    status.set(format!("协议读取失败：{error}"));
-                                }
-                            }
-                        }
-                        Err(error) => status.set(format!("认证状态读取失败：{error}")),
-                    },
-                    Ok(_) => status.set("节点未就绪".into()),
-                    Err(error) => status.set(connection_failure_message(&error.to_string())),
-                },
-                Err(error) => status.set(format!("地址无效：{error}")),
+            if let Some(address) = saved {
+                if connections::normalize_address(&address, device_mode.read().is_mobile()).is_ok()
+                {
+                    base_url.set(address);
+                    connect_node();
+                    return;
+                }
+            }
+            if let Some(origin) = fallback {
+                base_url.set(origin.clone());
+                node_url.set(origin.clone());
+                node_connection.address.set(origin.clone());
+                shared_client.set(WorkClient::new(&origin).ok());
             }
         });
-    };
+    });
 
     let login = move |_: MouseEvent| {
-        let draft_url = base_url.read().trim().to_owned();
-        if *node_url.read() != draft_url {
+        if node_connection.phase.read().busy() {
+            return;
+        }
+        let draft_url = connections::normalize_address(&base_url.read(), false)
+            .map(|value| format!("{value}/"));
+        if draft_url.as_deref() != Ok(node_url.read().as_str()) {
             status.set("请先连接当前地址，再登录".into());
             return;
         }
-        let client_result = shared_client
-            .read()
-            .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+        let Some(client) = shared_client.read().clone() else {
+            return;
+        };
         let secret = password.read().clone();
         if secret.is_empty() {
             status.set("请输入节点密码".into());
             return;
         }
-        state::scoped_spawn(requests, async move {
-            match client_result {
-                Ok(client) => match client.login(&secret).await {
-                    Ok(auth) => {
-                        auth_state.set(Some(auth));
-                        password.set(String::new());
-                        status.set("认证成功，请重新连接节点".into());
-                    }
-                    Err(error) => status.set(format!("登录失败：{error}")),
-                },
-                Err(error) => status.set(format!("地址无效：{error}")),
-            }
-        });
+        state::cancel_requests(connection_requests);
+        node_connection.epoch += 1;
+        let attempt = *node_connection.epoch.peek();
+        node_connection
+            .phase
+            .set(connections::Phase::Authenticating);
+        status.set("正在登录并加载项目…".into());
+        // Clear the visible password immediately; the request owns its copy.
+        password.set(String::new());
+        finish_connection(client, Some(secret), attempt, node_url.read().clone());
     };
     let submit_project = move |intent: project_picker::ProjectIntent| {
         if *project_busy.read() {
@@ -916,6 +1022,10 @@ fn App() -> Element {
                                         compact_revision += 1;
                                     }
                                     if event_type == "agent_settled" {
+                                        status.set(format!(
+                                            "{} · 会话在线",
+                                            phase_label(&connection.projection().phase)
+                                        ));
                                         let usage = event
                                             .wire
                                             .data
@@ -1720,6 +1830,24 @@ fn App() -> Element {
             .filter(|(_, window)| *window > 0.0)
             .map(|(threshold, window)| threshold / window * 100.0)
     });
+    let composer_model = runtime_state
+        .read()
+        .as_ref()
+        .and_then(|runtime| runtime.model_id.clone())
+        .unwrap_or_default();
+    let composer_thinking = runtime_state
+        .read()
+        .as_ref()
+        .and_then(|runtime| runtime.thinking_level.clone())
+        .unwrap_or_default();
+    let model_is_available = available_models
+        .read()
+        .iter()
+        .any(|model| model.id == composer_model);
+    let thinking_is_available = available_thinking_levels
+        .read()
+        .iter()
+        .any(|level| level == &composer_thinking);
 
     rsx! {
         updates::UpdateNotice { onopen: move |()| { active_page.set("settings".to_owned()); settings_section.set("updates".to_owned()); } }
@@ -2152,7 +2280,13 @@ fn App() -> Element {
                                     }
                                 } else {
                                     for (index, message) in transcript.read().iter().enumerate() {
-                                        div { key: "history-{history_id(message, index)}", {conversation::render_history(message)} }
+                                        div { key: "history-{history_id(message, index)}", {
+                                            if message.get("role").or_else(|| message.get("kind")).and_then(Value::as_str) == Some("user") {
+                                                conversation::render_history(message)
+                                            } else {
+                                                conversation::render_history_in_context(message, &transcript.read(), projection.read().as_ref().map_or(&[], |run| run.blocks.as_slice()))
+                                            }
+                                        } }
                                     }
                                     if let Some(run) = projection.read().as_ref() {
                                         for block in run.blocks.iter().filter(|block| !history_has_block(&transcript.read(), block)) {
@@ -2201,41 +2335,58 @@ fn App() -> Element {
                                     }
                                 }
                             }
-                            div { class: "composer-capabilities",
-                                button { class: "button", onclick: move |_| { if selected_session.read().is_some() { btw_open.set(true); } else { status.set("请先打开主会话，再创建独立旁问。".into()); } }, "BTW" }
-                                details { class: "capability-menu",
-                                summary { "能力" }
-                                div { class: "capability-menu-items",
-                                message_queue::QueueEntry { snapshot: queue.read().clone(), onopen: move |()| queue_open.set(true) }
-                                button { class: "button", onclick: move |_| session_details_open.set(true), "Tools" }
-                                button { class: "button", onclick: move |_| status.set("当前为节点 Agent 会话；可在 Tools 中配置真实工具。节点未提供 Plan/Ask 模式切换协议。".into()), "Agent 模式" }
-                                button { class: "button", onclick: move |_| status.set("可用命令：/btw [问题]、/compact、/new、/help。".into()), "/ 命令" }
-                                button { class: "button", disabled: selected_session.read().is_none(), onclick: move |_| context_open.set(true), "压缩上下文" }
-                                }
-                                }
-                                if let Some(session_id) = selected_session.read().clone() {
-                                    resources::SkillPicker { session_id: session_scope_key(&node_url.read(), &session_id), library: resource_library, open_session_config, onquote: move |text: String| {
-                                        if let Some(id) = selected_session.read().as_deref() {
-                                            let scope = session_scope_key(&node_url.read(), id);
-                                            let existing = drafts.read().get(&scope).map(|draft| draft.text.clone()).unwrap_or_default();
-                                            let text = if existing.is_empty() { text } else { format!("{existing}\n{text}") };
-                                            update_draft(drafts, &scope, text);
-                                        }
-                                    } }
-                                }
-                            }
                             div { class: "composer-bottom",
                                 div { class: "composer-options",
-                                    message_queue::DeliveryPicker { value: queue_delivery.read().clone(), onchange: move |value| queue_delivery.set(value) }
-                                    if let Some(session_id) = selected_session.read().clone() {
-                                        { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope, store: attachment_store, presentation: "button".to_owned(), onquote: move |text| {
-                                            if let Some(id) = selected_session.read().as_deref() { let scope = session_scope_key(&node_url.read(), id); let existing = drafts.read().get(&scope).map(|d| d.text.clone()).unwrap_or_default(); update_draft(drafts, &scope, if existing.is_empty() { text } else { format!("{existing}\n{text}") }); }
-                                        } } } }
+                                    select {
+                                        class: "composer-select",
+                                        aria_label: "模型",
+                                        value: "{composer_model}",
+                                        disabled: available_models.read().is_empty(),
+                                        onchange: move |event| {
+                                            let value = event.value();
+                                            if value.is_empty() { return; }
+                                            let (Some(session_id), Some(client)) = (selected_session.read().clone(), shared_client.read().clone()) else { return; };
+                                            let generation = *session_generation.read();
+                                            state::scoped_spawn(requests, async move {
+                                                match client.set_model(&session_id, &value).await {
+                                                    Ok(_) => if *session_generation.read() == generation {
+                                                        if let Ok(state) = client.runtime_state(&session_id).await { runtime_state.set(Some(state)); }
+                                                        status.set("模型已更新".into());
+                                                    },
+                                                    Err(error) => status.set(format!("模型更新失败：{error}")),
+                                                }
+                                            });
+                                        },
+                                        if !model_is_available {
+                                            option { value: "{composer_model}", if composer_model.is_empty() { "模型 · —" } else { "当前模型 · {composer_model}" } }
+                                        }
+                                        for model in available_models.read().iter() { option { value: "{model.id}", "{model.name} · {model.provider}" } }
                                     }
-                                    span { class: "model-pill", "D" }
-                                    button { class: "composer-option", onclick: move |_| session_details_open.set(true), "{runtime_state.read().as_ref().and_then(|r| r.model_id.as_deref()).unwrap_or(\"模型 · —\")}" }
-                                    span { class: "option-divider" }
-                                    button { class: "composer-option", onclick: move |_| session_details_open.set(true), Icon { name: "sparkles".to_owned() } "{runtime_state.read().as_ref().and_then(|r| r.thinking_level.as_deref()).unwrap_or(\"思考 · —\")}" }
+                                    select {
+                                        class: "composer-select composer-thinking-select",
+                                        aria_label: "思考等级",
+                                        value: "{composer_thinking}",
+                                        disabled: available_thinking_levels.read().is_empty(),
+                                        onchange: move |event| {
+                                            let value = event.value();
+                                            if value.is_empty() { return; }
+                                            let (Some(session_id), Some(client)) = (selected_session.read().clone(), shared_client.read().clone()) else { return; };
+                                            let generation = *session_generation.read();
+                                            state::scoped_spawn(requests, async move {
+                                                match client.set_thinking_level(&session_id, &value).await {
+                                                    Ok(_) => if *session_generation.read() == generation {
+                                                        if let Ok(state) = client.runtime_state(&session_id).await { runtime_state.set(Some(state)); }
+                                                        status.set("思考等级已更新".into());
+                                                    },
+                                                    Err(error) => status.set(format!("思考等级更新失败：{error}")),
+                                                }
+                                            });
+                                        },
+                                        if !thinking_is_available {
+                                            option { value: "{composer_thinking}", if composer_thinking.is_empty() { "思考等级 · —" } else { "当前等级 · {composer_thinking}" } }
+                                        }
+                                        for level in available_thinking_levels.read().iter() { option { value: "{level}", "{level}" } }
+                                    }
                                 }
                                 div { class: "composer-actions",
                                     if running {
@@ -3002,6 +3153,7 @@ fn history_has_block(messages: &[Value], block: &MessageBlock) -> bool {
             }
         }
         message.get("toolCallId").and_then(Value::as_str) == Some(block.id())
+            || conversation::message_has_tool_call(message, block.id())
     })
 }
 
@@ -3015,18 +3167,6 @@ fn default_node_url() -> String {
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         "http://127.0.0.1:3030/".to_owned()
-    }
-}
-
-fn connection_failure_message(error: &str) -> String {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = error;
-        "连接失败：请检查节点地址、网络与允许来源；Web 建议从节点提供的页面访问。".into()
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        format!("连接失败：{error}")
     }
 }
 

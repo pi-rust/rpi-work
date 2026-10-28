@@ -57,6 +57,10 @@ cargo run --locked -p rpi-http -- --project <项目目录> --rpi-bin <rpi可执�
 
 手机进入 **连接我的电脑**，扫描电脑显示的地址二维码，也可从相册识别二维码；识别后核对地址并确认连接。手机端不提供角色切换和手工地址表单。电脑默认使用本机节点，需要远程节点时在 **执行节点 → 连接其他节点** 填写地址。节点需正确配置监听地址、允许的 Host 和认证；逐设备配对和项目 ACL 尚需上游协议支持。
 
+当前源码支持记住成功连接的节点，重开后自动尝试重连；密码登录后直接加载项目与会话。桌面可从最近连接切换节点或清除记录，密码不会写入连接记录。连接失败可重试，15秒无响应会提示超时。详见 [节点连接交互](docs/node-connection.md)。
+
+本机 Web 客户端可通过 `scripts/dev-web.mjs` 与实际节点同源访问，支持节点认证、真实模型流式回复和对话内工具结果。启动方式及真实模型复验见 [真实节点聊天](docs/live-chat.md)。
+
 ### 3. 更新客户端
 
 **设置 → 应用更新** 默认在启动时及每 6 小时检查最新稳定 Release，可关闭自动检查或手动检查。下载后验证清单签名、文件大小和 SHA-256：
@@ -128,8 +132,8 @@ cargo run --locked -p work-cli -- watch <session-id>
 主分支构建成功不会自动创建 Release。发布稳定版本时，先更新 apps/work-ui/Cargo.toml 和 docs/release-notes.md，提交后打标签：
 
 ~~~shell
-git tag -a v0.1.2 -m "RPI Work v0.1.2"
-git push origin v0.1.2
+git tag -a v0.1.3 -m "RPI Work v0.1.3"
+git push origin v0.1.3
 ~~~
 
 标签中的版本必须与 UI 包版本一致。发布任务先创建草稿，上传完整制品并验证签名，最后公开 Release，供客户端下载和自动检查更新。签名配置、失败排查和密钥备份见 [发布说明](docs/automatic-updates.md#发布流程)。

@@ -1,4 +1,5 @@
 use crate::components::Icon;
+use crate::connections::{ConnectionStore, NodeHistory, Phase, normalize_address};
 use dioxus::core::Task;
 use dioxus::prelude::*;
 use work_client::{AuthState, Capabilities, WorkClient};
@@ -16,82 +17,6 @@ const decodeFrame=source=>{
     const pixels=context.getImageData(0,0,canvas.width,canvas.height);
     return window.jsQR(pixels.data,canvas.width,canvas.height)?.data||'';
 };";
-
-fn normalize_address(raw: &str, phone: bool) -> Result<String, String> {
-    let value = raw.trim();
-    if value.len() > 2048 || value.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err("服务地址过长或包含无效字符。".into());
-    }
-    let Some((scheme, rest)) = value.split_once("://") else {
-        return Err("请输入完整的 HTTP(S) 服务地址，例如 https://电脑地址:3030。".into());
-    };
-    let scheme = scheme.to_ascii_lowercase();
-    if !matches!(scheme.as_str(), "http" | "https") {
-        return Err("服务地址只支持 HTTP 或 HTTPS。".into());
-    }
-    let rest = rest.strip_suffix('/').unwrap_or(rest);
-    if rest.is_empty() || rest.contains(['/', '?', '#', '@', '\\', '%']) {
-        return Err("服务地址只包含协议、主机和端口，不包含路径、查询参数或账号密码。".into());
-    }
-    let (host, port) = if let Some(ipv6) = rest.strip_prefix('[') {
-        let (host, suffix) = ipv6.split_once(']').ok_or("IPv6 地址需要完整方括号。")?;
-        host.parse::<std::net::Ipv6Addr>()
-            .map_err(|_| "IPv6 地址无效。")?;
-        let port = if suffix.is_empty() {
-            None
-        } else {
-            Some(suffix.strip_prefix(':').ok_or("端口格式无效。")?)
-        };
-        (host, port)
-    } else {
-        let (host, port) = rest
-            .split_once(':')
-            .map_or((rest, None), |(h, p)| (h, Some(p)));
-        if host.is_empty()
-            || !host
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.'))
-            || host
-                .trim_end_matches('.')
-                .split('.')
-                .any(|part| part.is_empty() || part.starts_with('-') || part.ends_with('-'))
-        {
-            return Err("服务地址的主机名无效。".into());
-        }
-        (host, port)
-    };
-    if let Some(port) = port {
-        if port.is_empty()
-            || !port.bytes().all(|c| c.is_ascii_digit())
-            || port.parse::<u16>().ok().is_none_or(|p| p == 0)
-        {
-            return Err("端口必须是 1 到 65535 之间的数字。".into());
-        }
-    }
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
-    let loopback = host == "localhost"
-        || host.ends_with(".localhost")
-        || host == "0.0.0.0"
-        || host.starts_with("127.")
-        || host.parse::<std::net::Ipv6Addr>().is_ok_and(|ip| {
-            ip.is_loopback()
-                || ip.is_unspecified()
-                || ip
-                    .to_ipv4_mapped()
-                    .is_some_and(|v4| v4.is_loopback() || v4.is_unspecified())
-        })
-        || (host.bytes().all(|c| c.is_ascii_digit())
-            && host
-                .parse::<u32>()
-                .is_ok_and(|ip| std::net::Ipv4Addr::from(ip).is_loopback() || ip == 0));
-    if phone && loopback {
-        return Err(
-            "手机上的 localhost / 127.0.0.1 指向手机本机，请填写电脑可达的局域网或远程地址。"
-                .into(),
-        );
-    }
-    Ok(format!("{scheme}://{rest}"))
-}
 
 fn connection_address(raw: &str) -> Result<String, String> {
     let raw = raw.trim();
@@ -201,6 +126,7 @@ pub fn DevicesPage(
     onlogin: EventHandler<MouseEvent>,
     mobile_client: bool,
 ) -> Element {
+    let mut connection = use_context::<ConnectionStore>();
     let mut qr_open = use_signal(|| false);
     let mut remote_open = use_signal(|| false);
     let mut phone_address = use_signal(String::new);
@@ -216,7 +142,11 @@ pub fn DevicesPage(
         .trim()
         .trim_end_matches('/')
         .to_owned();
-    let current_address = base_url.read().clone();
+    let current_address = connection.address.read().clone();
+    let phase = connection.phase.read().clone();
+    let connection_status = phase.label().to_owned();
+    let busy = phase.busy();
+    let online = matches!(phase, Phase::Online);
     let local_node = normalize_address(&current_address, false).is_ok()
         && normalize_address(&current_address, true).is_err();
     use_effect(use_reactive((&mobile_client,), move |(_mobile,)| {
@@ -271,44 +201,97 @@ pub fn DevicesPage(
     rsx! {
         style { {include_str!("devices.css")} }
         div { class: "devices-page",
-            div { class: "page-heading",
-                div {
-                    h1 { if mobile_client { "连接我的电脑" } else { "执行节点" } }
-                    p { if mobile_client { "扫描电脑上的地址二维码，连接项目与会话。" } else { "默认使用本机执行节点，也可以连接其他节点。" } }
+            if mobile_client {
+                div { class: "page-heading",
+                    div { h1 { "连接我的电脑" } p { "扫描电脑上的地址二维码，连接项目与会话。" } }
                 }
-                if !mobile_client { button { class: "button", onclick: move |_| qr_open.set(true), Icon { name: "phone".to_owned() } "手机连接这台电脑" } }
             }
             if !mobile_client {
-                section { class: "device-status-panel desktop-node-panel",
-                    div { class: "server-identity",
-                        span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
-                        div { h2 { if local_node { "本机执行节点" } else { "当前执行节点" } } code { "{current_address}" } }
+                div { class: "overline", "YOUR COMPUTER. YOUR AGENT. EVERYWHERE." }
+                div { class: "page-heading connection-page-heading",
+                    div {
+                        h1 { "电脑运行，手机接续" }
+                        p { "PC 提供 Agent 服务，手机作为客户端查看、发送和确认。" }
                     }
-                    p { class: "meta", role: "status", "{status}" }
-                    div { class: "connection-server-actions",
-                        button { class: "button primary", onclick: move |event| {
-                            if !local_node { base_url.set("http://127.0.0.1:3030/".into()); }
-                            remote_open.set(false);
-                            onconnect.call(event);
-                        }, if local_node { "连接本机节点" } else { "切回本机节点" } }
-                        button { class: "button", onclick: move |_| remote_open.set(!remote_open()), "连接其他节点" }
-                    }
-                    if *remote_open.read() {
-                        div { class: "remote-node-form",
-                            div { class: "form-field",
-                                label { r#for: "node-url", "节点地址" }
-                                input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:3030/", oninput: move |event| base_url.set(event.value()) }
+                    button { class: "button primary", onclick: move |_| qr_open.set(true), Icon { name: "phone".to_owned() } "手机连接这台电脑" }
+                }
+                div { class: "connection-layout",
+                    section { class: "server-overview",
+                        div { class: "server-identity",
+                            span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
+                            div { h2 { if local_node { "这台电脑" } else { "当前执行节点" } } p { if local_node { "本机执行节点 · rpi-http" } else { "远程执行节点 · rpi-http" } } }
+                            span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "已连接" } else if busy { "连接中" } else { "未连接" } }
+                        }
+                        div { class: "connection-topology",
+                            span { Icon { name: "monitor".to_owned() } "PC 服务端" small { "模型 / 工具 / 项目文件" } }
+                            i { "HTTP + SSE" }
+                            span { Icon { name: "phone".to_owned() } "手机客户端" small { "对话 / 变更 / 回答确认" } }
+                        }
+                        div { class: "node-address", small { "当前执行节点地址" } code { "{current_address}" } }
+                        div { class: "server-details",
+                            div { span { "服务状态" } strong { role: "status", "{connection_status}" } }
+                            div { span { "连接方式" } strong { if local_node { "本机" } else { "远程节点" } } }
+                            div { span { "模型凭据" } strong { "保留在节点" } }
+                        }
+                        div { class: "connection-server-actions",
+                            button { class: "button", disabled: busy, onclick: move |event| {
+                                if local_node { base_url.set(connection.address.read().clone()); }
+                                else { base_url.set("http://127.0.0.1:3030/".into()); }
+                                remote_open.set(false);
+                                error.set(String::new());
+                                onconnect.call(event);
+                            }, if local_node { "连接本机节点" } else { "切回本机节点" } }
+                            button { class: "button", onclick: move |_| remote_open.set(!remote_open()), "连接其他节点" }
+                        }
+                        if *remote_open.read() {
+                            div { class: "remote-node-form",
+                                div { class: "form-field",
+                                    label { r#for: "node-url", "节点地址" }
+                                    input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:3030/", oninput: move |event| base_url.set(event.value()) }
+                                }
+                                button { class: "button primary", onclick: move |event| {
+                                    let candidate = normalize_address(&base_url.read(), false);
+                                    match candidate {
+                                        Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(event); }
+                                        Err(message) => error.set(message),
+                                    }
+                                }, "连接节点" }
                             }
-                            button { class: "button primary", onclick: move |event| onconnect.call(event), "连接节点" }
+                        }
+                        p { class: "connection-form-error", role: "alert", "{error}" }
+                        if let Some(auth) = auth_state.read().as_ref() {
+                            if auth.required && !auth.authenticated {
+                                div { class: "form-field", label { r#for: "device-node-password", "节点密码" } input { id: "device-node-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) } }
+                                button { class: "button primary", disabled: busy || password.read().is_empty(), onclick: move |event| onlogin.call(event), if busy { "正在登录…" } else { "登录" } }
+                            } else if auth.authenticated && online { p { class: "meta", "节点已认证。" } }
+                        }
+                        if let Some(caps) = capabilities.read().as_ref() { p { class: "connection-help", "协议 {caps.protocol} · {caps.supported_commands.len()} 个命令 · {caps.supported_actions.len()} 个动作" } }
+                        p { class: "connection-help", "同一局域网使用电脑可达地址；远程连接使用已配置的 HTTPS 或专用网络入口。" }
+                    }
+                    aside { class: "connection-steps",
+                        h3 { "连接只需三步" }
+                        div { b { "1" } span { "电脑显示二维码" small { "地址二维码，不包含密码" } } }
+                        div { b { "2" } span { "手机扫码并核对电脑" small { "识别后确认节点地址" } } }
+                        div { b { "3" } span { "登录并加载项目" small { "需要密码时在手机登录" } } }
+                    }
+                }
+                section { class: "node-history", aria_label: "最近连接的节点",
+                    div { class: "connection-clients-heading",
+                        h2 { "最近连接" }
+                        if !connection.history.read().recent.is_empty() {
+                            button { class: "button", onclick: move |_| connection.history.set(NodeHistory::default()), "清除连接记录" }
                         }
                     }
-                    if let Some(auth) = auth_state.read().as_ref() {
-                        if auth.required && !auth.authenticated {
-                            div { class: "form-field", label { r#for: "device-node-password", "节点密码" } input { id: "device-node-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) } }
-                            button { class: "button primary", onclick: move |event| onlogin.call(event), "登录" }
-                        } else if auth.authenticated { p { class: "meta", "节点已认证。" } }
+                    p { class: "connection-help", "只保存成功连接的地址；重开应用会尝试连接最近节点，密码不会保存。清除记录不影响当前连接。" }
+                    if connection.history.read().recent.is_empty() { div { class: "connection-empty", "成功连接节点后，地址会显示在这里。" } }
+                    for address in connection.history.read().recent.clone() {
+                        div { class: "node-history-item",
+                            code { "{address}" }
+                            button { class: "button", aria_label: format!("连接 {address}"), onclick: move |event| {
+                                base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(event);
+                            }, "连接" }
+                        }
                     }
-                    if let Some(caps) = capabilities.read().as_ref() { p { class: "meta", "协议 {caps.protocol} · {caps.supported_commands.len()} 个命令 · {caps.supported_actions.len()} 个动作" } }
                 }
             } else {
                 section { class: "mobile-connect-form",
@@ -355,6 +338,7 @@ pub fn DevicesPage(
                                 let script = format!(r"{QR_DECODER};{QR_FRAME_DECODER}
                                     {CAMERA_CLEANUP}
                                     const file=document.getElementById('device-qr-image')?.files?.[0];
+                                    document.getElementById('device-qr-image').value='';
                                     let bitmap;
                                     try {{
                                         if(!file) {{ dioxus.send(''); }}
@@ -386,19 +370,31 @@ pub fn DevicesPage(
                         div { class: "scanned-computer",
                             strong { "已识别电脑" }
                             code { "{phone_address}" }
-                            button { class: "button primary", onclick: connect_address, "连接这台电脑" }
+                            button { class: "button primary", disabled: busy, onclick: connect_address, "连接这台电脑" }
                         }
                     }
-                    p { class: "meta", role: "status", "{status}" }
+                    if normalize_address(&current_address, true).is_ok() && !matches!(phase, Phase::Idle) {
+                        div { class: "phone-current-node",
+                            strong { "我的电脑" } code { "{current_address}" }
+                            p { class: "meta", role: "status", "{connection_status}" }
+                            if !matches!(phase, Phase::PasswordRequired | Phase::Authenticating) {
+                                button { class: "button", disabled: busy, onclick: move |event| {
+                                    base_url.set(connection.address.read().clone()); onconnect.call(event);
+                                }, "重新连接" }
+                            }
+                        }
+                    } else { p { class: "meta", role: "status", "{connection_status}" } }
+
                     if let Some(auth) = auth_state.read().as_ref() {
                         if auth.required && !auth.authenticated {
                             div { class: "form-field", label { r#for: "phone-node-password", "电脑节点密码" } input { id: "phone-node-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) } }
-                            button { class: "button primary", onclick: move |event| onlogin.call(event), "登录电脑" }
-                        } else if auth.authenticated { p { class: "meta", "电脑已连接并认证。" } }
+                            button { class: "button primary", disabled: busy || password.read().is_empty(), onclick: move |event| onlogin.call(event), if busy { "正在登录…" } else { "登录电脑" } }
+                        } else if auth.authenticated && online { p { class: "meta", "电脑已连接并认证。" } }
                     }
                     p { class: "connection-form-error", role: "alert", "{error}" }
                 }
             }
+            if !connection.warning.read().is_empty() { p { class: "connection-form-error", role: "status", "{connection.warning}" } }
             if qr_open.read().to_owned() {
                 crate::components::Modal { id: "device-address-qr", title: "手机连接这台电脑", class: "device-address-dialog", onclose: move |()| qr_open.set(false),
                     div { class: "modal-body",

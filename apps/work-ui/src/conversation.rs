@@ -45,6 +45,32 @@ fn public_text(value: &Value) -> String {
 }
 
 pub fn render_history(message: &Value) -> Element {
+    render_history_in_context(message, &[], &[])
+}
+
+pub fn message_has_tool_call(message: &Value, id: &str) -> bool {
+    message
+        .get("content")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                matches!(
+                    item.get("type").and_then(Value::as_str),
+                    Some("toolCall" | "tool_use" | "tool_call")
+                ) && item
+                    .get("id")
+                    .or_else(|| item.get("toolCallId"))
+                    .and_then(Value::as_str)
+                    == Some(id)
+            })
+        })
+}
+
+pub fn render_history_in_context(
+    message: &Value,
+    messages: &[Value],
+    blocks: &[MessageBlock],
+) -> Element {
     let role = message
         .get("role")
         .or_else(|| message.get("kind"))
@@ -62,23 +88,15 @@ pub fn render_history(message: &Value) -> Element {
         .or_else(|| text_field(message, &["text"]))
         .unwrap_or_default();
     if matches!(role, "tool" | "toolResult" | "tool_result") {
-        let name = text_field(message, &["toolName", "name"]).unwrap_or_else(|| "工具结果".into());
-        let output = if text.is_empty() {
-            message.get("result").map(public_result).unwrap_or_default()
-        } else {
-            text
-        };
-        let status = if message.get("isError").and_then(Value::as_bool) == Some(true) {
-            ToolStatus::Failed
-        } else {
-            ToolStatus::Completed
-        };
-        let args = message
-            .get("arguments")
-            .or_else(|| message.get("args"))
-            .map(pretty_value)
-            .unwrap_or_default();
-        return tool_view(&name, &args, &output, &status);
+        if message
+            .get("toolCallId")
+            .and_then(Value::as_str)
+            .is_some_and(|id| messages.iter().any(|item| message_has_tool_call(item, id)))
+        {
+            // The matching assistant call displays the result in its own card.
+            return rsx! {};
+        }
+        return render_tool_result(message, text);
     }
     let user = role == "user";
     let calls = message
@@ -122,12 +140,46 @@ pub fn render_history(message: &Value) -> Element {
                 else { {markdown_view(&text)} }
                 for (key, name, args) in calls {
                     div { key: "{key}",
-                        {tool_view_with_label(&name, &args, "", "结果尚未提供", false)}
+                        {
+                            let result = messages.iter().rev().find(|item| {
+                                matches!(item.get("role").or_else(|| item.get("kind")).and_then(Value::as_str), Some("tool" | "toolResult" | "tool_result"))
+                                    && item.get("toolCallId").and_then(Value::as_str) == Some(key.as_str())
+                            });
+                            if let Some(result) = result {
+                                let output = result.get("content").map(public_text).or_else(|| result.get("result").map(public_result)).unwrap_or_default();
+                                let status = if result.get("isError").and_then(Value::as_bool) == Some(true) { ToolStatus::Failed } else { ToolStatus::Completed };
+                                tool_view(&name, &args, &output, &status)
+                            } else if let Some(block) = blocks.iter().find(|block| block.id() == key) {
+                                render_message_block(block)
+                            } else {
+                                tool_view_with_label(&name, &args, "", "等待工具结果", false)
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+fn render_tool_result(message: &Value, text: String) -> Element {
+    let name = text_field(message, &["toolName", "name"]).unwrap_or_else(|| "工具结果".into());
+    let output = if text.is_empty() {
+        message.get("result").map(public_result).unwrap_or_default()
+    } else {
+        text
+    };
+    let status = if message.get("isError").and_then(Value::as_bool) == Some(true) {
+        ToolStatus::Failed
+    } else {
+        ToolStatus::Completed
+    };
+    let args = message
+        .get("arguments")
+        .or_else(|| message.get("args"))
+        .map(pretty_value)
+        .unwrap_or_default();
+    tool_view(&name, &args, &output, &status)
 }
 
 pub fn render_message_block(block: &MessageBlock) -> Element {

@@ -594,7 +594,10 @@ pub fn normalize_event(event_type: &str, data: &Value) -> Result<EventKind, Clie
     }
 
     match event_type {
-        "ready" | "operation_accepted" | "agent_start" => Ok(EventKind::Accepted),
+        // SSE ready confirms the subscription, not a newly accepted agent run.
+        // Treating it as Accepted makes an idle/reopened chat show Stop and
+        // sends the first user message to the queue instead of starting a run.
+        "operation_accepted" | "agent_start" => Ok(EventKind::Accepted),
         "agent_end" => Ok(EventKind::AgentEnd),
         "agent_settled" => Ok(EventKind::AgentSettled {
             outcome: settlement(string("outcome"), data),
@@ -678,7 +681,7 @@ pub fn normalize_event(event_type: &str, data: &Value) -> Result<EventKind, Clie
         "connection_reconnecting" => {
             Ok(EventKind::ConnectionChanged(ConnectionState::Reconnecting))
         }
-        "connection_online" => Ok(EventKind::ConnectionChanged(ConnectionState::Online)),
+        "ready" | "connection_online" => Ok(EventKind::ConnectionChanged(ConnectionState::Online)),
         "connection_offline" => Ok(EventKind::ConnectionChanged(ConnectionState::Offline)),
         _ => Ok(EventKind::Ignored),
     }
@@ -1512,15 +1515,15 @@ impl MessageIdentity {
             .or_else(|| message.get("id"))
             .and_then(Value::as_str)
             .map(str::to_owned);
-        if explicit.is_some() {
-            self.current = explicit;
-        } else if kind == "message_start" || self.current.is_none() {
-            self.counter += 1;
-            self.current = Some(format!(
-                "anonymous-{}-{}",
-                seq.unwrap_or_default(),
-                self.counter
-            ));
+        if kind == "message_start" || self.current.is_none() {
+            self.current = explicit.or_else(|| {
+                self.counter += 1;
+                Some(format!(
+                    "anonymous-{}-{}",
+                    seq.unwrap_or_default(),
+                    self.counter
+                ))
+            });
         }
         if let Some(id) = &self.current {
             message.insert("entryId".into(), json!(id));
@@ -1614,71 +1617,37 @@ impl SessionConnection {
         }
         let mut normalized = wire.clone();
         normalized.data = self.identity.annotate(&wire.data, wire.seq);
-        self.merge_live_message(&normalized.data, wire.seq);
+        merge_live_message(&mut self.messages, &normalized.data, wire.seq);
         let event = normalized.into_core_event()?;
         let applied = self.projection.apply(event);
         if matches!(applied, ApplyResult::RebuiltForResync) {
             self.reconnecting = true;
         }
-        self.update_dialogs(&wire);
-        Ok(Some(SessionEvent { wire, applied }))
-    }
-
-    fn merge_live_message(&mut self, data: &Value, seq: Option<u64>) {
-        let Some(message) = data.get("message").and_then(Value::as_object) else {
-            return;
-        };
-        let role = message
-            .get("role")
-            .or_else(|| message.get("kind"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if !matches!(role, "user" | "assistant" | "tool" | "toolResult") {
-            return;
-        }
-        // During text streaming the assistant message_start/update often has no
-        // body; projection owns that partial text until a complete snapshot
-        // arrives. Keeping an empty history row would make the UI's stable-ID
-        // deduplication hide the live projection.
-        if role == "assistant"
-            && message
-                .get("content")
-                .map(content_text)
-                .unwrap_or_default()
-                .is_empty()
-        {
-            return;
-        }
-        let id = message
-            .get("entryId")
-            .or_else(|| message.get("messageId"))
-            .or_else(|| message.get("id"))
-            .and_then(Value::as_str)
-            .map_or_else(
-                || format!("live-{role}-{}", seq.unwrap_or_default()),
-                str::to_owned,
-            );
-        let mut incoming = Value::Object(message.clone());
-        if let Some(object) = incoming.as_object_mut() {
-            object.insert("entryId".into(), json!(id));
-        }
-        if let Some(existing) = self.messages.iter_mut().find(|item| {
-            item.get("entryId")
-                .or_else(|| item.get("messageId"))
-                .or_else(|| item.get("id"))
-                .and_then(Value::as_str)
-                == Some(id.as_str())
-        }) {
-            if let (Some(existing), Some(incoming)) =
-                (existing.as_object_mut(), incoming.as_object())
+        if matches!(wire.event_type.as_str(), "agent_start" | "agent_settled") {
+            // Native RPC does not emit the user's persisted message as a live
+            // message event. Read it at run start, then reconcile final entry IDs
+            // at settlement without resubscribing or advancing the SSE cursor.
+            let snapshot = self.client.snapshot(&self.session_id);
+            let timeout = reconnect_sleep(Duration::from_secs(5));
+            futures_util::pin_mut!(snapshot, timeout);
+            if let futures_util::future::Either::Left((Ok(snapshot), _)) =
+                futures_util::future::select(snapshot, timeout).await
             {
-                for (key, value) in incoming {
-                    existing.insert(key.clone(), value.clone());
+                if wire.event_type == "agent_start" {
+                    for message in snapshot
+                        .messages
+                        .iter()
+                        .filter(|message| message_role(message) == Some("user"))
+                    {
+                        merge_live_message(&mut self.messages, &json!({"message":message}), None);
+                    }
+                } else {
+                    reconcile_messages(&mut self.messages, &mut self.projection, snapshot.messages);
                 }
             }
-        } else {
-            self.messages.push(incoming);
         }
+        self.update_dialogs(&wire);
+        Ok(Some(SessionEvent { wire, applied }))
     }
 
     fn connection_event(
@@ -1739,6 +1708,136 @@ impl SessionConnection {
             }
             _ => {}
         }
+    }
+}
+
+fn message_role(message: &Value) -> Option<&str> {
+    message
+        .get("role")
+        .or_else(|| message.get("kind"))
+        .and_then(Value::as_str)
+}
+
+fn entry_id(message: &Value) -> Option<&str> {
+    message
+        .get("entryId")
+        .or_else(|| message.get("messageId"))
+        .or_else(|| message.get("id"))
+        .and_then(Value::as_str)
+}
+
+fn reconcile_messages(
+    messages: &mut Vec<Value>,
+    projection: &mut RunProjection,
+    mut canonical: Vec<Value>,
+) {
+    for live in messages.iter() {
+        let matched = canonical.iter().find(|item| {
+            (entry_id(live).is_some() && entry_id(item) == entry_id(live))
+                || (message_role(live) == message_role(item)
+                    && ((live.get("timestamp").and_then(Value::as_u64).is_some()
+                        && item.get("timestamp") == live.get("timestamp"))
+                        || (live.get("toolCallId").and_then(Value::as_str).is_some()
+                            && item.get("toolCallId") == live.get("toolCallId"))))
+        });
+        if let Some(matched) = matched {
+            if let (Some(old), Some(new)) = (entry_id(live), entry_id(matched)) {
+                for block in &mut projection.blocks {
+                    let id = match block {
+                        work_core::MessageBlock::Text { id, .. }
+                        | work_core::MessageBlock::ToolCall { id, .. }
+                        | work_core::MessageBlock::PublicSummary { id, .. } => id,
+                    };
+                    if id == old {
+                        new.clone_into(id);
+                    } else if let Some(suffix) = id.strip_prefix(&format!("{old}-text-")) {
+                        *id = format!("{new}-text-{suffix}");
+                    }
+                }
+            }
+        } else {
+            // Older nodes may omit a just-finished live message from snapshots.
+            canonical.push(live.clone());
+        }
+    }
+    *messages = canonical;
+}
+
+fn merge_live_message(messages: &mut Vec<Value>, data: &Value, seq: Option<u64>) {
+    let Some(message) = data.get("message").and_then(Value::as_object) else {
+        return;
+    };
+    let role = message
+        .get("role")
+        .or_else(|| message.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(
+        role,
+        "user" | "assistant" | "tool" | "toolResult" | "tool_result"
+    ) {
+        return;
+    }
+    // During text streaming the assistant message_start/update often has no
+    // body; projection owns that partial text until a complete snapshot
+    // arrives. Keeping an empty history row would make the UI's stable-ID
+    // deduplication hide the live projection.
+    if role == "assistant"
+        && message
+            .get("content")
+            .map(content_text)
+            .unwrap_or_default()
+            .is_empty()
+    {
+        return;
+    }
+    let id = message
+        .get("entryId")
+        .or_else(|| message.get("messageId"))
+        .or_else(|| message.get("id"))
+        .and_then(Value::as_str)
+        .map_or_else(
+            || {
+                if let Some(call) = message.get("toolCallId").and_then(Value::as_str) {
+                    format!("tool-result-{call}")
+                } else if let Some(timestamp) = message.get("timestamp").and_then(Value::as_u64) {
+                    format!("live-{role}-{timestamp}")
+                } else {
+                    format!("live-{role}-{}", seq.unwrap_or_default())
+                }
+            },
+            str::to_owned,
+        );
+    let mut incoming = Value::Object(message.clone());
+    if let Some(object) = incoming.as_object_mut() {
+        object.insert("entryId".into(), json!(id));
+    }
+    if let Some(existing) = messages.iter_mut().find(|item| {
+        item.get("entryId")
+            .or_else(|| item.get("messageId"))
+            .or_else(|| item.get("id"))
+            .and_then(Value::as_str)
+            == Some(id.as_str())
+            || (item.get("toolCallId").and_then(Value::as_str).is_some()
+                && item.get("toolCallId") == message.get("toolCallId")
+                && matches!(role, "tool" | "toolResult" | "tool_result"))
+            || (item.get("timestamp").and_then(Value::as_u64).is_some()
+                && item.get("timestamp") == message.get("timestamp")
+                && item
+                    .get("role")
+                    .or_else(|| item.get("kind"))
+                    .and_then(Value::as_str)
+                    == Some(role))
+    }) {
+        if let (Some(existing), Some(incoming)) = (existing.as_object_mut(), incoming.as_object()) {
+            for (key, value) in incoming {
+                if key != "entryId" {
+                    existing.insert(key.clone(), value.clone());
+                }
+            }
+        }
+    } else {
+        messages.push(incoming);
     }
 }
 
@@ -1821,6 +1920,30 @@ pub fn projection_from_snapshot(snapshot: &Snapshot) -> Result<RunProjection, Cl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subscription_ready_does_not_start_or_reopen_a_run() {
+        for phase in [
+            work_core::RunPhase::Ready,
+            work_core::RunPhase::Text,
+            work_core::RunPhase::Settled(SettlementOutcome::Completed),
+        ] {
+            let mut projection = RunProjection::new("actual-session");
+            projection.phase = phase.clone();
+            projection.connection = ConnectionState::Reconnecting;
+            projection.apply(Event {
+                id: "subscription-ready".into(),
+                seq: None,
+                kind: normalize_event("ready", &json!({"sessionId":"actual-session"})).unwrap(),
+            });
+            assert_eq!(projection.phase, phase);
+            assert_eq!(projection.connection, ConnectionState::Online);
+        }
+        assert!(matches!(
+            normalize_event("agent_start", &json!({})).unwrap(),
+            EventKind::Accepted
+        ));
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn run_native<F: std::future::Future>(future: F) -> F::Output {
@@ -2007,6 +2130,53 @@ mod tests {
             Some(4),
         );
         assert_ne!(start["message"]["entryId"], next["message"]["entryId"]);
+    }
+
+    #[test]
+    fn persisted_ids_and_tool_message_boundaries_do_not_duplicate_live_rows() {
+        let mut identity = MessageIdentity::default();
+        let mut messages = Vec::new();
+        let start = identity.annotate(&json!({"type":"message_start","message":{"role":"assistant","timestamp":42,"content":"first"}}), Some(1));
+        let end = identity.annotate(&json!({"type":"message_end","message":{"role":"assistant","timestamp":42,"entryId":"persisted-id","content":"complete"}}), Some(2));
+        assert_eq!(start["message"]["entryId"], end["message"]["entryId"]);
+        merge_live_message(&mut messages, &start, Some(1));
+        merge_live_message(&mut messages, &end, Some(2));
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["content"], "complete");
+        for (seq, kind) in [(3, "message_start"), (4, "message_end")] {
+            merge_live_message(
+                &mut messages,
+                &json!({"type":kind,"message":{"role":"toolResult","toolCallId":"call-1","content":"result"}}),
+                Some(seq),
+            );
+        }
+        assert_eq!(messages.len(), 2);
+        // Repeated content in a genuinely different message remains distinct.
+        let next = identity.annotate(&json!({"type":"message_start","message":{"role":"assistant","timestamp":43,"content":"complete"}}), Some(5));
+        merge_live_message(&mut messages, &next, Some(5));
+        assert_eq!(messages.len(), 3);
+    }
+
+    #[test]
+    fn settlement_reconciliation_adds_native_user_messages_and_rekeys_live_blocks() {
+        let mut messages = vec![
+            json!({"role":"assistant","entryId":"anonymous","timestamp":42,"content":"answer"}),
+        ];
+        let mut projection = RunProjection::new("session");
+        projection.blocks.push(work_core::MessageBlock::Text {
+            id: "anonymous-text-0".into(),
+            text: "answer".into(),
+        });
+        let canonical = vec![
+            json!({"role":"user","entryId":"user-id","timestamp":41,"content":"question"}),
+            json!({"role":"assistant","entryId":"persisted","timestamp":42,"content":"answer"}),
+        ];
+        reconcile_messages(&mut messages, &mut projection, canonical.clone());
+        assert_eq!(messages, canonical);
+        assert_eq!(projection.blocks[0].id(), "persisted-text-0");
+        assert_eq!(projection.cursor, None);
+        reconcile_messages(&mut messages, &mut projection, Vec::new());
+        assert_eq!(messages, canonical);
     }
 
     #[test]

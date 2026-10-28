@@ -64,7 +64,7 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            theme: Appearance::Paper,
+            theme: Appearance::Reddit,
             mode: "light",
             density: "standard",
         }
@@ -154,9 +154,9 @@ fn restored(value: &Value) -> (AppearanceSettings, ThemeLibrary) {
                 value
                     .get("theme")
                     .and_then(Value::as_str)
-                    .unwrap_or("paper"),
+                    .unwrap_or("reddit"),
             )
-            .unwrap_or(Appearance::Paper),
+            .unwrap_or(Appearance::Reddit),
         mode: mode(value.get("mode").and_then(Value::as_str)).unwrap_or("light"),
         density: density(value.get("density").and_then(Value::as_str)).unwrap_or("standard"),
     };
