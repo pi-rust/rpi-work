@@ -164,6 +164,8 @@ pub fn DevicesPage(
     let mut connection = use_context::<ConnectionStore>();
     let mut qr_open = use_signal(|| false);
     let mut remote_open = use_signal(|| false);
+    let mut manual_open = use_signal(|| false);
+    let mut manual_address = use_signal(String::new);
     let mut phone_address = use_signal(String::new);
     let mut error = use_signal(String::new);
     let mut scanner_status = use_signal(String::new);
@@ -186,6 +188,8 @@ pub fn DevicesPage(
         && normalize_address(&current_address, true).is_err();
     use_effect(use_reactive((&mobile_client,), move |(_mobile,)| {
         qr_open.set(false);
+        manual_open.set(false);
+        manual_address.set(String::new());
         scanning.set(false);
         camera_epoch += 1;
         phone_address.set(String::new());
@@ -238,6 +242,8 @@ pub fn DevicesPage(
     });
 
     let mut read_album = move |native_picker: bool| {
+        manual_open.set(false);
+        error.set(String::new());
         phone_address.set(String::new());
         scanning.set(false);
         camera_epoch += 1;
@@ -270,7 +276,7 @@ pub fn DevicesPage(
         div { class: "devices-page",
             if mobile_client {
                 div { class: "page-heading",
-                    div { h1 { "连接我的电脑" } p { "扫描电脑上的地址二维码，连接项目与会话。" } }
+                    div { h1 { "连接我的电脑" } p { "扫码连接电脑，也可以手动输入节点地址。" } }
                 }
             }
             if !mobile_client {
@@ -369,6 +375,8 @@ pub fn DevicesPage(
                         }
                         div { class: "connection-server-actions",
                             button { class: "button primary", disabled: *scanning.read(), onclick: move |_| {
+                                manual_open.set(false);
+                                error.set(String::new());
                                 phone_address.set(String::new());
                                 scanning.set(true);
                                 camera_epoch += 1;
@@ -406,6 +414,57 @@ pub fn DevicesPage(
                             }
                         }
 
+                    button {
+                        class: "mobile-manual-toggle",
+                        r#type: "button",
+                        aria_expanded: *manual_open.read(),
+                        aria_controls: "phone-manual-connection",
+                        onclick: move |_| {
+                            let open = !*manual_open.read();
+                            manual_open.set(open);
+                            error.set(String::new());
+                            if open {
+                                scanning.set(false);
+                                camera_epoch += 1;
+                                phone_address.set(String::new());
+                                scanner_status.set(String::new());
+                                let _ = document::eval(&format!("{CAMERA_CLEANUP}window.__rpiWorkQrAlbum?.cancel();"));
+                            }
+                        },
+                        Icon { name: if *manual_open.read() { "chevron" } else { "chevron-right" } }
+                        "手动输入地址"
+                    }
+                    if *manual_open.read() {
+                        form {
+                            id: "phone-manual-connection", class: "mobile-manual-form", novalidate: true,
+                            onsubmit: move |event: FormEvent| event.prevent_default(),
+                            div { class: "form-field",
+                                label { r#for: "phone-node-address", "电脑节点地址" }
+                                input {
+                                    id: "phone-node-address", r#type: "url", inputmode: "url",
+                                    autocomplete: "url", autocapitalize: "none", spellcheck: false,
+                                    placeholder: "https://work.example.com:3030",
+                                    aria_describedby: "phone-address-help",
+                                    value: "{manual_address}",
+                                    oninput: move |event| { manual_address.set(event.value()); error.set(String::new()); }
+                                }
+                            }
+                            p { id: "phone-address-help", class: "connection-help", "填写电脑的局域网 IP 或可访问的域名，包含 http:// 或 https://，需要时带端口。" }
+                            p { class: "connection-form-error", role: "alert", "{error}" }
+                            button {
+                                r#type: "submit", class: "button primary",
+                                disabled: busy || manual_address.read().trim().is_empty(),
+                                onclick: move |event| {
+                                    match normalize_address(&manual_address.read(), true) {
+                                        Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(event); }
+                                        Err(message) => error.set(message),
+                                    }
+                                },
+                                if busy { "正在连接…" } else { "连接电脑" }
+                            }
+                        }
+                    }
+
                     if !phone_address.read().is_empty() {
                         div { class: "scanned-computer",
                             strong { "已识别电脑" }
@@ -431,7 +490,7 @@ pub fn DevicesPage(
                             button { class: "button primary", disabled: busy || password.read().is_empty(), onclick: move |event| onlogin.call(event), if busy { "正在登录…" } else { "登录电脑" } }
                         } else if auth.authenticated && online { p { class: "meta", "电脑已连接并认证。" } }
                     }
-                    p { class: "connection-form-error", role: "alert", "{error}" }
+                    if !*manual_open.read() { p { class: "connection-form-error", role: "alert", "{error}" } }
                 }
             }
             if !connection.warning.read().is_empty() { p { class: "connection-form-error", role: "status", "{connection.warning}" } }

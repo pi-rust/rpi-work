@@ -131,7 +131,8 @@ const { startFixture } = require('./ui-fixture.cjs');
     await page.locator('.devices-page').getByRole('heading', { name: '连接我的电脑', exact: true }).waitFor();
     assert.equal(await page.locator('#node-url,.node-history').count(), 0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    pass('narrow-screen connection UI retains scan-only entry without address or history forms');
+    assert.equal(await page.getByRole('button', { name: '手动输入地址', exact: true }).getAttribute('aria-expanded'), 'false');
+    pass('narrow-screen connection UI retains scanning with a collapsed manual address entry');
 
     const blocked = await context.newPage();
     blocked.on('pageerror', error => errors.push(error.message));

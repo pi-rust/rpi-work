@@ -8,6 +8,7 @@ async function providers(page,connection=false){await nav(page,'打开设置');a
 async function devices(page,mode='pc'){
  await nav(page,'打开设置');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:page.viewportSize().width<701?'连接我的电脑':'执行节点',exact:true}).click();
  if(mode==='qr'){await page.getByRole('button',{name:'手机连接这台电脑',exact:true}).click();const dialog=page.getByRole('dialog',{name:'手机连接这台电脑',exact:true});await dialog.getByLabel('手机可访问的节点地址',{exact:true}).fill('https://192.168.50.8:3030');await dialog.locator('#device-address-qr-code svg').waitFor()}
+ if(mode==='advanced'){await page.getByRole('button',{name:'手动输入地址',exact:true}).click();await page.getByLabel('电脑节点地址',{exact:true}).fill('https://work.example.com:3030');await page.locator('#phone-manual-connection').scrollIntoViewIfNeeded()}
 }
 
 async function metaActual(page,editor=false){
@@ -47,7 +48,7 @@ async function measure(page,actual){
  const selectors={header:actual?'.app-header':'.topbar',page:actual?'.page-view:visible, .meta-page':'.page-view:visible',heading:actual?'.page-view h1, .meta-page h1':'.page-view h1',modal:'dialog[open]',modalHeader:'dialog[open] .modal-header',modalBody:'dialog[open] .modal-body',cards:'.settings-cards',btw:actual?'.composer-extras.btw-panel':'.btw-panel',codeEditor:actual?'.meta-code':'.meta-editor-content>textarea'};
  const result={headerText:await page.locator(actual?'.app-header h1':'.topbar h1').allTextContents()};for(const [name,selector]of Object.entries(selectors)){const el=page.locator(selector).first();if(!await el.count()||!await el.isVisible())continue;result[name]=await el.evaluate(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return{x:r.x,y:r.y,w:r.width,h:r.height,font:s.fontSize,line:s.lineHeight,padding:s.padding,radius:s.borderRadius}})}result.layout=await page.evaluate(()=>{
   const visible=e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
-  const controls=[...document.querySelectorAll('.resource-card,.provider-group,.settings-card,.skill-picker-row,.session-resource-row,.modal-header,.composer-options,.section-tabs,.settings-navigation')].filter(visible);
+  const controls=[...document.querySelectorAll('.resource-card,.provider-group,.settings-card,.skill-picker-row,.session-resource-row,.modal-header,.composer-options,.section-tabs,.settings-navigation,.mobile-manual-form')].filter(visible);
   return {viewportOverflow:document.documentElement.scrollWidth>innerWidth+1,checked:controls.length,overflow:controls.filter(e=>e.scrollWidth>e.clientWidth+2).map(e=>({class:e.className,width:e.clientWidth,content:e.scrollWidth,text:e.textContent.trim().slice(0,60)}))};
  });return result;
 }
@@ -58,7 +59,7 @@ async function measure(page,actual){
   for(const page of [actual,reference])await page.addInitScript(()=>localStorage.setItem('rpi-work-appearance-v1',JSON.stringify({theme:'reddit',mode:'light',density:'standard'})));
   const viewports=process.env.REVIEW_ALL_VIEWPORTS?[[1440,1000],[1280,800],[768,1024],[390,844],[320,740]]:[[1440,1000],[390,844]];
   for(const [width,height] of viewports)for(const [name,openActual,openReference]of cases.filter(([name])=>!process.env.REVIEW_PAGE_FILTER||new RegExp(process.env.REVIEW_PAGE_FILTER).test(name))){
-   if(name==='devices-advanced'||(name==='devices-phone'&&width>700)||(name==='devices-qr'&&width<701)){results.push({name,width,notApplicable:true,reason:'Current connection flow separates native desktop serving from phone scanning and removes the old manual phone address form.'});continue;}
+   if((name==='devices-advanced'&&width>700)||(name==='devices-phone'&&width>700)||(name==='devices-qr'&&width<701)){results.push({name,width,notApplicable:true,reason:'The current device does not offer this entry: desktop shares its address QR; mobile scans or manually enters a computer address.'});continue;}
    try{
     await actual.setViewportSize({width:1440,height:1000});await actual.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');await connect(actual,node);await actual.setViewportSize({width,height});await actual.evaluate(()=>{document.documentElement.dataset.theme='reddit';document.documentElement.dataset.mode='light'});await reference.setViewportSize({width,height});await reference.goto(process.env.REVIEW_REFERENCE_URL||'http://127.0.0.1:4182/prototype/');await reference.evaluate(()=>{document.documentElement.dataset.theme='reddit';document.documentElement.dataset.mode='light'});await openActual(actual);await openReference(reference);
     await actual.screenshot({path:`artifacts/page-review-${name}-${width}-actual.png`,animations:'disabled'});await reference.screenshot({path:`artifacts/page-review-${name}-${width}-reference.png`,animations:'disabled'});const a=await measure(actual,true),r=await measure(reference,false);results.push({name,width,actual:a,reference:r});console.log('CAPTURED',name,width);
