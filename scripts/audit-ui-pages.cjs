@@ -2,14 +2,14 @@
 const fs=require('node:fs'),path=require('node:path');
 const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),path.resolve('../rpi-package/packages/rpi-web/frontend')]}));
 const {startFixture}=require('./ui-fixture.cjs');
-async function connect(page,node){await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(node.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.getByRole('status').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();await page.locator('.project-row').filter({hasText:'rpi-work'}).click();await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).waitFor()}
+async function connect(page,node){await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();await page.getByRole('button',{name:'连接其他节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(node.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.getByRole('status').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();await page.locator('.project-row').filter({hasText:'rpi-work'}).click();await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).waitFor()}
 async function nav(page,name){if(page.viewportSize().width<701)await page.getByRole('button',{name:'打开项目导航',exact:true}).click();await page.locator('.sidebar').getByRole('button',{name,exact:true}).click()}
 async function providers(page,connection=false){await nav(page,'打开设置');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'Providers',exact:true}).click();await page.locator('.provider-list').getByRole('button',{name:'用于此会话',exact:true}).waitFor();if(connection)await page.locator('.provider-list').getByRole('button',{name:/^连接设置(?:：.+)?$/,exact:true}).first().click()}
 async function devices(page,mode='pc'){
- await nav(page,'打开设置');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
- if(mode==='qr'){await page.getByRole('button',{name:'设置服务地址',exact:true}).click();const dialog=page.getByRole('dialog',{name:'手机连接这台电脑',exact:true});await dialog.getByLabel('手机可访问的节点地址',{exact:true}).fill('https://192.168.50.8:3030');await dialog.locator('#device-address-qr-code svg').waitFor()}
- if(mode==='phone'||mode==='advanced'){await page.getByRole('button',{name:'手机 · 客户端',exact:true}).click();if(mode==='advanced')await page.getByRole('button',{name:/高级.*手工/}).click()}
+ await nav(page,'打开设置');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:page.viewportSize().width<701?'连接我的电脑':'执行节点',exact:true}).click();
+ if(mode==='qr'){await page.getByRole('button',{name:'手机连接这台电脑',exact:true}).click();const dialog=page.getByRole('dialog',{name:'手机连接这台电脑',exact:true});await dialog.getByLabel('手机可访问的节点地址',{exact:true}).fill('https://192.168.50.8:3030');await dialog.locator('#device-address-qr-code svg').waitFor()}
 }
+
 async function metaActual(page,editor=false){
  if(page.viewportSize().width<701)await page.getByRole('button',{name:'打开项目导航',exact:true}).click();await page.getByRole('button',{name:'添加项目',exact:true}).click();const dialog=page.getByRole('dialog',{name:'添加项目',exact:true});await dialog.locator('#project-picker-path').fill(`D:/Projects/visual-meta-${page.viewportSize().width}${editor?'-editor':''}`);await dialog.locator('#project-picker-name').fill('视觉审查元Agent');await dialog.getByRole('radio',{name:/元Agent/}).check();await dialog.getByRole('button',{name:'打开项目',exact:true}).click();await nav(page,'元Agent');await page.getByRole('button',{name:'+ 新建能力',exact:true}).click();await page.getByLabel('名称',{exact:true}).fill('视觉审查包');await page.getByLabel('资源 ID',{exact:true}).fill(`personal.visual-review-${page.viewportSize().width}${editor?'-editor':''}`);await page.getByRole('button',{name:'创建设计草稿',exact:true}).click();if(editor)await page.getByRole('button',{name:'编辑源码',exact:true}).click();
 }
@@ -23,7 +23,7 @@ const cases=[
  ['settings',p=>nav(p,'打开设置'),p=>p.evaluate(()=>navigate('settings'))],
  ['providers',p=>providers(p),p=>p.evaluate(()=>navigate('providers'))],
  ['provider-connection',p=>providers(p,true),p=>p.evaluate(()=>providerConfig('DeepSeek'))],
- ['devices',async p=>{await nav(p,'打开设置');await p.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click()},p=>p.evaluate(()=>navigate('devices'))],
+ ['devices',p=>devices(p),p=>p.evaluate(()=>navigate('devices'))],
  ['devices-phone',p=>devices(p,'phone'),p=>p.evaluate(()=>openMobileConnect('scan'))],
  ['devices-advanced',p=>devices(p,'advanced'),p=>p.evaluate(()=>openMobileConnect('advanced'))],
  ['devices-qr',p=>devices(p,'qr'),p=>p.evaluate(()=>openPairing())],
@@ -45,16 +45,22 @@ const cases=[
 ];
 async function measure(page,actual){
  const selectors={header:actual?'.app-header':'.topbar',page:actual?'.page-view:visible, .meta-page':'.page-view:visible',heading:actual?'.page-view h1, .meta-page h1':'.page-view h1',modal:'dialog[open]',modalHeader:'dialog[open] .modal-header',modalBody:'dialog[open] .modal-body',cards:'.settings-cards',btw:actual?'.composer-extras.btw-panel':'.btw-panel',codeEditor:actual?'.meta-code':'.meta-editor-content>textarea'};
- const result={headerText:await page.locator(actual?'.app-header h1':'.topbar h1').allTextContents()};for(const [name,selector]of Object.entries(selectors)){const el=page.locator(selector).first();if(!await el.count()||!await el.isVisible())continue;result[name]=await el.evaluate(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return{x:r.x,y:r.y,w:r.width,h:r.height,font:s.fontSize,line:s.lineHeight,padding:s.padding,radius:s.borderRadius}})}return result;
+ const result={headerText:await page.locator(actual?'.app-header h1':'.topbar h1').allTextContents()};for(const [name,selector]of Object.entries(selectors)){const el=page.locator(selector).first();if(!await el.count()||!await el.isVisible())continue;result[name]=await el.evaluate(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return{x:r.x,y:r.y,w:r.width,h:r.height,font:s.fontSize,line:s.lineHeight,padding:s.padding,radius:s.borderRadius}})}result.layout=await page.evaluate(()=>{
+  const visible=e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
+  const controls=[...document.querySelectorAll('.resource-card,.provider-group,.settings-card,.skill-picker-row,.session-resource-row,.modal-header,.composer-options,.section-tabs,.settings-navigation')].filter(visible);
+  return {viewportOverflow:document.documentElement.scrollWidth>innerWidth+1,checked:controls.length,overflow:controls.filter(e=>e.scrollWidth>e.clientWidth+2).map(e=>({class:e.className,width:e.clientWidth,content:e.scrollWidth,text:e.textContent.trim().slice(0,60)}))};
+ });return result;
 }
 (async()=>{
  const node=await startFixture(),browser=await chromium.launch({headless:true,executablePath:'C:/Users/bigfish/scoop/apps/googlechrome/current/chrome.exe'}),actual=await browser.newPage(),reference=await browser.newPage();actual.setDefaultTimeout(6000);reference.setDefaultTimeout(6000);const results=[];
  node.setQueue([{entryId:'visual-follow-up',queue:'followUp',status:'queued',text:'完成后检查手机端设置抽屉的对比度。'},{entryId:'visual-steer',queue:'steer',status:'queued',text:'先保留现有快捷键，不要调整键位。'}]);
  try{
+  for(const page of [actual,reference])await page.addInitScript(()=>localStorage.setItem('rpi-work-appearance-v1',JSON.stringify({theme:'reddit',mode:'light',density:'standard'})));
   const viewports=process.env.REVIEW_ALL_VIEWPORTS?[[1440,1000],[1280,800],[768,1024],[390,844],[320,740]]:[[1440,1000],[390,844]];
   for(const [width,height] of viewports)for(const [name,openActual,openReference]of cases.filter(([name])=>!process.env.REVIEW_PAGE_FILTER||new RegExp(process.env.REVIEW_PAGE_FILTER).test(name))){
+   if(name==='devices-advanced'||(name==='devices-phone'&&width>700)||(name==='devices-qr'&&width<701)){results.push({name,width,notApplicable:true,reason:'Current connection flow separates native desktop serving from phone scanning and removes the old manual phone address form.'});continue;}
    try{
-    await actual.setViewportSize({width:1440,height:1000});await actual.goto('http://127.0.0.1:4173/target/parity-web/');await connect(actual,node);await actual.setViewportSize({width,height});await reference.setViewportSize({width,height});await reference.goto('http://127.0.0.1:4173/prototype/');await openActual(actual);await openReference(reference);
+    await actual.setViewportSize({width:1440,height:1000});await actual.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');await connect(actual,node);await actual.setViewportSize({width,height});await actual.evaluate(()=>{document.documentElement.dataset.theme='reddit';document.documentElement.dataset.mode='light'});await reference.setViewportSize({width,height});await reference.goto(process.env.REVIEW_REFERENCE_URL||'http://127.0.0.1:4182/prototype/');await reference.evaluate(()=>{document.documentElement.dataset.theme='reddit';document.documentElement.dataset.mode='light'});await openActual(actual);await openReference(reference);
     await actual.screenshot({path:`artifacts/page-review-${name}-${width}-actual.png`,animations:'disabled'});await reference.screenshot({path:`artifacts/page-review-${name}-${width}-reference.png`,animations:'disabled'});const a=await measure(actual,true),r=await measure(reference,false);results.push({name,width,actual:a,reference:r});console.log('CAPTURED',name,width);
    }catch(error){results.push({name,width,error:error.message});console.log('CAPTURE ERROR',name,width,error.message.split('\n')[0])}
   }

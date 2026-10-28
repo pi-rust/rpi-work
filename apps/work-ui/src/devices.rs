@@ -113,6 +113,41 @@ else{{try{{
     )
 }
 
+fn album_script(native_picker: bool) -> String {
+    let file_source = if native_picker {
+        r"const file=await new Promise(resolve=>{
+    window.__rpiWorkQrAlbum?.cancel();
+    const input=document.createElement('input');
+    input.type='file';input.accept='image/*';input.hidden=true;
+    let done=false;
+    const finish=file=>{if(done)return;done=true;input.remove();if(window.__rpiWorkQrAlbum?.input===input)window.__rpiWorkQrAlbum=null;resolve(file);};
+    input.onchange=()=>finish(input.files?.[0]||null);
+    input.oncancel=()=>finish(null);
+    window.__rpiWorkQrAlbum={input,cancel:()=>finish(null)};
+    // Outside the Dioxus root, so its desktop-only file-dialog interceptor does
+    // not consume this input. Wry opens Android's system photo picker instead.
+    document.body.appendChild(input);input.click();
+});"
+    } else {
+        "const file=document.getElementById('device-qr-image')?.files?.[0];document.getElementById('device-qr-image').value='';"
+    };
+    format!(
+        r"{QR_DECODER};{QR_FRAME_DECODER}
+                                    {CAMERA_CLEANUP}
+                                    {file_source}
+                                    let bitmap;
+                                    try {{
+                                        if(!file) {{ dioxus.send(''); }}
+                                        else {{
+                                            if(file.size>10*1024*1024)throw new Error('image too large');
+                                            bitmap=await createImageBitmap(file);
+                                            dioxus.send(decodeFrame(bitmap)||'ERR:图片中未找到二维码，请重新选择或重新扫码。');
+                                        }}
+                                    }} catch(_) {{ dioxus.send('ERR:无法识别图片，请选择清晰的地址二维码。'); }}
+                                    finally {{ bitmap?.close(); }}"
+    )
+}
+
 #[component]
 pub fn DevicesPage(
     shared_client: Signal<Option<WorkClient>>,
@@ -156,7 +191,9 @@ pub fn DevicesPage(
         phone_address.set(String::new());
         scanner_status.set(String::new());
         error.set(String::new());
-        let _ = document::eval(CAMERA_CLEANUP);
+        let _ = document::eval(&format!(
+            "{CAMERA_CLEANUP}window.__rpiWorkQrAlbum?.cancel();"
+        ));
     }));
     let connect_address = move |event: MouseEvent| {
         let candidate = phone_address.read().clone();
@@ -170,7 +207,9 @@ pub fn DevicesPage(
         }
     };
     use_drop(move || {
-        let _ = document::eval(CAMERA_CLEANUP);
+        let _ = document::eval(&format!(
+            "{CAMERA_CLEANUP}window.__rpiWorkQrAlbum?.cancel();"
+        ));
     });
     use_effect(move || {
         if !*qr_open.read() {
@@ -197,6 +236,34 @@ pub fn DevicesPage(
             }
         }
     });
+
+    let mut read_album = move |native_picker: bool| {
+        phone_address.set(String::new());
+        scanning.set(false);
+        camera_epoch += 1;
+        let epoch = *camera_epoch.read();
+        scanner_status.set("正在识别图片…".into());
+        let script = album_script(native_picker);
+        let mut evaluator = document::eval(&script);
+        spawn(async move {
+            let result = evaluator.recv::<String>().await;
+            if *camera_epoch.read() != epoch {
+                return;
+            }
+            match result {
+                Ok(value) if value.starts_with("ERR:") => scanner_status.set(value[4..].to_owned()),
+                Ok(value) if !value.is_empty() => match connection_address(&value) {
+                    Ok(address) => {
+                        phone_address.set(address);
+                        scanner_status.set("已读取图片地址，请核对后连接。".into());
+                    }
+                    Err(message) => scanner_status.set(message),
+                },
+                Ok(_) => scanner_status.set("未选择图片。".into()),
+                Err(_) => scanner_status.set("图片识别失败，请重新扫描或从图片识别。".into()),
+            }
+        });
+    };
 
     rsx! {
         style { {include_str!("devices.css")} }
@@ -329,41 +396,14 @@ pub fn DevicesPage(
                             }, "关闭相机" } }
                         }
                         div { class: "form-field",
+                            if cfg!(target_os = "android") {
+                                button { class: "button album-scan", onclick: move |_| read_album(true), "相册扫码" }
+                            } else {
                             label { r#for: "device-qr-image", class: "button album-scan", "相册扫码" }
                             input { id: "device-qr-image", hidden: true, r#type: "file", accept: "image/*", onchange: move |_| {
-                                phone_address.set(String::new());
-                                scanning.set(false); camera_epoch += 1;
-                                let epoch = *camera_epoch.read();
-                                scanner_status.set("正在识别图片…".into());
-                                let script = format!(r"{QR_DECODER};{QR_FRAME_DECODER}
-                                    {CAMERA_CLEANUP}
-                                    const file=document.getElementById('device-qr-image')?.files?.[0];
-                                    document.getElementById('device-qr-image').value='';
-                                    let bitmap;
-                                    try {{
-                                        if(!file) {{ dioxus.send(''); }}
-                                        else {{
-                                            if(file.size>10*1024*1024)throw new Error('image too large');
-                                            bitmap=await createImageBitmap(file);
-                                            dioxus.send(decodeFrame(bitmap)||'ERR:图片中未找到二维码，请重新选择或重新扫码。');
-                                        }}
-                                    }} catch(_) {{ dioxus.send('ERR:无法识别图片，请选择清晰的地址二维码。'); }}
-                                    finally {{ bitmap?.close(); }}");
-                                let mut evaluator = document::eval(&script);
-                                spawn(async move {
-                                    let result = evaluator.recv::<String>().await;
-                                    if *camera_epoch.read() != epoch { return; }
-                                    match result {
-                                        Ok(value) if value.starts_with("ERR:") => scanner_status.set(value[4..].to_owned()),
-                                        Ok(value) if !value.is_empty() => match connection_address(&value) {
-                                            Ok(address) => { phone_address.set(address);  scanner_status.set("已读取图片地址，请核对后连接。".into()); }
-                                            Err(message) => scanner_status.set(message),
-                                        },
-                                        Ok(_) => scanner_status.set("未选择图片。".into()),
-                                        Err(_) => scanner_status.set("图片识别失败，请重新扫描或从图片识别。".into()),
-                                    }
-                                });
+                                read_album(false);
                             } }
+                            }
                         }
 
                     if !phone_address.read().is_empty() {

@@ -1,5 +1,10 @@
 /* Base controls: all colors, type, spacing and shapes use the shared theme contract. */
 * { box-sizing: border-box; }
+h1, h2, h3, p { margin: 0; }
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+code, pre, kbd { font-family: var(--mono); }
+small { font-size: 11px; }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 body { background: var(--canvas); color: var(--text); font: 14px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
 button, input, textarea, select { font: inherit; color: inherit; }
@@ -102,7 +107,7 @@ h1, h2 { font-family: var(--font-heading); }
 .tab-count { padding: 1px 5px; border-radius: var(--radius-xs); background: var(--code); color: var(--muted); font: 9px var(--mono); }
 
 /* Conversation scrolls independently; composer and queue remain at its foot. */
-.transcript { flex: 1; min-height: 0; padding: var(--space-28) var(--space-38) var(--space-25); overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
+.transcript { flex: 1; min-height: 0; padding: var(--space-28) var(--space-38) var(--space-25); overflow-y: auto; overflow-wrap: anywhere; white-space: normal; font-size: 14px; line-height: 1.6; }
 .transcript > :first-child { margin-top: 0; }
 .timeline-line { max-width: 790px; margin: 0 0 var(--space-18); padding: var(--space-12) var(--space-14); border: 1px solid var(--line); border-radius: var(--radius-md); color: var(--muted); }
 .tool-line { border-left: 3px solid var(--warning-line); background: var(--warning-bg); }
@@ -492,3 +497,30 @@ h1, h2 { font-family: var(--font-heading); }
 .project-files-modal .project-preview-tools>.project-quote{margin-left:auto}
 @media(max-width:700px){.inspector .runtime-shortcuts button,.inspector-small-button{font-size:10px;min-height:36px}}
 
+
+/* Match the reference composer: capability chips above one compact control row. */
+.composer-capabilities { display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; margin: var(--space-5) 0 var(--space-3); border-top: 1px solid var(--line); padding-top: var(--space-6); }
+.composer-main .composer-capabilities > button,
+.composer-main .composer-capabilities > .skill-picker > .skill-picker-trigger,
+.composer-main .composer-capabilities > .capability-menu > .capability-menu-items > button,
+.composer-main .composer-capabilities > .capability-menu > .capability-menu-items > .queue-entry > button { min-height: 23px; padding: 0; color: var(--muted); font-size: 9px; }
+.composer-capabilities .icon { width: 12px; height: 12px; }
+.composer-main .delivery-picker { gap: var(--space-4); font-size: 10px; }
+.composer-main .delivery-picker select { height: 27px; padding: 0 var(--space-4); font: inherit; }
+.capability-menu { position: relative; color: var(--muted); font-size: 9px; }
+.capability-menu > summary { display: flex; align-items: center; min-height: 23px; cursor: pointer; list-style: none; }
+.capability-menu-items { position: absolute; z-index: 35; bottom: calc(100% + var(--space-5)); left: 0; display: grid; gap: var(--space-6); min-width: 170px; padding: var(--space-10); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--card); box-shadow: var(--shadow); }
+.composer-main .capability-menu-items button { justify-content: flex-start; }
+.model-pill { display: grid; place-items: center; width: 17px; height: 17px; background: var(--info-bg); color: var(--info); font-size: 9px; border-radius: var(--radius-xs); }
+.option-divider { width: 1px; height: 13px; background: var(--line); }
+.composer-main .composer-capabilities>.skill-picker{order:-1}.composer-main .composer-capabilities{margin:7px 0 9px}.composer-main .composer-capabilities>.button,.composer-main .capability-menu>summary,.composer-main .skill-picker-trigger{min-height:28px;font-size:10px;padding:4px 8px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm)}.composer-main .composer-options{flex:1;min-width:0;gap:5px}.composer-main .composer-select{min-width:0;width:auto;max-width:190px;height:30px;border:0;background:transparent;padding:3px 18px 3px 5px;font-size:11px;box-shadow:none}.composer-main .composer-thinking-select{width:85px;max-width:85px}.composer-main .attachment-button{width:30px;min-width:30px;padding:0}.composer-main .composer-actions{flex:none}.composer-main .composer-options>.delivery-picker{display:none}@media(max-width:700px){.composer-main .composer-select{flex:1;max-width:calc(100% - 110px);height:36px;font-size:10px}.composer-main .composer-thinking-select{flex:0 1 75px;max-width:75px}.composer-main .composer-capabilities{flex-wrap:nowrap;gap:5px}.composer-main .composer-capabilities>.skill-picker{flex:0 1 auto;min-width:0}.composer-main .composer-capabilities .skill-picker-chips{display:none}.composer-main .composer-capabilities>.button,.composer-main .capability-menu>summary,.composer-main .skill-picker-trigger{min-height:30px;font-size:10px}.composer-main .composer-options{gap:0}.composer-main .composer-foot>span:last-child{display:none}}
+
+.composer-main .capability-menu-items .delivery-picker{display:flex!important;align-items:center;justify-content:space-between;gap:8px}.composer-main .capability-menu-items .delivery-picker select{max-width:125px;font-size:10px}
+
+/* Inspector uses the reference's section labels and environment card rhythm. */
+.inspector-card{margin:0 21px;padding:14px 0 13px;border-bottom:0}.inspector-card>strong,.inspector-section-label>strong{font-size:9px;font-weight:500;letter-spacing:.06em;margin-bottom:12px;color:var(--muted)}.inspector>.overview-card{position:relative;padding-top:25px}.overview-card>.inspector-run-status{position:absolute;right:0;top:24px;margin:0;font-size:9px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.inspector-context-button>span:first-child{font-size:9px;color:var(--muted)}.inspector-context-button strong{font-size:16px;line-height:1.6;font-weight:500;color:var(--text)}.inspector .data-line{font-size:9px;margin-top:8px}.inspector-section-label{display:flex;align-items:center;justify-content:space-between}.inspector-section-label>.icon{width:12px;height:12px;color:var(--muted)}.environment-card{padding:12px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--card);margin-bottom:12px;min-width:0}.environment-heading{display:flex;align-items:center;gap:9px;margin-bottom:11px;min-width:0}.environment-icon{display:grid;place-items:center;width:27px;height:27px;flex:none;border-radius:var(--radius-sm);background:var(--side);color:var(--muted)}.environment-heading>div{flex:1;min-width:0}.environment-heading strong{font-size:10px;font-weight:500;margin:0 0 2px}.environment-heading small{font-size:8px;margin:0}.environment-heading>i{width:5px;height:5px;flex:none;border-radius:50%;background:var(--muted)}.environment-heading>.environment-online{background:var(--success)}.environment-card>code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;background:var(--panel);padding:4px 7px;border-radius:var(--radius-xs);color:var(--muted)}.inspector .environment-settings{border:0;background:transparent;padding:5px 0;font-size:9px;margin-top:12px;min-height:26px}.inspector-card>small{font-size:9px}.inspector-file-row{font-size:9px}.inspector-plan .plan-title{font-size:10px}
+
+/* Composer measurements match the shared prototype at desktop and phone widths. */
+.composer-main .composer-capabilities{margin:5px 0 3px;gap:10px}.composer-main .composer-capabilities>.skill-picker{width:auto;flex:0 0 auto}.composer-main .composer-capabilities>.capability-menu{flex:0 0 auto}.composer-main .composer-capabilities>.button,.composer-main .composer-capabilities>.capability-menu>summary,.composer-main .composer-capabilities .skill-picker-trigger{min-height:23px;height:23px;padding:0;border:0;border-radius:0;background:transparent;color:var(--muted);font-size:9px;line-height:1.6;white-space:nowrap;gap:5px}.composer-main .composer-select{height:29px}@media(max-width:700px){.composer-main .composer-capabilities{gap:8px;flex-wrap:nowrap}.composer-main .composer-capabilities>.skill-picker{width:auto;flex:0 0 auto}.composer-main .composer-capabilities>.button,.composer-main .composer-capabilities>.capability-menu>summary,.composer-main .composer-capabilities .skill-picker-trigger{min-height:30px;height:30px;font-size:10px}.composer-main .composer-select{height:36px}}
+
+.review-overview{padding:19px 28px 13px}.review-overview p{margin:4px 0 0}.review-scope{padding:0 28px 15px}.review-scope button{min-height:30px;padding:6px 10px;line-height:16px}@media(max-width:700px){.review-overview{padding:16px 14px 12px;align-items:flex-start}.review-scope{padding:0 14px 12px;gap:5px}.review-scope>span{font-size:9px}}

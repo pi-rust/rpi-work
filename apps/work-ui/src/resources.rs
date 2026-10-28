@@ -703,7 +703,7 @@ fn PackageCard(
                             let session = state.session_mut(&scope);
                             set_package_selected(session, &package_id, &package_version, !desired);
                         }, if desired { "移除当前会话" } else { "用于本会话" } }
-                        small { "本地配置 · 待节点应用" }
+                        if desired { small { "本地配置 · 待节点应用" } }
                     } else { small { "请先返回对话选择会话" } }
                 }
             }
@@ -1160,15 +1160,15 @@ fn SessionSkills(
                     let quote = format!("请在本条消息中显式参考 Skill {}（{}）：\n\n{}", skill.name, skill.source, skill.content);
                     rsx! {
                         div { class: "session-resource-row",
-                            div { strong { "{skill.name}" } small { "{skill.source} · 全文已获取" } }
-                            span { class: "resource-badge", if active { "已选择 · 待节点应用" } else { "未选择" } }
-                            button { class: "button", onclick: move |_| {
+                            input { r#type: "checkbox", checked: active, aria_label: "选择 Skill {skill.name}", onchange: move |event| {
                                 let mut state = library.write();
                                 let session = state.session_mut(&session_id);
-                                if active { session.skills.retain(|id| id != &skill_id); }
-                                else { session.skills.push(skill_id.clone()); }
+                                session.skills.retain(|id| id != &skill_id);
+                                if event.checked() { session.skills.push(skill_id.clone()); }
                                 session.revision += 1;
-                            }, if active { "取消选择" } else { "加入 desired" } }
+                            } }
+                            div { strong { "{skill.name}" } small { "{skill.source} · 全文已获取" } }
+                            span { class: "resource-badge", if active { "已选择 · 待节点应用" } else { "未选择" } }
                             button { class: "small-link", onclick: move |_| onquote.call(quote.clone()), "引用到草稿" }
                         }
                     }

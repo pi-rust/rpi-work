@@ -220,7 +220,7 @@ fn App() -> Element {
     let mut dialog_errors = use_signal(std::collections::HashMap::<String, String>::new);
     let mut answered_dialogs = use_signal(std::collections::HashSet::<String>::new);
     let mut btw_open = use_signal(|| false);
-    let queue_delivery = use_signal(|| "followUp".to_owned());
+    let mut queue_delivery = use_signal(|| "followUp".to_owned());
     let mut delete_confirmation = use_signal(|| false);
     let mut show_project_form = use_signal(|| false);
     let mut project_busy = use_signal(|| false);
@@ -1830,6 +1830,14 @@ fn App() -> Element {
             .filter(|(_, window)| *window > 0.0)
             .map(|(threshold, window)| threshold / window * 100.0)
     });
+    let inspector_protocol = capabilities
+        .read()
+        .as_ref()
+        .map_or_else(|| "尚未连接".into(), |caps| caps.protocol.clone());
+    let inspector_project_path = selected_project_path
+        .read()
+        .clone()
+        .unwrap_or_else(|| "未选择项目".into());
     let composer_model = runtime_state
         .read()
         .as_ref()
@@ -2335,8 +2343,37 @@ fn App() -> Element {
                                     }
                                 }
                             }
+                            div { class: "composer-capabilities",
+                                button { class: "button", aria_label: "BTW", onclick: move |_| { if selected_session.read().is_some() { btw_open.set(true); } else { status.set("请先打开主会话，再创建独立旁问。".into()); } }, Icon { name: "message" } "BTW 旁问" }
+                                details { class: "capability-menu",
+                                summary { Icon { name: "blocks" } "常用能力" }
+                                div { class: "capability-menu-items",
+                                message_queue::QueueEntry { snapshot: queue.read().clone(), onopen: move |()| queue_open.set(true) }
+                                    message_queue::DeliveryPicker { value: queue_delivery.read().clone(), onchange: move |value| queue_delivery.set(value) }
+                                button { class: "button", onclick: move |_| session_details_open.set(true), "Tools" }
+                                button { class: "button", onclick: move |_| status.set("当前为节点 Agent 会话；可在 Tools 中配置真实工具。节点未提供 Plan/Ask 模式切换协议。".into()), "Agent 模式" }
+                                button { class: "button", onclick: move |_| status.set("可用命令：/btw [问题]、/compact、/new、/help。".into()), "/ 命令" }
+                                button { class: "button", disabled: selected_session.read().is_none(), onclick: move |_| context_open.set(true), "压缩上下文" }
+                                }
+                                }
+                                if let Some(session_id) = selected_session.read().clone() {
+                                    resources::SkillPicker { session_id: session_scope_key(&node_url.read(), &session_id), library: resource_library, open_session_config, onquote: move |text: String| {
+                                        if let Some(id) = selected_session.read().as_deref() {
+                                            let scope = session_scope_key(&node_url.read(), id);
+                                            let existing = drafts.read().get(&scope).map(|draft| draft.text.clone()).unwrap_or_default();
+                                            let text = if existing.is_empty() { text } else { format!("{existing}\n{text}") };
+                                            update_draft(drafts, &scope, text);
+                                        }
+                                    } }
+                                }
+                            }
                             div { class: "composer-bottom",
                                 div { class: "composer-options",
+                                    if let Some(session_id) = selected_session.read().clone() {
+                                        { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope, store: attachment_store, presentation: "button".to_owned(), onquote: move |text| {
+                                            if let Some(id) = selected_session.read().as_deref() { let scope = session_scope_key(&node_url.read(), id); let existing = drafts.read().get(&scope).map(|d| d.text.clone()).unwrap_or_default(); update_draft(drafts, &scope, if existing.is_empty() { text } else { format!("{existing}\n{text}") }); }
+                                        } } } }
+                                    }
                                     select {
                                         class: "composer-select",
                                         aria_label: "模型",
@@ -2473,13 +2510,19 @@ fn App() -> Element {
                                 button { onclick: move |_| queue_open.set(true), Icon { name: "message".to_owned() } "队列 {queue.read().as_ref().map(|q| q.count).unwrap_or(0)}" }
                             }
                         }
-                        div { class: "inspector-card",
-                            strong { "执行环境" }
-                            small { "rpi-http · {node_url}" }
-                            small { "{selected_project_path.read().as_deref().unwrap_or(\"未选择项目\")}" }
-                            div { class: "runtime-shortcuts",
-                                button { onclick: move |_| { active_page.set("settings".into()); settings_section.set("devices".into()); }, Icon { name: "settings".to_owned() } if device_mode.read().is_mobile() { "连接我的电脑" } else { "节点设置" } }
+                        div { class: "inspector-card inspector-environment",
+                            div { class: "inspector-section-label", strong { "执行环境" } Icon { name: "monitor" } }
+                            div { class: "environment-card",
+                                div { class: "environment-heading",
+                                    span { class: "environment-icon", Icon { name: "monitor" } }
+                                    div { strong { "当前执行节点" } small { "rpi-http · {inspector_protocol}" } }
+                                    i { class: if matches!(*node_connection.phase.read(), connections::Phase::Online) { "environment-online" } else { "environment-offline" } }
+                                }
+                                code { title: "{inspector_project_path}", "{inspector_project_path}" }
                             }
+                            div { class: "data-line", span { "模型提供方" } span { "{inspector_provider}" } }
+                            div { class: "data-line", span { "节点认证" } span { if auth_state.read().as_ref().is_some_and(|auth| auth.authenticated) { "已认证" } else { "尚未认证" } } }
+                            button { class: "inspector-small-button environment-settings", title: "{node_url}", onclick: move |_| { active_page.set("settings".into()); settings_section.set("devices".into()); }, if device_mode.read().is_mobile() { "连接我的电脑" } else { "节点设置" } Icon { name: "chevron-right" } }
                         }
                         div { class: "inspector-card",
                             strong { "计划" }
