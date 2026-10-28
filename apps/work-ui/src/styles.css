@@ -132,7 +132,7 @@ h1, h2 { font-family: var(--font-heading); }
 .call-section-title { color: var(--muted); font-size: 10px; }
 .composer-main { flex-shrink: 0; padding: var(--space-9) var(--space-30) var(--space-10); }
 .composer-main .composer { display: block; width: 100%; padding: var(--space-13) var(--space-13) var(--space-10); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--card); box-shadow: 0 3px 12px var(--shadow-color); }
-.composer-main textarea { display: inline-block; width: 100%; min-height: 45px; max-height: 25dvh; resize: vertical; padding: 2px; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 11px; line-height: 1.8; }
+.composer-main textarea { display: inline-block; width: 100%; min-height: 45px; max-height: 25dvh; resize: none; padding: 2px; border: 0; border-radius: 0; outline: none !important; background: transparent; box-shadow: none; font-size: 11px; line-height: 1.8; }
 .composer-main .composer-bottom { min-height: 29px; padding-top: 0; margin-top: var(--space-4); }
 .composer-main .composer-foot { min-height: 31px; align-items: center; padding: var(--space-7) var(--space-2) 0; }
 .composer-foot .session-trace-trigger { min-height: 24px; padding: 0 var(--space-4); }

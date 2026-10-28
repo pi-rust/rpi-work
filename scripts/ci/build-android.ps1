@@ -75,6 +75,9 @@ $apkManifest = & (Join-Path $buildTools.FullName $aaptName) dump xmltree $signed
 if ($LASTEXITCODE -ne 0 -or ($apkManifest -join "`n") -notmatch 'com\.pirust\.rpiwork\.updates' -or ($apkManifest -join "`n") -notmatch 'android.permission.REQUEST_INSTALL_PACKAGES') {
     throw 'The APK must declare its update provider and installation permission.'
 }
+if (($apkManifest -join "`n") -notmatch 'android:windowSoftInputMode\([^\r\n]*\)=\(type 0x11\)0x10\b') {
+    throw 'The APK must resize its window for the keyboard (adjustResize).'
+}
 $dist = Join-Path $repoRoot 'target/ci-dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 $suffix = if ($fixedSigning) { '' } else { '-dev' }
