@@ -14,6 +14,7 @@ pedantic = "warn"
 
 [dependencies]
 async-stream = "0.3"
+async-trait = "0.1"
 futures-core = "0.3"
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls", "stream"] }
@@ -23,8 +24,11 @@ thiserror = "2"
 url = "2"
 work-core = { path = "../work-core" }
 
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+rpi-extcore = "=0.1.5"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["io-util", "macros", "process", "sync", "time"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-timers = { version = "0.3", features = ["futures"] }

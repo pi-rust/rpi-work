@@ -1,9 +1,11 @@
-//! HTTP/SSE transport for the rpi HTTP API (rpi-http and rpi-web).
+//! Native RPC workspace and HTTP/SSE clients for RPI Work.
 #![allow(clippy::missing_errors_doc)]
 //!
-//! This crate owns transport concerns only. It does not execute tools or make
-//! decisions about retries. SSE frames are normalized into `work-core` events
-//! and can then be reduced by `RunProjection`.
+//! `WorkspaceClient` selects the desktop's in-process native workspace or an
+//! explicit remote HTTP client. Agent execution uses native RPC; local project,
+//! file and Git operations reuse the shared Rust core. Both event sources feed
+//! the same `work-core` projection without turning request acceptance into run
+//! completion.
 
 use async_stream::try_stream;
 use futures_core::Stream;
@@ -20,12 +22,41 @@ use work_core::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
+mod native_lifecycle;
+mod permissions;
+mod transport;
+pub use transport::{
+    AgentClient, AgentConnection, AgentSession, AgentSessionConnection, AgentTransport,
+    unsupported, wire_event,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+mod acp;
+#[cfg(not(target_arch = "wasm32"))]
+pub use acp::AcpClient;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod rpc;
+#[cfg(not(target_arch = "wasm32"))]
+pub use rpc::RpiRpcClient;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<WireEvent, ClientError>> + Send>>;
 #[cfg(target_arch = "wasm32")]
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<WireEvent, ClientError>>>>;
 
+pub mod workspace;
+pub use workspace::WorkspaceClient;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+mod local_workspace;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub use local_workspace::{LocalError, LocalWorkspace};
+
 #[derive(Debug, Error)]
 pub enum ClientError {
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    #[error(transparent)]
+    Local(#[from] LocalError),
     #[error("invalid base URL: {0}")]
     InvalidBaseUrl(#[from] url::ParseError),
     #[error("HTTP request failed: {0}")]
@@ -38,6 +69,20 @@ pub enum ClientError {
     Sse(String),
     #[error("node did not confirm authentication")]
     AuthenticationNotConfirmed,
+    #[error("operation `{operation}` is unsupported by {protocol}")]
+    Unsupported { operation: String, protocol: String },
+    #[error("RPC transport error: {0}")]
+    Rpc(String),
+    #[error("ACP transport error: {0}")]
+    Acp(String),
+    #[error("agent protocol mismatch: {0}")]
+    ProtocolMismatch(String),
+    #[error("agent request timed out: {0}")]
+    RequestTimeout(String),
+    #[error("agent process failed: {0}")]
+    Process(String),
+    #[error("agent process exited: {0}")]
+    ChildExited(String),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -320,6 +365,8 @@ pub struct PendingDialog {
     pub request_id: String,
     #[serde(rename = "toolCallId")]
     pub tool_call_id: Option<String>,
+    #[serde(rename = "responseId")]
+    pub response_id: Option<Value>,
     pub ui: UiDialogPayload,
 }
 
@@ -357,6 +404,18 @@ pub struct SessionSummary {
     pub pending_resume: bool,
     #[serde(default, rename = "latestSettlement")]
     pub latest_settlement: Option<Value>,
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub pinned: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+pub struct SessionPreferences {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    pub archived: bool,
+    pub pinned: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -894,9 +953,18 @@ fn reported_active_tools(state: &Value) -> Result<Vec<String>, ClientError> {
 pub struct WorkClient {
     http: reqwest::Client,
     base_url: Url,
+    bearer_token: Option<String>,
 }
 
-fn authenticated(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+fn authenticated(
+    request: reqwest::RequestBuilder,
+    bearer_token: Option<&str>,
+) -> reqwest::RequestBuilder {
+    let request = if let Some(token) = bearer_token.filter(|token| !token.trim().is_empty()) {
+        request.bearer_auth(token.trim())
+    } else {
+        request
+    };
     #[cfg(target_arch = "wasm32")]
     {
         request.fetch_credentials_include()
@@ -909,14 +977,23 @@ fn authenticated(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
 
 impl WorkClient {
     pub fn new(base_url: &str) -> Result<Self, ClientError> {
+        Self::new_with_token(base_url, None)
+    }
+
+    pub fn new_with_token(base_url: &str, bearer_token: Option<&str>) -> Result<Self, ClientError> {
         let mut base_url = Url::parse(base_url)?;
         if !base_url.path().ends_with('/') {
             let path = format!("{}/", base_url.path());
             base_url.set_path(&path);
         }
+        let bearer_token = bearer_token
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+            .map(str::to_owned);
         Ok(Self {
             http: build_http_client()?,
             base_url,
+            bearer_token,
         })
     }
 
@@ -963,6 +1040,21 @@ impl WorkClient {
         Ok(self.get::<Response>("api/v1/projects").await?.projects)
     }
 
+    pub async fn rename_project(
+        &self,
+        project_id: &str,
+        name: &str,
+    ) -> Result<Project, ClientError> {
+        let result: ProjectCreation = self
+            .post(
+                &format!("api/v1/projects/{project_id}/rename"),
+                json!({"name":name}),
+            )
+            .await?;
+        Ok(result.project)
+    }
+
+    /// Browse relative to the node's projects root; an empty path lists that root.
     pub async fn project_folders(&self, path: &str) -> Result<ProjectFolders, ClientError> {
         let mut url = self.url("api/v1/project-folders")?;
         url.query_pairs_mut().append_pair("path", path);
@@ -1045,6 +1137,19 @@ impl WorkClient {
         self.post(
             &format!("api/v1/sessions/{session_id}/rename"),
             json!({ "title": title }),
+        )
+        .await
+    }
+
+    pub async fn session_preferences(
+        &self,
+        session_id: &str,
+        archived: Option<bool>,
+        pinned: Option<bool>,
+    ) -> Result<SessionPreferences, ClientError> {
+        self.post(
+            &format!("api/v1/sessions/{session_id}/metadata"),
+            json!({"archived":archived,"pinned":pinned}),
         )
         .await
     }
@@ -1321,6 +1426,7 @@ impl WorkClient {
                 .header("x-rpi-web", "1")
                 .header("accept", "text/event-stream")
                 .header("last-event-id", after.to_string()),
+            self.bearer_token.as_deref(),
         )
         .send()
         .await?;
@@ -1365,7 +1471,7 @@ impl WorkClient {
         let pending_dialogs = snapshot_dialogs(&snapshot);
         let messages = snapshot.messages;
         Ok(SessionConnection {
-            client: self.clone(),
+            client: WorkspaceClient::Remote(self.clone()),
             session_id,
             projection,
             stream,
@@ -1380,22 +1486,31 @@ impl WorkClient {
     }
 
     async fn get_url<T: for<'de> Deserialize<'de>>(&self, url: Url) -> Result<T, ClientError> {
-        let response = authenticated(self.http.get(url).header("x-rpi-web", "1"))
-            .send()
-            .await?;
+        let response = authenticated(
+            self.http.get(url).header("x-rpi-web", "1"),
+            self.bearer_token.as_deref(),
+        )
+        .send()
+        .await?;
         self.decode(response).await
     }
     async fn get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, ClientError> {
-        let response = authenticated(self.http.get(self.url(path)?).header("x-rpi-web", "1"))
-            .send()
-            .await?;
+        let response = authenticated(
+            self.http.get(self.url(path)?).header("x-rpi-web", "1"),
+            self.bearer_token.as_deref(),
+        )
+        .send()
+        .await?;
         self.decode(response).await
     }
 
     async fn delete(&self, path: &str) -> Result<(), ClientError> {
-        let response = authenticated(self.http.delete(self.url(path)?).header("x-rpi-web", "1"))
-            .send()
-            .await?;
+        let response = authenticated(
+            self.http.delete(self.url(path)?).header("x-rpi-web", "1"),
+            self.bearer_token.as_deref(),
+        )
+        .send()
+        .await?;
         let status = response.status();
         if !status.is_success() {
             let message = response.text().await.unwrap_or_default();
@@ -1408,15 +1523,21 @@ impl WorkClient {
         &self,
         path: &str,
     ) -> Result<T, ClientError> {
-        let response = authenticated(self.http.delete(self.url(path)?).header("x-rpi-web", "1"))
-            .send()
-            .await?;
+        let response = authenticated(
+            self.http.delete(self.url(path)?).header("x-rpi-web", "1"),
+            self.bearer_token.as_deref(),
+        )
+        .send()
+        .await?;
         self.decode(response).await
     }
     async fn post_empty<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, ClientError> {
-        let response = authenticated(self.http.post(self.url(path)?).header("x-rpi-web", "1"))
-            .send()
-            .await?;
+        let response = authenticated(
+            self.http.post(self.url(path)?).header("x-rpi-web", "1"),
+            self.bearer_token.as_deref(),
+        )
+        .send()
+        .await?;
         self.decode(response).await
     }
 
@@ -1430,6 +1551,7 @@ impl WorkClient {
                 .post(self.url(path)?)
                 .header("x-rpi-web", "1")
                 .json(&body),
+            self.bearer_token.as_deref(),
         )
         .send()
         .await?;
@@ -1461,7 +1583,7 @@ pub struct SessionEvent {
 }
 
 pub struct SessionConnection {
-    client: WorkClient,
+    client: WorkspaceClient,
     session_id: String,
     projection: RunProjection,
     stream: EventStream,
@@ -1667,13 +1789,9 @@ impl SessionConnection {
     }
 
     async fn restore_snapshot(&mut self) -> Result<(), ClientError> {
-        let snapshot = self.client.snapshot(&self.session_id).await?;
+        let (snapshot, stream) = self.client.snapshot_stream(&self.session_id).await?;
         let pending_dialogs = snapshot_dialogs(&snapshot);
         let projection = projection_from_snapshot(&snapshot)?;
-        let stream = self
-            .client
-            .subscribe(&self.session_id, snapshot.last_seq)
-            .await?;
         // Publish the new snapshot only once its subscription is ready.
         self.projection = projection;
         self.identity = MessageIdentity::default();
@@ -1690,7 +1808,7 @@ impl SessionConnection {
     fn update_dialogs(&mut self, wire: &WireEvent) {
         match wire.event_type.as_str() {
             "ui_dialog_request" => {
-                if let Ok(Some(dialog)) = wire_dialog(wire) {
+                if let Ok(Some(dialog)) = dialog_from_wire(wire) {
                     if !self
                         .pending_dialogs
                         .iter()
@@ -1853,7 +1971,7 @@ fn snapshot_dialogs(snapshot: &Snapshot) -> Vec<PendingDialog> {
     dialogs
 }
 
-fn wire_dialog(wire: &WireEvent) -> Result<Option<PendingDialog>, ClientError> {
+pub fn dialog_from_wire(wire: &WireEvent) -> Result<Option<PendingDialog>, ClientError> {
     let Some(request_id) = wire.data.get("requestId").and_then(Value::as_str) else {
         return Ok(None);
     };
@@ -1869,6 +1987,7 @@ fn wire_dialog(wire: &WireEvent) -> Result<Option<PendingDialog>, ClientError> {
             .get("toolCallId")
             .and_then(Value::as_str)
             .map(str::to_owned),
+        response_id: wire.data.get("jsonRpcRequestId").cloned(),
         ui: serde_json::from_value(ui)?,
     }))
 }
@@ -1876,6 +1995,7 @@ fn wire_dialog(wire: &WireEvent) -> Result<Option<PendingDialog>, ClientError> {
 pub fn projection_from_snapshot(snapshot: &Snapshot) -> Result<RunProjection, ClientError> {
     let mut projection = RunProjection::new(snapshot.session_id.clone());
     let mut identity = MessageIdentity::default();
+    let mut replayed_settlement = false;
     for item in &snapshot.events {
         let event = WireEvent {
             id: Some(item.seq.to_string()),
@@ -1888,9 +2008,13 @@ pub fn projection_from_snapshot(snapshot: &Snapshot) -> Result<RunProjection, Cl
                 .into(),
             data: identity.annotate(&item.event, Some(item.seq)),
         };
+        replayed_settlement |= event.event_type == "agent_settled";
         projection.apply(event.into_core_event()?);
     }
-    if !matches!(projection.phase, work_core::RunPhase::Settled(_))
+    // Sequenced settlements already place completion in the event history. The
+    // unsequenced fallback may describe an older turn, not the active one after it.
+    if !replayed_settlement
+        && !matches!(projection.phase, work_core::RunPhase::Settled(_))
         && let Some(settlement_data) = snapshot.latest_settlement.as_ref()
     {
         let outcome = settlement(
@@ -1921,6 +2045,22 @@ pub fn projection_from_snapshot(snapshot: &Snapshot) -> Result<RunProjection, Cl
 mod tests {
     use super::*;
 
+    #[test]
+    fn optional_bearer_token_is_attached_without_exposing_empty_tokens() {
+        let http = reqwest::Client::new();
+        let request = authenticated(http.get("http://localhost/"), Some("secret-token"))
+            .build()
+            .expect("request");
+        assert_eq!(
+            request.headers().get("authorization").unwrap(),
+            "Bearer secret-token"
+        );
+
+        let request = authenticated(http.get("http://localhost/"), Some("  "))
+            .build()
+            .expect("request");
+        assert!(request.headers().get("authorization").is_none());
+    }
     #[test]
     fn subscription_ready_does_not_start_or_reopen_a_run() {
         for phase in [
@@ -2335,6 +2475,22 @@ mod tests {
     }
 
     #[test]
+    fn permission_wire_preserves_acp_response_id() {
+        let wire = WireEvent {
+            id: None,
+            seq: None,
+            event_type: "ui_dialog_request".into(),
+            data: json!({
+                "requestId":"1",
+                "jsonRpcRequestId":1,
+                "ui":{"purpose":"permission", "options":[{"optionId":"allow", "title":"Allow"}]}
+            }),
+        };
+        let pending = dialog_from_wire(&wire).unwrap().unwrap();
+        assert_eq!(pending.response_id, Some(json!(1)));
+        assert_eq!(pending.ui.options[0].raw["optionId"], "allow");
+    }
+    #[test]
     fn wire_and_snapshot_keep_string_options_and_multiple_pending_requests() {
         let dialogs = json!([
             {"requestId":"one","ui":{"question":"Q1", "options":["A","B"], "multiple":true}},
@@ -2350,7 +2506,7 @@ mod tests {
                 event_type: "ui_dialog_request".into(),
                 data: raw.clone(),
             };
-            let pending = wire_dialog(&wire).unwrap().unwrap();
+            let pending = dialog_from_wire(&wire).unwrap().unwrap();
             assert_eq!(pending.request_id, raw["requestId"]);
             assert_eq!(pending.ui.raw, raw["ui"]);
         }
@@ -2479,6 +2635,40 @@ mod tests {
             work_core::RunPhase::Settled(SettlementOutcome::Interrupted)
         );
         assert_eq!(projection.cursor, Some(12));
+    }
+
+    #[test]
+    fn old_snapshot_settlement_does_not_complete_a_newer_running_turn() {
+        for (event, expected) in [
+            (json!({"type":"agent_start"}), work_core::RunPhase::Accepted),
+            (
+                json!({"type":"message_update","message":{"entryId":"new-answer","role":"assistant"},"eventType":"text_delta","delta":"Working"}),
+                work_core::RunPhase::Text,
+            ),
+            (
+                json!({"type":"tool_execution_start","toolCallId":"new-tool","toolName":"read","args":{}}),
+                work_core::RunPhase::Tool,
+            ),
+            (
+                json!({"type":"agent_end"}),
+                work_core::RunPhase::AwaitingSettlement,
+            ),
+        ] {
+            let snapshot: Snapshot = serde_json::from_value(json!({
+                "sessionId":"session-1", "lastSeq":4,
+                "latestSettlement":{"outcome":"completed"},
+                "events":[
+                    {"seq":1,"event":{"type":"agent_start"}},
+                    {"seq":2,"event":{"type":"agent_settled","outcome":"completed"}},
+                    {"seq":3,"event":{"type":"agent_start"}},
+                    {"seq":4,"event":event}
+                ]
+            }))
+            .unwrap();
+            let projection = projection_from_snapshot(&snapshot).unwrap();
+            assert_eq!(projection.phase, expected);
+            assert_eq!(projection.cursor, Some(4));
+        }
     }
 
     #[test]

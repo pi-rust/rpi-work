@@ -1,0 +1,132 @@
+{
+  "date": "2026-10-29",
+  "engine": "Chromium / Playwright",
+  "checks": [
+    {
+      "name": "默认完成态、空输入禁用发送、无需外部资源",
+      "passed": true
+    },
+    {
+      "name": "过程可展开；Tab 方向键即时切换；工作区范围明确",
+      "passed": true
+    },
+    {
+      "name": "等待确认→授权→执行中→停止中→节点确认中断",
+      "passed": true
+    },
+    {
+      "name": "运行中补充消息可排队、取回编辑，不自动执行",
+      "passed": true
+    },
+    {
+      "name": "断线保留草稿且禁发；重连同步；失败有修复入口",
+      "passed": true
+    },
+    {
+      "name": "Skills 选择保存；上下文抽屉 Escape 关闭并返回焦点",
+      "passed": true
+    },
+    {
+      "name": "搜索空态、新建任务、切换会话保留草稿、发送模拟完成",
+      "passed": true
+    },
+    {
+      "name": "中文输入法组合 Enter 不发送；Shift Enter 换行",
+      "passed": true
+    },
+    {
+      "name": "附件选择与移除；只读文件浏览；旁问独立",
+      "passed": true
+    },
+    {
+      "name": "1440 / 1024 / 768 / 390 / 320 宽度没有页面横向溢出",
+      "passed": true
+    },
+    {
+      "name": "移动导航可关闭；变更列表/详情返回；弹窗适配",
+      "passed": true
+    },
+    {
+      "name": "深色主题；减少动态效果；交互控件具备可访问名称",
+      "passed": true
+    }
+  ],
+  "geometry": [
+    {
+      "width": 1440,
+      "documentWidth": 1440,
+      "composer": {
+        "x": 419,
+        "y": 821.203125,
+        "width": 850,
+        "height": 129.796875,
+        "top": 821.203125,
+        "right": 1269,
+        "bottom": 951,
+        "left": 419
+      },
+      "inputSize": "15px"
+    },
+    {
+      "width": 1024,
+      "documentWidth": 1024,
+      "composer": {
+        "x": 276,
+        "y": 589.203125,
+        "width": 720,
+        "height": 129.796875,
+        "top": 589.203125,
+        "right": 996,
+        "bottom": 719,
+        "left": 276
+      },
+      "inputSize": "15px"
+    },
+    {
+      "width": 768,
+      "documentWidth": 768,
+      "composer": {
+        "x": 242,
+        "y": 845.203125,
+        "width": 502,
+        "height": 129.796875,
+        "top": 845.203125,
+        "right": 744,
+        "bottom": 975,
+        "left": 242
+      },
+      "inputSize": "15px"
+    },
+    {
+      "width": 390,
+      "documentWidth": 390,
+      "composer": {
+        "x": 12,
+        "y": 667.625,
+        "width": 366,
+        "height": 134.375,
+        "top": 667.625,
+        "right": 378,
+        "bottom": 802,
+        "left": 12
+      },
+      "inputSize": "16px"
+    },
+    {
+      "width": 320,
+      "documentWidth": 320,
+      "composer": {
+        "x": 12,
+        "y": 563.625,
+        "width": 296,
+        "height": 134.375,
+        "top": 563.625,
+        "right": 308,
+        "bottom": 698,
+        "left": 12
+      },
+      "inputSize": "16px"
+    }
+  ],
+  "errors": []
+}

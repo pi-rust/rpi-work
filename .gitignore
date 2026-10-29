@@ -13,10 +13,8 @@ Thumbs.db
 
 # Local agent sessions and implementation coordination, not product sources.
 .rpi/
-/docs/rpi-*.md
+/docs/archive/local/
 
 # Generated screenshots, downloads and machine-specific reports stay local.
-# These two source-review baselines are inputs, not generated run results.
-/artifacts/*
-!/artifacts/prototype-review-baseline.json
-!/artifacts/upstream-review-baseline.json
+# Source-review baselines are tracked in tests/fixtures/baselines/.
+/artifacts/

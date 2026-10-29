@@ -1826,6 +1826,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "futf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4419,6 +4429,7 @@ dependencies = [
  "bytes",
  "cookie",
  "cookie_store",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http",
@@ -4495,6 +4506,31 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rpi-durable-core"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e71b8a66ef733c576fa5dfb57a9d13496c813e0c305f468872a89177b6a61f34"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rpi-extcore"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cecd79ed9355d053a2987a78be9b1c72bd2f0b753a62e8ca03a9f69fe7e7bbc"
+dependencies = [
+ "futures-util",
+ "rpi-durable-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -5329,6 +5365,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -5677,6 +5714,7 @@ version = "1.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "wasm-bindgen",
 ]
@@ -6409,10 +6447,12 @@ name = "work-client"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "futures-core",
  "futures-util",
  "gloo-timers",
  "reqwest",
+ "rpi-extcore",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -6429,6 +6469,11 @@ version = "0.1.0"
 name = "work-node"
 version = "0.1.0"
 dependencies = [
+ "fs2",
+ "getrandom 0.3.4",
+ "reqwest",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -6440,10 +6485,13 @@ dependencies = [
  "gloo-timers",
  "jni 0.21.1",
  "ndk-context",
+ "rfd",
+ "serde",
  "serde_json",
  "tokio",
  "work-client",
  "work-core",
+ "work-node",
  "work-update",
 ]
 

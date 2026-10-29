@@ -1,0 +1,11 @@
+{
+  "name": "rpi-work-development-tools",
+  "private": true,
+  "description": "Development and browser verification only; not part of the Rust application runtime.",
+  "devDependencies": {
+    "playwright": "1.64.1"
+  },
+  "scripts": {
+    "install-browser": "playwright install chromium"
+  }
+}

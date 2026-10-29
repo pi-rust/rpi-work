@@ -1,8 +1,9 @@
-//! Local rpi HTTP node process supervision for desktop clients.
+//! Desktop runtime resolution, workspace ownership, and optional HTTP supervision.
 #![allow(clippy::missing_errors_doc)]
 //!
-//! A manager only owns processes it started. Connecting to an already-running
-//! node is the responsibility of `work-client` and never calls `stop` here.
+//! The default desktop uses `local::LocalRuntime` and native RPC, with no HTTP
+//! process or listener. The compatibility manager only owns processes it started;
+//! connecting to an existing remote node remains `work-client`'s responsibility.
 
 use std::{
     ffi::OsString,
@@ -13,6 +14,9 @@ use std::{
     time::{Duration, Instant},
 };
 use thiserror::Error;
+
+pub mod desktop;
+pub mod local;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NodeBackend {
@@ -146,15 +150,30 @@ impl NodeManager {
     }
 
     pub fn start(&mut self) -> Result<(), NodeError> {
+        self.start_with(&[], &[])
+    }
+
+    pub fn start_with(
+        &mut self,
+        extra_arguments: &[OsString],
+        environment: &[(OsString, OsString)],
+    ) -> Result<(), NodeError> {
         if self.child.is_some() {
             return Err(NodeError::AlreadyRunning);
         }
         let mut command = Command::new(&self.config.executable);
         command
             .args(self.config.arguments())
+            .args(extra_arguments)
+            .envs(environment.iter().cloned())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
         self.child = Some(command.spawn()?);
         Ok(())
     }

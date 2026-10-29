@@ -1,0 +1,29 @@
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const {chromium}=require('../support/browser.cjs');
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH});
+ try{
+  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[],results=[];
+  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  const pass=t=>{results.push(t);console.log('PASS '+t);},trigger=page.locator('#quick-session-trigger'),row=id=>page.locator(`[data-quick-session="${id}"]`);
+  await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:4182/prototype/');
+  assert.equal(await trigger.isVisible(),false);await page.setViewportSize({width:375,height:812});assert.equal(await trigger.isVisible(),true);
+  const fit=async label=>{for(const selector of ['.topbar','#quick-session-trigger','#modal','#quick-session-results']){if(!await page.locator(selector).isVisible())continue;const d=await page.locator(selector).evaluate(e=>({width:e.clientWidth,content:e.scrollWidth}));assert.ok(d.content<=d.width+1,`${label}/${selector}: ${JSON.stringify(d)}`);}assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));};
+  await page.locator('#prompt').fill('深色模式会话的草稿');await trigger.click();assert.equal(await trigger.getAttribute('aria-expanded'),'true');assert.equal(await page.locator('.sidebar.open').count(),0);assert.equal(await row('dark').getAttribute('aria-current'),'true');assert.match(await row('dark').innerText(),/有草稿/);
+  await page.locator('#quick-session-search').fill('pi-rust');assert.equal(await page.locator('[data-quick-session]').count(),1);await row('rpc').click();
+  assert.equal(await page.locator('#task-title').innerText(),'检查 RPC 事件流');assert.equal(await page.locator('#quick-session-project').innerText(),'pi-rust');assert.equal(await page.locator('#prompt').inputValue(),'');assert.equal(await trigger.getAttribute('aria-expanded'),'false');
+  await page.locator('#prompt').fill('RPC 草稿');await trigger.click();await row('dark').click();assert.equal(await page.locator('#prompt').inputValue(),'深色模式会话的草稿');await trigger.click();assert.equal(await page.locator('[data-quick-session]').first().getAttribute('data-quick-session'),'dark');await row('rpc').click();assert.equal(await page.locator('#prompt').inputValue(),'RPC 草稿');
+  pass('mobile header switches across projects without the sidebar; recent order and per-session drafts are preserved');
+  await trigger.click();await page.locator('#quick-session-search').fill('不存在的会话');assert.equal(await page.locator('[data-quick-session]').count(),0);assert.equal(await page.locator('.quick-session-empty').isVisible(),true);await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('#modal').open);assert.equal(await trigger.getAttribute('aria-expanded'),'false');assert.equal(await trigger.evaluate(e=>document.activeElement===e),true);
+  await trigger.click();await page.locator('#quick-session-new').click();assert.equal(await trigger.getAttribute('aria-expanded'),'false');assert.equal(await page.locator('#new-project').inputValue(),'pi-rust');const title='用于验证移动端快速切换入口的超长会话标题和草稿恢复';await page.locator('#new-title').fill(title);await page.locator('#create-task').click();assert.equal(await page.locator('#quick-session-title').innerText(),title);await trigger.click();assert.equal(await page.locator('[data-quick-session]').count(),6);assert.match(await page.locator('[data-quick-session]').first().innerText(),new RegExp(title));
+  for(const width of [320,375,390,430]){await page.setViewportSize({width,height:568});await fit(width);}
+  const scroll=await page.locator('#quick-session-results').evaluate(e=>({height:e.clientHeight,content:e.scrollHeight}));assert.ok(scroll.content>scroll.height);await row('plugin').click();assert.equal(await page.locator('#task-title').innerText(),'整理扩展加载方式');
+  pass('search empty state, Escape/focus, new session and long titles work at 320–430px; long lists scroll vertically');
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'artifacts/prototype-session-switcher-mobile-home.png',animations:'disabled'});await trigger.click();await page.screenshot({path:'artifacts/prototype-session-switcher-mobile.png',animations:'disabled'});await page.keyboard.press('Escape');
+  await page.setViewportSize({width:1440,height:900});await page.locator('#preview-toggle').click();assert.equal(await trigger.isVisible(),true);await trigger.click();await fit('desktop phone preview');await row('dark').click();assert.equal(await page.locator('#quick-session-title').innerText(),'为工作台添加深色模式');await page.locator('#preview-toggle').click();assert.equal(await trigger.isVisible(),false);
+  pass('desktop phone preview exposes the same switcher; desktop keeps its breadcrumb and sidebar');
+  await page.setViewportSize({width:390,height:844});await page.locator('#session-options').click();await page.locator('#stream-demo-entry').click();await trigger.click();assert.equal(await row('rpc').isDisabled(),true);assert.equal(await page.locator('#quick-session-new').isDisabled(),true);assert.equal(await row('dark').isDisabled(),false);assert.equal(await page.locator('.quick-session-notice').isVisible(),true);await row('dark').click();assert.equal(await page.locator('#task-title').innerText(),'为工作台添加深色模式');await page.locator('#send-button').click();
+  pass('running demo explains its switch restriction, disables other sessions/new session and allows closing via the current row');
+  assert.deepEqual(errors,[]);fs.writeFileSync('artifacts/session-switcher-validation.json',JSON.stringify({browser:await browser.version(),results,errors},null,2));
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

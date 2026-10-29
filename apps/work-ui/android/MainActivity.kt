@@ -20,6 +20,9 @@ class MainActivity : WryActivity() {
     @androidx.annotation.Keep
     fun updateCacheDirectory(): String = File(cacheDir, "rpi-work-updates").absolutePath
 
+    @androidx.annotation.Keep
+    fun draftsDirectory(): String = File(filesDir, "rpi-work-drafts").absolutePath
+
     @Suppress("DEPRECATION")
     private fun signers(info: PackageInfo): Set<String> {
         val signatures = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else info.signatures
