@@ -48,7 +48,14 @@ for (const file of [path.join(root, 'README.md'), ...files(path.join(root, 'docs
 }
 const baseline = JSON.parse(fs.readFileSync(path.join(root, 'tests/fixtures/baselines/prototype-review-baseline.json'), 'utf8').replace(/^\uFEFF/, ''));
 for (const [file, digest] of Object.entries(baseline.hashes)) {
-  const actual = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex');
-  assert.equal(actual.toUpperCase(), digest.toUpperCase(), `Frozen design changed: ${file}`);
+  const bytes = fs.readFileSync(path.join(root, file));
+  const candidates = [bytes];
+  if (/\.(?:css|js|html)$/.test(file)) {
+    // Git checkouts may use LF or CRLF. Preserve every other byte; the frozen
+    // design content must still match the original baseline on either OS.
+    const lf = bytes.toString('latin1').replace(/\r\n/g, '\n');
+    candidates.push(Buffer.from(lf, 'latin1'), Buffer.from(lf.replace(/\n/g, '\r\n'), 'latin1'));
+  }
+  assert(candidates.some(candidate => crypto.createHash('sha256').update(candidate).digest('hex').toUpperCase() === digest.toUpperCase()), `Frozen design changed: ${file}`);
 }
 console.log(`PASS structure: ${workflowScripts} workflow script references, ${imports} local JS imports, ${includes} embedded resources, ${links} documentation links, ${Object.keys(baseline.hashes).length} unchanged design files`);

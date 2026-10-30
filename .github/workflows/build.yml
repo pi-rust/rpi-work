@@ -31,7 +31,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Check repository structure and workflow script paths
-        run: node tools/review/check-structure.cjs
+        run: |
+          node --test tests/structure/check-structure.test.cjs
+          node tools/review/check-structure.cjs
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
