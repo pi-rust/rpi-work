@@ -146,8 +146,8 @@ cargo run --locked -p work-cli -- commands
 主分支构建成功不会自动创建 Release。发布稳定版本时，先更新 apps/work-ui/Cargo.toml 和 docs/release-notes.md，提交后打标签：
 
 ~~~shell
-git tag -a v0.1.7 -m "RPI Work v0.1.7"
-git push origin v0.1.7
+git tag -a v0.1.8 -m "RPI Work v0.1.8"
+git push origin v0.1.8
 ~~~
 
 标签中的版本必须与 UI 包版本一致。发布任务先创建草稿，上传完整制品并验证签名，最后公开 Release，供客户端下载和自动检查更新。签名配置、失败排查和密钥备份见 [发布说明](docs/guides/automatic-updates.md#发布流程)。

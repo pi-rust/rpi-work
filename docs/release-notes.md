@@ -1,4 +1,4 @@
-RPI Work 0.1.7
+RPI Work 0.1.8
 
 ## Codex 默认主题与完整视觉规格
 
@@ -18,10 +18,12 @@ RPI Work 0.1.7
 
 ## 验证与安装
 
+- 修复 Web 发布工作流中的旧脚本路径，增加工作流脚本存在性检查；v0.1.7 因构建入口失败未公开，正式版本顺延，未覆盖原标签。
+
 - 本地 workspace：193 项测试通过、0 失败，4 项既有 ignored；格式与严格 Clippy 检查通过。
 - 正式 WASM 与模块构建、主题/设置/更新/扩展/资源库七套浏览器回归通过，覆盖浅深色、持久化、取消恢复、390/320px 和触控边界；开发 Demo 的真实宿主及正负向验证另行完成。
 - 本地验证不等于所有平台的实机验证；各平台发行制品由标签 CI 构建、校验并发布签名更新清单，不调用外部模型。
 
-Android ARM64 APK 沿用固定签名，versionCode 1007，可从此前固定签名版本覆盖升级。执行宿主仍由电脑节点提供；节点密码、模型密钥和本机配置不包含在安装包中。桌面包仍为便携发行，未增加 Windows MSI、Apple 签名/公证或应用商店发行支持。
+Android ARM64 APK 沿用固定签名，versionCode 1008，可从此前固定签名版本覆盖升级。执行宿主仍由电脑节点提供；节点密码、模型密钥和本机配置不包含在安装包中。桌面包仍为便携发行，未增加 Windows MSI、Apple 签名/公证或应用商店发行支持。
 
-说明：[主题视觉规格](https://github.com/pi-rust/rpi-work/blob/v0.1.7/docs/guides/theme-design.md) · [扩展架构](https://github.com/pi-rust/rpi-work/blob/v0.1.7/docs/architecture/extensions.md) · [真实扩展 Demo](https://github.com/pi-rust/rpi-work/blob/v0.1.7/docs/guides/extension-demo.md)
+说明：[主题视觉规格](https://github.com/pi-rust/rpi-work/blob/v0.1.8/docs/guides/theme-design.md) · [扩展架构](https://github.com/pi-rust/rpi-work/blob/v0.1.8/docs/architecture/extensions.md) · [真实扩展 Demo](https://github.com/pi-rust/rpi-work/blob/v0.1.8/docs/guides/extension-demo.md)

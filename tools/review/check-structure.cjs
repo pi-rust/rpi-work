@@ -9,7 +9,14 @@ const files = directory => fs.readdirSync(directory, { withFileTypes: true }).fl
   const file = path.join(directory, entry.name);
   return entry.isDirectory() ? files(file) : [file];
 });
-let imports = 0, links = 0, includes = 0;
+let imports = 0, links = 0, includes = 0, workflowScripts = 0;
+for (const file of files(path.join(root, '.github/workflows')).filter(file => /\.ya?ml$/.test(file))) {
+  for (const match of fs.readFileSync(file, 'utf8').matchAll(/\.\/((?:scripts|tools)\/[\w./-]+\.ps1)\b/g)) {
+    const target = path.resolve(root, match[1]);
+    assert(fs.existsSync(target) && fs.statSync(target).isFile(), `Missing workflow script in ${file}: ${match[1]}`);
+    workflowScripts++;
+  }
+}
 for (const file of [...files(path.join(root, 'tools')), ...files(path.join(root, 'tests'))]) {
   if (!/\.(?:cjs|mjs)$/.test(file)) continue;
   const text = fs.readFileSync(file, 'utf8');
@@ -44,4 +51,4 @@ for (const [file, digest] of Object.entries(baseline.hashes)) {
   const actual = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex');
   assert.equal(actual.toUpperCase(), digest.toUpperCase(), `Frozen design changed: ${file}`);
 }
-console.log(`PASS structure: ${imports} local JS imports, ${includes} embedded resources, ${links} documentation links, ${Object.keys(baseline.hashes).length} unchanged design files`);
+console.log(`PASS structure: ${workflowScripts} workflow script references, ${imports} local JS imports, ${includes} embedded resources, ${links} documentation links, ${Object.keys(baseline.hashes).length} unchanged design files`);
