@@ -1,0 +1,28 @@
+/* Visual roles consume validated ThemeDesign tokens; structural layout stays in components. */
+.app-header .breadcrumb h1, .page-view .page-heading h1, .app-dialog .modal-header h2 {
+  font-family: var(--font-heading);
+  font-weight: var(--heading-weight);
+}
+.app-dialog .modal-header h2 { font-size: var(--font-title); }
+.app-shell .form-field input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .form-field select { min-height: var(--control-height); }
+.app-shell .composer-main .composer { box-shadow: var(--shadow-control); }
+.theme-design-summary { min-width: 0; margin: var(--space-16) 0; padding: var(--space-12); border: var(--border-width) solid var(--line); border-radius: var(--radius-md); background: var(--panel); }
+.theme-design-summary h3 { margin: 0 0 var(--space-10); font-size: var(--font-nav); font-weight: var(--heading-weight); }
+.theme-design-summary dl { display: grid; gap: var(--space-7); margin: 0; font-size: var(--font-assist); }
+.theme-design-summary dl > div { display: grid; grid-template-columns: minmax(64px, 1fr) minmax(0, 3fr); gap: var(--space-10); }
+.theme-design-summary dt { color: var(--muted); }
+.theme-design-summary dd { margin: 0; overflow-wrap: anywhere; }
+.theme-design-summary p { margin: var(--space-10) 0 0; font-size: var(--font-assist); color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  /* Imported scale/compact values must never lower mobile input or primary touch safety. */
+  body input:not([type="checkbox"]):not([type="radio"]), body select, body textarea {
+    font-size: max(16px, var(--font-body)) !important;
+  }
+  .app-dialog .modal-header > .icon-button, .app-dialog.appearance-modal .modal-actions > button:is(.button, .secondary) {
+    min-width: var(--hit-size); min-height: var(--hit-size);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}

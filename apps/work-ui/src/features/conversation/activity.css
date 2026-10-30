@@ -1,4 +1,4 @@
-.reply-waiting{display:flex;align-items:center;gap:8px;padding:8px 0;margin:4px 0;color:var(--muted);font-size:12px;min-height:32px}
+.reply-waiting{display:flex;align-items:center;gap:8px;padding:8px 0;margin:4px 0;color:var(--muted);font-size:calc(12px * var(--type-scale, 1));min-height:32px}
 .activity-spinner{display:inline-block;box-sizing:border-box;width:14px;height:14px;flex:0 0 14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:activity-spin .8s linear infinite}
 .reply-waiting .activity-spinner{color:var(--accent)}.reply-paused{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:var(--warning)}
 .composer-main .send-button.is-loading:disabled{opacity:1;cursor:wait;background:var(--panel);color:var(--muted);border-color:var(--line)}

@@ -1,6 +1,10 @@
 use serde_json::{Map, Value, json};
 use std::{collections::BTreeMap, fmt::Write as _};
 
+#[path = "theme_design.rs"]
+mod design;
+pub use design::ThemeDesign;
+
 const THEME_SCHEMA_VERSION: u64 = 1;
 pub const THEME_KIND: &str = "rpi-work-theme";
 pub const MAX_CUSTOM_THEMES: usize = 12;
@@ -32,13 +36,25 @@ pub struct Theme {
     pub light: Palette,
     pub dark: Palette,
     pub brand: Option<String>,
+    pub design: Option<ThemeDesign>,
+}
+impl Theme {
+    pub fn effective_design(&self) -> ThemeDesign {
+        self.design.clone().unwrap_or_else(|| {
+            if self.id == "codex" {
+                ThemeDesign::codex()
+            } else {
+                ThemeDesign::legacy(&self.font, &self.heading_font, &self.shape)
+            }
+        })
+    }
 }
 
 const PALETTE_KEYS: [&str; 11] = [
     "bg", "side", "panel", "card", "text", "muted", "line", "code", "accent", "accentBg",
     "selected",
 ];
-const THEME_KEYS: [&str; 8] = [
+const THEME_KEYS: [&str; 9] = [
     "id",
     "name",
     "description",
@@ -47,6 +63,7 @@ const THEME_KEYS: [&str; 8] = [
     "shape",
     "palettes",
     "brand",
+    "design",
 ];
 
 fn exact_keys(object: &Map<String, Value>, allowed: &[&str], required: &[&str]) -> bool {
@@ -57,7 +74,7 @@ fn exact_keys(object: &Map<String, Value>, allowed: &[&str], required: &[&str]) 
 fn string_field(object: &Map<String, Value>, key: &str, max: usize) -> Result<String, String> {
     let value = object.get(key).and_then(Value::as_str).unwrap_or("");
     if value.trim().is_empty() || value.encode_utf16().count() > max {
-        return Err("主题格式不正确，请使用版本 1 的主题 JSON。".into());
+        return Err("主题格式不正确，请使用受支持的完整主题 JSON。".into());
     }
     Ok(value.to_owned())
 }
@@ -145,7 +162,7 @@ fn validate_contrast(palette: &Palette, dark: bool) -> Result<(), String> {
 pub fn parse_theme(value: &Value) -> Result<Theme, String> {
     let object = value
         .as_object()
-        .ok_or("主题格式不正确，请使用版本 1 的主题 JSON。")?;
+        .ok_or("主题格式不正确，请使用受支持的完整主题 JSON。")?;
     if !exact_keys(
         object,
         &THEME_KEYS,
@@ -159,7 +176,7 @@ pub fn parse_theme(value: &Value) -> Result<Theme, String> {
             "palettes",
         ],
     ) {
-        return Err("主题格式不正确，请使用版本 1 的主题 JSON。".into());
+        return Err("主题格式不正确，请使用受支持的完整主题 JSON。".into());
     }
     let id = string_field(object, "id", 64)?;
     if !id.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
@@ -167,18 +184,18 @@ pub fn parse_theme(value: &Value) -> Result<Theme, String> {
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
     {
-        return Err("主题格式不正确，请使用版本 1 的主题 JSON。".into());
+        return Err("主题格式不正确，请使用受支持的完整主题 JSON。".into());
     }
     let font = string_field(object, "font", 16)?;
     let heading_font = string_field(object, "headingFont", 16)?;
     if !["system", "humanist", "code"].contains(&font.as_str())
         || !["system", "humanist", "code"].contains(&heading_font.as_str())
     {
-        return Err("主题格式不正确，请使用版本 1 的主题 JSON。".into());
+        return Err("主题格式不正确，请使用受支持的完整主题 JSON。".into());
     }
     let shape = string_field(object, "shape", 16)?;
     if !["soft", "crisp", "square"].contains(&shape.as_str()) {
-        return Err("主题格式不正确，请使用版本 1 的主题 JSON。".into());
+        return Err("主题格式不正确，请使用受支持的完整主题 JSON。".into());
     }
     let palettes = object
         .get("palettes")
@@ -196,6 +213,15 @@ pub fn parse_theme(value: &Value) -> Result<Theme, String> {
         Some(value) if value.as_str().is_some_and(hex) => Some(value.as_str().unwrap().to_owned()),
         _ => return Err("品牌色必须是六位十六进制颜色。".into()),
     };
+    let design = object
+        .get("design")
+        .map(|value| {
+            let design: ThemeDesign = serde_json::from_value(value.clone())
+                .map_err(|_| "视觉规格字段不合法：仅支持受控字体、数值及阴影枚举。".to_owned())?;
+            design.validate()?;
+            Ok::<_, String>(design)
+        })
+        .transpose()?;
     Ok(Theme {
         id,
         name: string_field(object, "name", 40)?,
@@ -206,6 +232,7 @@ pub fn parse_theme(value: &Value) -> Result<Theme, String> {
         light,
         dark,
         brand,
+        design,
     })
 }
 
@@ -220,6 +247,12 @@ pub fn theme_value(theme: &Theme) -> Value {
             .as_object_mut()
             .unwrap()
             .insert("brand".into(), Value::String(brand.clone()));
+    }
+    if let Some(design) = &theme.design {
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("design".into(), serde_json::to_value(design).unwrap());
     }
     value
 }
@@ -258,6 +291,7 @@ fn theme(
         light,
         dark,
         brand: brand.map(str::to_owned),
+        design: None,
     }
 }
 
@@ -323,7 +357,60 @@ pub fn presets() -> Vec<Theme> {
             ]),
             Some("#ff4500"),
         ),
+        theme(
+            "codex",
+            "Codex 黑白",
+            "白色画布、浅灰分区与黑白操作，搭配石墨灰深色模式。",
+            ["system", "system", "soft"],
+            palette([
+                "#ffffff", "#f9f9f9", "#f7f7f8", "#ffffff", "#1f1f1f", "#666666", "#e5e5e5",
+                "#f4f4f4", "#202020", "#eeeeee", "#eaeaea",
+            ]),
+            palette([
+                "#212121", "#181818", "#262626", "#2c2c2c", "#ececec", "#b0b0b0", "#424242",
+                "#303030", "#f0f0f0", "#3b3b3b", "#383838",
+            ]),
+            None,
+        ),
     ]
+}
+
+/// Generated fallback and built-in rules share the portable theme's token source.
+#[allow(dead_code)] // Used by the native CSS generator and consistency tests, not the UI runtime.
+pub fn codex_stylesheet() -> String {
+    let theme = presets()
+        .into_iter()
+        .find(|theme| theme.id == "codex")
+        .unwrap();
+    let mut css = String::from(
+        "/* Generated by cargo run -p work-ui --example sync-codex-theme. Edit theme_contract.rs / theme_design.rs. */\n",
+    );
+    for (selector, dark) in [
+        (
+            ":root,\n[data-theme=\"codex\"][data-mode=\"light\"],\n[data-theme=\"codex\"][data-mode=\"system\"]",
+            false,
+        ),
+        ("[data-theme=\"codex\"][data-mode=\"dark\"]", true),
+        (
+            "@media (prefers-color-scheme: dark) {\n[data-theme=\"codex\"][data-mode=\"system\"]",
+            true,
+        ),
+    ] {
+        let _ = writeln!(css, "{selector} {{");
+        let _ = writeln!(
+            css,
+            "  color-scheme: {};",
+            if dark { "dark" } else { "light" }
+        );
+        for (key, value) in build_tokens(&theme, dark, false) {
+            let _ = writeln!(css, "  --{key}: {value};");
+        }
+        css.push_str("}\n");
+        if selector.starts_with("@media") {
+            css.push_str("}\n");
+        }
+    }
+    css
 }
 
 // Inputs are validated hex channels and all callers use weights in [0, 1].
@@ -341,12 +428,9 @@ fn mix(a: &str, b: &str, weight: f64) -> String {
     }
     out
 }
+#[cfg(test)]
 fn font(name: &str) -> &'static str {
-    match name {
-        "humanist" => "\"Inter\",\"Segoe UI\",\"Microsoft YaHei\",sans-serif",
-        "code" => "\"Cascadia Code\",\"SFMono-Regular\",Consolas,\"Microsoft YaHei\",monospace",
-        _ => "\"Segoe UI\",\"Microsoft YaHei\",sans-serif",
-    }
+    design::FontFamily::legacy(name).stack()
 }
 
 pub fn build_tokens(theme: &Theme, dark: bool, compact: bool) -> BTreeMap<String, String> {
@@ -494,48 +578,21 @@ fn insert_derived_colors(t: &mut BTreeMap<String, String>, p: &Palette, dark: bo
 }
 
 fn insert_layout_tokens(t: &mut BTreeMap<String, String>, theme: &Theme, compact: bool) {
-    t.insert("sans".into(), font(&theme.font).into());
-    t.insert("mono".into(), font("code").into());
-    t.insert("font-heading".into(), font(&theme.heading_font).into());
-    t.insert("shadow".into(), "0 16px 60px var(--shadow-color)".into());
-    t.insert(
-        "density-factor".into(),
-        if compact { ".86" } else { "1" }.into(),
-    );
-    t.insert(
-        "font-message".into(),
-        if compact { "12px" } else { "13px" }.into(),
-    );
-    t.insert(
-        "message-line-height".into(),
-        if compact { "1.8" } else { "1.95" }.into(),
-    );
-    t.insert(
-        "control-height".into(),
-        if compact { "34px" } else { "39px" }.into(),
-    );
-    t.insert("motion-fast".into(), "160ms".into());
-    t.insert("motion-normal".into(), "220ms".into());
-    let radii = match theme.shape.as_str() {
-        "crisp" => [2, 3, 5, 8, 10],
-        "square" => [1, 2, 3, 5, 7],
-        _ => [3, 5, 8, 12, 16],
-    };
-    for (key, value) in ["xs", "sm", "md", "lg", "xl"].into_iter().zip(radii) {
-        t.insert(format!("radius-{key}"), format!("{value}px"));
-    }
-    t.insert("radius-pill".into(), "999px".into());
-    for n in 1..=80 {
+    t.extend(theme.effective_design().tokens(compact));
+    if theme.design.is_none() {
+        // Preserve the v1 token contract; actual theme-specific reading rhythm
+        // is represented by reading-line-height rather than this legacy token.
         t.insert(
-            format!("space-{n}"),
-            format!("calc({n}px * var(--density-factor))"),
+            "message-line-height".into(),
+            if compact { "1.8" } else { "1.95" }.into(),
         );
     }
 }
 
 pub fn parse_theme_document(value: &Value) -> Result<(Theme, Option<&str>, Option<&str>), String> {
     let object = value.as_object().ok_or("导入文件必须是 JSON 对象。")?;
-    if object.get("schemaVersion").and_then(Value::as_u64) != Some(THEME_SCHEMA_VERSION)
+    let schema = object.get("schemaVersion").and_then(Value::as_u64);
+    if !matches!(schema, Some(1 | 2))
         || object.get("kind").and_then(Value::as_str) != Some(THEME_KIND)
     {
         return Err("主题 JSON 版本或类型不受支持。".into());
@@ -548,6 +605,9 @@ pub fn parse_theme_document(value: &Value) -> Result<(Theme, Option<&str>, Optio
         return Err("主题 JSON 含有未知或缺失字段。".into());
     }
     let theme = parse_theme(object.get("theme").unwrap())?;
+    if (schema == Some(2)) != theme.design.is_some() {
+        return Err("版本 2 必须包含完整 design 视觉规格；旧版主题请保持版本 1。".into());
+    }
     let mode = match object.get("preferredMode") {
         None => None,
         Some(Value::String(value)) if ["light", "dark", "system"].contains(&value.as_str()) => {
@@ -566,12 +626,110 @@ pub fn parse_theme_document(value: &Value) -> Result<(Theme, Option<&str>, Optio
 }
 
 pub fn theme_document(theme: &Theme, mode: &str, density: &str) -> Value {
-    json!({"schemaVersion":THEME_SCHEMA_VERSION,"kind":THEME_KIND,"theme":theme_value(theme),"preferredMode":mode,"density":density})
+    let schema = if theme.design.is_some() {
+        2
+    } else {
+        THEME_SCHEMA_VERSION
+    };
+    json!({"schemaVersion":schema,"kind":THEME_KIND,"theme":theme_value(theme),"preferredMode":mode,"density":density})
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_and_complete_design_documents_round_trip_without_silent_upgrades() {
+        let mut theme = presets().pop().unwrap();
+        let legacy = theme_document(&theme, "dark", "compact");
+        assert_eq!(legacy["schemaVersion"], 1);
+        assert!(legacy["theme"].get("design").is_none());
+        assert_eq!(parse_theme_document(&legacy).unwrap().0, theme);
+        theme.design = Some(theme.effective_design());
+        let document = theme_document(&theme, "system", "standard");
+        assert_eq!(document["schemaVersion"], 2);
+        assert_eq!(parse_theme_document(&document).unwrap().0, theme);
+        let mut wrong_version = document.clone();
+        wrong_version["schemaVersion"] = json!(1);
+        assert!(parse_theme_document(&wrong_version).is_err());
+        let mut missing_design = legacy;
+        missing_design["schemaVersion"] = json!(2);
+        assert!(parse_theme_document(&missing_design).is_err());
+        let mut wrong_fields = document;
+        wrong_fields["theme"]["design"]["typography"]["css"] = json!("body{display:none}");
+        assert!(parse_theme_document(&wrong_fields).is_err());
+    }
+
+    #[test]
+    fn complete_design_controls_every_visual_group_and_density_is_independent() {
+        let mut theme = presets().pop().unwrap();
+        let mut spec = theme.effective_design();
+        spec.typography.body_font = design::FontFamily::Serif;
+        spec.typography.scale = 1.2;
+        spec.typography.message_size = 16;
+        spec.geometry.spacing_scale = 1.25;
+        spec.geometry.radii = [0, 2, 4, 6, 8];
+        spec.shadow = design::Shadow::None;
+        spec.motion.fast = 0;
+        spec.validate().unwrap();
+        theme.design = Some(spec.clone());
+        let tokens = build_tokens(&theme, false, true);
+        assert_eq!(tokens["sans"], design::FontFamily::Serif.stack());
+        assert_eq!(tokens["type-scale"], "1.2");
+        assert_eq!(tokens["font-message"], "calc(15px * var(--type-scale))");
+        assert_eq!(tokens["spacing-scale"], "1.25");
+        assert_eq!(tokens["radius-md"], "4px");
+        assert_eq!(tokens["shadow"], "none");
+        assert_eq!(tokens["motion-fast"], "0ms");
+        assert_eq!(theme.design.unwrap(), spec);
+    }
+
+    #[test]
+    fn legacy_line_height_contract_and_existing_reading_rhythm_are_preserved() {
+        for theme in presets() {
+            for compact in [false, true] {
+                let tokens = build_tokens(&theme, false, compact);
+                assert_eq!(
+                    tokens["message-line-height"],
+                    if compact { "1.8" } else { "1.95" }
+                );
+                assert_eq!(
+                    tokens["reading-line-height"],
+                    if theme.id == "codex" { "1.7" } else { "1.55" }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn codex_visual_defaults_are_portable_and_do_not_replace_explicit_designs() {
+        let mut theme = presets().pop().unwrap();
+        let design = theme.effective_design();
+        design.validate().unwrap();
+        assert_eq!(design.typography.message_size, 15);
+        assert_eq!(design.typography.heading_weight, 600);
+        assert_eq!(design.geometry.radii, [4, 8, 12, 16, 20]);
+        assert_eq!(design.shadow, design::Shadow::Subtle);
+        let document = theme_document(&theme, "light", "standard");
+        assert_eq!(document["schemaVersion"], 1);
+        assert_eq!(
+            parse_theme_document(&document)
+                .unwrap()
+                .0
+                .effective_design(),
+            design
+        );
+        let explicit = ThemeDesign::legacy("code", "humanist", "square");
+        theme.design = Some(explicit.clone());
+        assert_eq!(theme.effective_design(), explicit);
+        for other in presets().into_iter().filter(|theme| theme.id != "codex") {
+            assert_eq!(
+                other.effective_design(),
+                ThemeDesign::legacy(&other.font, &other.heading_font, &other.shape)
+            );
+        }
+    }
+
     #[test]
     fn presets_are_valid() {
         for theme in presets() {
@@ -621,7 +779,10 @@ mod tests {
     #[test]
     fn tokens_cover_shape_density_and_derived_colors() {
         let tokens = build_tokens(&presets()[0], false, true);
-        assert_eq!(tokens["space-80"], "calc(80px * var(--density-factor))");
+        assert_eq!(
+            tokens["space-80"],
+            "calc(80px * var(--density-factor) * var(--spacing-scale))"
+        );
         assert_eq!(tokens["density-factor"], ".86");
         assert_eq!(tokens["radius-md"], "8px");
         assert_eq!(tokens["terminal-text"], "#e1eaf2");

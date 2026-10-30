@@ -1,5 +1,7 @@
 # 会话资源与可下载 Package · v0.6
 
+> 当前扩展实现：会话配置新增 Extensions，保存固定版本的 **desired Agent pins**；UI 可见性属于设备偏好，不是 Agent 开关。节点安装/应用与动态 UI 尚未接入。详见 [Agent / UI 扩展边界](../architecture/extensions.md)；下文安装流程仍是设计目标。
+
 > 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](../guides/testing-artifacts.md)。
 
 2026-10-24。Skills、Tools、提示词作为**会话配置**，入口位于对话内容上方的紧凑工具栏。输入框继续保留 Skills 选择，用于给某一条消息指定技能。

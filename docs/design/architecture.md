@@ -10,7 +10,7 @@
 - 数据默认沿用平台 `rpi-work/node`（或 `RPI_WORK_DATA_DIR`），锁为 `<data>/node.lock`；原生目录索引为 `<data>/rpc/projects.json`，每项目注册表为 `<data>/rpc/projects/<id>/sessions.json`。迁移只导入旧应用目录索引与匹配项目的注册项及偏好，保留源文件，不改写 transcript；不承诺全局原生历史发现。退出先停止 core 拥有的子进程，再释放锁。
 - 已报告验证：`work-client` / `work-node` / `work-ui` 测试、desktop 与 WASM 检查，以及 rpi 0.11.0 上显式运行 ignored `local_workspace_smoke`，无模型调用。未手工测试原生 GUI 目录选择器或真实模型聊天。没有发布新二进制或升级已安装应用。
 
-实现细节与存储迁移边界见 [transport 架构](../architecture/transport.md)，当前目录组织见 [项目结构](../guides/project-structure.md)。
+实现细节与存储迁移边界见 [transport 架构](../architecture/transport.md)，当前目录组织见 [项目结构](../guides/project-structure.md)。Agent 扩展与 UI 扩展已分离契约；资源导入/预览、desired 会话 pins 与设备 UI 偏好已实现，节点安装和动态 UI 挂载未接入，见 [扩展架构](../architecture/extensions.md)。
 
 ## 历史设计记录（下文 v0.2–v0.9 与第 1–10 节）
 

@@ -3,6 +3,8 @@
 //! The client layer is expected to translate HTTP/SSE events into [`Event`]s.
 //! This crate deliberately does not know about HTTP, JSON, or a particular UI.
 
+pub mod extensions;
+
 use std::collections::HashSet;
 
 /// The lifecycle of one agent run.

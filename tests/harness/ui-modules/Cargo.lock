@@ -3678,6 +3678,9 @@ dependencies = [
 [[package]]
 name = "work-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "work-update"

@@ -58,16 +58,18 @@ impl WorkspaceClient {
     }
     /// Stop native children while keeping the catalog and facade reusable.
     /// Remote workspaces are not owned by this client and are left running.
+    /// Immediate remote results are ready futures so the facade stays async on
+    /// Web/Android too, where the native awaiting branches are compiled out.
     pub async fn suspend(&self) {
         match self {
-            Self::Remote(_) => {}
+            Self::Remote(_) => std::future::ready(()).await,
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(client) => client.suspend().await,
         }
     }
     pub async fn shutdown(&self) {
         match self {
-            Self::Remote(_) => {}
+            Self::Remote(_) => std::future::ready(()).await,
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(client) => client.shutdown().await,
         }
@@ -81,7 +83,9 @@ impl WorkspaceClient {
     ) -> Result<Project, ClientError> {
         let _ = (name, path.as_ref(), init_git);
         match self {
-            Self::Remote(_) => Err(unsupported("create_project_directory", "http-sse")),
+            Self::Remote(_) => {
+                std::future::ready(Err(unsupported("create_project_directory", "http-sse"))).await
+            }
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(client) => {
                 client
@@ -93,7 +97,9 @@ impl WorkspaceClient {
     /// Native model/auth control context, created lazily without a user project.
     pub async fn control_session(&self) -> Result<String, ClientError> {
         match self {
-            Self::Remote(_) => Err(unsupported("control_session", "http-sse")),
+            Self::Remote(_) => {
+                std::future::ready(Err(unsupported("control_session", "http-sse"))).await
+            }
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(client) => client.control_session().await,
         }

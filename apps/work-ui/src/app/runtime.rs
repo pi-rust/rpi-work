@@ -71,6 +71,22 @@ pub(crate) fn interaction_state(
     InteractionState::Ready
 }
 
+/// Fail closed until the selected session is synchronized, online and idle.
+/// Local submission acknowledgement is not proof of runtime settlement;
+/// `interaction` must include the pending-reply window. UI preferences stay independent.
+pub(crate) fn extension_config_locked(
+    projection: Option<&RunProjection>,
+    interaction: InteractionState,
+    has_pending_dialogs: bool,
+) -> bool {
+    has_pending_dialogs
+        || interaction != InteractionState::Ready
+        || projection.is_none_or(|run| {
+            run.connection != ConnectionState::Online
+                || !matches!(run.phase, RunPhase::Ready | RunPhase::Settled(_))
+        })
+}
+
 pub(crate) fn phase_tone(phase: &RunPhase) -> &'static str {
     match phase {
         RunPhase::Ready => "ready",
@@ -181,8 +197,15 @@ pub(crate) fn resource_snapshot(
         .iter()
         .map(|skill| json!({"id":skill.id,"revision":skill.content.len(),"content":skill.content}))
         .collect::<Vec<_>>();
+    // These are desired client trace metadata, not evidence of node loading.
+    let extensions = binding.extension_pins.iter().map(|pin| {
+        let manifest = library.extensions.iter().filter_map(|extension| extension.manifest.as_ref())
+            .find(|manifest| manifest.pin() == *pin && manifest.agent.is_some());
+        json!({"id":pin.id,"version":pin.version,"agent":manifest.and_then(|m| m.agent.as_ref()),"unresolved":manifest.is_none()})
+    }).collect::<Vec<_>>();
     json!({
         "desiredRevision":binding.revision,
+        "extensions":{"status":"desired-only","nodeApplied":null,"pins":extensions},
         "packages":packages,
         "skills":skills,
         "disabledSkills":binding.disabled_skills,
@@ -264,6 +287,143 @@ pub(crate) fn session_matches(session: &SessionSummary, query: &str, projects: &
 mod status_tests {
     use super::{super::connections::Phase, interaction_state, projection_status, task_status};
     use work_core::{ConnectionState, RunPhase, RunProjection, SettlementOutcome};
+
+    #[test]
+    fn extension_config_stays_locked_until_the_session_has_a_synchronized_projection() {
+        let interaction = interaction_state(None, true, false, false);
+        assert!(super::extension_config_locked(None, interaction, false));
+    }
+
+    #[test]
+    fn extension_config_stays_locked_after_prompt_ack_before_runtime_events() {
+        let ready = RunProjection::new("previous-run");
+        // HTTP/RPC submission has finished, but no run event has arrived yet.
+        let interaction = interaction_state(Some(&ready), true, false, true);
+        assert!(super::extension_config_locked(
+            Some(&ready),
+            interaction,
+            false
+        ));
+    }
+
+    #[test]
+    fn extension_config_requires_confirmed_online_idle_state() {
+        let mut run = RunProjection::new("run");
+        assert!(!super::extension_config_locked(
+            Some(&run),
+            super::InteractionState::Ready,
+            false
+        ));
+        assert!(super::extension_config_locked(
+            Some(&run),
+            super::InteractionState::Ready,
+            true
+        ));
+        assert!(super::extension_config_locked(
+            Some(&run),
+            super::InteractionState::Disconnected,
+            false
+        ));
+        for connection in [
+            ConnectionState::Reconnecting,
+            ConnectionState::Resyncing,
+            ConnectionState::Offline,
+        ] {
+            run.connection = connection;
+            assert!(super::extension_config_locked(
+                Some(&run),
+                super::InteractionState::Ready,
+                false
+            ));
+        }
+        run.connection = ConnectionState::Online;
+        for phase in [
+            RunPhase::Accepted,
+            RunPhase::Preparing,
+            RunPhase::Text,
+            RunPhase::Tool,
+            RunPhase::AwaitingInput,
+            RunPhase::AwaitingSettlement,
+            RunPhase::Cancelling,
+        ] {
+            run.phase = phase;
+            assert!(super::extension_config_locked(
+                Some(&run),
+                super::InteractionState::Ready,
+                false
+            ));
+        }
+        for outcome in [
+            SettlementOutcome::Completed,
+            SettlementOutcome::Failed,
+            SettlementOutcome::Interrupted,
+        ] {
+            run.phase = RunPhase::Settled(outcome);
+            assert!(!super::extension_config_locked(
+                Some(&run),
+                super::InteractionState::Ready,
+                false
+            ));
+        }
+    }
+
+    #[test]
+    fn extension_snapshots_preserve_desired_versions_without_ui_or_applied_claims() {
+        use crate::features::resources::library as resources;
+        use work_core::extensions::{ExtensionManifest, ExtensionPin, UiExtensionPreference};
+
+        let manifest: ExtensionManifest = serde_json::from_value(serde_json::json!({
+            "schemaVersion":1,"kind":"rpi-work-extension-design","id":"team.review",
+            "name":"Review","version":"1.0.0",
+            "agent":{"runtime":"rpi-native","entry":"src/lib.rs"}
+        }))
+        .unwrap();
+        let pin = manifest.pin();
+        let mut library = resources::ResourceLibrary::default();
+        library.extensions.push(resources::ExtensionResource {
+            id: pin.key(),
+            name: "Review".into(),
+            description: String::new(),
+            source: pin.key(),
+            content: String::new(),
+            manifest: Some(manifest),
+            acquired: true,
+            design_sample: false,
+        });
+        let binding = resources::SessionBinding {
+            session_id: "node/session".into(),
+            extension_pins: vec![
+                pin.clone(),
+                ExtensionPin {
+                    id: "missing.extension".into(),
+                    version: "0.1.0".into(),
+                },
+            ],
+            ..resources::SessionBinding::default()
+        };
+        let snapshot = super::resource_snapshot(&binding, &library);
+        assert_eq!(snapshot["extensions"]["status"], "desired-only");
+        assert!(snapshot["extensions"]["nodeApplied"].is_null());
+        assert_eq!(snapshot["extensions"]["pins"][0]["version"], "1.0.0");
+        assert_eq!(snapshot["extensions"]["pins"][0]["unresolved"], false);
+        assert_eq!(snapshot["extensions"]["pins"][1]["unresolved"], true);
+        library.ui_preferences.push(UiExtensionPreference {
+            extension: pin,
+            contribution_id: "status".into(),
+            visible: false,
+        });
+        assert_eq!(super::resource_snapshot(&binding, &library), snapshot);
+        library.extensions[0].manifest.as_mut().unwrap().version = "2.0.0".into();
+        let missing_old_version = super::resource_snapshot(&binding, &library);
+        assert_eq!(
+            missing_old_version["extensions"]["pins"][0]["version"],
+            "1.0.0"
+        );
+        assert_eq!(
+            missing_old_version["extensions"]["pins"][0]["unresolved"],
+            true
+        );
+    }
 
     #[test]
     fn first_message_title_uses_a_bounded_unicode_first_line() {

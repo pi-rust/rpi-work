@@ -79,7 +79,7 @@ fn use_project_set(storage_key: &'static str) -> Signal<std::collections::HashSe
 
 pub const RECENT_SESSION_LIMIT: usize = 5;
 
-/// Browser time works on web, desktop WebView and mobile alike.
+/// Browser time works on web, desktop `WebView` and mobile alike.
 pub fn use_sidebar_clock() -> Signal<u64> {
     let mut now = use_signal(|| 0);
     use_future(move || async move {
@@ -105,9 +105,9 @@ pub fn relative_updated_at(updated_at: u64, now: u64) -> String {
         0 => "刚刚".into(),
         1..60 => format!("{minutes}分"),
         60..1440 => format!("{}小时", minutes / 60),
-        1440..43200 => format!("{}天", minutes / 1440),
-        43200..525600 => format!("{}个月", minutes / 43200),
-        _ => format!("{}年", minutes / 525600),
+        1440..43_200 => format!("{}天", minutes / 1440),
+        43_200..525_600 => format!("{}个月", minutes / 43_200),
+        _ => format!("{}年", minutes / 525_600),
     }
 }
 

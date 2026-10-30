@@ -21,6 +21,7 @@ use work_core::{
     Usage,
 };
 
+mod extensions;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_lifecycle;
 mod permissions;

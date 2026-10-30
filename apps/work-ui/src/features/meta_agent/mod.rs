@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const CSS: &str = include_str!("meta_agent.css");
+#[cfg(test)]
+mod tests;
 static NEXT_NOTICE_INSTANCE: AtomicU64 = AtomicU64::new(1);
 const MAX_BYTES: usize = 200 * 1024;
 const NOTICE_DURATION_MS: u32 = 3300;
@@ -359,7 +361,11 @@ fn templates(kind: &str, id: &str, name: &str, version: &str) -> BTreeMap<String
             );
         }
         "Extension" => {
-            files.insert("extension.design.json".into(), serde_json::to_string_pretty(&json!({"kind":"rpi-work-extension-design","id":id,"name":name,"version":version,"entry":"src/lib.rs","description":"设计草稿，尚未适配原生扩展宿主。"})).unwrap_or_default());
+            files.insert("extension.design.json".into(), serde_json::to_string_pretty(&json!({
+                "schemaVersion":1,"kind":"rpi-work-extension-design","id":id,"name":name,"version":version,
+                "agent":{"runtime":"rpi-native","entry":"src/lib.rs","tools":[],"permissions":["project.read"]},
+                "ui":{"schemaVersion":1,"contributions":[{"id":"path-status","slot":"session-inspector","title":"路径检查设计预览","widgets":[{"type":"text","text":"这是静态设计预览，尚未在执行节点加载。"},{"type":"fields","fields":[{"label":"Agent 执行位置","value":"执行节点"},{"label":"UI 呈现位置","value":"客户端"}]}]}]}
+            })).unwrap_or_default());
             files.insert("src/lib.rs".into(), "// 设计源码草稿；尚未注册到原生宿主。\npub fn is_relative_project_path(path: &str) -> bool {\n    !path.is_empty() && !path.starts_with('/') && !path.contains(\"..\")\n}\n".into());
             files.insert("tests/cases.md".into(), "# 本地结构测试场景\n\n- 接受 src/lib.rs\n- 拒绝 ../secrets\n- 不代表 Rust 编译或运行测试\n".into());
         }
@@ -477,19 +483,15 @@ fn validate_kind(resource: &MetaResource, has_tests: bool, checks: &mut Vec<Meta
             });
         }
         _ => {
-            let manifest = resource
-                .sources
-                .get("extension.design.json")
-                .and_then(|s| serde_json::from_str::<Value>(s).ok());
-            let entry = manifest.as_ref().and_then(|v| v["entry"].as_str());
-            let valid = manifest.as_ref().is_some_and(|v| {
-                v["kind"] == "rpi-work-extension-design"
-                    && v["id"] == resource.id
-                    && v["version"] == resource.version
-                    && entry.is_some_and(|e| resource.sources.contains_key(e))
-            });
+            let valid = resource.sources.contains_key("extension.design.json")
+                && crate::features::extensions::design_manifest(
+                    &source_json(&resource.sources),
+                    &resource.id,
+                    &resource.version,
+                )
+                .is_ok();
             checks.push(MetaCheck {
-                name: "扩展设计清单与源码入口引用".into(),
+                name: "Agent/UI 独立声明、兼容 schema、身份与源码入口（兼容旧设计）".into(),
                 ok: valid,
             });
             checks.push(MetaCheck {

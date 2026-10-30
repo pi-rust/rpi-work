@@ -14,8 +14,8 @@ use super::{
     identity::{node_origin, project_scope_key, session_scope_key},
     runtime::{
         InteractionState, connection_status, conversation_title, default_node_url,
-        interaction_state, phase_label, projection_status, resource_snapshot, task_status,
-        transport_online,
+        extension_config_locked, interaction_state, phase_label, projection_status,
+        resource_snapshot, task_status, transport_online,
     },
 };
 use crate::features::projects::{
@@ -42,7 +42,7 @@ use management::SessionAction;
 use settings::SettingsPage;
 use state::{Drafts, update_draft};
 const CSS: &str = include_str!("../shared/theme/styles.css");
-const THEMES: &str = include_str!("../shared/theme/themes.css");
+const THEMES: &str = appearance::STYLESHEETS;
 const RESOURCES_CSS: &str = resources::CSS;
 const META_AGENT_CSS: &str = meta_agent::CSS;
 const PROJECT_PICKER_CSS: &str = project_picker::CSS;
@@ -2660,6 +2660,11 @@ pub(super) fn App() -> Element {
         submitting,
         waiting_reply,
     );
+    let extension_locked = extension_config_locked(
+        projection.read().as_ref(),
+        interaction,
+        !pending_dialogs.read().is_empty(),
+    );
     let running = interaction.is_active();
     let activity_label = interaction.activity_label(waiting_reply);
     let submitting_original = submitting
@@ -3056,7 +3061,7 @@ pub(super) fn App() -> Element {
                                                             management::SidebarSession {
                                                                 key: "sidebar-session-{id}", session: session.clone(), selected,
                                                                 busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
-                                                                now: *sidebar_now.read(), onopen: move |id| open_session(id), onaction: session_action,
+                                                                now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
                                                             }
                                                         }
                                                     }
@@ -3102,7 +3107,7 @@ pub(super) fn App() -> Element {
                                         management::SidebarSession {
                                             key: "sidebar-session-{id}", session: session.clone(), selected,
                                             busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
-                                            now: *sidebar_now.read(), onopen: move |id| open_session(id), onaction: session_action,
+                                            now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
                                         }
                                     }
                                 }
@@ -3292,6 +3297,7 @@ pub(super) fn App() -> Element {
                                         session_id: session_scope_key(&node_url.read(), &session_id), compact: true, open_requested: open_session_config,
                                         session_title: selected_session_title.read().clone(),
                                         on_browse: Some(EventHandler::new(move |()| active_page.set("packages".to_owned()))),
+                                        extension_config_locked: extension_locked,
                                         selected_session,
                                         library: resource_library, onquote: move |text: String| {
                                             if let Some(id) = selected_session.read().as_deref() {

@@ -146,8 +146,8 @@ cargo run --locked -p work-cli -- commands
 主分支构建成功不会自动创建 Release。发布稳定版本时，先更新 apps/work-ui/Cargo.toml 和 docs/release-notes.md，提交后打标签：
 
 ~~~shell
-git tag -a v0.1.6 -m "RPI Work v0.1.6"
-git push origin v0.1.6
+git tag -a v0.1.7 -m "RPI Work v0.1.7"
+git push origin v0.1.7
 ~~~
 
 标签中的版本必须与 UI 包版本一致。发布任务先创建草稿，上传完整制品并验证签名，最后公开 Release，供客户端下载和自动检查更新。签名配置、失败排查和密钥备份见 [发布说明](docs/guides/automatic-updates.md#发布流程)。
@@ -156,8 +156,8 @@ git push origin v0.1.6
 
 - **产品与架构**：[功能设计](docs/design/product-design.md) · [Dioxus / rpi 框架](docs/design/architecture.md) · [上游功能边界](docs/archive/upstream-functional-review.md)
 - **对话与项目**：[流式消息](docs/design/streaming.md) · [多文件审阅](docs/design/conversation-and-review.md) · [项目文件](docs/design/project-files.md) · [会话追踪](docs/design/session-tracing.md)
-- **能力与扩展**：[Skills 与交互工具](docs/design/skills-and-interactive-tools.md) · [会话 Package](docs/design/session-packages.md) · [元Agent](docs/design/meta-agent.md)
-- **设备与外观**：[手机与电脑连接](docs/guides/node-connection.md) · [主题](docs/design/themes.md)
-- **构建与验收**：[多平台编译](docs/guides/ci-builds.md) · [自动更新](docs/guides/automatic-updates.md) · [原型还原验收](docs/archive/ui-parity-acceptance.md) · [本地测试产物](docs/guides/testing-artifacts.md)
+- **能力与扩展**：[Agent / UI 扩展边界](docs/architecture/extensions.md) · [真实原生扩展与实时 UI Demo](docs/guides/extension-demo.md) · [Skills 与交互工具](docs/design/skills-and-interactive-tools.md) · [会话 Package](docs/design/session-packages.md) · [元Agent](docs/design/meta-agent.md)
+- **设备与外观**：[手机与电脑连接](docs/guides/node-connection.md) · [主题](docs/design/themes.md) · [字体与完整视觉规格](docs/guides/theme-design.md)
+- **构建与验收**：[开发规范](docs/guides/development-standards.md) · [多平台编译](docs/guides/ci-builds.md) · [自动更新](docs/guides/automatic-updates.md) · [原型还原验收](docs/archive/ui-parity-acceptance.md) · [本地测试产物](docs/guides/testing-artifacts.md)
 
 查看 HTML 原型：在仓库根目录运行 python -m http.server 4173 --bind 127.0.0.1，打开 <http://127.0.0.1:4182/prototype/>。原型使用示例数据，设计稿与历史验收记录单独保留在文档中。

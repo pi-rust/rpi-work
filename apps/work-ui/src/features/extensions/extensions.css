@@ -1,0 +1,26 @@
+.extension-contract { min-width: 0; display: grid; gap: var(--space-8); }
+.extension-contract > h3 { margin-top: var(--space-14); }
+.extension-contract h4 { margin: var(--space-5) 0; font-size: calc(11px * var(--type-scale, 1)); color: var(--muted); }
+.extension-contract > p { margin: 0; line-height: 1.7; font-size: calc(11px * var(--type-scale, 1)); overflow-wrap: anywhere; }
+.extension-preview { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-12); background: var(--panel); }
+.extension-preview > header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-10); }
+.extension-preview > header > div { min-width: 0; display: grid; gap: var(--space-5); }
+.extension-preview code { font: calc(10px * var(--type-scale, 1))/1.7 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.extension-preview strong { font-size: calc(12px * var(--type-scale, 1)); overflow-wrap: anywhere; }
+.extension-preview .button { flex: none; min-height: 36px; }
+.extension-widgets { min-width: 0; display: grid; gap: var(--space-10); margin-top: var(--space-10); }
+.extension-widgets p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: calc(12px * var(--type-scale, 1)); line-height: 1.7; }
+.extension-widgets dl { display: grid; gap: var(--space-7); margin: 0; }
+.extension-widgets dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-10); }
+.extension-widgets dt, .extension-widgets dd { margin: 0; overflow-wrap: anywhere; font-size: calc(11px * var(--type-scale, 1)); }
+.extension-progress { display: grid; gap: var(--space-7); font-size: calc(11px * var(--type-scale, 1)); }
+.extension-progress progress { width: 100%; accent-color: var(--accent); }
+.extension-session-list { display: grid; gap: var(--space-10); min-width: 0; }
+.extension-session-list .resource-actions { margin-top: var(--space-10); }
+.resource-modal .resource-segments { display: flex; width: 100%; overflow-x: auto; }
+.resource-modal .resource-segments > button { flex: 1 0 auto; }
+@media(max-width:700px) {
+  .extension-preview > header { flex-wrap: wrap; }
+  .extension-preview .button { min-height: 44px; }
+  .resource-modal .resource-segments > button { min-height: 44px; padding: 6px 8px; }
+}

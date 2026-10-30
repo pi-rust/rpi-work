@@ -7,9 +7,19 @@ mod theme_contract;
 use theme_contract::{MAX_CUSTOM_THEMES, MAX_THEME_JSON_BYTES, THEME_KIND, Theme};
 
 const APPEARANCE_KIND: &str = "rpi-work-appearance";
+pub const STYLESHEETS: &str = concat!(
+    include_str!("themes.css"),
+    "\n",
+    include_str!("codex.css"),
+    "\n",
+    include_str!("codex-components.css"),
+    "\n",
+    include_str!("theme-design.css")
+);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Appearance {
+    Codex,
     Paper,
     Ocean,
     Graphite,
@@ -20,6 +30,7 @@ impl Appearance {
     // Custom identities are stable slots; the complete imported ID lives in the library.
     pub const fn id(self) -> &'static str {
         match self {
+            Self::Codex => "codex",
             Self::Paper => "paper",
             Self::Ocean => "ocean",
             Self::Graphite => "graphite",
@@ -40,6 +51,7 @@ impl Appearance {
     }
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Codex => "Codex 黑白",
             Self::Paper => "纸与苔绿",
             Self::Ocean => "海湾蓝",
             Self::Graphite => "石墨紫",
@@ -47,8 +59,14 @@ impl Appearance {
             Self::Custom(_) => "自定义主题",
         }
     }
-    pub const fn all() -> [Self; 4] {
-        [Self::Paper, Self::Ocean, Self::Graphite, Self::Reddit]
+    pub const fn all() -> [Self; 5] {
+        [
+            Self::Codex,
+            Self::Paper,
+            Self::Ocean,
+            Self::Graphite,
+            Self::Reddit,
+        ]
     }
     fn from_id(id: &str) -> Option<Self> {
         Self::all().into_iter().find(|theme| theme.id() == id)
@@ -64,7 +82,7 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            theme: Appearance::Reddit,
+            theme: Appearance::Codex,
             mode: "light",
             density: "standard",
         }
@@ -154,9 +172,9 @@ fn restored(value: &Value) -> (AppearanceSettings, ThemeLibrary) {
                 value
                     .get("theme")
                     .and_then(Value::as_str)
-                    .unwrap_or("reddit"),
+                    .unwrap_or("codex"),
             )
-            .unwrap_or(Appearance::Reddit),
+            .unwrap_or(Appearance::Codex),
         mode: mode(value.get("mode").and_then(Value::as_str)).unwrap_or("light"),
         density: density(value.get("density").and_then(Value::as_str)).unwrap_or("standard"),
     };
@@ -295,7 +313,12 @@ fn apply_script(settings: AppearanceSettings, library: &ThemeLibrary) -> String 
     let theme = library.resolve(settings.theme);
     let light = theme_contract::build_tokens(&theme, false, settings.density == "compact");
     let dark = theme_contract::build_tokens(&theme, true, settings.density == "compact");
-    let payload = json!({"id":theme.id,"mode":settings.mode,"density":settings.density,"custom":matches!(settings.theme,Appearance::Custom(_)),"light":light,"dark":dark});
+    let layout_keys: Vec<_> = theme
+        .effective_design()
+        .tokens(settings.density == "compact")
+        .into_keys()
+        .collect();
+    let payload = json!({"id":theme.id,"mode":settings.mode,"density":settings.density,"custom":matches!(settings.theme,Appearance::Custom(_)),"layoutKeys":layout_keys,"light":light,"dark":dark});
     let literal = serde_json::to_string(&payload.to_string()).unwrap();
     format!(
         r#"
@@ -306,7 +329,7 @@ fn apply_script(settings: AppearanceSettings, library: &ThemeLibrary) -> String 
             const dark=config.mode==='dark'||(config.mode==='system'&&media.matches), mode=dark?'dark':'light', tokens=config[mode];
             for(const key of Object.keys(tokens))root.style.removeProperty('--'+key);
             if(config.custom)for(const [key,value] of Object.entries(tokens))root.style.setProperty('--'+key,value);
-            else for(const key of ['density-factor','font-message','message-line-height','control-height'])root.style.setProperty('--'+key,tokens[key]);
+            else for(const key of config.layoutKeys)root.style.setProperty('--'+key,tokens[key]);
             root.dataset.theme=config.id;root.dataset.mode=mode;root.dataset.colorMode=mode;
             root.dataset.appearance=config.mode;root.dataset.density=config.density;root.style.colorScheme=mode;
             document.body?.classList.toggle('theme-dark',dark);
@@ -365,11 +388,7 @@ fn preview_style(theme: &Theme) -> String {
             let _ = write!(style, "--mini-{mode}-{key}:{value};");
         }
     }
-    let radius = match theme.shape.as_str() {
-        "crisp" => 5,
-        "square" => 3,
-        _ => 8,
-    };
+    let radius = theme.effective_design().geometry.radii[2];
     let _ = write!(style, "--mini-radius:{radius}px");
     style
 }
@@ -505,6 +524,14 @@ pub fn AppearancePicker(
             )
         }))
         .collect();
+    let visual = library
+        .read()
+        .resolve(settings.read().theme)
+        .effective_design();
+    let body_font = visual.typography.body_font.stack();
+    let heading_font = visual.typography.heading_font.stack();
+    let code_font = visual.typography.code_font.stack();
+    let radii = format!("{:?}", visual.geometry.radii);
     let mut cancel_header = cancel.clone();
     rsx! {
         style { {include_str!("../../features/settings/settings.css")} }
@@ -540,6 +567,19 @@ pub fn AppearancePicker(
                         }
                     }
                 }
+                section { class: "theme-design-summary", aria_label: "主题视觉规格",
+                    h3 { "视觉规格 · 不只是配色" }
+                    dl {
+                        div { dt { "正文字体" } dd { "{body_font}" } }
+                        div { dt { "标题字体" } dd { "{heading_font}" } }
+                        div { dt { "代码字体" } dd { "{code_font}" } }
+                        div { dt { "字号 / 行高" } dd { "{visual.typography.scale}× · 正文 {visual.typography.body_size}px · 消息 {visual.typography.message_size}px / {visual.typography.message_line_height}" } }
+                        div { dt { "间距 / 圆角" } dd { "{visual.geometry.spacing_scale}× · {radii}px" } }
+                        div { dt { "控件 / 触控" } dd { "{visual.geometry.control_height}px / {visual.geometry.hit_size}px" } }
+                        div { dt { "动效" } dd { "{visual.motion.fast} / {visual.motion.normal}ms" } }
+                    }
+                    p { "完整视觉规格使用主题 JSON v2；旧版主题仍可直接使用。字体仅使用本机安全字体栈，不下载外部资源。" }
+                }
                 div { class: "theme-contract-preview", span { "品牌强调" } span { "成功 / 新增" } span { "失败 / 删除" } span { "运行状态" } }
                 div { class: "theme-portable",
                     for (full, label) in [(true,"导出主题 JSON"),(false,"导出偏好 JSON")] {
@@ -554,10 +594,10 @@ pub fn AppearancePicker(
                 }
                 p { class: "theme-import-notice", role: "status", "{notice}" }
                 p { class: "theme-error", role: "alert", "{error}" }
-                div { class: "modal-actions",
-                    button { class: "secondary", onclick: move |_| cancel(), "取消" }
-                    button { class: "button primary", disabled: *saving.read(), onclick: move |_| save(), if *saving.read() { "正在保存…" } else { "保存" } }
-                }
+            }
+            div { class: "modal-actions",
+                button { class: "secondary", onclick: move |_| cancel(), "取消" }
+                button { class: "button primary", disabled: *saving.read(), onclick: move |_| save(), if *saving.read() { "正在保存…" } else { "保存" } }
             }
         }
     }
@@ -566,6 +606,54 @@ pub fn AppearancePicker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_is_default_but_existing_theme_choices_are_preserved() {
+        assert_eq!(AppearanceSettings::default().theme, Appearance::Codex);
+        assert_eq!(Appearance::all()[0], Appearance::Codex);
+        for value in [Value::Null, json!({}), json!({"theme":"missing"})] {
+            assert_eq!(restored(&value).0.theme, Appearance::Codex);
+        }
+        for theme in Appearance::all() {
+            let (settings, _) =
+                restored(&json!({"theme":theme.id(),"mode":"dark","density":"compact"}));
+            assert_eq!(settings.theme, theme);
+            assert_eq!(settings.mode, "dark");
+            assert_eq!(settings.density, "compact");
+        }
+    }
+
+    #[test]
+    fn codex_portable_colors_and_builtin_css_match_in_both_modes() {
+        let library = ThemeLibrary::default();
+        let theme = library.resolve(Appearance::Codex);
+        let portable = theme_contract::theme_document(&theme, "light", "standard");
+        let (settings, restored_library, _) = import_document(
+            &portable.to_string(),
+            AppearanceSettings::default(),
+            &library,
+        )
+        .unwrap();
+        assert_eq!(settings.theme, Appearance::Codex);
+        assert_eq!(restored_library, library);
+        assert_eq!(
+            include_str!("codex.css"),
+            theme_contract::codex_stylesheet()
+        );
+        for dark in [false, true] {
+            let tokens = theme_contract::build_tokens(&theme, dark, false);
+            for surface in ["bg", "side", "panel", "card", "code", "selected-bg"] {
+                for text in ["text", "muted", "body-text"] {
+                    assert!(
+                        theme_contract::contrast(&tokens[text], &tokens[surface]) >= 4.5,
+                        "{text} on {surface} (dark={dark})"
+                    );
+                }
+            }
+            assert!(theme_contract::contrast(&tokens["accent"], &tokens["on-accent"]) >= 4.5);
+        }
+    }
+
     #[test]
     fn legacy_preferences_still_restore() {
         let (settings, library) =

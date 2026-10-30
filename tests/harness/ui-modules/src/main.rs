@@ -2,6 +2,7 @@
 use dioxus::prelude::*;
 #[path = "../../../../apps/work-ui/src/app/mod.rs"]
 mod app;
+mod extension_demo;
 #[path = "../../../../apps/work-ui/src/features/mod.rs"]
 mod features;
 #[path = "../../../../apps/work-ui/src/shared/mod.rs"]
@@ -41,15 +42,17 @@ fn App() -> Element {
     });
     rsx! {
         style { {include_str!("../../../../apps/work-ui/src/shared/theme/styles.css")} }
-        style { {include_str!("../../../../apps/work-ui/src/shared/theme/themes.css")} }
+        style { {appearance::STYLESHEETS} }
         style { "{resource_styles}" }
         style { {"html,body { overflow:auto; } .module-nav {display:flex;padding:10px;gap:15px;flex-wrap:wrap} .module-notice,.module-quote {padding:10px;overflow-wrap:anywhere;white-space:pre-wrap;max-width:100%}"} }
         nav { class: "module-nav",
-            for name in ["meta", "packages", "skills", "extensions", "traces", "projects", "extras", "conversation", "settings", "queue", "scroll"] {
+            for name in ["meta", "packages", "skills", "extensions", "extension-demo", "traces", "projects", "extras", "conversation", "settings", "queue", "scroll"] {
                 button { onclick:move |_|page.set(name.into()), "{name}" }
             }
         }
-        if page.read().as_str()=="scroll" {
+        if page.read().as_str()=="extension-demo" {
+            extension_demo::ExtensionDemo {}
+        } else if page.read().as_str()=="scroll" {
             ScrollContent {}
         } else if page.read().as_str()=="queue" {
             QueueContent {}
@@ -396,13 +399,15 @@ fn ResourceContent(kind: String) -> Element {
         let runtime_state = use_signal(|| None::<work_client::RuntimeState>);
         let status = use_signal(String::new);
         let mut quoted = use_signal(String::new);
+        let mut extension_locked = use_signal(|| false);
         let open_requested = use_signal(|| false);
         let open_session_config = use_signal(|| false);
         return rsx! {
             div { class:"module-nav",
                 button { onclick:move |_|session.set("review-session-a".into()), "Session A" }
                 button { onclick:move |_|session.set("review-session-b".into()), "Session B" }
-                resources::SessionResources {session_id:session.read().clone(), library, selected_session,shared_client,native_agents,session_generation,requests,runtime_state,status,open_requested,onquote:move |text|quoted.set(text)}
+                button { onclick:move |_| { let locked = *extension_locked.read(); extension_locked.set(!locked); }, "Toggle extension lock" }
+                resources::SessionResources {session_id:session.read().clone(), extension_config_locked:*extension_locked.read(), library, selected_session,shared_client,native_agents,session_generation,requests,runtime_state,status,open_requested,onquote:move |text|quoted.set(text)}
                 resources::SkillPicker {session_id:session.read().clone(), library, open_session_config, onquote:move |text|quoted.set(text)}
             }
             resources::ResourcePage { kind, library }

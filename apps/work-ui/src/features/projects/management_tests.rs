@@ -12,8 +12,8 @@ fn relative_time_handles_unknown_future_and_boundaries() {
         (59, "59分"),
         (60, "1小时"),
         (1440, "1天"),
-        (43200, "1个月"),
-        (525600, "1年"),
+        (43_200, "1个月"),
+        (525_600, "1年"),
     ] {
         assert_eq!(relative_updated_at(base, base + minutes * 60_000), expected);
     }

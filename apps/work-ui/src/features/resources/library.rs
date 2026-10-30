@@ -1,10 +1,17 @@
-use crate::shared::components::{Icon, Modal};
+use crate::{
+    features::extensions,
+    shared::components::{Icon, Modal},
+};
 use dioxus::{core::Task, prelude::*};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use work_client::{AgentClient, RuntimeState, WorkspaceClient};
+use work_core::extensions::{ExtensionManifest, ExtensionPin, UiExtensionPreference};
 
-pub const CSS: &str = include_str!("resources.css");
+pub const CSS: &str = concat!(
+    include_str!("resources.css"),
+    include_str!("../extensions/extensions.css")
+);
 const MAX_PACKAGE_BYTES: usize = 200 * 1024;
 #[cfg(any(target_arch = "wasm32", target_os = "android"))]
 const STORAGE_KEY: &str = "rpi-work-resources-v1";
@@ -29,8 +36,9 @@ pub struct ExtensionResource {
     pub description: String,
     pub source: String,
     pub content: String,
+    /// Derived from the immutable design source, never an installation receipt.
+    pub manifest: Option<ExtensionManifest>,
     pub acquired: bool,
-    pub node_installed: bool,
     pub design_sample: bool,
 }
 
@@ -80,6 +88,8 @@ pub struct PackagePin {
 pub struct SessionBinding {
     pub session_id: String,
     pub package_pins: Vec<PackagePin>,
+    /// Desired Agent configuration only. UI visibility is not a session binding.
+    pub extension_pins: Vec<ExtensionPin>,
     pub skills: Vec<String>,
     pub disabled_skills: Vec<String>,
     pub disabled_tools: Vec<String>,
@@ -94,6 +104,7 @@ pub struct ResourceLibrary {
     pub skills: Vec<SkillResource>,
     pub extensions: Vec<ExtensionResource>,
     pub sessions: Vec<SessionBinding>,
+    pub ui_preferences: Vec<UiExtensionPreference>,
     pub storage_error: Option<String>,
 }
 
@@ -133,6 +144,35 @@ impl ResourceLibrary {
                 .map(session_from_value)
                 .collect::<Result<_, _>>()?;
         }
+        if let Some(preferences) = object.get("ui_preferences") {
+            library.ui_preferences = serde_json::from_value(preferences.clone())
+                .map_err(|error| format!("UI 显示偏好无效：{error}"))?;
+        }
+        // The immutable package source is canonical; never trust separately saved
+        // UI/runtime metadata or a legacy node_installed flag.
+        for extension in &mut library.extensions {
+            if let Some(package) = library
+                .packages
+                .iter()
+                .find(|p| package_key(p) == extension.source)
+            {
+                extension.manifest = extension_manifest(package)?;
+            }
+        }
+        library.ui_preferences.retain(|preference| {
+            library
+                .extensions
+                .iter()
+                .filter_map(|e| e.manifest.as_ref())
+                .any(|manifest| {
+                    manifest.pin() == preference.extension
+                        && manifest.ui.as_ref().is_some_and(|ui| {
+                            ui.contributions
+                                .iter()
+                                .any(|c| c.id == preference.contribution_id)
+                        })
+                })
+        });
         // Validate persisted records before migration so corrupt storage remains protected.
         library.packages.retain(|package| !package.design_sample);
         library.skills.retain(|skill| !skill.design_sample);
@@ -150,11 +190,12 @@ impl ResourceLibrary {
 
     fn to_value(&self) -> Value {
         json!({
-            "version": 2,
+            "version": 3,
             "packages": self.packages.iter().map(package_value).collect::<Vec<_>>(),
             "skills": self.skills.iter().map(skill_value).collect::<Vec<_>>(),
             "extensions": self.extensions.iter().map(extension_value).collect::<Vec<_>>(),
-            "sessions": self.sessions.iter().map(session_value).collect::<Vec<_>>()
+            "sessions": self.sessions.iter().map(session_value).collect::<Vec<_>>(),
+            "ui_preferences": self.ui_preferences
         })
     }
 
@@ -360,8 +401,8 @@ pub fn import_design_package(
             description: package.description.clone(),
             source: key.clone(),
             content: source_text(&value["design"]["sources"]),
+            manifest: extension_manifest(&package)?,
             acquired: true,
-            node_installed: false,
             design_sample: false,
         })
     } else {
@@ -374,6 +415,42 @@ pub fn import_design_package(
     // All published kinds retain their immutable document here; pages filter by kind.
     library.packages.push(package);
     Ok(key)
+}
+
+fn extension_manifest(package: &DesignPackage) -> Result<Option<ExtensionManifest>, String> {
+    if !package.resource_kind.eq_ignore_ascii_case("extension") {
+        return Ok(None);
+    }
+    let manifest = package_manifest_value(package);
+    extensions::design_manifest(
+        &manifest["design"]["sources"],
+        &package.id,
+        &package.version,
+    )
+}
+
+fn set_extension_selected(binding: &mut SessionBinding, pin: &ExtensionPin, selected: bool) {
+    binding.extension_pins.retain(|p| p.id != pin.id);
+    if selected {
+        binding.extension_pins.push(pin.clone());
+    }
+    binding.revision += 1;
+}
+
+fn set_ui_visible(
+    library: &mut ResourceLibrary,
+    pin: &ExtensionPin,
+    contribution_id: &str,
+    visible: bool,
+) {
+    library
+        .ui_preferences
+        .retain(|p| p.extension != *pin || p.contribution_id != contribution_id);
+    library.ui_preferences.push(UiExtensionPreference {
+        extension: pin.clone(),
+        contribution_id: contribution_id.into(),
+        visible,
+    });
 }
 
 fn package_skills(package: &DesignPackage) -> Vec<SkillResource> {
@@ -497,11 +574,14 @@ pub fn ResourcePage(
     };
     let subtitle = match kind.as_str() {
         "skills" => "找到技能、明确来源，再查看它是否被获取或引用。",
-        "extensions" => "设计目录与节点安装状态分开显示。",
+        "extensions" => "Agent 在节点执行，UI 在客户端呈现；两者可独立声明。",
         _ => "具名、版本化的 Skills、工具声明与提示词组合。",
     };
     let query = search.read().to_lowercase();
-    let status_value = status.read().clone();
+    let mut status_value = status.read().clone();
+    if kind == "extensions" && matches!(status_value.as_str(), "installed" | "pending") {
+        status_value = "all".into();
+    }
     let state = library.read();
     let package_count = state.packages.len();
     let storage_error = state.storage_error.clone();
@@ -535,7 +615,7 @@ pub fn ResourcePage(
             format!("{} {} {}", item.name, item.description, item.source)
                 .to_lowercase()
                 .contains(&query)
-                && status_matches(&status_value, item.acquired, item.node_installed)
+                && status_matches(&status_value, item.acquired, false)
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -555,7 +635,7 @@ pub fn ResourcePage(
                     import_error.set(String::new());
                     paste_open.set(false);
                     import_notice.set(format!(
-                        "已载入本地资源库：{key}。等待节点安装；存储失败会另行提示。"
+                        "已载入本地资源库：{key}。导入不代表节点已应用；存储失败会另行提示。"
                     ));
                 }
                 Err(message) => import_error.set(message),
@@ -577,7 +657,11 @@ pub fn ResourcePage(
                     span { class: "resource-count", "{count} 项" }
                 }
             }
-            div { class: "resource-notice", "下载后安装，安装后配置会话。状态会区分本地内容、节点安装与会话选择。" }
+            div { class: "resource-notice",
+                if kind == "extensions" {
+                    "这里管理扩展设计。Agent 由执行节点运行，UI 由客户端呈现；导入、会话选择和 UI 显示互不代替。节点扩展管理尚未接入。"
+                } else { "下载后安装，安装后配置会话。状态会区分本地内容、节点安装与会话选择。" }
+            }
             if session_name.is_some() || on_back.is_some() {
                 div { class: "resource-context-strip",
                     div { Icon { name: "message" } span { "当前会话" } strong { "{session_name_label}" } }
@@ -588,9 +672,11 @@ pub fn ResourcePage(
             }
             div { class: "resource-filters",
                 input { value: "{search}", placeholder: "搜索名称、用途或来源…", aria_label: "搜索资源", oninput: move |event| search.set(event.value()) }
-                select { value: "{status}", aria_label: "状态筛选", onchange: move |event| status.set(event.value()),
+                select { value: "{status_value}", aria_label: "状态筛选", onchange: move |event| status.set(event.value()),
                     option { value: "all", "全部状态" } option { value: "acquired", "已获取" }
-                    option { value: "installed", "节点已安装" } option { value: "pending", "等待节点安装" }
+                    if kind != "extensions" {
+                        option { value: "installed", "节点已安装" } option { value: "pending", "等待节点安装" }
+                    }
                 }
                 if kind == "packages" { span { class: "resource-filter-note", "{package_count} 个版本记录" } }
             }
@@ -787,8 +873,14 @@ fn ExtensionCard(
                 span { class: "resource-badge", "{extension_state(&extension)}" }
             }
             p { "{extension.description}" }
-            small { "{extension.source} · 设计资源" }
-            Steps { acquired: extension.acquired, installed: extension.node_installed, desired: false }
+            small { "{extension.source} · {extensions::kind_label(extension.manifest.as_ref())}" }
+            if let Some(manifest) = &extension.manifest {
+                div { class: "resource-summary",
+                    span { if manifest.agent.is_some() { "Agent：节点执行" } else { "无 Agent 能力" } }
+                    span { if let Some(ui) = &manifest.ui { "UI：{ui.contributions.len()} 个声明" } else { "UI：默认工具卡" } }
+                }
+            }
+            p { class: "meta", "设计导入不代表节点已安装或加载。UI 显示偏好与 Agent 配置独立。" }
             div { class: "resource-actions",
                 button { class: "button", onclick: move |_| detail.set(Some(detail_id.clone())), "查看设计" }
                 if let Some(owner) = owner {
@@ -799,7 +891,9 @@ fn ExtensionCard(
                         if let Some(item) = library.write().extensions.iter_mut().find(|item| item.id == action_id) { item.acquired = true; }
                     }, "获取设计" }
                 }
-                button { class: "button", disabled: true, "等待节点安装" }
+                if extension.manifest.as_ref().is_none_or(|manifest| manifest.agent.is_some()) {
+                    button { class: "button", disabled: true, "节点管理暂不支持" }
+                }
             }
         }
     }
@@ -853,7 +947,7 @@ fn ResourceDetail(
                 } else if kind == "skills" {
                     if let Some(skill) = skill { SkillDetail { skill } }
                 } else {
-                    if let Some(extension) = extension { ExtensionDetail { extension } }
+                    if let Some(extension) = extension { ExtensionDetail { extension, library } }
                 }
             }
         }
@@ -891,12 +985,20 @@ fn SkillDetail(skill: SkillResource) -> Element {
 }
 
 #[component]
-fn ExtensionDetail(extension: ExtensionResource) -> Element {
+fn ExtensionDetail(extension: ExtensionResource, library: Signal<ResourceLibrary>) -> Element {
+    let preferences = library.read().ui_preferences.clone();
     rsx! {
         div { class: "resource-detail-content",
             code { "{extension.id}" } span { "来源：{extension.source}" } p { "{extension.description}" }
-            h3 { "设计正文" } pre { "{extension.content}" }
-            p { class: "resource-boundary", "此项是扩展设计资源，不是可执行原生插件；节点安装接口接入前不会显示已安装或已启用。" }
+            if let Some(manifest) = extension.manifest {
+                { let pin = manifest.pin(); rsx! {
+                    extensions::ExtensionPreview { manifest, preferences,
+                        onvisibility: move |(id, visible): (String, bool)| set_ui_visible(&mut library.write(), &pin, &id, visible),
+                    }
+                } }
+            } else { p { class: "resource-boundary", "旧版设计未声明独立的 Agent/UI 能力。保留源码，不推断工具、UI 或节点安装状态。" } }
+            details { summary { "设计正文（只读源码）" } pre { "{extension.content}" } }
+            p { class: "resource-boundary", "这是惰性设计预览，不执行代码；Agent 安装/加载以节点观测为准，UI 显示不授予 Agent 权限。" }
         }
     }
 }
@@ -907,6 +1009,7 @@ pub fn SessionResources(
     #[props(default = false)] compact: bool,
     #[props(default)] session_title: Option<String>,
     #[props(default)] on_browse: Option<EventHandler<()>>,
+    #[props(default = true)] extension_config_locked: bool,
     selected_session: Signal<Option<String>>,
     library: Signal<ResourceLibrary>,
     onquote: EventHandler<String>,
@@ -968,7 +1071,7 @@ pub fn SessionResources(
         })
         .sum::<usize>()
         + usize::from(!binding.instructions.trim().is_empty());
-    let config_count = binding.package_pins.len();
+    let config_count = binding.package_pins.len() + binding.extension_pins.len();
     let tool_count = packages
         .iter()
         .flat_map(|item| item.tools.iter())
@@ -1000,7 +1103,7 @@ pub fn SessionResources(
                             span { "会话配置 r{binding.revision}" }
                         }
                         div { class: "resource-segments",
-                            for (key, label) in [("packages", "Packages"), ("skills", "Skills"), ("tools", "Tools"), ("prompts", "提示词")] {
+                            for (key, label) in [("packages", "Packages"), ("extensions", "扩展"), ("skills", "Skills"), ("tools", "Tools"), ("prompts", "提示词")] {
                                 button { class: if *tab.read() == key { "active" } else { "" }, onclick: move |_| tab.set(key.to_owned()), "{label}" }
                             }
                         }
@@ -1009,6 +1112,9 @@ pub fn SessionResources(
                                 session_id: session_id.clone(), library, binding: binding.clone(),
                                 on_browse, package_detail, onclose: move |()| open.set(false),
                             }
+                        }
+                        if *tab.read() == "extensions" {
+                            SessionExtensions { session_id: session_id.clone(), library, binding: binding.clone(), locked: extension_config_locked }
                         }
                         if *tab.read() == "skills" { SessionSkills { session_id: session_id.clone(), library, binding: binding.clone(), onquote } }
                         if *tab.read() == "tools" {
@@ -1024,6 +1130,87 @@ pub fn SessionResources(
                         onclose: move |()| package_detail.set(None),
                     }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn SessionExtensions(
+    session_id: String,
+    library: Signal<ResourceLibrary>,
+    binding: SessionBinding,
+    locked: bool,
+) -> Element {
+    let mut detail = use_signal(|| None::<String>);
+    let extensions = library
+        .read()
+        .extensions
+        .iter()
+        .filter(|e| e.acquired)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unresolved = binding
+        .extension_pins
+        .iter()
+        .filter(|pin| {
+            !extensions.iter().any(|extension| {
+                extension
+                    .manifest
+                    .as_ref()
+                    .is_some_and(|m| m.agent.is_some() && m.pin() == **pin)
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    rsx! {
+        div { class: "extension-session-list",
+            p { class: "resource-boundary", "Agent 选择只保存本会话的期望版本（desired），当前节点尚未支持安装/绑定协议，不表示已加载或已生效。纯 UI 扩展不加入 Agent 配置。" }
+            if locked { p { role: "status", class: "meta", "尚未确认会话在线且空闲，暂不能更改 Agent 扩展选择。同步、发送、运行和等待回答期间保持锁定；UI 显示偏好仍可独立修改。" } }
+            if extensions.is_empty() { EmptyState { text: "尚无已导入的扩展设计，可从能力库导入或由元Agent发布。" } }
+            for extension in extensions {
+                {
+                    let manifest = extension.manifest.clone();
+                    let has_agent = manifest.as_ref().is_some_and(|m| m.agent.is_some());
+                    let pin = manifest.as_ref().map(ExtensionManifest::pin);
+                    let selected = pin.as_ref().is_some_and(|pin| binding.extension_pins.contains(pin));
+                    let scope = session_id.clone();
+                    let detail_id = extension.id.clone();
+                    rsx! {
+                        article { class: "resource-card", key: "{extension.id}",
+                            div { class: "resource-card-title",
+                                div { h3 { "{extension.name}" } code { "{extension.id}" } }
+                                span { class: "resource-badge", if selected { "desired · 待节点应用" } else if has_agent { "Agent 未选择" } else { "不加入 Agent 配置" } }
+                            }
+                            p { "{extensions::kind_label(manifest.as_ref())}" }
+                            div { class: "resource-actions",
+                                button { class: "button", onclick: move |_| detail.set(Some(detail_id.clone())), "查看 Agent / UI" }
+                                if has_agent {
+                                    button { class: "button", disabled: locked,
+                                        onclick: move |_| {
+                                            if locked { return; }
+                                            if let Some(pin) = &pin { set_extension_selected(library.write().session_mut(&scope), pin, !selected); }
+                                        },
+                                        if selected { "移除 Agent 选择" } else { "选择 Agent 版本" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for pin in unresolved {
+                { let scope = session_id.clone(); rsx! {
+                    article { class: "resource-card", p { "无法解析 Agent 扩展：{pin.key()}" }
+                        p { class: "meta", "来源缺失或不是 Agent 扩展，不会作为有效能力加载。" }
+                        button { class: "button", disabled: locked, onclick: move |_| {
+                            if !locked { set_extension_selected(library.write().session_mut(&scope), &pin, false); }
+                        }, "移除失效选择" }
+                    }
+                } }
+            }
+            if let Some(resource_key) = detail.read().clone() {
+                ResourceDetail { resource_key, kind: "extensions".to_owned(), library, onclose: move |()| detail.set(None) }
             }
         }
     }
@@ -1339,12 +1526,16 @@ fn skill_state(skill: &SkillResource, desired: bool) -> &'static str {
     }
 }
 fn extension_state(extension: &ExtensionResource) -> &'static str {
-    if extension.node_installed {
-        "节点已安装 · 待启用"
-    } else if extension.acquired {
-        "已获取 · 待节点安装"
+    if !extension.acquired {
+        "未获取设计"
+    } else if extension
+        .manifest
+        .as_ref()
+        .is_some_and(|manifest| manifest.agent.is_none())
+    {
+        "已获取 UI 设计 · 客户端预览"
     } else {
-        "未获取"
+        "已获取设计 · 节点状态未知"
     }
 }
 fn string_field(value: &Value, field: &str) -> Result<String, String> {
@@ -1436,6 +1627,9 @@ fn package_from_manifest(value: &Value) -> Result<DesignPackage, String> {
     }
     if resource_kind.eq_ignore_ascii_case("extension") && value["design"]["sources"].is_null() {
         return Err("Extension 设计资源缺少 design.sources".into());
+    }
+    if resource_kind.eq_ignore_ascii_case("extension") {
+        extensions::design_manifest(&value["design"]["sources"], &id, &version)?;
     }
     let tool_ids = manifest_tool_ids(tools)?;
     let mut skill_ids = BTreeSet::new();
@@ -1553,13 +1747,13 @@ fn extension_from_value(value: &Value) -> Result<ExtensionResource, String> {
         description: string_field(value, "description")?,
         source: string_field(value, "source")?,
         content: string_field(value, "content")?,
+        manifest: None,
         acquired: value["acquired"].as_bool().unwrap_or(false),
-        node_installed: false,
         design_sample: value["design_sample"].as_bool().unwrap_or(false),
     })
 }
 fn session_value(session: &SessionBinding) -> Value {
-    json!({"session_id":session.session_id,"package_pins":session.package_pins.iter().map(|pin| json!({"id":pin.id,"version":pin.version})).collect::<Vec<_>>(),"skills":session.skills,"disabled_skills":session.disabled_skills,"disabled_tools":session.disabled_tools,"disabled_prompts":session.disabled_prompts,"instructions":session.instructions,"revision":session.revision})
+    json!({"session_id":session.session_id,"package_pins":session.package_pins.iter().map(|pin| json!({"id":pin.id,"version":pin.version})).collect::<Vec<_>>(),"extension_pins":session.extension_pins,"skills":session.skills,"disabled_skills":session.disabled_skills,"disabled_tools":session.disabled_tools,"disabled_prompts":session.disabled_prompts,"instructions":session.instructions,"revision":session.revision})
 }
 fn session_from_value(value: &Value) -> Result<SessionBinding, String> {
     let mut package_pins = Vec::new();
@@ -1594,9 +1788,20 @@ fn session_from_value(value: &Value) -> Result<SessionBinding, String> {
             });
         }
     }
+    let mut extension_pins: Vec<ExtensionPin> = Vec::new();
+    if let Some(pins) = value.get("extension_pins") {
+        let pins: Vec<ExtensionPin> = serde_json::from_value(pins.clone())
+            .map_err(|error| format!("Agent 扩展绑定无效：{error}"))?;
+        for pin in pins {
+            pin.validate()?;
+            extension_pins.retain(|p| p.id != pin.id);
+            extension_pins.push(pin);
+        }
+    }
     Ok(SessionBinding {
         session_id: string_field(value, "session_id")?,
         package_pins,
+        extension_pins,
         skills: strings(&value["skills"]),
         disabled_skills: strings(&value["disabled_skills"]),
         disabled_tools: strings(&value["disabled_tools"]),
@@ -1663,9 +1868,9 @@ fn sample_library() -> ResourceLibrary {
         extensions: vec![ExtensionResource {
             id: "path-check".into(), name: "路径检查 Extension 设计".into(), description: "检查工具路径、边界和项目目录约束的扩展设计。".into(),
             source: "扩展目录 · 设计样例".into(), content: "# Path check extension\n\nDesign only: validate paths before a node-provided action.".into(),
-            acquired: true, node_installed: false, design_sample: true,
+            acquired: true, manifest: None, design_sample: true,
         }],
-        sessions: Vec::new(), storage_error: None,
+        sessions: Vec::new(), ui_preferences: Vec::new(), storage_error: None,
     }
 }
 
@@ -1692,6 +1897,10 @@ async fn export_package(package: DesignPackage) -> Result<(), String> {
 }
 
 #[cfg(test)]
+#[path = "extension_tests.rs"]
+mod extension_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1715,6 +1924,7 @@ mod tests {
                 skills: Vec::new(),
                 extensions: Vec::new(),
                 sessions: Vec::new(),
+                ui_preferences: Vec::new(),
                 storage_error: None,
             }
         );
@@ -1767,6 +1977,7 @@ mod tests {
                     id: samples.packages[0].id.clone(),
                     version: samples.packages[0].version.clone(),
                 }],
+                extension_pins: Vec::new(),
                 skills: vec![samples.skills[0].id.clone()],
                 disabled_skills: vec!["keep-disabled-skill".into()],
                 disabled_tools: vec!["read".into()],
@@ -1774,6 +1985,7 @@ mod tests {
                 instructions: "Keep all session settings".into(),
                 revision: 9,
             }],
+            ui_preferences: Vec::new(),
             storage_error: None,
         };
         expected.packages[0].design_sample = false;
@@ -2089,6 +2301,18 @@ mod tests {
         assert_eq!(restored.extensions.len(), fixture.extensions.len());
         assert!(restored.packages.iter().all(|item| !item.node_installed));
         assert!(restored.skills.iter().all(|item| !item.node_installed));
-        assert!(restored.extensions.iter().all(|item| !item.node_installed));
+        assert!(
+            restored
+                .extensions
+                .iter()
+                .all(|item| item.manifest.is_none())
+        );
+        assert!(
+            restored.to_value()["extensions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|item| item.get("node_installed").is_none())
+        );
     }
 }

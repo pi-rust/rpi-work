@@ -1,0 +1,64 @@
+/* Built-in Codex surface treatment only; portable visual values remain semantic tokens. */
+[data-theme="codex"] .sidebar .nav-item { color: var(--text); }
+[data-theme="codex"] .sidebar .nav-item > .icon { color: var(--muted); }
+[data-theme="codex"] .sidebar .session-item.current { font-weight: 500; }
+[data-theme="codex"] .sidebar .version {
+  color: var(--muted); border-color: var(--line); background: var(--panel); border-radius: var(--radius-pill);
+}
+[data-theme="codex"] .app-header .theme-trigger {
+  color: var(--muted); border-color: transparent; background: transparent; border-radius: var(--radius-pill);
+}
+[data-theme="codex"] .section-tabs .tab-resource:not(.active),
+[data-theme="codex"] .section-tabs .session-capability-trigger {
+  color: var(--muted); border-color: transparent; background: transparent; font-size: var(--font-assist); white-space: nowrap;
+}
+[data-theme="codex"] .composer-main .composer {
+  border-color: var(--line); border-radius: var(--radius-xl); background: var(--card); box-shadow: var(--shadow-control);
+}
+[data-theme="codex"] .composer-main textarea {
+  font-size: max(16px, var(--font-body)); line-height: var(--body-line-height);
+}
+/* The surrounding editor keeps a visible focus indicator; textarea's base outline is suppressed. */
+[data-theme="codex"] .composer-main:focus-within .composer {
+  border-color: var(--accent); box-shadow: 0 0 0 2px var(--focus-color);
+}
+[data-theme="codex"] .composer-main .send-button { border-radius: var(--radius-pill); }
+@media (min-width: 701px) {
+  [data-theme="codex"] .composer-main .send-button {
+    width: calc(var(--control-height) - 4px); height: calc(var(--control-height) - 4px);
+  }
+}
+@media (max-width: 700px) {
+  [data-theme="codex"] .app-header .quick-session { min-width: 64px; overflow: hidden; }
+  [data-theme="codex"] .app-header .top-actions { min-width: 0; }
+  [data-theme="codex"] .app-header .quick-session > span { flex: 1; overflow: hidden; }
+  [data-theme="codex"] .app-header .quick-session strong { min-width: 0; max-width: 100%; }
+  /* Keep resource actions readable and reachable by swipe/keyboard, never squeeze their labels. */
+  [data-theme="codex"] .section-tabs {
+    height: calc(var(--hit-size) + var(--border-width)); min-height: calc(var(--hit-size) + var(--border-width));
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  }
+  [data-theme="codex"] .section-tabs > button,
+  [data-theme="codex"] .section-tabs .session-resource-entry { flex-shrink: 0; }
+  [data-theme="codex"] .section-tabs .session-capability-trigger,
+  [data-theme="codex"] .section-tabs .session-config-summary,
+  [data-theme="codex"] .section-tabs > .tab-resource {
+    min-width: var(--hit-size); min-height: var(--hit-size); padding-inline: var(--space-8);
+  }
+  [data-theme="codex"] .section-tabs .session-config-summary .icon { display: inline-flex; }
+  [data-theme="codex"] .section-tabs button:focus-visible { outline-offset: -3px; }
+}
+@media (max-width: 360px) {
+  /* Passive status stays available to assistive tech; active/error states and node status stay visible. */
+  [data-theme="codex"] .top-actions .status-badge:is(.ready, .completed) {
+    position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="codex"] .app-header .theme-trigger:hover,
+  [data-theme="codex"] .section-tabs .tab-resource:not(.active):hover,
+  [data-theme="codex"] .section-tabs .session-capability-trigger:hover {
+    color: var(--text); background: var(--selected-bg);
+  }
+}

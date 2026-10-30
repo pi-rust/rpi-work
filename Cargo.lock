@@ -6464,6 +6464,10 @@ dependencies = [
 [[package]]
 name = "work-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "work-node"
@@ -6479,7 +6483,7 @@ dependencies = [
 
 [[package]]
 name = "work-ui"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "dioxus",
  "gloo-timers",

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 2,
+  "kind": "rpi-work-theme",
+  "preferredMode": "light",
+  "density": "standard",
+  "theme": {
+    "id": "codex-reading",
+    "name": "Codex 阅读",
+    "description": "衬线正文、宽松行距与轻阴影的完整视觉主题示例。",
+    "font": "system",
+    "headingFont": "system",
+    "shape": "soft",
+    "palettes": {
+      "light": {
+        "bg": "#ffffff", "side": "#f9f9f9", "panel": "#f7f7f8", "card": "#ffffff",
+        "text": "#1f1f1f", "muted": "#666666", "line": "#e5e5e5", "code": "#f4f4f4",
+        "accent": "#202020", "accentBg": "#eeeeee", "selected": "#eaeaea"
+      },
+      "dark": {
+        "bg": "#212121", "side": "#181818", "panel": "#262626", "card": "#2c2c2c",
+        "text": "#ececec", "muted": "#b0b0b0", "line": "#424242", "code": "#303030",
+        "accent": "#f0f0f0", "accentBg": "#3b3b3b", "selected": "#383838"
+      }
+    },
+    "design": {
+      "typography": {
+        "bodyFont": "serif", "headingFont": "system", "codeFont": "code",
+        "scale": 1.1,
+        "bodySize": 16, "navSize": 13, "assistSize": 12, "titleSize": 20,
+        "messageSize": 16, "codeSize": 12,
+        "bodyLineHeight": 1.8, "messageLineHeight": 1.85,
+        "bodyWeight": 400, "headingWeight": 600
+      },
+      "geometry": {
+        "spacingScale": 1.1, "radii": [2, 4, 8, 12, 16],
+        "controlHeight": 44, "hitSize": 48, "borderWidth": 1
+      },
+      "shadow": "subtle",
+      "motion": { "fastMs": 100, "normalMs": 160, "pressMs": 80 }
+    }
+  }
+}

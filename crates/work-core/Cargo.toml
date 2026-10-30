@@ -12,5 +12,11 @@ unsafe_code = "warn"
 all = "warn"
 pedantic = "warn"
 
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+
 [lib]
 path = "src/lib.rs"

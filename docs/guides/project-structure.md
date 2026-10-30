@@ -11,6 +11,7 @@ apps/
         conversation/    消息、工具、输入区、队列与跟随滚动
         projects/        项目选择、文件预览与变更审阅
         resources/       Packages、Skills、Tools 与会话配置
+        extensions/      Agent/UI 设计契约适配与受控静态 UI 预览
         meta_agent/      元 Agent 资源编写工作台
         settings/        连接、Provider、更新设置
         observability/   用量、上下文与会话追踪
@@ -31,13 +32,13 @@ tools/
   review/                截图、布局审查、对照图册
     archive/             历史的一次性诊断与协作工具
 scripts/ci/              平台打包、签名和 Rust 检查
-docs/                    guides、design、archive、images、release-notes
+docs/                    guides、architecture、design、archive、images、release-notes
 artifacts/               忽略的本次截图与报告
 target/                  忽略的编译、下载、日志与临时验证数据
 .rpi/                    忽略的本机 Agent 会话
 ```
 
-`work-core` 不依赖 UI 和具体传输；`work-client` 当前负责 HTTP/SSE；`work-node` 负责原生桌面的本机节点启动、认证信息和进程监管。ACP 适配属于后续工作。
+`work-core` 不依赖 UI 和具体传输；`work-client` 通过 `WorkspaceClient` 区分本机 Rust 工作空间与远程 HTTP/SSE，Agent 执行使用对应的 RPC/ACP/HTTP 客户端。本机桌面默认使用进程内 `rpi-extcore` 与 stdio RPC，不启动 HTTP 服务；`work-node` 负责本机运行时、数据目录锁和宿主生命周期。具体边界见 [transport 架构](../architecture/transport.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
 
 正式应用通过 `assets/vendor/` 编译二维码资源，不再引用设计原型。原型自己的 vendor 快照独立保留，以便复现已确认的设计；基准哈希只调整目录键名，原型文件内容不变。
 

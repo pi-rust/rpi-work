@@ -8,6 +8,7 @@ const manifest=(id='review.owner-a',version='0.1.0',name='Roundtrip Package')=>(
   const pass=name=>{results.push(name);console.log('PASS',name)};
   async function importPackage(value){await page.getByRole('button',{name:/导入资源包/}).click();const m=page.getByRole('dialog',{name:'导入设计包',exact:true});await m.locator('textarea').fill(JSON.stringify(value));await m.getByRole('button',{name:'校验并导入',exact:true}).click();if(await m.isVisible()&&/已读取|已导入/.test(await m.innerText()))await page.keyboard.press('Escape');return m;}
   const card=(name,version)=>page.locator('.resource-card').filter({hasText:name}).filter({hasText:version});
+  async function sessionPins(sessionId){return page.evaluate(id=>JSON.parse(localStorage.getItem('rpi-work-resources-v1')).sessions.find(session=>session.session_id===id)?.package_pins||[],sessionId);}
   async function exportCard(name,version){const [download]=await Promise.all([page.waitForEvent('download'),card(name,version).getByRole('button',{name:'导出 JSON',exact:true}).click()]);return JSON.parse(fs.readFileSync(await download.path(),'utf8'));}
   try{
     await page.goto('http://127.0.0.1:4182/modules/all/');
@@ -27,11 +28,11 @@ const manifest=(id='review.owner-a',version='0.1.0',name='Roundtrip Package')=>(
     await config.locator('.session-resource-row').filter({hasText:'Roundtrip Package'}).filter({hasText:'0.1.0'}).getByRole('button',{name:'用于本会话',exact:true}).click();
     await page.keyboard.press('Escape');
     await importPackage(manifest('review.owner-a','0.2.0'));
-    assert.match(await page.locator('.session-resource-caption').innerText(),/@0\.1\.0/);
+    assert.deepEqual(await sessionPins('review-session-a'),[{id:'review.owner-a',version:'0.1.0'}]);
     await page.getByRole('button',{name:'Session B',exact:true}).click();
-    assert.match(await page.locator('.session-resource-caption').innerText(),/未绑定/);
+    assert.deepEqual(await sessionPins('review-session-b'),[]);
     await page.getByRole('button',{name:'Session A',exact:true}).click();
-    assert.match(await page.locator('.session-resource-caption').innerText(),/@0\.1\.0/);
+    assert.deepEqual(await sessionPins('review-session-a'),[{id:'review.owner-a',version:'0.1.0'}]);
     pass('new versions do not rebind a session and bindings stay isolated by session');
     const ownerB=manifest('review.owner-b','0.1.0','Other Owner');ownerB.resources.skills[0].name='Owner B Review';ownerB.resources.skills[0].content='# Owner B\n\n其他来源。';await importPackage(ownerB);
     await page.getByRole('button',{name:'skills',exact:true}).click();
@@ -42,13 +43,13 @@ const manifest=(id='review.owner-a',version='0.1.0',name='Roundtrip Package')=>(
     const extension=manifest('review.extension','0.1.0','Review Extension');extension.design={resourceKind:'Extension',sources:{'src/lib.rs':'// unexecuted extension source'}};extension.resources={skills:[],tools:[],prompts:[]};await importPackage(extension);
     await page.getByRole('button',{name:'extensions',exact:true}).click();
     const extensionCard=page.locator('.resource-card').filter({hasText:'Review Extension'});await extensionCard.waitFor();
-    assert.match(await extensionCard.innerText(),/待节点安装|等待节点安装/);
+    assert.match(await extensionCard.innerText(),/已获取设计 · 节点状态未知/);
     const extDownload=page.waitForEvent('download');await extensionCard.getByRole('button',{name:'导出 JSON',exact:true}).click();
     assert.deepEqual(JSON.parse(fs.readFileSync(await (await extDownload).path(),'utf8')),extension);
     pass('Extension design is classified correctly and remains uninstalled on node');
     await page.reload();await page.getByRole('button',{name:'packages',exact:true}).click();
     await card('Roundtrip Package','0.1.0').waitFor();
-    assert.match(await page.locator('.session-resource-caption').innerText(),/@0\.1\.0/);
+    assert.deepEqual(await sessionPins('review-session-a'),[{id:'review.owner-a',version:'0.1.0'}]);
     pass('personal library and session versions persist after reload');
     for(const width of [390,320]){await page.setViewportSize({width,height:844});await page.screenshot({path:`artifacts/ui-resources-module-${width}.png`});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.getByRole('button',{name:'打开会话资源配置',exact:true}).click();await page.screenshot({path:`artifacts/ui-resources-module-config-${width}.png`});assert(await page.getByRole('dialog').evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.keyboard.press('Escape');}
     pass('390/320 resource pages and configuration dialogs stay bounded');
