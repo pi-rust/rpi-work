@@ -464,7 +464,7 @@ pub fn NativeResources(
                                     article { key: "{resource.reference}", class: "native-resource-card",
                                         div { class: "native-resource-heading",
                                             h3 { "{resource.name}" }
-                                            span { class: "native-install-state {install_class}", aria_label: "安装状态：{installation}", "{installation}" }
+                                            span { class: "native-install-state {install_class}", role: "status", aria_label: "安装状态：{installation}", "{installation}" }
                                         }
                                         if let Some(description) = resource.facts["description"].as_str() { p { class: "native-resource-description", "{description}" } }
                                         p { class: "native-resource-meta",
@@ -472,8 +472,8 @@ pub fn NativeResources(
                                             if let Some(version) = resource.facts["version"].as_str() { " · 记录版本 {version}" }
                                         }
                                         div { class: "native-resource-footer",
-                                            span { class: "native-selection-state {selection_class}", aria_label: "{selection_text}", "{selection_text}" }
-                                            span { class: "native-load-state", aria_label: "实际加载状态：未核实", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
+                                            span { class: "native-selection-state {selection_class}", role: "status", aria_label: "{selection_text}", "{selection_text}" }
+                                            span { class: "native-load-state", role: "status", aria_label: "实际加载状态：未核实", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
                                             button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, "查看详情" }
                                         }
                                     }
