@@ -449,11 +449,11 @@ pub fn NativeResources(
                         }
                         div { class: "native-resource-list",
                             for resource in resources {
-                                { let open_resource = resource.clone(); let selected = current.as_ref().and_then(|s| s.configuration.as_ref()).map(|c| c.desired.main_package.as_ref().is_some_and(|r| r.reference.as_deref() == Some(resource.reference.as_str())) || c.desired.skills.iter().chain(&c.desired.extensions).any(|r| r.reference.as_deref() == Some(resource.reference.as_str()))); rsx! {
+                                { let open_resource = resource.clone(); let selected = current.as_ref().and_then(|s| s.configuration.as_ref()).map(|c| c.desired.main_package.as_ref().is_some_and(|r| r.reference.as_deref() == Some(resource.reference.as_str())) || c.desired.skills.iter().chain(&c.desired.extensions).any(|r| r.reference.as_deref() == Some(resource.reference.as_str()))); let install_class = match resource.facts["installed"].as_bool() { Some(true) => "installed", Some(false) => "not-installed", None => "unknown" }; let selection_class = match selected { Some(true) => "selected", Some(false) => "not-selected", None => "unknown" }; rsx! {
                                     article { key: "{resource.reference}", class: "native-resource-card",
                                         div { class: "native-resource-heading",
                                             h3 { "{resource.name}" }
-                                            span { class: "native-install-state", {super::detail::installation_label(&resource.facts)} }
+                                            span { class: "native-install-state {install_class}", {super::detail::installation_label(&resource.facts)} }
                                         }
                                         if let Some(description) = resource.facts["description"].as_str() { p { class: "native-resource-description", "{description}" } }
                                         p { class: "native-resource-meta",
@@ -461,7 +461,7 @@ pub fn NativeResources(
                                             if let Some(version) = resource.facts["version"].as_str() { " · 记录版本 {version}" }
                                         }
                                         div { class: "native-resource-footer",
-                                            span { class: "native-selection-state", match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" } }
+                                            span { class: "native-selection-state {selection_class}", match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" } }
                                             button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, "查看详情" }
                                         }
                                     }

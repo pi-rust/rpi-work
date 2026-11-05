@@ -27,12 +27,15 @@
 @media (hover:hover){.resource-center .native-resource-card:hover{background:var(--panel)}}
 .native-resource-heading{align-items:flex-start}
 .resource-center .native-resource-card h3{font-size:16px;line-height:1.5;font-weight:600;overflow-wrap:anywhere;letter-spacing:-.01em}
-.native-install-state{flex-shrink:0;max-width:45%;padding:3px 8px;border-radius:var(--radius-sm);background:var(--panel);border:1px solid var(--line);font-size:13px;line-height:1.5;color:var(--text);overflow-wrap:anywhere}
+.native-install-state{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;max-width:45%;padding:3px 8px;border-radius:var(--radius-sm);background:var(--panel);border:1px solid var(--line);font-size:13px;line-height:1.5;color:var(--text);overflow-wrap:anywhere}
+.native-install-state::before,.native-selection-state::before{content:"";width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:var(--muted)}
+.native-install-state.installed::before,.native-selection-state.selected::before{background:var(--success)}
+.native-install-state.not-installed::before,.native-selection-state.not-selected::before{background:var(--muted)}
 .resource-center .native-resource-card p{font-size:14px;line-height:1.6}
 .resource-center .native-resource-description{color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .native-resource-meta{overflow-wrap:anywhere}
 .native-resource-footer{flex-wrap:wrap;justify-content:flex-start}
-.native-selection-state{flex:1 1 9rem;color:var(--muted);font-size:13px;line-height:1.5}
+.native-selection-state{display:inline-flex;align-items:center;gap:6px;flex:1 1 9rem;color:var(--muted);font-size:13px;line-height:1.5}
 .resource-center .resource-empty{padding:24px 16px;border:1px dashed var(--line);border-radius:var(--radius-md);font-size:14px;line-height:1.7;color:var(--muted)}
 .resource-center .resource-error{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--danger);font-size:14px;line-height:1.7}
 .resource-center .native-resources summary{min-height:44px;align-content:center;font-size:14px;cursor:pointer}
