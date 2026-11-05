@@ -611,7 +611,7 @@ fn ToolCallView(
                         }
                     }
                     super::turn_timing::ToolElapsed { id: id.clone(), timing }
-                    span { class: "tool-result-hint", aria_label: "结果状态：{result_hint}", aria_live: "polite", "{result_hint}" }
+                    span { class: "tool-result-hint", role: "status", aria_label: "结果状态：{result_hint}", aria_live: "polite", "{result_hint}" }
                     if !failed && label == "已完成" {
                         span { class: "tool-success-mark", aria_hidden: "true", {glyph("check")} }
                     }
