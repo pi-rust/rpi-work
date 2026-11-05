@@ -459,3 +459,163 @@ async fn installed_rpi_runtime_passes_rpc_and_acp_handshakes() {
     }
     acp.stop().await.expect("real ACP stops");
 }
+
+#[tokio::test]
+async fn acp_cancel_is_notification_and_settles_only_when_prompt_replies() {
+    use futures_util::StreamExt;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let client = AcpClient::spawn(
+            env!("CARGO_BIN_EXE_acp-fixture"),
+            &["--wait-cancel".into()],
+            ".",
+        )
+        .await
+        .unwrap();
+        let id = client.new_session(".").await.unwrap();
+        let mut stream = client.subscribe_events().unwrap();
+        let mut prompt = std::pin::pin!(client.prompt(&id, "wait"));
+        tokio::select! {
+            result = &mut prompt => panic!("prompt unexpectedly finished: {result:?}"),
+            event = stream.next() => {
+                assert_eq!(event.unwrap().unwrap().data["delta"], "waiting for cancel");
+            }
+        }
+        // The strict fixture asserts there is no ID and sends no cancel response.
+        assert_eq!(client.cancel(&id).await.unwrap(), Value::Null);
+        assert_eq!(prompt.await.unwrap()["stopReason"], "cancelled");
+        // Also cover the public raw request entry point and reuse after cancel.
+        assert_eq!(
+            client
+                .request("session/cancel", json!({"sessionId":id}))
+                .await
+                .unwrap(),
+            Value::Null
+        );
+        client.new_session(".").await.unwrap();
+        client.stop().await.unwrap();
+    })
+    .await
+    .expect("cancel must not wait for a JSON-RPC response");
+}
+
+#[tokio::test]
+async fn acp_full_config_snapshots_updates_and_validation_are_session_scoped() {
+    let client = AcpClient::spawn(
+        env!("CARGO_BIN_EXE_acp-fixture"),
+        &["--load-session".into()],
+        ".",
+    )
+    .await
+    .unwrap();
+    let agent = AgentClient::from_transport(client.clone());
+    let first = agent.open_session(".").await.unwrap();
+    let alias = agent.resume_session("alias-session", ".").await.unwrap();
+    assert_eq!(
+        agent.session_config_options("unknown"),
+        Vec::<serde_json::Value>::new()
+    );
+    let initial = agent.session_config_options(first.id());
+    assert_eq!(initial[0]["currentValue"], "fixture-model");
+    assert_eq!(initial[0]["options"][0]["value"], "fixture-model");
+    assert_eq!(initial, client.session_config_options(first.id()));
+    assert!(
+        alias
+            .set_config_option("thinking", json!("high"))
+            .await
+            .is_ok()
+    );
+    assert!(
+        first
+            .set_config_option("thought_level", json!("low"))
+            .await
+            .is_ok()
+    );
+    assert_eq!(
+        agent.session_config_options(first.id())[1]["currentValue"],
+        "low"
+    );
+    assert_eq!(
+        agent.session_config_options(alias.id())[1]["id"],
+        "thought_level"
+    );
+    for (id, value) in [
+        ("unknown", json!("high")),
+        ("model", json!("unlisted")),
+        ("thinking", json!(null)),
+        ("thinking", json!(7)),
+    ] {
+        assert!(first.set_config_option(id, value).await.is_err());
+    }
+    let updated = json!([
+        {"id":"custom","name":"Custom","type":"select","currentValue":"second",
+            "options":[{"group":"Choices","options":[{"value":"second","name":"Second"}]}]},
+        {"id":"thought_level","type":"select","currentValue":"low",
+            "options":[{"value":"low","name":"Low"}]}
+    ]);
+    // The response is a reader barrier: the preceding update has been applied.
+    client
+        .request(
+            "fixture_config_update",
+            json!({"sessionId":first.id(),"configOptions":updated}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        agent.session_config_options(first.id()),
+        updated.as_array().unwrap().clone()
+    );
+    assert!(agent.supports_config_option(first.id(), "custom"));
+    assert!(agent.supports_config_option(first.id(), "thinking"));
+    assert!(!agent.supports_config_option(first.id(), "model"));
+    assert!(
+        first
+            .set_config_option("thinking", json!("high"))
+            .await
+            .is_err()
+    );
+    assert!(
+        first
+            .set_config_option("model", json!("fixture-model"))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        agent.session_config_options(alias.id())[1]["currentValue"],
+        "high"
+    );
+    assert!(!agent.supports("models") && !agent.supports("thinking_levels"));
+    client
+        .request(
+            "fixture_config_update",
+            json!({"sessionId":first.id(),"configOptions":[]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        agent.session_config_options(first.id()),
+        Vec::<serde_json::Value>::new()
+    );
+    assert!(!agent.supports_config_option(first.id(), "custom"));
+    client.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn acp_prompt_response_can_take_longer_than_control_deadline() {
+    let client = AcpClient::spawn(
+        env!("CARGO_BIN_EXE_acp-fixture"),
+        &["--slow-prompt".into()],
+        ".",
+    )
+    .await
+    .unwrap();
+    let id = client.new_session(".").await.unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(40),
+        client.prompt(&id, "slow fixture prompt"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(result["stopReason"], "end_turn");
+    client.stop().await.unwrap();
+}

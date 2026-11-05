@@ -56,7 +56,7 @@ fn main() {
             ),
             "get_messages" => emit(
                 &mut stdout,
-                json!({"type":"response","id":id,"command":"get_messages","success":true,"data":{"messages":[],"total":0,"hasMore":false}}),
+                json!({"type":"response","id":id,"command":"get_messages","success":true,"data":{"messages":[],"total":0,"hasMore":false,"truncated":false,"pendingResume":false}}),
             ),
             "get_history" => emit(
                 &mut stdout,

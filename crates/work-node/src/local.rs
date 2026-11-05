@@ -1,7 +1,7 @@
 //! RPC-only local runtime configuration and workspace ownership.
 //!
-//! This module never launches a process or configures an HTTP service. The UI
-//! owner must retain `LocalRuntime` until all native children owned by the core
+//! This module never launches a process or configures an HTTP service. The native
+//! host must retain `LocalRuntime` until all native children owned by the core
 //! client have shut down. Dropping it earlier releases the workspace lock while
 //! those children may still be using the data directory.
 
@@ -62,7 +62,7 @@ impl LocalRuntime {
             .open(data.join("node.lock"))
             .map_err(|_| "无法打开本机节点锁。")?;
         lock.try_lock_exclusive()
-            .map_err(|_| "本机节点已由另一个 RPI Work 窗口使用，请返回已打开的窗口。")?;
+            .map_err(|_| "本机节点已由另一个 RPI Work 宿主使用（桌面或无头进程）；请返回原窗口，或用 --connect <节点地址> 连接并独立登录。")?;
         Ok(Self {
             rpi,
             data,
@@ -151,7 +151,7 @@ mod tests {
         assert!(data.join("node.lock").is_file());
         assert!(!data.join("rpc").exists());
         let error = LocalRuntime::from_paths(rpi.clone(), data.clone()).unwrap_err();
-        assert!(error.contains("另一个 RPI Work 窗口"));
+        assert!(error.contains("另一个 RPI Work 宿主"));
         // Compatibility mode and RPC use the very same lock file.
         let competing = OpenOptions::new()
             .read(true)

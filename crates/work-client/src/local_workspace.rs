@@ -1,353 +1,73 @@
-//! Native workspace backed directly by the published rpi-extcore service.
+//! Local access facade: owns no workspace state, process or client projection.
+use crate::local_workspace_adapter::{into_agent_client, map_workspace_stream};
 use crate::{
     AuthState, AuthStatus, Capabilities, ClientError, Diff, EventStream, FileContent, FileListing,
-    GitStatus, Health, History, HostResponse, ModelDescriptor, Project, ProjectFolder,
-    ProjectFolders, QueueCancellation, QueueMutation, QueueSnapshot, RuntimeState, SessionBranch,
+    GitStatus, Health, History, HostResponse, ModelDescriptor, Project, ProjectFolders,
+    QueueCancellation, QueueMutation, QueueSnapshot, RuntimeState, SessionBranch,
     SessionConnection, SessionMutation, SessionPreferences, SessionSummary, Snapshot, ToolCatalog,
-    WireEvent, WorkspaceClient, payload_with_type,
+    WorkspaceClient,
 };
-use async_stream::try_stream;
-use futures_util::StreamExt;
-use rpi_extcore::{
-    events::{self, StreamItem},
-    registry::Registry,
-    reply::{IntoReply, ReplyKind},
-    service::{self, BackendConfig, Service},
-    workspace,
-};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::Value;
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-    time::Duration,
+    sync::Arc,
 };
-use work_core::{AgentDescriptor, CapabilitySet, TransportIdentity};
-mod migration;
-use migration::{load_aliases, migrate_registries};
+use work_core::AgentDescriptor;
+pub use work_node::workspace::LocalError;
+use work_node::workspace::LocalWorkspace as NodeWorkspace;
 
-#[derive(Debug, thiserror::Error)]
-pub enum LocalError {
-    #[error("local workspace I/O: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("invalid local workspace data: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("invalid local workspace input: {0}")]
-    InvalidInput(String),
-    #[error("local workspace item not found: {0}")]
-    NotFound(String),
-    #[error("project is already registered: {0}")]
-    DuplicateProject(String),
-    #[error("native service initialization failed: {0}")]
-    Initialization(String),
-    #[error("native service returned {kind:?}: {message}")]
-    Service { kind: ReplyKind, message: String },
-    #[error("native operation is unsupported: {0}")]
-    Unsupported(String),
-    #[error("local workspace has been shut down")]
-    Shutdown,
-    #[error("local workspace state lock was poisoned")]
-    Poisoned,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct Alias {
-    name: String,
-    path: PathBuf,
-}
-struct State {
-    aliases: Vec<Alias>,
-    services: HashMap<String, Arc<Service>>,
-    closed: bool,
-}
-struct Inner {
-    executable: PathBuf,
-    data: PathBuf,
-    control_root: PathBuf,
-    state: Mutex<State>,
-    // Separate from Alias so existing catalogs and legacy migration stay compatible.
-    project_cache: Mutex<HashMap<PathBuf, Project>>,
-    control: tokio::sync::Mutex<Option<String>>,
-    // Read leases permit independent projects to run concurrently. Shutdown takes
-    // the exclusive lease so no in-flight operation can start a host afterward.
-    lifecycle: Arc<tokio::sync::RwLock<()>>,
-    session_dir: Option<PathBuf>,
-}
-
-/// A cloneable native backend. No listener, HTTP client, or SSE transport is used.
+/// Cloneable local access to the same node workspace used by the HTTP server.
 #[derive(Clone)]
 pub struct LocalWorkspace {
-    inner: Arc<Inner>,
+    owner: Arc<NodeWorkspace>,
 }
-
-fn local<T>(result: Result<T, LocalError>) -> Result<T, ClientError> {
-    result.map_err(ClientError::Local)
-}
-fn decode<T: for<'de> Deserialize<'de>>(reply: impl IntoReply) -> Result<T, ClientError> {
-    let reply = reply.into_reply();
-    if !matches!(
-        reply.kind,
-        ReplyKind::Success | ReplyKind::Created | ReplyKind::Empty
-    ) {
-        return Err(ClientError::Local(LocalError::Service {
-            kind: reply.kind,
-            message: reply
-                .value
-                .get("error")
-                .and_then(Value::as_str)
-                .map_or_else(|| reply.value.to_string(), str::to_owned),
-        }));
-    }
-    local(serde_json::from_value(reply.value).map_err(LocalError::from))
-}
-fn alias_name(name: &str) -> Result<String, LocalError> {
-    let name = name.trim();
-    if name.is_empty() || name.chars().any(char::is_control) {
-        return Err(LocalError::InvalidInput(
-            "project name must be nonempty and contain no control characters".into(),
-        ));
-    }
-    Ok(name.to_owned())
-}
-fn public_project(alias: &Alias) -> Result<Project, LocalError> {
-    let core = workspace::Project::new(&alias.path)?;
-    Ok(Project {
-        id: core.id,
-        name: alias.name.clone(),
-        path: core.path,
-    })
-}
-
-struct CreatedDirectory {
-    path: PathBuf,
-    registered: bool,
-}
-impl Drop for CreatedDirectory {
-    fn drop(&mut self) {
-        if !self.registered {
-            // Only remove our Git metadata and an otherwise empty directory;
-            // never recursively delete files another actor may have added.
-            let _ = std::fs::remove_dir_all(self.path.join(".git"));
-            let _ = std::fs::remove_dir(&self.path);
-        }
-    }
-}
-
-// Match the remote workspace's async façade, even for synchronous local operations,
-// preserving execution on poll rather than performing work when creating the future.
-#[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
 impl LocalWorkspace {
-    pub fn new(executable: PathBuf, data: PathBuf) -> Result<Self, ClientError> {
-        Self::with_session_dir(executable, data, None)
+    /// Wrap an existing owner without initializing another workspace or host.
+    #[must_use]
+    pub fn from_node_owner(owner: Arc<NodeWorkspace>) -> Self {
+        Self { owner }
     }
-
-    /// Override the host transcript directory (useful for isolated installations
-    /// and smoke tests). None preserves access to legacy native transcripts.
+    /// Share the exact owner with other node access adapters.
+    #[must_use]
+    pub fn node_owner(&self) -> Arc<NodeWorkspace> {
+        self.owner.clone()
+    }
+    pub fn new(executable: PathBuf, data: PathBuf) -> Result<Self, ClientError> {
+        NodeWorkspace::new(executable, data)
+            .map(|owner| Self::from_node_owner(Arc::new(owner)))
+            .map_err(Into::into)
+    }
     pub fn with_session_dir(
         executable: PathBuf,
         data: PathBuf,
         session_dir: Option<PathBuf>,
     ) -> Result<Self, ClientError> {
-        local((|| {
-            std::fs::create_dir_all(&data)?;
-            let data = std::fs::canonicalize(data)?;
-            std::fs::create_dir_all(data.join("rpc"))?;
-            let aliases = load_aliases(&data)?;
-            let mut project_cache: HashMap<PathBuf, Project> =
-                match std::fs::read(data.join("rpc/project-cache.json")) {
-                    Ok(bytes) => serde_json::from_slice(&bytes)?,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
-                    Err(error) => return Err(error.into()),
-                };
-            for alias in &aliases {
-                if let Ok(project) = public_project(alias) {
-                    project_cache.insert(alias.path.clone(), project);
-                }
-            }
-            Self::save_project_cache(&data, &project_cache)?;
-            migrate_registries(&data, &aliases)?;
-            let control_root = data.join("rpc").join("control");
-            std::fs::create_dir_all(&control_root)?;
-            Ok(Self {
-                inner: Arc::new(Inner {
-                    executable,
-                    data,
-                    control_root,
-                    state: Mutex::new(State {
-                        aliases,
-                        services: HashMap::new(),
-                        closed: false,
-                    }),
-                    project_cache: Mutex::new(project_cache),
-                    control: tokio::sync::Mutex::new(None),
-                    lifecycle: Arc::new(tokio::sync::RwLock::new(())),
-                    session_dir,
-                }),
-            })
-        })())
+        NodeWorkspace::with_session_dir(executable, data, session_dir)
+            .map(|owner| Self::from_node_owner(Arc::new(owner)))
+            .map_err(Into::into)
     }
-
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, State>, LocalError> {
-        let state = self.inner.state.lock().map_err(|_| LocalError::Poisoned)?;
-        if state.closed {
-            return Err(LocalError::Shutdown);
-        }
-        Ok(state)
-    }
-    fn save_aliases(&self, aliases: &[Alias]) -> Result<(), LocalError> {
-        let path = self.inner.data.join("rpc/projects.json");
-        let temporary = path.with_extension("json.tmp");
-        std::fs::write(&temporary, serde_json::to_vec_pretty(aliases)?)?;
-        std::fs::rename(temporary, path)?;
-        Ok(())
-    }
-    fn save_project_cache(
-        data: &Path,
-        cache: &HashMap<PathBuf, Project>,
-    ) -> Result<(), LocalError> {
-        let path = data.join("rpc/project-cache.json");
-        let temporary = path.with_extension("json.tmp");
-        std::fs::write(&temporary, serde_json::to_vec_pretty(cache)?)?;
-        std::fs::rename(temporary, path)?;
-        Ok(())
-    }
-    fn public_project(&self, alias: &Alias) -> Result<Project, LocalError> {
-        public_project(alias).or_else(|error| {
-            let cache = self
-                .inner
-                .project_cache
-                .lock()
-                .map_err(|_| LocalError::Poisoned)?;
-            let mut project = cache.get(&alias.path).cloned().ok_or(error)?;
-            project.name.clone_from(&alias.name);
-            Ok(project)
-        })
-    }
-    fn registry_path(&self, id: &str) -> PathBuf {
-        self.inner
-            .data
-            .join("rpc")
-            .join("projects")
-            .join(id)
-            .join("sessions.json")
-    }
-    fn service_for_root(&self, root: &Path) -> Result<Arc<Service>, LocalError> {
-        let project = workspace::Project::new(root)?;
-        let mut state = self.lock()?;
-        if let Some(service) = state.services.get(&project.id) {
-            return Ok(service.clone());
-        }
-        let registry = self.registry_path(&project.id);
-        std::fs::create_dir_all(registry.parent().expect("registry parent"))?;
-        // Always explicit: never inherit the process's current working directory.
-        let config = BackendConfig {
-            project: project.root,
-            projects: Vec::new(),
-            projects_root: Some(self.inner.data.join("managed-projects")),
-            rpi_bin: self.inner.executable.clone(),
-            session_dir: self.inner.session_dir.clone(),
-            registry,
-        };
-        let service =
-            Service::new(config).map_err(|e| LocalError::Initialization(e.to_string()))?;
-        state.services.insert(project.id, service.clone());
-        Ok(service)
-    }
-    fn project_root(&self, id: &str) -> Result<PathBuf, LocalError> {
-        for alias in &self.lock()?.aliases {
-            if self
-                .public_project(alias)
-                .is_ok_and(|project| project.id == id)
-            {
-                return Ok(alias.path.clone());
-            }
-        }
-        Err(LocalError::NotFound(format!("project {id}")))
-    }
-    fn project_service(&self, id: &str) -> Result<Arc<Service>, ClientError> {
-        local(
-            self.project_root(id)
-                .and_then(|root| self.service_for_root(&root)),
-        )
-    }
-    fn roots(&self) -> Result<Vec<PathBuf>, LocalError> {
-        let mut roots: Vec<_> = self
-            .lock()?
-            .aliases
-            .iter()
-            .map(|a| a.path.clone())
-            .collect();
-        roots.push(self.inner.control_root.clone());
-        Ok(roots)
-    }
-    fn session_service(&self, id: &str) -> Result<Arc<Service>, ClientError> {
-        local((|| {
-            for root in self.roots()? {
-                // An unavailable drive must not hide sessions in other projects.
-                let Ok(project) = workspace::Project::new(&root) else {
-                    continue;
-                };
-                let registry = Registry::load(self.registry_path(&project.id))
-                    .map_err(LocalError::Initialization)?;
-                if registry.get(id).is_some() {
-                    return self.service_for_root(&root);
-                }
-            }
-            Err(LocalError::NotFound(format!("session {id}")))
-        })())
-    }
-
     #[must_use]
     pub fn descriptor(&self) -> AgentDescriptor {
-        AgentDescriptor {
-            identity: TransportIdentity {
-                protocol: "rpi".into(),
-                version: None,
-                transport: "native".into(),
-                agent_name: Some("rpi".into()),
-            },
-            capabilities: CapabilitySet::http_default(),
-        }
+        self.owner.descriptor()
     }
     pub async fn health(&self) -> Result<Health, ClientError> {
-        local(self.lock().map(|_| ()))?;
-        Ok(Health {
-            ok: true,
-            service: Some("rpi-extcore".into()),
-            version: Some("0.1.5".into()),
-            protocol: Some("rpi".into()),
-        })
+        self.owner.health().await.map_err(Into::into)
     }
     pub async fn auth(&self) -> Result<AuthState, ClientError> {
-        local(self.lock().map(|_| ()))?;
-        Ok(AuthState {
-            required: false,
-            authenticated: true,
-        })
+        self.owner.auth().await.map_err(Into::into)
     }
-    pub async fn login(&self, _password: &str) -> Result<AuthState, ClientError> {
-        Err(ClientError::Local(LocalError::Unsupported(
-            "workspace password login (native access uses OS permissions)".into(),
-        )))
+    pub async fn login(&self, password: &str) -> Result<AuthState, ClientError> {
+        self.owner.login(password).await.map_err(Into::into)
     }
     pub async fn logout(&self) -> Result<AuthState, ClientError> {
-        Err(ClientError::Local(LocalError::Unsupported(
-            "workspace password logout (native access uses OS permissions)".into(),
-        )))
+        self.owner.logout().await.map_err(Into::into)
     }
     pub async fn capabilities(&self) -> Result<Capabilities, ClientError> {
-        decode(rpi_extcore::protocol::capabilities())
+        self.owner.capabilities().await.map_err(Into::into)
     }
     pub async fn projects(&self) -> Result<Vec<Project>, ClientError> {
-        let state = local(self.lock())?;
-        // Legacy aliases that were already inaccessible on first upgrade have
-        // no known core ID yet. Keep them on disk; expose them once accessible.
-        Ok(state
-            .aliases
-            .iter()
-            .filter_map(|alias| self.public_project(alias).ok())
-            .collect())
+        self.owner.projects().await.map_err(Into::into)
     }
     pub async fn create_project(
         &self,
@@ -355,179 +75,46 @@ impl LocalWorkspace {
         path: Option<&str>,
         init_git: bool,
     ) -> Result<Project, ClientError> {
-        if let Some(path) = path {
-            return self.register_project(name, Path::new(path));
-        }
-        let name = local(alias_name(name))?;
-        if Path::new(&name).components().count() != 1
-            || name == "."
-            || name == ".."
-            || name.contains(['/', char::from(92), ':'])
-        {
-            return Err(ClientError::Local(LocalError::InvalidInput(
-                "new project name must be a single directory name".into(),
-            )));
-        }
-        let root = self.inner.data.join("managed-projects");
-        local(std::fs::create_dir_all(&root).map_err(LocalError::from))?;
-        self.create_project_directory(&name, &root.join(&name), init_git)
+        self.owner
+            .create_project(name, path, init_git)
             .await
+            .map_err(Into::into)
     }
-    fn register_project(&self, name: &str, path: &Path) -> Result<Project, ClientError> {
-        local((|| {
-            let name = alias_name(name)?;
-            let core = workspace::Project::new(path)?;
-            let mut state = self.lock()?;
-            if let Some(existing) = state
-                .aliases
-                .iter()
-                .filter_map(|alias| self.public_project(alias).ok())
-                .find(|p| p.id == core.id)
-            {
-                return Ok(existing);
-            }
-            let alias = Alias {
-                name,
-                path: core.root,
-            };
-            let project = public_project(&alias)?;
-            {
-                let mut cache = self
-                    .inner
-                    .project_cache
-                    .lock()
-                    .map_err(|_| LocalError::Poisoned)?;
-                cache.insert(alias.path.clone(), project.clone());
-                Self::save_project_cache(&self.inner.data, &cache)?;
-            }
-            let mut aliases = state.aliases.clone();
-            aliases.push(alias);
-            self.save_aliases(&aliases)?;
-            state.aliases = aliases;
-            Ok(project)
-        })())
-    }
-    /// Create a directory at an explicitly selected absolute path, then register it.
     pub async fn create_project_directory(
         &self,
         name: &str,
         path: &Path,
         init_git: bool,
     ) -> Result<Project, ClientError> {
-        local(alias_name(name))?;
-        if !path.is_absolute() {
-            return Err(ClientError::Local(LocalError::InvalidInput(
-                "select an absolute project directory".into(),
-            )));
-        }
-        local(self.lock().map(|_| ()))?;
-        local(std::fs::create_dir(path).map_err(LocalError::from))?;
-        let mut created = CreatedDirectory {
-            path: path.into(),
-            registered: false,
-        };
-        if init_git {
-            let outcome = tokio::time::timeout(
-                Duration::from_secs(15),
-                rpi_extcore::process::background_command("git")
-                    .args(["-c", "core.fsmonitor=false", "init", "--quiet"])
-                    .arg(path)
-                    .stdin(std::process::Stdio::null())
-                    .kill_on_drop(true)
-                    .output(),
-            )
-            .await;
-            if !matches!(outcome, Ok(Ok(ref output)) if output.status.success()) {
-                return Err(ClientError::Local(LocalError::Initialization(
-                    "git initialization failed; new directory registration was rolled back".into(),
-                )));
-            }
-        }
-        let project = self.register_project(name, path)?;
-        created.registered = true;
-        Ok(project)
+        self.owner
+            .create_project_directory(name, path, init_git)
+            .await
+            .map_err(Into::into)
     }
     pub async fn rename_project(
         &self,
         project_id: &str,
         name: &str,
     ) -> Result<Project, ClientError> {
-        local((|| {
-            let name = alias_name(name)?;
-            let mut state = self.lock()?;
-            let mut aliases = state.aliases.clone();
-            let alias = aliases
-                .iter_mut()
-                .find(|a| self.public_project(a).is_ok_and(|p| p.id == project_id))
-                .ok_or_else(|| LocalError::NotFound(format!("project {project_id}")))?;
-            alias.name = name;
-            let project = self.public_project(alias)?;
-            self.save_aliases(&aliases)?;
-            state.aliases = aliases;
-            Ok(project)
-        })())
+        self.owner
+            .rename_project(project_id, name)
+            .await
+            .map_err(Into::into)
     }
-    /// Browse an explicit directory; empty selects the managed-projects directory.
     pub async fn project_folders(&self, path: &str) -> Result<ProjectFolders, ClientError> {
-        local((|| {
-            let root = if path.is_empty() {
-                self.inner.data.join("managed-projects")
-            } else {
-                PathBuf::from(path)
-            };
-            if path.is_empty() {
-                std::fs::create_dir_all(&root)?;
-            }
-            let root = std::fs::canonicalize(root)?;
-            let mut folders = Vec::new();
-            for entry in std::fs::read_dir(&root)? {
-                let entry = entry?;
-                if entry.file_type()?.is_dir() {
-                    folders.push(ProjectFolder {
-                        name: entry.file_name().to_string_lossy().into(),
-                        path: entry.path().to_string_lossy().into(),
-                    });
-                }
-            }
-            folders.sort_by(|a, b| a.name.cmp(&b.name));
-            Ok(ProjectFolders {
-                root: root.to_string_lossy().into(),
-                path: root.to_string_lossy().into(),
-                folders,
-            })
-        })())
+        self.owner.project_folders(path).await.map_err(Into::into)
     }
     pub async fn files(&self, project_id: &str, path: &str) -> Result<FileListing, ClientError> {
-        let service = self.project_service(project_id)?;
-        decode(
-            service::project_files(
-                &service,
-                project_id.into(),
-                service::FileQuery {
-                    path: path.into(),
-                    staged: false,
-                },
-            )
-            .await,
-        )
+        self.owner.files(project_id, path).await.map_err(Into::into)
     }
     pub async fn file(&self, project_id: &str, path: &str) -> Result<FileContent, ClientError> {
-        let service = self.project_service(project_id)?;
-        decode(
-            service::project_file(
-                &service,
-                project_id.into(),
-                service::FileQuery {
-                    path: path.into(),
-                    staged: false,
-                },
-            )
-            .await,
-        )
+        self.owner.file(project_id, path).await.map_err(Into::into)
+    }
+    pub async fn image(&self, project_id: &str, path: &str) -> Result<crate::ProjectImage, ClientError> {
+        self.owner.image(project_id, path).await.map_err(Into::into)
     }
     pub async fn git_status(&self, project_id: &str) -> Result<GitStatus, ClientError> {
-        let service = self.project_service(project_id)?;
-        decode(service::project_status(&service, project_id.into()).await)
+        self.owner.git_status(project_id).await.map_err(Into::into)
     }
     pub async fn diff(
         &self,
@@ -535,138 +122,67 @@ impl LocalWorkspace {
         path: &str,
         staged: bool,
     ) -> Result<Diff, ClientError> {
-        let service = self.project_service(project_id)?;
-        decode(
-            service::project_diff(
-                &service,
-                project_id.into(),
-                service::FileQuery {
-                    path: path.into(),
-                    staged,
-                },
-            )
-            .await,
-        )
+        self.owner
+            .diff(project_id, path, staged)
+            .await
+            .map_err(Into::into)
+    }
+    pub async fn agent_backends(&self) -> Result<Vec<crate::AgentBackendOption>, ClientError> {
+        self.owner.agent_backends().await.map_err(Into::into)
+    }
+    pub async fn session_agent_binding(
+        &self,
+        id: &str,
+    ) -> Result<crate::SessionAgentBinding, ClientError> {
+        self.owner
+            .session_agent_binding(id)
+            .await
+            .map_err(Into::into)
+    }
+    pub async fn create_session_with_backend(
+        &self,
+        project: Option<&str>,
+        backend: &str,
+    ) -> Result<String, ClientError> {
+        self.owner
+            .create_session_with_backend(project, backend)
+            .await
+            .map_err(Into::into)
+    }
+    pub async fn prepare_agent_session(
+        &self,
+        id: &str,
+    ) -> Result<Option<crate::AgentClient>, ClientError> {
+        self.owner
+            .prepare_agent_session(id)
+            .await
+            .map(|agent| agent.map(into_agent_client))
+            .map_err(Into::into)
     }
     pub async fn sessions(&self) -> Result<Vec<SessionSummary>, ClientError> {
-        #[derive(Deserialize)]
-        struct Listing {
-            sessions: Vec<SessionSummary>,
-        }
-        let mut all = Vec::new();
-        let aliases = local(self.lock().map(|s| s.aliases.clone()))?;
-        for alias in aliases {
-            if workspace::Project::new(&alias.path).is_err() {
-                continue;
-            }
-            let service = local(self.service_for_root(&alias.path))?;
-            let listing: Listing = decode(
-                service::list_sessions(&service, service::SessionListQuery::default()).await,
-            )?;
-            all.extend(listing.sessions);
-        }
-        Ok(all)
+        self.owner.sessions().await.map_err(Into::into)
     }
     pub async fn create_session(&self, project_id: Option<&str>) -> Result<String, ClientError> {
-        #[derive(Deserialize)]
-        struct Created {
-            #[serde(rename = "sessionId")]
-            session_id: String,
-        }
-        let _lease = self.inner.lifecycle.read().await;
-        let service = if let Some(id) = project_id {
-            self.project_service(id)?
-        } else {
-            let root = local(
-                self.lock()
-                    .map(|s| s.aliases.first().map(|a| a.path.clone())),
-            )?
-            .unwrap_or_else(|| self.inner.control_root.clone());
-            local(self.service_for_root(&root))?
-        };
-        let result: Created = decode(
-            service::create_session(
-                &service,
-                service::CreateSessionRequest {
-                    project_id: project_id.map(str::to_owned),
-                },
-            )
-            .await,
-        )?;
-        Ok(result.session_id)
+        self.owner
+            .create_session(project_id)
+            .await
+            .map_err(Into::into)
     }
     pub async fn control_session(&self) -> Result<String, ClientError> {
-        let _lease = self.inner.lifecycle.read().await;
-        let mut control = self.inner.control.lock().await;
-        local(self.lock().map(|_| ()))?;
-        if let Some(id) = control.as_ref() {
-            return Ok(id.clone());
-        }
-        let service = local(self.service_for_root(&self.inner.control_root))?;
-        let registry = local(
-            Registry::load(service.config.registry.clone()).map_err(LocalError::Initialization),
-        )?;
-        if let Some(entry) = registry.entries().first() {
-            let _: SessionSummary =
-                decode(service::open_session(&service, entry.session_id.clone()).await)?;
-            *control = Some(entry.session_id.clone());
-        } else {
-            let value: Value = decode(
-                service::create_session(&service, service::CreateSessionRequest::default()).await,
-            )?;
-            let id = value
-                .get("sessionId")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    ClientError::Local(LocalError::Initialization(
-                        "create_session omitted sessionId".into(),
-                    ))
-                })?;
-            *control = Some(id.into());
-        }
-        control.clone().ok_or_else(|| {
-            ClientError::Local(LocalError::Initialization(
-                "control session was not assigned".into(),
-            ))
-        })
+        self.owner.control_session().await.map_err(Into::into)
     }
     pub async fn get_session(&self, session_id: &str) -> Result<SessionSummary, ClientError> {
-        let service = self.session_service(session_id)?;
-        let summary = decode(service::get_session(&service, session_id.into()).await)?;
-        Self::enrich_summary(&service, summary)
-    }
-
-    fn enrich_summary(
-        service: &Service,
-        mut summary: SessionSummary,
-    ) -> Result<SessionSummary, ClientError> {
-        let registry = local(
-            Registry::load(service.config.registry.clone()).map_err(LocalError::Initialization),
-        )?;
-        if let Some(entry) = registry.get(&summary.session_id) {
-            summary.project_id.clone_from(&entry.project_id);
-            let prefs = registry.preferences(&summary.session_id);
-            summary.pinned = prefs.pinned;
-            summary.archived = prefs.archived;
-        }
-        Ok(summary)
+        self.owner.get_session(session_id).await.map_err(Into::into)
     }
     pub async fn rename_session(
         &self,
         session_id: &str,
         title: &str,
     ) -> Result<SessionMutation, ClientError> {
-        let service = self.session_service(session_id)?;
-        decode(
-            service::rename_session(
-                &service,
-                session_id.into(),
-                service::RenameRequest {
-                    title: title.into(),
-                },
-            )
-            .await,
-        )
+        self.owner
+            .rename_session(session_id, title)
+            .await
+            .map_err(Into::into)
     }
     pub async fn session_preferences(
         &self,
@@ -674,19 +190,10 @@ impl LocalWorkspace {
         archived: Option<bool>,
         pinned: Option<bool>,
     ) -> Result<SessionPreferences, ClientError> {
-        let service = self.session_service(session_id)?;
-        decode(
-            service::session_metadata(
-                &service,
-                session_id.into(),
-                service::MetadataRequest {
-                    archived,
-                    pinned,
-                    tags: None,
-                },
-            )
-            .await,
-        )
+        self.owner
+            .session_preferences(session_id, archived, pinned)
+            .await
+            .map_err(Into::into)
     }
     pub async fn fork_session(
         &self,
@@ -694,80 +201,55 @@ impl LocalWorkspace {
         entry_id: Option<&str>,
         title: Option<&str>,
     ) -> Result<SessionMutation, ClientError> {
-        let _lease = self.inner.lifecycle.read().await;
-        let service = self.session_service(session_id)?;
-        decode(
-            service::fork_session(
-                &service,
-                session_id.into(),
-                service::ForkRequest {
-                    entry_id: entry_id.map(str::to_owned),
-                    title: title.map(str::to_owned),
-                },
-            )
-            .await,
-        )
+        self.owner
+            .fork_session(session_id, entry_id, title)
+            .await
+            .map_err(Into::into)
     }
     pub async fn clone_session(
         &self,
         session_id: &str,
         title: Option<&str>,
     ) -> Result<SessionMutation, ClientError> {
-        let _lease = self.inner.lifecycle.read().await;
-        let service = self.session_service(session_id)?;
-        decode(
-            service::clone_session(
-                &service,
-                session_id.into(),
-                service::ForkRequest {
-                    entry_id: None,
-                    title: title.map(str::to_owned),
-                },
-            )
-            .await,
-        )
+        self.owner
+            .clone_session(session_id, title)
+            .await
+            .map_err(Into::into)
     }
     pub async fn delete_session(&self, session_id: &str) -> Result<(), ClientError> {
-        let service = self.session_service(session_id)?;
-        let _: Value = decode(service::delete_session(&service, session_id.into()).await)?;
-        Ok(())
+        self.owner
+            .delete_session(session_id)
+            .await
+            .map_err(Into::into)
     }
     pub async fn open_session(&self, session_id: &str) -> Result<SessionSummary, ClientError> {
-        let _lease = self.inner.lifecycle.read().await;
-        let service = self.session_service(session_id)?;
-        let summary = decode(service::open_session(&service, session_id.into()).await)?;
-        Self::enrich_summary(&service, summary)
+        self.owner
+            .open_session(session_id)
+            .await
+            .map_err(Into::into)
     }
     pub async fn snapshot(&self, session_id: &str) -> Result<Snapshot, ClientError> {
-        let service = self.session_service(session_id)?;
-        decode(service::snapshot(&service, session_id.into()).await)
+        self.owner.snapshot(session_id).await.map_err(Into::into)
+    }
+    pub async fn snapshot_with_limit(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Snapshot, ClientError> {
+        self.owner
+            .snapshot_with_limit(session_id, limit)
+            .await
+            .map_err(Into::into)
     }
     pub async fn command<T: for<'de> Deserialize<'de>>(
         &self,
         session_id: &str,
         payload: Value,
     ) -> Result<HostResponse<T>, ClientError> {
-        let command: rpi_extcore::protocol::ApiCommand =
-            local(serde_json::from_value(payload).map_err(LocalError::from))?;
-        if !rpi_extcore::protocol::SUPPORTED_COMMANDS.contains(&command.kind.as_str()) {
-            return Err(ClientError::Local(LocalError::Unsupported(command.kind)));
-        }
-        let lease = self.inner.lifecycle.read().await;
-        let service = self.session_service(session_id)?;
-        let _: SessionSummary = decode(service::open_session(&service, session_id.into()).await)?;
-        let host = service.live_session(session_id).await.ok_or_else(|| {
-            ClientError::Local(LocalError::NotFound(format!("live session {session_id}")))
-        })?;
-        if !host.supports_command(&command.kind) {
-            return Err(ClientError::Local(LocalError::Unsupported(format!(
-                "host did not advertise {}",
-                command.kind
-            ))));
-        }
-        // The host is guaranteed live after open, but waiting for its response
-        // must not prevent shutdown from stopping an unresponsive child.
-        drop(lease);
-        decode(service::command(&service, session_id.into(), command).await)
+        self.owner
+            .command(session_id, payload)
+            .await
+            .map_err(Into::into)
     }
     pub async fn command_data<T: for<'de> Deserialize<'de>>(
         &self,
@@ -775,80 +257,25 @@ impl LocalWorkspace {
         command: &str,
         payload: Value,
     ) -> Result<T, ClientError> {
-        let response: HostResponse<T> = self
-            .command(session_id, payload_with_type(command, payload))
-            .await?;
-        if !response.success {
-            return Err(ClientError::Local(LocalError::Service {
-                kind: ReplyKind::InvalidInput,
-                message: response
-                    .error
-                    .unwrap_or_else(|| format!("{command} failed")),
-            }));
-        }
-        response.data.ok_or_else(|| {
-            ClientError::Local(LocalError::Service {
-                kind: ReplyKind::Internal,
-                message: format!("{command} returned no data"),
-            })
-        })
+        self.owner
+            .command_data(session_id, command, payload)
+            .await
+            .map_err(Into::into)
     }
     pub async fn refresh_auth(&self, provider: &str) -> Result<Value, ClientError> {
-        let id = self.control_session().await?;
-        let service = self.session_service(&id)?;
-        let host = service
-            .live_session(&id)
-            .await
-            .ok_or_else(|| ClientError::Local(LocalError::NotFound("control host".into())))?;
-        if !host.supports_command("oauth") {
-            return Err(ClientError::Local(LocalError::Unsupported(
-                "host did not advertise oauth".into(),
-            )));
-        }
-        self.command_data(
-            &id,
-            "oauth",
-            json!({ "provider": provider, "action": "refresh" }),
-        )
-        .await
+        self.owner.refresh_auth(provider).await.map_err(Into::into)
     }
     pub async fn subscribe(
         &self,
         session_id: &str,
         after: u64,
     ) -> Result<EventStream, ClientError> {
-        let _lease = self.inner.lifecycle.read().await;
-        let service = self.session_service(session_id)?;
-        let _: SessionSummary = decode(service::open_session(&service, session_id.into()).await)?;
-        let subscription = service
-            .subscribe_events(session_id, Some(after))
+        self.owner
+            .subscribe(session_id, after)
             .await
-            .ok_or_else(|| {
-                ClientError::Local(LocalError::NotFound(format!("session {session_id}")))
-            })?;
-        let stream = try_stream! {
-            let _service = service;
-            yield WireEvent { id: None, seq: None, event_type: "ready".into(), data: subscription.ready };
-            if subscription.gap {
-                yield WireEvent { id: None, seq: None, event_type: "resync_required".into(), data: json!({"type":"resync_required"}) };
-            }
-            let events = events::replay_stream(subscription.replay, subscription.receiver, subscription.after);
-            futures_util::pin_mut!(events);
-            while let Some(item) = events.next().await {
-                match item {
-                    StreamItem::Event(event) => {
-                        let event_type = event.value.get("type").and_then(Value::as_str).unwrap_or("unknown").to_owned();
-                        yield WireEvent { id: Some(event.seq.to_string()), seq: Some(event.seq), event_type, data: event.value };
-                    }
-                    StreamItem::ResyncRequired { dropped } => {
-                        yield WireEvent { id: None, seq: None, event_type: "resync_required".into(), data: json!({"type":"resync_required", "dropped": dropped}) };
-                    }
-                }
-            }
-        };
-        Ok(Box::pin(stream))
+            .map(map_workspace_stream)
+            .map_err(Into::into)
     }
-    /// Use the workspace facade's shared snapshot/projector connector.
     pub async fn connect_session(
         &self,
         session_id: impl Into<String>,
@@ -858,83 +285,18 @@ impl LocalWorkspace {
             .connect_session(session_id)
             .await
     }
-    /// Stop all children without closing the project catalog. The same facade
-    /// can reopen persisted sessions after cleanup releases its lifecycle lease.
     pub async fn suspend(&self) {
-        self.stop(false).await;
+        self.owner.suspend().await;
     }
-
     pub async fn shutdown(&self) {
-        self.stop(true).await;
+        self.owner.shutdown().await;
     }
-
-    async fn stop(&self, permanent: bool) {
-        let inner = self.inner.clone();
-        // Spawn before acquiring the lease: cancelling even a queued caller must
-        // not abandon cleanup. Reopening serializes behind this exclusive lease.
-        let cleanup = tokio::spawn(async move {
-            let _lease = inner.lifecycle.clone().write_owned().await;
-            let services = if let Ok(mut state) = inner.state.lock() {
-                state.closed |= permanent;
-                state
-                    .services
-                    .drain()
-                    .map(|(_, service)| service)
-                    .collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            };
-            // No state or control mutex may be held while awaiting child exit.
-            *inner.control.lock().await = None;
-            futures_util::future::join_all(services.iter().map(|service| service.shutdown())).await;
-        });
-        let _ = cleanup.await;
-    }
-}
-impl Drop for Inner {
-    fn drop(&mut self) {
-        let services = self
-            .state
-            .get_mut()
-            .map(|state| {
-                state
-                    .services
-                    .drain()
-                    .map(|(_, service)| service)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        if services.is_empty() {
-            return;
-        }
-        let cleanup = async move {
-            futures_util::future::join_all(services.iter().map(|service| service.shutdown())).await;
-        };
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(cleanup);
-        } else {
-            let _ = std::thread::Builder::new()
-                .name("local-workspace-cleanup".into())
-                .spawn(move || {
-                    if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        runtime.block_on(async {
-                            let _ = tokio::time::timeout(Duration::from_secs(5), cleanup).await;
-                        });
-                    }
-                });
-        }
-    }
-}
-
-impl LocalWorkspace {
     pub async fn session_branch(&self, session_id: &str) -> Result<SessionBranch, ClientError> {
-        self.command_data(session_id, "get_session_branch", Value::Null)
+        self.owner
+            .session_branch(session_id)
             .await
+            .map_err(Into::into)
     }
-
     pub async fn history(
         &self,
         session_id: &str,
@@ -942,396 +304,653 @@ impl LocalWorkspace {
         before_seq: Option<u64>,
         limit: u64,
     ) -> Result<History, ClientError> {
-        self.command_data(
-            session_id,
-            "get_history",
-            json!({ "afterSeq": after_seq, "beforeSeq": before_seq, "limit": limit }),
-        )
-        .await
+        self.owner
+            .history(session_id, after_seq, before_seq, limit)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn runtime_state(&self, session_id: &str) -> Result<RuntimeState, ClientError> {
-        self.command_data(session_id, "get_state", Value::Null)
+        self.owner
+            .runtime_state(session_id)
             .await
+            .map_err(Into::into)
     }
-
-    /// Read the explicitly reported active-tools field without allowing the
-    /// `RuntimeState` serde default to turn a missing field into an empty list.
     pub async fn active_tools_state(&self, session_id: &str) -> Result<Vec<String>, ClientError> {
-        let state: Value = self
-            .command_data(session_id, "get_state", Value::Null)
-            .await?;
-        let tools = state
-            .get("activeTools")
-            .and_then(Value::as_array)
-            .ok_or_else(|| {
-                ClientError::Local(LocalError::InvalidInput(
-                    "get_state omitted activeTools".into(),
-                ))
-            })?;
-        tools
-            .iter()
-            .map(|tool| {
-                tool.as_str().map(str::to_owned).ok_or_else(|| {
-                    ClientError::Local(LocalError::InvalidInput(
-                        "get_state returned an invalid activeTools entry".into(),
-                    ))
-                })
-            })
-            .collect()
+        self.owner
+            .active_tools_state(session_id)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn models(&self, session_id: &str) -> Result<Vec<ModelDescriptor>, ClientError> {
-        #[derive(Deserialize)]
-        struct Response {
-            models: Vec<ModelDescriptor>,
-        }
-        Ok(self
-            .command_data::<Response>(session_id, "get_available_models", Value::Null)
-            .await?
-            .models)
+        self.owner.models(session_id).await.map_err(Into::into)
     }
-
     pub async fn auth_status(&self, session_id: &str) -> Result<AuthStatus, ClientError> {
-        self.command_data(session_id, "get_auth_status", Value::Null)
-            .await
+        self.owner.auth_status(session_id).await.map_err(Into::into)
     }
-
     pub async fn thinking_levels(&self, session_id: &str) -> Result<Vec<String>, ClientError> {
-        #[derive(Deserialize)]
-        struct Response {
-            levels: Vec<String>,
-        }
-        Ok(self
-            .command_data::<Response>(session_id, "get_available_thinking_levels", Value::Null)
-            .await?
-            .levels)
+        self.owner
+            .thinking_levels(session_id)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn tools(&self, session_id: &str) -> Result<ToolCatalog, ClientError> {
-        self.command_data(session_id, "get_available_tools", Value::Null)
-            .await
+        self.owner.tools(session_id).await.map_err(Into::into)
     }
-
     pub async fn set_model(&self, session_id: &str, model_id: &str) -> Result<Value, ClientError> {
-        self.command_data(session_id, "set_model", json!({ "modelId": model_id }))
+        self.owner
+            .set_model(session_id, model_id)
             .await
+            .map_err(Into::into)
     }
-
     pub async fn set_thinking_level(
         &self,
         session_id: &str,
         level: &str,
     ) -> Result<Value, ClientError> {
-        self.command_data(session_id, "set_thinking_level", json!({ "level": level }))
+        self.owner
+            .set_thinking_level(session_id, level)
             .await
+            .map_err(Into::into)
     }
-
     pub async fn set_active_tools(
         &self,
         session_id: &str,
         tools: &[String],
     ) -> Result<Value, ClientError> {
-        self.command_data(session_id, "set_active_tools", json!({ "tools": tools }))
+        self.owner
+            .set_active_tools(session_id, tools)
             .await
+            .map_err(Into::into)
     }
-
     pub async fn resume_pending(&self, session_id: &str) -> Result<Value, ClientError> {
-        self.command_data(session_id, "resume_pending", Value::Null)
+        self.owner
+            .resume_pending(session_id)
             .await
+            .map_err(Into::into)
     }
-
     pub async fn compact(
         &self,
         session_id: &str,
         custom_instructions: Option<&str>,
     ) -> Result<Value, ClientError> {
-        self.command_data(
-            session_id,
-            "compact",
-            json!({ "customInstructions": custom_instructions }),
-        )
-        .await
+        self.owner
+            .compact(session_id, custom_instructions)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn queue(
         &self,
         session_id: &str,
         include_completed: bool,
     ) -> Result<QueueSnapshot, ClientError> {
-        self.command_data(
-            session_id,
-            "get_queue",
-            json!({ "includeCompleted": include_completed }),
-        )
-        .await
+        self.owner
+            .queue(session_id, include_completed)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn queue_message(
         &self,
         session_id: &str,
         message: &str,
         deliver_as: &str,
     ) -> Result<QueueMutation, ClientError> {
-        self.command_data(
-            session_id,
-            "queue_message",
-            json!({ "message": message, "deliverAs": deliver_as }),
-        )
-        .await
+        self.owner
+            .queue_message(session_id, message, deliver_as)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn cancel_queued(
         &self,
         session_id: &str,
         entry_id: &str,
     ) -> Result<QueueCancellation, ClientError> {
-        self.command_data(session_id, "cancel_queued", json!({ "entryId": entry_id }))
+        self.owner
+            .cancel_queued(session_id, entry_id)
             .await
+            .map_err(Into::into)
     }
-
     pub async fn clear_queue(&self, session_id: &str) -> Result<Value, ClientError> {
-        self.command_data(session_id, "clear_queue", Value::Null)
-            .await
+        self.owner.clear_queue(session_id).await.map_err(Into::into)
     }
-
     pub async fn dialog_response(
         &self,
         session_id: &str,
         request_id: &str,
         value: Value,
     ) -> Result<Value, ClientError> {
-        self.command_data(
-            session_id,
-            "ui_dialog_response",
-            json!({ "requestId": request_id, "answer": value }),
-        )
-        .await
+        self.owner
+            .dialog_response(session_id, request_id, value)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn cancel_dialog(
         &self,
         session_id: &str,
         request_id: &str,
     ) -> Result<Value, ClientError> {
-        self.command_data(
-            session_id,
-            "ui_dialog_response",
-            json!({ "requestId": request_id, "cancelled": true }),
-        )
-        .await
+        self.owner
+            .cancel_dialog(session_id, request_id)
+            .await
+            .map_err(Into::into)
     }
-
     pub async fn prompt(
         &self,
         session_id: &str,
         message: &str,
     ) -> Result<HostResponse<Value>, ClientError> {
-        self.command(session_id, json!({ "type": "prompt", "message": message }))
+        self.owner
+            .prompt(session_id, message)
             .await
+            .map_err(Into::into)
     }
-
     pub async fn abort(&self, session_id: &str) -> Result<HostResponse<Value>, ClientError> {
-        self.command(session_id, json!({ "type": "abort" })).await
+        self.owner.abort(session_id).await.map_err(Into::into)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    struct Fixture(PathBuf);
-    impl Fixture {
-        fn new() -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "rpi-local-workspace-{}-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            std::fs::create_dir_all(&path).unwrap();
-            Self(std::fs::canonicalize(path).unwrap())
-        }
-        fn client(&self) -> LocalWorkspace {
-            LocalWorkspace::new("not-started-by-project-tests".into(), self.0.join("data")).unwrap()
-        }
+impl work_core::api::NodeApi for LocalWorkspace {
+    fn provider_catalog(&self) -> work_core::api::NodeFuture<'_, work_core::api::ProviderCatalog> {
+        work_core::api::NodeApi::provider_catalog(self.owner.as_ref())
     }
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
+    fn provider_mutate(
+        &self,
+        request: work_core::api::ProviderMutation,
+    ) -> work_core::api::NodeFuture<'_, work_core::api::ProviderReceipt> {
+        work_core::api::NodeApi::provider_mutate(self.owner.as_ref(), request)
     }
-    fn run<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
-    #[test]
-    fn arbitrary_existing_directory_aliases_survive_rename_and_restart() {
-        let fixture = Fixture::new();
-        let directory = fixture.0.join("outside-managed-root");
-        std::fs::create_dir(&directory).unwrap();
-        let client = fixture.client();
-        let project =
-            run(client.create_project("A friendly alias", directory.to_str(), false)).unwrap();
-        assert_eq!(project.id, workspace::Project::new(&directory).unwrap().id);
-        assert_eq!(project.name, "A friendly alias");
-        assert!(
-            client.inner.state.lock().unwrap().services.is_empty(),
-            "registration must not create a service or launch a host"
-        );
-        let renamed = run(client.rename_project(&project.id, "Renamed alias")).unwrap();
-        assert_eq!(project.id, renamed.id);
-        assert_eq!(project.path, renamed.path);
-        drop(client);
-        let restarted = fixture.client();
-        assert_eq!(run(restarted.projects()).unwrap(), vec![renamed]);
-        assert!(
-            directory.is_dir(),
-            "alias rename must not move the directory"
-        );
-    }
-    #[test]
-    fn canonical_duplicate_registration_reuses_original_alias() {
-        let fixture = Fixture::new();
-        let directory = fixture.0.join("existing");
-        std::fs::create_dir(&directory).unwrap();
-        let client = fixture.client();
-        let first = run(client.create_project("First", directory.to_str(), false)).unwrap();
-        let alternate = directory.join(".");
-        assert_eq!(
-            run(client.create_project("Second", alternate.to_str(), false)).unwrap(),
-            first
-        );
-        assert_eq!(run(client.projects()).unwrap().len(), 1);
-    }
-    #[test]
-    fn explicit_creation_and_managed_creation_are_distinct_from_open() {
-        let fixture = Fixture::new();
-        let client = fixture.client();
-        let explicit = fixture.0.join("explicit-new-directory");
-        let created =
-            run(client.create_project_directory("Explicit alias", &explicit, false)).unwrap();
-        assert!(explicit.is_dir());
-        assert_eq!(created.name, "Explicit alias");
-        assert!(run(client.create_project_directory("No overwrite", &explicit, false)).is_err());
-        let managed = run(client.create_project("Managed", None, false)).unwrap();
-        assert!(Path::new(&managed.path).is_dir());
-        let missing = fixture.0.join("not-created-by-open");
-        assert!(run(client.create_project("Missing", missing.to_str(), false)).is_err());
-        assert!(!missing.exists());
-        assert!(
-            run(client.create_project_directory("Relative", Path::new("relative-project"), false))
-                .is_err()
-        );
-        assert_eq!(run(client.projects()).unwrap().len(), 2);
-    }
-    #[test]
-    fn failed_registration_rolls_back_only_new_directory() {
-        let fixture = Fixture::new();
-        let client = fixture.client();
-        // Force alias persistence to fail after directory creation.
-        std::fs::create_dir(fixture.0.join("data/rpc/projects.json")).unwrap();
-        let path = fixture.0.join("rolled-back");
-        assert!(run(client.create_project_directory("Alias", &path, false)).is_err());
-        assert!(!path.exists());
-        assert_eq!(run(client.projects()).unwrap().len(), 0);
-        let existing = fixture.0.join("existing");
-        std::fs::create_dir(&existing).unwrap();
-        std::fs::write(existing.join("keep.txt"), "untouched").unwrap();
-        assert!(run(client.create_project_directory("Alias", &existing, true)).is_err());
-        assert_eq!(
-            std::fs::read_to_string(existing.join("keep.txt")).unwrap(),
-            "untouched"
-        );
+    fn provider_release_hosts(
+        &self,
+    ) -> work_core::api::NodeFuture<'_, work_core::api::NativeReleaseReport> {
+        work_core::api::NodeApi::provider_release_hosts(self.owner.as_ref())
     }
 
-    #[test]
-    fn offline_summary_preserves_registry_project_and_preferences() {
-        let fixture = Fixture::new();
-        let directory = fixture.0.join("project");
-        std::fs::create_dir(&directory).unwrap();
-        let client = fixture.client();
-        let project = run(client.create_project("Alias", directory.to_str(), false)).unwrap();
-        let service = client.project_service(&project.id).unwrap();
-        std::fs::write(
-            &service.config.registry,
-            serde_json::to_vec(&json!({
-                "sessions": [{"sessionId": "offline", "projectId": project.id, "title": "Title"}],
-                "preferences": {"offline": {"pinned": true, "archived": true}}
-            }))
-            .unwrap(),
+    fn package_catalog<'a>(
+        &'a self,
+        project: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::PackageCatalog> {
+        work_core::api::NodeApi::package_catalog(self.owner.as_ref(), project)
+    }
+    fn package_bundle<'a>(
+        &'a self,
+        project: &'a str,
+        package: work_core::api::PackageRef,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::PackageBundle> {
+        work_core::api::NodeApi::package_bundle(self.owner.as_ref(), project, package)
+    }
+    fn package_acquire<'a>(
+        &'a self,
+        project: &'a str,
+        package: work_core::api::PackageRef,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::PackageAcquisition> {
+        work_core::api::NodeApi::package_acquire(self.owner.as_ref(), project, package)
+    }
+    fn package_install<'a>(
+        &'a self,
+        project: &'a str,
+        request: work_core::api::PackageInstall,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::NativeReceipt> {
+        work_core::api::NodeApi::package_install(self.owner.as_ref(), project, request)
+    }
+    fn native_catalog<'a>(
+        &'a self,
+        project: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::NativeCatalog> {
+        work_core::api::NodeApi::native_catalog(self.owner.as_ref(), project)
+    }
+    fn native_manage<'a>(
+        &'a self,
+        project: &'a str,
+        request: work_core::api::NativeManagement,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::NativeReceipt> {
+        work_core::api::NodeApi::native_manage(self.owner.as_ref(), project, request)
+    }
+    fn native_session_resources<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::NativeSessionResources> {
+        work_core::api::NodeApi::native_session_resources(self.owner.as_ref(), id)
+    }
+    fn native_apply<'a>(
+        &'a self,
+        id: &'a str,
+        request: work_core::api::NativeApply,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::NativeOperation> {
+        work_core::api::NodeApi::native_apply(self.owner.as_ref(), id, request)
+    }
+    fn native_create<'a>(
+        &'a self,
+        project: &'a str,
+        request: work_core::api::NativeCreate,
+    ) -> work_core::api::NodeFuture<'a, String> {
+        work_core::api::NodeApi::native_create(self.owner.as_ref(), project, request)
+    }
+    fn native_release<'a>(
+        &'a self,
+        project: &'a str,
+        scope: work_core::api::NativeScope,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::NativeReleaseReport> {
+        work_core::api::NodeApi::native_release(self.owner.as_ref(), project, scope)
+    }
+    fn native_saved_history<'a>(
+        &'a self,
+        id: &'a str,
+        cursor: Option<String>,
+    ) -> work_core::api::NodeFuture<'a, Value> {
+        work_core::api::NodeApi::native_saved_history(self.owner.as_ref(), id, cursor)
+    }
+    fn authoring<'a>(
+        &'a self,
+        project: &'a str,
+        request: work_core::api::AuthoringRequest,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::AuthoringState> {
+        work_core::api::NodeApi::authoring(self.owner.as_ref(), project, request)
+    }
+
+    fn health(&self) -> work_core::api::NodeFuture<'_, work_core::api::Health> {
+        work_core::api::NodeApi::health(self.owner.as_ref())
+    }
+
+    fn auth(&self) -> work_core::api::NodeFuture<'_, work_core::api::AuthState> {
+        work_core::api::NodeApi::auth(self.owner.as_ref())
+    }
+
+    fn login<'a>(
+        &'a self,
+        password: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::AuthState> {
+        work_core::api::NodeApi::login(self.owner.as_ref(), password)
+    }
+
+    fn logout(&self) -> work_core::api::NodeFuture<'_, work_core::api::AuthState> {
+        work_core::api::NodeApi::logout(self.owner.as_ref())
+    }
+
+    fn capabilities(&self) -> work_core::api::NodeFuture<'_, work_core::api::Capabilities> {
+        work_core::api::NodeApi::capabilities(self.owner.as_ref())
+    }
+
+    fn projects(&self) -> work_core::api::NodeFuture<'_, Vec<work_core::api::Project>> {
+        work_core::api::NodeApi::projects(self.owner.as_ref())
+    }
+
+    fn rename_project<'a>(
+        &'a self,
+        project_id: &'a str,
+        name: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::Project> {
+        work_core::api::NodeApi::rename_project(self.owner.as_ref(), project_id, name)
+    }
+
+    fn project_folders<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::ProjectFolders> {
+        work_core::api::NodeApi::project_folders(self.owner.as_ref(), path)
+    }
+
+    fn create_project<'a>(
+        &'a self,
+        name: &'a str,
+        path: Option<&'a str>,
+        init_git: bool,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::Project> {
+        work_core::api::NodeApi::create_project(self.owner.as_ref(), name, path, init_git)
+    }
+
+    fn files<'a>(
+        &'a self,
+        project_id: &'a str,
+        path: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::FileListing> {
+        work_core::api::NodeApi::files(self.owner.as_ref(), project_id, path)
+    }
+
+    fn file<'a>(
+        &'a self,
+        project_id: &'a str,
+        path: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::FileContent> {
+        work_core::api::NodeApi::file(self.owner.as_ref(), project_id, path)
+    }
+
+    fn image<'a>(
+        &'a self, project_id: &'a str, path: &'a str,
+    ) -> work_core::api::NodeFuture<'a, crate::ProjectImage> {
+        work_core::api::NodeApi::image(self.owner.as_ref(), project_id, path)
+    }
+
+    fn git_status<'a>(
+        &'a self,
+        project_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::GitStatus> {
+        work_core::api::NodeApi::git_status(self.owner.as_ref(), project_id)
+    }
+
+    fn diff<'a>(
+        &'a self,
+        project_id: &'a str,
+        path: &'a str,
+        staged: bool,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::Diff> {
+        work_core::api::NodeApi::diff(self.owner.as_ref(), project_id, path, staged)
+    }
+
+    fn agent_backends(
+        &self,
+    ) -> work_core::api::NodeFuture<'_, Vec<work_core::api::AgentBackendOption>> {
+        work_core::api::NodeApi::agent_backends(self.owner.as_ref())
+    }
+
+    fn session_agent_binding<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionAgentBinding> {
+        work_core::api::NodeApi::session_agent_binding(self.owner.as_ref(), id)
+    }
+
+    fn create_session_with_backend<'a>(
+        &'a self,
+        project_id: Option<&'a str>,
+        backend: &'a str,
+    ) -> work_core::api::NodeFuture<'a, String> {
+        work_core::api::NodeApi::create_session_with_backend(
+            self.owner.as_ref(),
+            project_id,
+            backend,
         )
-        .unwrap();
-        // A new service must load the on-disk registry, not a fabricated host.
-        run(client.shutdown());
-        let restarted = fixture.client();
-        let summary = run(restarted.get_session("offline")).unwrap();
-        assert_eq!(summary.project_id, Some(project.id));
-        assert!(summary.archived && summary.pinned);
-        assert_eq!(summary.title.as_deref(), Some("Title"));
-        assert_eq!(summary.status, "offline");
-        run(restarted.shutdown());
     }
 
-    #[test]
-    fn shutdown_waits_for_host_start_lease_and_is_permanent() {
-        run(async {
-            let fixture = Fixture::new();
-            let client = fixture.client();
-            let lease = client.inner.lifecycle.read().await;
-            let shutdown = client.shutdown();
-            tokio::pin!(shutdown);
-            assert!(
-                tokio::time::timeout(Duration::from_millis(10), &mut shutdown)
-                    .await
-                    .is_err()
-            );
-            assert!(client.health().await.is_ok());
-            drop(lease);
-            shutdown.await;
-            client.shutdown().await;
-            assert!(matches!(
-                client.create_session(None).await,
-                Err(ClientError::Local(LocalError::Shutdown))
-            ));
-            assert!(
-                fixture.client().health().await.is_ok(),
-                "restart requires a new facade"
-            );
-        });
+    fn sessions(&self) -> work_core::api::NodeFuture<'_, Vec<work_core::api::SessionSummary>> {
+        work_core::api::NodeApi::sessions(self.owner.as_ref())
     }
 
-    #[test]
-    fn services_use_explicit_canonical_roots_and_per_project_registries() {
-        let fixture = Fixture::new();
-        let directory = fixture.0.join("project");
-        std::fs::create_dir(&directory).unwrap();
-        let client = fixture.client();
-        let project = run(client.create_project("Alias", directory.to_str(), false)).unwrap();
-        let service = client.project_service(&project.id).unwrap();
-        assert_eq!(
-            service.config.project,
-            std::fs::canonicalize(directory).unwrap()
-        );
-        assert_eq!(
-            service.config.registry,
-            fixture
-                .0
-                .join("data/rpc/projects")
-                .join(project.id)
-                .join("sessions.json")
-        );
-        run(client.shutdown());
-        assert!(matches!(
-            run(client.projects()),
-            Err(ClientError::Local(LocalError::Shutdown))
-        ));
+    fn create_session<'a>(
+        &'a self,
+        project_id: Option<&'a str>,
+    ) -> work_core::api::NodeFuture<'a, String> {
+        work_core::api::NodeApi::create_session(self.owner.as_ref(), project_id)
+    }
+
+    fn get_session<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionSummary> {
+        work_core::api::NodeApi::get_session(self.owner.as_ref(), session_id)
+    }
+
+    fn rename_session<'a>(
+        &'a self,
+        session_id: &'a str,
+        title: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionMutation> {
+        work_core::api::NodeApi::rename_session(self.owner.as_ref(), session_id, title)
+    }
+
+    fn session_preferences<'a>(
+        &'a self,
+        session_id: &'a str,
+        archived: Option<bool>,
+        pinned: Option<bool>,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionPreferences> {
+        work_core::api::NodeApi::session_preferences(
+            self.owner.as_ref(),
+            session_id,
+            archived,
+            pinned,
+        )
+    }
+
+    fn fork_session<'a>(
+        &'a self,
+        session_id: &'a str,
+        entry_id: Option<&'a str>,
+        title: Option<&'a str>,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionMutation> {
+        work_core::api::NodeApi::fork_session(self.owner.as_ref(), session_id, entry_id, title)
+    }
+
+    fn clone_session<'a>(
+        &'a self,
+        session_id: &'a str,
+        title: Option<&'a str>,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionMutation> {
+        work_core::api::NodeApi::clone_session(self.owner.as_ref(), session_id, title)
+    }
+
+    fn delete_session<'a>(&'a self, session_id: &'a str) -> work_core::api::NodeFuture<'a, ()> {
+        work_core::api::NodeApi::delete_session(self.owner.as_ref(), session_id)
+    }
+
+    fn open_session<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionSummary> {
+        work_core::api::NodeApi::open_session(self.owner.as_ref(), session_id)
+    }
+
+    fn snapshot<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::Snapshot> {
+        work_core::api::NodeApi::snapshot(self.owner.as_ref(), session_id)
+    }
+
+    fn snapshot_with_limit<'a>(
+        &'a self,
+        session_id: &'a str,
+        limit: u64,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::Snapshot> {
+        work_core::api::NodeApi::snapshot_with_limit(self.owner.as_ref(), session_id, limit)
+    }
+
+    fn session_access<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionAccess> {
+        work_core::api::NodeApi::session_access(self.owner.as_ref(), id)
+    }
+
+    fn session_configuration<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionConfiguration> {
+        work_core::api::NodeApi::session_configuration(self.owner.as_ref(), id)
+    }
+
+    fn set_session_config_option<'a>(
+        &'a self,
+        id: &'a str,
+        config_id: &'a str,
+        value: serde_json::Value,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::set_session_config_option(
+            self.owner.as_ref(),
+            id,
+            config_id,
+            value,
+        )
+    }
+
+    fn session_branch<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::SessionBranch> {
+        work_core::api::NodeApi::session_branch(self.owner.as_ref(), session_id)
+    }
+
+    fn history<'a>(
+        &'a self,
+        session_id: &'a str,
+        after_seq: Option<u64>,
+        before_seq: Option<u64>,
+        limit: u64,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::History> {
+        work_core::api::NodeApi::history(
+            self.owner.as_ref(),
+            session_id,
+            after_seq,
+            before_seq,
+            limit,
+        )
+    }
+
+    fn runtime_state<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::RuntimeState> {
+        work_core::api::NodeApi::runtime_state(self.owner.as_ref(), session_id)
+    }
+
+    fn active_tools_state<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, Vec<String>> {
+        work_core::api::NodeApi::active_tools_state(self.owner.as_ref(), session_id)
+    }
+
+    fn models<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, Vec<work_core::api::ModelDescriptor>> {
+        work_core::api::NodeApi::models(self.owner.as_ref(), session_id)
+    }
+
+    fn auth_status<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::AuthStatus> {
+        work_core::api::NodeApi::auth_status(self.owner.as_ref(), session_id)
+    }
+
+    fn thinking_levels<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, Vec<String>> {
+        work_core::api::NodeApi::thinking_levels(self.owner.as_ref(), session_id)
+    }
+
+    fn tools<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::ToolCatalog> {
+        work_core::api::NodeApi::tools(self.owner.as_ref(), session_id)
+    }
+
+    fn set_model<'a>(
+        &'a self,
+        session_id: &'a str,
+        model_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::set_model(self.owner.as_ref(), session_id, model_id)
+    }
+
+    fn set_thinking_level<'a>(
+        &'a self,
+        session_id: &'a str,
+        level: &'a str,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::set_thinking_level(self.owner.as_ref(), session_id, level)
+    }
+
+    fn set_active_tools<'a>(
+        &'a self,
+        session_id: &'a str,
+        tools: &'a [String],
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::set_active_tools(self.owner.as_ref(), session_id, tools)
+    }
+
+    fn resume_pending<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::resume_pending(self.owner.as_ref(), session_id)
+    }
+
+    fn compact<'a>(
+        &'a self,
+        session_id: &'a str,
+        custom_instructions: Option<&'a str>,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::compact(self.owner.as_ref(), session_id, custom_instructions)
+    }
+
+    fn queue<'a>(
+        &'a self,
+        session_id: &'a str,
+        include_completed: bool,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::QueueSnapshot> {
+        work_core::api::NodeApi::queue(self.owner.as_ref(), session_id, include_completed)
+    }
+
+    fn queue_message<'a>(
+        &'a self,
+        session_id: &'a str,
+        message: &'a str,
+        deliver_as: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::QueueMutation> {
+        work_core::api::NodeApi::queue_message(self.owner.as_ref(), session_id, message, deliver_as)
+    }
+
+    fn cancel_queued<'a>(
+        &'a self,
+        session_id: &'a str,
+        entry_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::QueueCancellation> {
+        work_core::api::NodeApi::cancel_queued(self.owner.as_ref(), session_id, entry_id)
+    }
+
+    fn clear_queue<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::clear_queue(self.owner.as_ref(), session_id)
+    }
+
+    fn dialog_response<'a>(
+        &'a self,
+        session_id: &'a str,
+        request_id: &'a str,
+        value: serde_json::Value,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::dialog_response(self.owner.as_ref(), session_id, request_id, value)
+    }
+
+    fn cancel_dialog<'a>(
+        &'a self,
+        session_id: &'a str,
+        request_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::cancel_dialog(self.owner.as_ref(), session_id, request_id)
+    }
+
+    fn prompt<'a>(
+        &'a self,
+        session_id: &'a str,
+        message: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::HostResponse<serde_json::Value>> {
+        work_core::api::NodeApi::prompt(self.owner.as_ref(), session_id, message)
+    }
+
+    fn prompt_content<'a>(
+        &'a self,
+        session_id: &'a str,
+        content_blocks: &'a Value,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::HostResponse<Value>> {
+        work_core::api::NodeApi::prompt_content(self.owner.as_ref(), session_id, content_blocks)
+    }
+
+    fn abort<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::HostResponse<serde_json::Value>> {
+        work_core::api::NodeApi::abort(self.owner.as_ref(), session_id)
+    }
+
+    fn subscribe<'a>(
+        &'a self,
+        session_id: &'a str,
+        after: u64,
+    ) -> work_core::api::NodeFuture<'a, work_core::api::NodeEventStream> {
+        work_core::api::NodeApi::subscribe(self.owner.as_ref(), session_id, after)
     }
 }

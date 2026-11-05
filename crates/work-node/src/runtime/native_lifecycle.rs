@@ -61,7 +61,7 @@ pub(crate) fn test_child() -> Child {
     tokio::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "native_lifecycle::tests::child_fixture",
+            "runtime::native_lifecycle::tests::child_fixture",
             "--ignored",
         ])
         .stdin(std::process::Stdio::piped())

@@ -1,9 +1,10 @@
 //! Desktop runtime resolution, workspace ownership, and optional HTTP supervision.
 #![allow(clippy::missing_errors_doc)]
 //!
-//! The default desktop uses `local::LocalRuntime` and native RPC, with no HTTP
-//! process or listener. The compatibility manager only owns processes it started;
-//! connecting to an existing remote node remains `work-client`'s responsibility.
+//! Native GUI/headless hosts retain `local::LocalRuntime` around the same RPC
+//! workspace. `work-host` attaches its optional in-process HTTP adapter; this crate
+//! does not start that listener. The compatibility manager owns only processes it
+//! started; connecting to an existing node remains `work-client`'s responsibility.
 
 use std::{
     ffi::OsString,
@@ -17,6 +18,10 @@ use thiserror::Error;
 
 pub mod desktop;
 pub mod local;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod runtime;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub mod workspace;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NodeBackend {
@@ -62,7 +67,7 @@ impl NodeConfig {
             mode: NodeMode::Standalone,
             project: project.into(),
             bind: "127.0.0.1".into(),
-            port: 3030,
+            port: 13030,
             rpi_bin: None,
             assets: None,
             registry: None,
@@ -258,6 +263,7 @@ mod tests {
         let config = NodeConfig::rpi_http("D:/Projects/demo");
         assert_eq!(config.executable, Path::new("rpi-http"));
         assert_eq!(config.mode, NodeMode::Standalone);
+        assert_eq!(config.port, 13030);
         assert_eq!(NodeBackend::RpiHttp.executable(), "rpi-http");
     }
     #[test]

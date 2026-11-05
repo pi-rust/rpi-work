@@ -24,11 +24,15 @@ thiserror = "2"
 url = "2"
 work-core = { path = "../work-core" }
 
-[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
-rpi-extcore = "=0.1.5"
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+work-node = { path = "../work-node" }
 tokio = { version = "1", features = ["io-util", "macros", "process", "sync", "time"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+futures-channel = "0.3"
 gloo-timers = { version = "0.3", features = ["futures"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["BinaryType", "CloseEvent", "ErrorEvent", "Event", "MessageEvent", "WebSocket"] }

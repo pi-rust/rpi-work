@@ -1,4 +1,4 @@
-//! A desktop owns its private loopback node instead of attaching to port 3030.
+//! A desktop owns its private loopback node instead of attaching to port 13030.
 use crate::{NodeConfig, NodeManager};
 use fs2::FileExt;
 use std::{

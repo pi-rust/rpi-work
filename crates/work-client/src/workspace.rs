@@ -3,10 +3,11 @@
 use crate::LocalWorkspace;
 use crate::{
     AuthState, AuthStatus, Capabilities, ClientError, Diff, EventStream, FileContent, FileListing,
-    GitStatus, Health, History, HostResponse, MessageIdentity, ModelDescriptor, Project,
-    ProjectFolders, QueueCancellation, QueueMutation, QueueSnapshot, RuntimeState, SessionBranch,
-    SessionConnection, SessionMutation, SessionPreferences, SessionSummary, Snapshot, ToolCatalog,
-    WorkClient, projection_from_snapshot, snapshot_dialogs, unsupported,
+    GitStatus, Health, History, HostResponse, MESSAGE_PAGE_SIZE, MessageIdentity, MessagePage,
+    MessagePageInfo, ModelDescriptor, Project, ProjectFolders, QueueCancellation, QueueMutation,
+    QueueSnapshot, RuntimeState, SessionBranch, SessionConnection, SessionMutation,
+    SessionPreferences, SessionSummary, Snapshot, ToolCatalog, WorkClient, snapshot_dialogs,
+    snapshot_state, unsupported,
 };
 use futures_util::StreamExt;
 use serde::Deserialize;
@@ -27,6 +28,63 @@ impl From<WorkClient> for WorkspaceClient {
 }
 
 impl WorkspaceClient {
+    pub async fn agent_backends(&self) -> Result<Vec<crate::AgentBackendOption>, ClientError> {
+        match self {
+            Self::Remote(client) => client.agent_backends().await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client.agent_backends().await,
+        }
+    }
+    pub async fn session_agent_binding(
+        &self,
+        id: &str,
+    ) -> Result<crate::SessionAgentBinding, ClientError> {
+        match self {
+            Self::Remote(client) => client.session_agent_binding(id).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client.session_agent_binding(id).await,
+        }
+    }
+    pub async fn create_session_with_backend(
+        &self,
+        project_id: Option<&str>,
+        backend: &str,
+    ) -> Result<String, ClientError> {
+        match self {
+            Self::Remote(client) if backend == "rpi" => client.create_session(project_id).await,
+            Self::Remote(client) => {
+                if !client
+                    .agent_backends()
+                    .await?
+                    .iter()
+                    .any(|b| b.id == backend && b.available)
+                {
+                    return Err(unsupported("create_session_with_backend", backend));
+                }
+                client
+                    .create_session_with_backend(project_id, backend)
+                    .await
+            }
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => {
+                client
+                    .create_session_with_backend(project_id, backend)
+                    .await
+            }
+        }
+    }
+    pub async fn prepare_agent_session(
+        &self,
+        id: &str,
+    ) -> Result<Option<crate::AgentClient>, ClientError> {
+        let _ = id;
+        match self {
+            Self::Remote(_) => std::future::ready(Ok(None)).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client.prepare_agent_session(id).await,
+        }
+    }
+
     pub fn new(base_url: &str) -> Result<Self, ClientError> {
         WorkClient::new(base_url).map(Self::Remote)
     }
@@ -104,6 +162,17 @@ impl WorkspaceClient {
             Self::Local(client) => client.control_session().await,
         }
     }
+    pub async fn operation_status(
+        &self,
+        operation: &work_core::api::realtime::OperationRef,
+    ) -> Result<work_core::api::realtime::OperationStatus, ClientError> {
+        match self {
+            Self::Remote(client) => client.operation_status(operation).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(_) => Err(crate::unsupported("operation_status", "local workspace")),
+        }
+    }
+
     pub async fn health(&self) -> Result<Health, ClientError> {
         match self {
             Self::Remote(client) => client.health().await,
@@ -125,6 +194,39 @@ impl WorkspaceClient {
             Self::Remote(client) => client.login(password).await,
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(client) => client.login(password).await,
+        }
+    }
+
+    pub async fn qr_authorization_node(&self) -> Result<Option<String>, ClientError> {
+        match self {
+            Self::Remote(client) => client.qr_authorization_node().await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(_) => Err(ClientError::Unsupported {
+                operation: "qr_authorization_node".into(),
+                protocol: "local workspace".into(),
+            }),
+        }
+    }
+
+    pub async fn issue_qr_authorization(&self) -> Result<crate::QrAuthorization, ClientError> {
+        match self {
+            Self::Remote(client) => client.issue_qr_authorization().await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(_) => Err(ClientError::Unsupported {
+                operation: "issue_qr_authorization".into(),
+                protocol: "local workspace (host UI owns QR authorization)".into(),
+            }),
+        }
+    }
+
+    pub async fn redeem_qr_authorization(&self, ticket: &str) -> Result<AuthState, ClientError> {
+        match self {
+            Self::Remote(client) => client.redeem_qr_authorization(ticket).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(_) => Err(ClientError::Unsupported {
+                operation: "redeem_qr_authorization".into(),
+                protocol: "local workspace".into(),
+            }),
         }
     }
 
@@ -206,6 +308,14 @@ impl WorkspaceClient {
             Self::Remote(client) => client.file(project_id, path).await,
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(client) => client.file(project_id, path).await,
+        }
+    }
+
+    pub async fn image(&self, project_id: &str, path: &str) -> Result<crate::ProjectImage, ClientError> {
+        match self {
+            Self::Remote(client) => client.image(project_id, path).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client.image(project_id, path).await,
         }
     }
 
@@ -536,6 +646,126 @@ impl WorkspaceClient {
         }
     }
 
+    pub async fn snapshot_with_limit(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Snapshot, ClientError> {
+        match self {
+            Self::Remote(client) => client.snapshot_with_limit(session_id, limit).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client.snapshot_with_limit(session_id, limit).await,
+        }
+    }
+
+    /// Bounded native timeline read; preserves host order without scanning the transcript.
+    pub async fn message_summaries(
+        &self,
+        session_id: &str,
+        query: &crate::MessageSummaryQuery,
+    ) -> Result<crate::MessageSummaryPage, ClientError> {
+        query.validate()?;
+        match self {
+            Self::Remote(client) => client.message_summaries(session_id, query).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => {
+                if client.session_agent_binding(session_id).await?.backend != "rpi" {
+                    return Err(unsupported("message_summaries", "acp"));
+                }
+                // command_data checks HostResponse.success and unwraps only data.
+                let data: Value = client
+                    .command_data(
+                        session_id,
+                        "get_message_summaries",
+                        serde_json::to_value(query)?,
+                    )
+                    .await
+                    .map_err(|e| {
+                        crate::message_queries::compatibility_error(e, "message_summaries")
+                    })?;
+                let page: crate::MessageSummaryPage =
+                    serde_json::from_value(data).map_err(|_| {
+                        ClientError::ProtocolMismatch(
+                            "invalid native message_summaries response".into(),
+                        )
+                    })?;
+                page.validate(query)?;
+                Ok(page)
+            }
+        }
+    }
+
+    /// Bounded native timeline read; preserves host order without scanning the transcript.
+    pub async fn message_window(
+        &self,
+        session_id: &str,
+        query: &crate::MessageWindowQuery,
+    ) -> Result<crate::MessageWindowPage, ClientError> {
+        query.validate()?;
+        match self {
+            Self::Remote(client) => client.message_window(session_id, query).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => {
+                if client.session_agent_binding(session_id).await?.backend != "rpi" {
+                    return Err(unsupported("message_window", "acp"));
+                }
+                // command_data checks HostResponse.success and unwraps only data.
+                let data: Value = client
+                    .command_data(
+                        session_id,
+                        "get_message_window",
+                        serde_json::to_value(query)?,
+                    )
+                    .await
+                    .map_err(|e| {
+                        crate::message_queries::compatibility_error(e, "message_window")
+                    })?;
+                let page: crate::MessageWindowPage =
+                    serde_json::from_value(data).map_err(|_| {
+                        ClientError::ProtocolMismatch(
+                            "invalid native message_window response".into(),
+                        )
+                    })?;
+                page.validate(query)?;
+                Ok(page)
+            }
+        }
+    }
+
+    pub async fn message_page(
+        &self,
+        session_id: &str,
+        limit: u64,
+        before_id: &str,
+    ) -> Result<MessagePage, ClientError> {
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        if let Self::Local(client) = self {
+            if client.session_agent_binding(session_id).await?.backend != "rpi" {
+                return Err(unsupported("message_pagination", "acp"));
+            }
+        }
+        if before_id.trim().is_empty() || limit == 0 {
+            return Err(unsupported("message_pagination", "invalid cursor or limit"));
+        }
+        let data: Value = self
+            .command_data(
+                session_id,
+                "get_messages",
+                serde_json::json!({"limit": limit, "beforeId": before_id}),
+            )
+            .await?;
+        let page: MessagePage = serde_json::from_value(data)
+            .map_err(|_| unsupported("message_pagination", "get_messages metadata"))?;
+        page.validate_before(before_id)?;
+        if page.messages.len() as u64 > limit {
+            return Err(unsupported(
+                "message_pagination",
+                "get_messages ignored limit",
+            ));
+        }
+        Ok(page)
+    }
+
     pub async fn command<T: for<'de> Deserialize<'de>>(
         &self,
         session_id: &str,
@@ -596,11 +826,25 @@ impl WorkspaceClient {
     pub(crate) async fn snapshot_stream(
         &self,
         session_id: &str,
-    ) -> Result<(Snapshot, EventStream), ClientError> {
+    ) -> Result<(Snapshot, EventStream, bool), ClientError> {
+        let access = self.session_access(session_id).await?;
+        self.snapshot_stream_with_access(session_id, &access).await
+    }
+
+    async fn snapshot_stream_with_access(
+        &self,
+        session_id: &str,
+        access: &crate::SessionAccess,
+    ) -> Result<(Snapshot, EventStream, bool), ClientError> {
         if self.is_local() {
             // subscribe() acquires the bounded core replay and receiver eagerly.
             let stream = self.subscribe(session_id, 0).await?;
-            let snapshot = self.snapshot(session_id).await?;
+            let snapshot = if access.snapshot_limit {
+                self.snapshot_with_limit(session_id, MESSAGE_PAGE_SIZE)
+                    .await?
+            } else {
+                self.snapshot(session_id).await?
+            };
             let after = snapshot.last_seq;
             let stream = stream.filter_map(move |event| async move {
                 match &event {
@@ -616,11 +860,16 @@ impl WorkspaceClient {
                     _ => Some(event),
                 }
             });
-            Ok((snapshot, Box::pin(stream)))
+            Ok((snapshot, Box::pin(stream), access.snapshot_limit))
         } else {
-            let snapshot = self.snapshot(session_id).await?;
+            let snapshot = if access.snapshot_limit {
+                self.snapshot_with_limit(session_id, MESSAGE_PAGE_SIZE)
+                    .await?
+            } else {
+                self.snapshot(session_id).await?
+            };
             let stream = self.subscribe(session_id, snapshot.last_seq).await?;
-            Ok((snapshot, stream))
+            Ok((snapshot, stream, access.snapshot_limit))
         }
     }
     pub async fn connect_session(
@@ -629,19 +878,46 @@ impl WorkspaceClient {
     ) -> Result<SessionConnection, ClientError> {
         let session_id = session_id.into();
         self.open_session(&session_id).await?;
-        let (snapshot, stream) = self.snapshot_stream(&session_id).await?;
-        let projection = projection_from_snapshot(&snapshot)?;
+        let access = self.session_access(&session_id).await?;
+        self.connection_from_access(session_id, &access).await
+    }
+
+    /// Reuse the access observed for this exact session during the current open.
+    /// The caller must discard it on a session/node generation change. This is
+    /// capability negotiation, not authorization; all owner checks still apply.
+    /// Reconnects independently refresh access through `snapshot_stream`.
+    pub async fn connect_session_with_access(
+        &self,
+        session_id: impl Into<String>,
+        access: &crate::SessionAccess,
+    ) -> Result<SessionConnection, ClientError> {
+        let session_id = session_id.into();
+        self.open_session(&session_id).await?;
+        self.connection_from_access(session_id, access).await
+    }
+
+    async fn connection_from_access(
+        &self,
+        session_id: String,
+        access: &crate::SessionAccess,
+    ) -> Result<SessionConnection, ClientError> {
+        let (snapshot, stream, snapshot_limit) = self
+            .snapshot_stream_with_access(&session_id, access)
+            .await?;
+        let (messages, projection) = snapshot_state(&snapshot)?;
         let mut identity = MessageIdentity::default();
         for item in &snapshot.events {
             identity.annotate(&item.event, Some(item.seq));
         }
         let pending_dialogs = snapshot_dialogs(&snapshot);
-        let messages = snapshot.messages;
+        let message_page_info = MessagePageInfo::from_snapshot(&snapshot);
         Ok(SessionConnection {
             client: self.clone(),
             session_id,
             projection,
             stream,
+            snapshot_limit,
+            message_page_info,
             history_len: messages.len(),
             messages,
             pending_dialogs,

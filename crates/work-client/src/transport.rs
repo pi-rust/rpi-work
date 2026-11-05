@@ -7,107 +7,8 @@ use work_core::{AgentDescriptor, CapabilitySet, RunProjection, TransportIdentity
 
 use crate::{
     ClientError, EventStream, MessageIdentity, PendingDialog, SessionConnection, SessionEvent,
-    WireEvent, WorkClient,
+    WorkClient,
 };
-
-/// Native streams terminate on process failure even while the client still owns
-/// its broadcast sender. Buffered events are delivered before the terminal error.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn native_event_stream(
-    mut receiver: tokio::sync::broadcast::Receiver<WireEvent>,
-    mut terminal: tokio::sync::watch::Receiver<Option<String>>,
-    protocol: &'static str,
-) -> EventStream {
-    use tokio::sync::broadcast::error::{RecvError, TryRecvError};
-    let stream = async_stream::try_stream! {
-        let lag_error = |count| {
-            let message = format!("{protocol} event stream lagged by {count} events");
-            if protocol == "ACP" { ClientError::Acp(message) } else { ClientError::Rpc(message) }
-        };
-        loop {
-            let reason = terminal.borrow().clone();
-            if let Some(reason) = reason {
-                loop {
-                    match receiver.try_recv() {
-                        Ok(event) => yield event,
-                        Err(TryRecvError::Lagged(count)) => Err(lag_error(count))?,
-                        Err(TryRecvError::Empty | TryRecvError::Closed) => break,
-                    }
-                }
-                Err(ClientError::ChildExited(reason))?;
-            }
-            let event = tokio::select! {
-                biased;
-                event = receiver.recv() => Some(event),
-                changed = terminal.changed() => {
-                    if changed.is_err() { break; }
-                    None
-                }
-            };
-            if let Some(event) = event {
-                match event {
-                    Ok(event) => yield event,
-                    Err(RecvError::Lagged(count)) => Err(lag_error(count))?,
-                    Err(RecvError::Closed) => break,
-                }
-            }
-        }
-    };
-    Box::pin(stream)
-}
-
-/// Write a frame with a single request deadline and interruption on terminal
-/// state. A caller must invalidate the transport after any failed/partial write.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) async fn write_native_frame<W: tokio::io::AsyncWrite + Unpin>(
-    stdin: &tokio::sync::Mutex<W>,
-    line: &[u8],
-    mut terminal: tokio::sync::watch::Receiver<Option<String>>,
-    deadline: tokio::time::Instant,
-    on_incomplete: impl FnOnce() + Send + Sync + 'static,
-) -> Result<(), ClientError> {
-    use tokio::io::AsyncWriteExt;
-    let write_terminal = terminal.clone();
-    let write = async move {
-        let mut stdin = stdin.lock().await;
-        // The terminal branch may have been polled before a cancelled writer
-        // poisoned the stream. Recheck after obtaining exclusive stdin access.
-        let reason = write_terminal.borrow().clone();
-        if let Some(reason) = reason {
-            return Err(ClientError::ChildExited(reason));
-        }
-        // Declared after stdin, so it invalidates synchronously BEFORE stdin
-        // unlocks on cancellation, write error, timeout, or EOF interruption.
-        let mut incomplete = crate::native_lifecycle::CleanupGuard::new(on_incomplete);
-        stdin
-            .write_all(line)
-            .await
-            .map_err(|error| ClientError::Process(error.to_string()))?;
-        stdin
-            .flush()
-            .await
-            .map_err(|error| ClientError::Process(error.to_string()))?;
-        incomplete.disarm();
-        Ok(())
-    };
-    let stopped = async {
-        loop {
-            let reason = terminal.borrow().clone();
-            if let Some(reason) = reason {
-                return reason;
-            }
-            if terminal.changed().await.is_err() {
-                return "native transport closed".to_owned();
-            }
-        }
-    };
-    tokio::select! {
-        biased;
-        reason = stopped => Err(ClientError::ChildExited(reason)),
-        result = tokio::time::timeout_at(deadline, write) => result
-            .map_err(|_| ClientError::RequestTimeout("writing native frame".into()))?,
-    }
-}
 
 /// Protocol-neutral request surface shared by HTTP/SSE, native RPI RPC and ACP.
 #[async_trait(?Send)]
@@ -140,6 +41,11 @@ pub trait AgentTransport {
             "thinking" | "thought_level" => self.descriptor().supports("thinking_levels"),
             _ => false,
         }
+    }
+
+    /// Full session-negotiated options; this does not advertise a discovery API.
+    fn session_config_options(&self, _session_id: &str) -> Vec<Value> {
+        Vec::new()
     }
 
     async fn open_session(&self, _cwd: &str) -> Result<String, ClientError> {
@@ -262,6 +168,11 @@ impl AgentClient {
     #[must_use]
     pub fn supports_config_option(&self, session_id: &str, config_id: &str) -> bool {
         self.backend.supports_config_option(session_id, config_id)
+    }
+
+    #[must_use]
+    pub fn session_config_options(&self, session_id: &str) -> Vec<Value> {
+        self.backend.session_config_options(session_id)
     }
 
     pub fn require(&self, operation: &str) -> Result<(), ClientError> {
@@ -789,6 +700,14 @@ pub enum AgentConnection {
 
 impl AgentConnection {
     #[must_use]
+    pub fn message_page_info(&self) -> Option<&crate::MessagePageInfo> {
+        match self {
+            Self::Http(connection) => Some(connection.message_page_info()),
+            Self::Native(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn projection(&self) -> &RunProjection {
         match self {
             Self::Http(connection) => connection.projection(),
@@ -855,16 +774,17 @@ impl AgentSessionConnection {
             return Ok(None);
         };
         let mut wire = result?;
-        wire.data = self.identity.annotate(&wire.data, wire.seq);
-        if let Some(message) = wire.data.get("message")
-            && matches!(
-                wire.event_type.as_str(),
-                "message_start" | "message_update" | "message_end"
-            )
-            && message.is_object()
+        if wire.event_type != "resync_required"
+            && wire
+                .seq
+                .is_some_and(|seq| self.projection.cursor.is_some_and(|cursor| seq <= cursor))
         {
-            self.messages.push(message.clone());
+            return Ok(Some(SessionEvent {
+                wire,
+                applied: work_core::ApplyResult::IgnoredStale,
+            }));
         }
+        wire.data = self.identity.annotate(&wire.data, wire.seq);
         if wire.event_type == "ui_dialog_request" {
             if let Some(dialog) = crate::dialog_from_wire(&wire)?
                 && !self
@@ -880,7 +800,11 @@ impl AgentSessionConnection {
             self.pending_dialogs
                 .retain(|item| item.request_id != request_id);
         }
-        let applied = self.projection.apply(wire.clone().into_core_event()?);
+        let applied = crate::apply_live_message_event(
+            &mut self.messages,
+            &mut self.projection,
+            wire.clone(),
+        )?;
         Ok(Some(SessionEvent { wire, applied }))
     }
 }
@@ -944,19 +868,7 @@ pub fn unsupported(operation: &str, protocol: &str) -> ClientError {
     }
 }
 
-pub fn wire_event(
-    id: Option<String>,
-    seq: Option<u64>,
-    event_type: impl Into<String>,
-    data: Value,
-) -> WireEvent {
-    WireEvent {
-        id,
-        seq,
-        event_type: event_type.into(),
-        data,
-    }
-}
+pub use work_core::api::events::wire_event;
 
 #[cfg(test)]
 mod tests {
@@ -992,95 +904,81 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test]
-    async fn native_write_interrupts_backpressure_and_lock_wait_on_eof_or_deadline() {
-        use tokio::{
-            io::duplex,
-            sync::{Mutex, watch},
-            time::{Duration, Instant, timeout},
+    async fn native_image_messages_merge_public_caption_deltas_without_duplicate_rows() {
+        let message = json!({"entryId":"m","role":"assistant","content":[{"type":"image","mimeType":"image/png","data":"AA=="}]});
+        let delta = json!({"type":"message_update","eventType":"text_delta","contentIndex":1,"delta":"caption","message":{"entryId":"m","role":"assistant"}});
+        let events = vec![
+            wire_event(
+                Some("start".into()),
+                Some(1),
+                "message_start",
+                json!({"type":"message_start","message":message}),
+            ),
+            wire_event(
+                Some("caption".into()),
+                Some(2),
+                "message_update",
+                delta.clone(),
+            ),
+            wire_event(Some("replay".into()), Some(2), "message_update", delta),
+            wire_event(
+                Some("end".into()),
+                Some(3),
+                "message_end",
+                json!({"type":"message_end","message":{"entryId":"m","role":"assistant","content":[]}}),
+            ),
+        ];
+        let mut connection = AgentSessionConnection {
+            session_id: "s".into(),
+            projection: RunProjection::new("s"),
+            stream: Box::pin(futures_util::stream::iter(events.into_iter().map(Ok))),
+            identity: MessageIdentity::default(),
+            messages: Vec::new(),
+            pending_dialogs: Vec::new(),
         };
-        for locked in [false, true] {
-            for stopped in [false, true] {
-                let (writer, _unread_pipe) = duplex(1);
-                let stdin = Mutex::new(writer);
-                let held_lock = if locked {
-                    Some(stdin.lock().await)
-                } else {
-                    None
-                };
-                let (terminal, receiver) = watch::channel(None);
-                let deadline =
-                    Instant::now() + Duration::from_millis(if stopped { 1000 } else { 30 });
-                let mut write = std::pin::pin!(write_native_frame(
-                    &stdin,
-                    b"blocked frame",
-                    receiver,
-                    deadline,
-                    || {},
-                ));
-                tokio::select! {
-                    result = &mut write => panic!("write should be blocked: {result:?}"),
-                    () = tokio::time::sleep(Duration::from_millis(5)) => {}
-                }
-                if stopped {
-                    terminal.send_replace(Some("fixture EOF".into()));
-                }
-                let result = timeout(Duration::from_secs(1), write).await.unwrap();
-                if stopped {
-                    assert!(matches!(result, Err(ClientError::ChildExited(_))));
-                } else {
-                    assert!(matches!(result, Err(ClientError::RequestTimeout(_))));
-                }
-                drop(held_lock);
-            }
+        for _ in 0..4 {
+            connection.next().await.unwrap().unwrap();
         }
+        assert_eq!(connection.messages.len(), 1);
+        assert_eq!(connection.messages[0]["content"][1]["text"], "caption");
+        assert!(connection.next().await.unwrap().is_none());
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test]
-    async fn incomplete_frame_poisons_queued_writer_before_unlocking_stdin() {
-        use tokio::{
-            io::{AsyncReadExt, duplex},
-            sync::{Mutex, watch},
-            time::{Duration, Instant},
+    async fn native_compact_envelope_messages_share_retained_and_projection_identity() {
+        let events = vec![
+            json!({"type":"message_start","messageId":"host","message":{"kind":"assistant","content":[]}}),
+            json!({"type":"message_update","messageId":"host","eventType":"text_delta","delta":"first","contentIndex":0}),
+            json!({"type":"message_update","messageId":"host","eventType":"text_delta","delta":" tail","contentIndex":0}),
+            json!({"type":"message_end","messageId":"host","message":{"kind":"assistant","content":"first tail"}}),
+        ];
+        let stream = events.into_iter().enumerate().map(|(index, data)| {
+            Ok(wire_event(
+                Some(format!("wire-{index}")),
+                Some(index as u64 + 1),
+                data["type"].as_str().unwrap(),
+                data.clone(),
+            ))
+        });
+        let mut connection = AgentSessionConnection {
+            session_id: "s".into(),
+            projection: RunProjection::new("s"),
+            stream: Box::pin(futures_util::stream::iter(stream)),
+            identity: MessageIdentity::default(),
+            messages: Vec::new(),
+            pending_dialogs: Vec::new(),
         };
-        let (writer, mut reader) = duplex(1);
-        let stdin = Arc::new(Mutex::new(writer));
-        let (terminal, receiver) = watch::channel(None);
-        let deadline = Instant::now() + Duration::from_secs(1);
-        let observed_lock = Arc::clone(&stdin);
-        let poison = terminal.clone();
-        let mut first = Box::pin(write_native_frame(
-            &stdin,
-            b"partial",
-            receiver.clone(),
-            deadline,
-            move || {
-                assert!(
-                    observed_lock.try_lock().is_err(),
-                    "poison must run while stdin is still locked"
-                );
-                poison.send_replace(Some("incomplete frame".into()));
-            },
-        ));
-        assert!(futures_util::poll!(&mut first).is_pending());
-        let mut queued = Box::pin(write_native_frame(
-            &stdin,
-            b"next frame",
-            receiver,
-            deadline,
-            || {},
-        ));
-        assert!(futures_util::poll!(&mut queued).is_pending());
-        drop(first);
-        assert!(matches!(queued.await, Err(ClientError::ChildExited(_))));
-        let mut byte = [0];
-        reader.read_exact(&mut byte).await.unwrap();
-        assert_eq!(byte, [b'p']);
-        // The queued writer must not have appended any bytes.
-        assert!(futures_util::poll!(Box::pin(reader.read(&mut byte))).is_pending());
-        assert!(terminal.borrow().is_some());
+        for index in 0..4 {
+            connection.next().await.unwrap().unwrap();
+            assert_eq!(connection.projection.blocks.len(), usize::from(index > 0));
+            if index > 0 {
+                assert_eq!(connection.projection.blocks[0].id(), "host-text-0");
+            }
+        }
+        assert_eq!(connection.messages.len(), 1);
+        assert_eq!(connection.messages[0]["entryId"], "host");
+        assert_eq!(connection.messages[0]["content"], "first tail");
     }
 
     #[test]

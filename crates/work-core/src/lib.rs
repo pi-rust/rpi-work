@@ -1,10 +1,13 @@
-//! UI- and transport-independent state projection for an RPI Work run.
+//! UI- and transport-independent contracts and state projection for RPI Work.
 //!
-//! The client layer is expected to translate HTTP/SSE events into [`Event`]s.
-//! This crate deliberately does not know about HTTP, JSON, or a particular UI.
+//! [`api`] defines shared node payloads and a small in-process service boundary.
+//! The run projection itself remains independent of wire formats, networking,
+//! runtime implementations, and a particular UI.
 
+pub mod api;
 pub mod extensions;
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// The lifecycle of one agent run.
@@ -65,7 +68,8 @@ pub struct Usage {
     pub cache_write_tokens: Option<u64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransportIdentity {
     pub protocol: String,
     pub version: Option<String>,
@@ -90,7 +94,8 @@ impl TransportIdentity {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CapabilitySet {
     pub sessions: bool,
     pub session_load: bool,
@@ -202,7 +207,8 @@ impl CapabilitySet {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentDescriptor {
     pub identity: TransportIdentity,
     pub capabilities: CapabilitySet,
@@ -258,6 +264,15 @@ pub enum EventKind {
     TextSnapshot {
         block_id: String,
         text: String,
+    },
+    /// One whole structured message, applied under a single event identity/cursor.
+    TextSnapshots {
+        message_id: String,
+        /// Public text block IDs and replacement text, in content-array order.
+        snapshots: Vec<(String, String)>,
+        /// Clear absent same-message text slots in place, never shifting block indices.
+        /// Empty start/update arrays are non-authoritative; explicit end arrays are not.
+        authoritative: bool,
     },
     ToolStarted {
         tool_id: String,
@@ -388,10 +403,31 @@ impl RunProjection {
             }
             EventKind::TextSnapshot { block_id, text } => {
                 self.phase = RunPhase::Text;
-                match self.find_block_mut(&block_id) {
-                    Some(MessageBlock::Text { text: current, .. }) => *current = text,
-                    Some(_) => {}
-                    None => self.blocks.push(MessageBlock::Text { id: block_id, text }),
+                self.upsert_text(block_id, text);
+            }
+            EventKind::TextSnapshots {
+                message_id,
+                snapshots,
+                authoritative,
+            } => {
+                self.phase = RunPhase::Text;
+                if authoritative {
+                    let prefix = format!("{message_id}-text-");
+                    for block in &mut self.blocks {
+                        if let MessageBlock::Text { id, text } = block {
+                            // Validate the complete suffix so IDs such as m-text-1-child
+                            // cannot retire another message's text blocks.
+                            if id.strip_prefix(&prefix).is_some_and(|index| {
+                                !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+                            }) && !snapshots.iter().any(|(block_id, _)| block_id == id)
+                            {
+                                text.clear();
+                            }
+                        }
+                    }
+                }
+                for (block_id, text) in snapshots {
+                    self.upsert_text(block_id, text);
                 }
             }
             EventKind::ToolStarted {
@@ -460,6 +496,14 @@ impl RunProjection {
             EventKind::ConnectionChanged(connection) => self.connection = connection,
             EventKind::Ignored => {}
             EventKind::ResyncRequired { .. } => unreachable!("handled before deduplication"),
+        }
+    }
+
+    fn upsert_text(&mut self, block_id: String, text: String) {
+        match self.find_block_mut(&block_id) {
+            Some(MessageBlock::Text { text: current, .. }) => *current = text,
+            Some(_) => {}
+            None => self.blocks.push(MessageBlock::Text { id: block_id, text }),
         }
     }
 

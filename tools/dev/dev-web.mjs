@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import { gzipSync } from 'node:zlib';
 import fs from 'node:fs';
@@ -8,17 +9,33 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const staticRoot = path.join(repoRoot, 'target', 'parity-web');
-const port = Number(process.env.PORT || 4173);
+const buildOutputRoot = process.env.RPI_UI_BUILD_OUTPUT_ROOT
+  ? path.resolve(repoRoot, process.env.RPI_UI_BUILD_OUTPUT_ROOT)
+  : path.join(repoRoot, 'target');
+const staticRoot = process.env.RPI_UI_ASSETS
+  ? path.resolve(repoRoot, process.env.RPI_UI_ASSETS)
+  : path.join(buildOutputRoot, 'parity-web');
+const port = Number(process.env.PORT || 14180);
 const apiHost = process.env.RPI_API_HOST || '127.0.0.1';
-const apiPort = Number(process.env.RPI_API_PORT || 3030);
+const apiPort = Number(process.env.RPI_API_PORT || 13031);
 const listenHost = process.env.RPI_UI_HOST || '0.0.0.0';
-const allowedUiHosts = new Set([
-  `localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`,
-  ...Object.values(os.networkInterfaces()).flat().filter(address => address?.family === 'IPv4').map(address => `${address.address}:${port}`),
-  ...(process.env.RPI_UI_ALLOWED_HOSTS || '').split(',').map(host => host.trim().toLowerCase()).filter(Boolean),
-]);
+const entryMode = process.env.RPI_UI_ENTRY_MODE || 'hosted';
+if (!['hosted', 'standalone'].includes(entryMode)) {
+  throw new Error('RPI_UI_ENTRY_MODE must be hosted or standalone');
+}
+const allowedUiHosts = new Set(
+  (process.env.RPI_UI_ALLOWED_HOSTS || '').split(',').map(host => host.trim().toLowerCase()).filter(Boolean),
+);
+function allowLocalUiHosts(boundPort) {
+  for (const host of [
+    `localhost:${boundPort}`, `127.0.0.1:${boundPort}`, `[::1]:${boundPort}`,
+    ...Object.values(os.networkInterfaces()).flat().filter(address => address?.family === 'IPv4').map(address => `${address.address}:${boundPort}`),
+  ]) allowedUiHosts.add(host);
+}
 const watchBuild = process.argv.includes('--watch-build');
+if (watchBuild && process.env.RPI_UI_ASSETS) {
+  throw new Error('Custom RPI_UI_ASSETS requires a prebuilt bundle; omit --watch-build');
+}
 const debugBuild = process.argv.includes('--debug-build') || process.env.RPI_DEBUG_BUILD === '1';
 const reloadClients = new Set();
 let lastBuildStamp = '';
@@ -104,7 +121,7 @@ function scheduleBuild() {
   }, 500);
 }
 
-function proxyApi(req, response) {
+function proxyApi(req, response, hostedMetadata = false) {
   // Check the public request before translating its authority for the private
   // node. Rewriting arbitrary origins would remove the node's CSRF protection.
   const authority = (req.headers.host || '').toLowerCase();
@@ -133,14 +150,23 @@ function proxyApi(req, response) {
       headers,
     },
     (upstream) => {
+      // A missing declaration in desktop-entry mode is a configuration/version
+      // failure, never permission to consult remembered, unrelated nodes.
+      if (hostedMetadata && upstream.statusCode === 404) {
+        response.writeHead(502, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        response.end(JSON.stringify({ error: 'Desktop Web entry is unavailable; configure owner Web assets or its Web proxy port' }));
+        upstream.resume();
+        return;
+      }
+      if (hostedMetadata) upstream.headers['cache-control'] = 'no-store';
       response.writeHead(upstream.statusCode || 502, upstream.headers);
       upstream.pipe(response);
       response.on('close', () => upstream.destroy());
     },
   );
   proxy.on('error', (error) => {
-    if (!response.headersSent) response.writeHead(502, { 'content-type': 'application/json; charset=utf-8' });
-    response.end(JSON.stringify({ error: `local rpi-http unavailable: ${error.message}` }));
+    if (!response.headersSent) response.writeHead(502, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    response.end(JSON.stringify({ error: `desktop API unavailable: ${error.message}` }));
   });
   req.pipe(proxy);
   req.on('aborted', () => proxy.destroy());
@@ -218,8 +244,45 @@ function serveStatic(req, response) {
   });
 }
 
+function proxyRealtimeUpgrade(req, clientSocket, head) {
+  const authority = (req.headers.host || '').toLowerCase();
+  if (!allowedUiHosts.has(authority)) { clientSocket.destroy(); return; }
+  let origin;
+  if (req.headers.origin) {
+    try { origin = new URL(req.headers.origin); } catch { clientSocket.destroy(); return; }
+    if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== req.headers.origin || origin.host.toLowerCase() !== authority) {
+      clientSocket.destroy(); return;
+    }
+  }
+  let pathname;
+  try { pathname = new URL(req.url || '/', 'http://localhost').pathname; } catch { clientSocket.destroy(); return; }
+  if (pathname !== '/api/v1/realtime') { clientSocket.destroy(); return; }
+  const upstream = net.connect(apiPort, apiHost);
+  upstream.once('connect', () => {
+    const lines = [`${req.method} ${req.url} HTTP/1.1`];
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (name === 'host' || name === 'origin' || name === 'content-length') continue;
+      if (Array.isArray(value)) for (const item of value) lines.push(`${name}: ${item}`);
+      else if (value != null) lines.push(`${name}: ${value}`);
+    }
+    lines.push(`host: ${apiHost}:${apiPort}`);
+    if (origin) lines.push(`origin: ${origin.protocol}//${apiHost}:${apiPort}`);
+    upstream.write(`${lines.join('\r\n')}\r\n\r\n`);
+    if (head?.length) upstream.write(head);
+    upstream.pipe(clientSocket);
+    clientSocket.pipe(upstream);
+  });
+  upstream.on('error', (error) => { log(`WebSocket proxy upstream error: ${error.message}`); clientSocket.destroy(); });
+  clientSocket.on('error', () => upstream.destroy());
+  clientSocket.on('close', () => upstream.destroy());
+  upstream.on('close', () => clientSocket.destroy());
+}
+
 function requestHandler(req, response) {
-  const requestPath = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+  // Routing must not parse an untrusted Host before the API/entry Host guard.
+  let requestPath;
+  try { requestPath = new URL(req.url || '/', 'http://localhost').pathname; }
+  catch { response.writeHead(400); response.end('bad path'); return; }
   if (requestPath === '/__rpi_reload') {
     response.writeHead(200, {
       'cache-control': 'no-cache',
@@ -230,6 +293,14 @@ function requestHandler(req, response) {
     response.write(': connected\n\n');
     reloadClients.add(response);
     req.on('close', () => reloadClients.delete(response));
+    return;
+  }
+  if (requestPath === '/.well-known/rpi-work-entry') {
+    if (entryMode === 'hosted') proxyApi(req, response, true);
+    else {
+      response.writeHead(404, { 'cache-control': 'no-store' });
+      response.end();
+    }
     return;
   }
   if (requestPath === '/api' || requestPath.startsWith('/api/')) {
@@ -246,9 +317,20 @@ function startBuild() {
   }
   buildRunning = true;
   log('source change detected; rebuilding Web bundle');
+  const buildArgs = [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    path.join(repoRoot, 'tools', 'dev', 'build-ui-web.ps1'),
+    ...(debugBuild ? ['-DebugBuild'] : []),
+  ];
+  if (process.env.RPI_UI_BUILD_OUTPUT_ROOT) {
+    buildArgs.push('-OutputRoot', process.env.RPI_UI_BUILD_OUTPUT_ROOT);
+  }
   const child = spawn(
     'powershell.exe',
-    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repoRoot, 'tools', 'dev', 'build-ui-web.ps1'), ...(debugBuild ? ['-DebugBuild'] : [])],
+    buildArgs,
     { cwd: repoRoot, stdio: 'inherit', windowsHide: true },
   );
   child.on('exit', (code) => {
@@ -282,10 +364,13 @@ function watchSources() {
 }
 
 const server = http.createServer(requestHandler);
+server.on('upgrade', (req, socket, head) => proxyRealtimeUpgrade(req, socket, head));
 server.listen(port, listenHost, () => {
+  const boundPort = server.address().port;
+  allowLocalUiHosts(boundPort);
   log(`serving ${staticRoot}`);
-  log(`local URL: http://127.0.0.1:${port}/`);
-  log(`API proxy: /api/* -> http://${apiHost}:${apiPort}`);
+  log(`local URL: http://127.0.0.1:${boundPort}/`);
+  log(`entry mode: ${entryMode}; API proxy: /api/* -> http://${apiHost}:${apiPort}`);
   if (watchBuild) {
     watchSources();
     startBuild();

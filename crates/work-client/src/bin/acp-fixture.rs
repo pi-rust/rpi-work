@@ -38,7 +38,7 @@ fn config_options(session_id: &str) -> Value {
         {"id":"model","name":"Model","category":"model","type":"select",
             "currentValue":"fixture-model","options":[{"value":"fixture-model","name":"Fixture"}]},
         {"id":thinking_id,"name":"Thinking","category":"thought_level","type":"select",
-            "currentValue":"high","options":[{"value":"high","name":"High"}]}
+            "currentValue":"high","options":[{"value":"high","name":"High"},{"value":"low","name":"Low"}]}
     ])
 }
 
@@ -64,6 +64,14 @@ fn set_config_response(stdout: &mut impl Write, request: &Value) {
         .iter_mut()
         .find(|option| option["id"] == request["params"]["configId"])
         .expect("negotiated config ID");
+    assert!(
+        selected["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|option| option["value"] == request["params"]["value"]),
+        "negotiated config value"
+    );
     selected["currentValue"] = request["params"]["value"].clone();
     if std::env::args().any(|arg| arg == "--drop-config-after-set") {
         options = json!([]);
@@ -74,6 +82,8 @@ fn set_config_response(stdout: &mut impl Write, request: &Value) {
     );
 }
 
+// One ordered dispatcher keeps the stdio fixture's request/response order explicit.
+#[allow(clippy::too_many_lines)]
 fn main() {
     let supports_load = std::env::args().any(|arg| arg == "--load-session");
     let wait_permission = std::env::args().any(|arg| arg == "--wait-permission");
@@ -109,6 +119,15 @@ fn main() {
             .and_then(Value::as_str)
             .unwrap_or_default()
         {
+            "fixture_config_update" => {
+                emit(
+                    &mut stdout,
+                    json!({"jsonrpc":"2.0","method":"session/update",
+                    "params":{"sessionId":request["params"]["sessionId"],"update":{
+                        "sessionUpdate":"config_options_update","configOptions":request["params"]["configOptions"]}}}),
+                );
+                emit(&mut stdout, json!({"jsonrpc":"2.0","id":id,"result":{}}));
+            }
             "fixture_hang" => emit(
                 &mut stdout,
                 json!({"jsonrpc":"2.0","method":"session/update",
@@ -125,6 +144,19 @@ fn main() {
             }
             "session/prompt" => {
                 let session_id = request["params"]["sessionId"].clone();
+                if std::env::args().any(|arg| arg == "--wait-cancel") {
+                    assert!(pending_prompt.replace((id, session_id.clone())).is_none());
+                    emit(
+                        &mut stdout,
+                        json!({"jsonrpc":"2.0","method":"session/update",
+                        "params":{"sessionId":session_id,"update":{"sessionUpdate":"agent_message_chunk",
+                            "content":{"type":"text","text":"waiting for cancel"}}}}),
+                    );
+                    continue;
+                }
+                if std::env::args().any(|arg| arg == "--slow-prompt") {
+                    std::thread::sleep(std::time::Duration::from_secs(31));
+                }
                 let options = if wait_permission {
                     json!([
                         {"optionId":"deny-7","name":"Reject","kind":"reject_once"},
@@ -146,12 +178,16 @@ fn main() {
                 }
             }
             "session/set_config_option" => set_config_response(&mut stdout, &request),
-            "session/cancel" => emit(
-                &mut stdout,
-                json!({
-                    "jsonrpc":"2.0", "id":id, "result":{}
-                }),
-            ),
+            "session/cancel" => {
+                assert!(
+                    request.get("id").is_none(),
+                    "session/cancel must be a notification"
+                );
+                if let Some((prompt_id, session_id)) = pending_prompt.take() {
+                    finish_prompt(&mut stdout, &prompt_id, &session_id, true);
+                }
+                // Notifications never receive a response.
+            }
             _ => emit(
                 &mut stdout,
                 json!({

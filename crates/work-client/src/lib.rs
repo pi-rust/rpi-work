@@ -11,20 +11,47 @@ use async_stream::try_stream;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use reqwest::{StatusCode, Url};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::pin::Pin;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, AtomicU64, Ordering},
+};
 use std::time::Duration;
 use thiserror::Error;
-use work_core::{
-    ApplyResult, ConnectionState, Event, EventKind, OutputMode, RunProjection, SettlementOutcome,
-    Usage,
+use work_core::api::events::{
+    content_text, has_image_content, has_tool_call_content, settlement, usage,
 };
+use work_core::{ApplyResult, Event, EventKind, RunProjection};
+#[cfg(test)]
+use work_core::{ConnectionState, OutputMode, SettlementOutcome};
 
+mod desktop_workspace;
 mod extensions;
+mod message_page;
+mod message_queries;
+mod node_api;
+mod prompt_content;
+mod providers;
 #[cfg(not(target_arch = "wasm32"))]
-mod native_lifecycle;
-mod permissions;
+mod realtime_client;
+mod resources;
+mod session_access;
+mod session_configuration;
+#[cfg(target_arch = "wasm32")]
+mod wasm_realtime_client;
+pub use message_page::{MESSAGE_PAGE_SIZE, MessagePage, MessagePageInfo};
+pub use message_queries::{
+    MessageSummary, MessageSummaryPage, MessageSummaryQuery, MessageWindowPage, MessageWindowQuery,
+};
+pub use work_core::api::{SessionAccess, SessionConfiguration};
+#[cfg(not(target_arch = "wasm32"))]
+mod native_runtime;
+#[cfg(not(target_arch = "wasm32"))]
+mod native_session;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native_session::RememberedSession;
 mod transport;
 pub use transport::{
     AgentClient, AgentConnection, AgentSession, AgentSessionConnection, AgentTransport,
@@ -46,10 +73,69 @@ pub type EventStream = Pin<Box<dyn Stream<Item = Result<WireEvent, ClientError>>
 #[cfg(target_arch = "wasm32")]
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<WireEvent, ClientError>>>>;
 
+fn is_legacy_realtime_error(error: &ClientError) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        realtime_client::legacy(error)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        wasm_realtime_client::legacy(error)
+    }
+}
+
+async fn realtime_command<T: for<'de> Deserialize<'de>>(
+    client: &WorkClient,
+    session_id: &str,
+    payload: Value,
+) -> Result<HostResponse<T>, ClientError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        wasm_realtime_client::command(client, session_id, payload).await
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        realtime_client::command(client, session_id, payload).await
+    }
+}
+
+async fn realtime_mutation(
+    client: &WorkClient,
+    session_id: &str,
+    kind: work_core::api::realtime::RealtimeOperationKind,
+    payload: Value,
+) -> Result<Value, ClientError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        wasm_realtime_client::mutation(client, session_id, kind, payload).await
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        realtime_client::mutation(client, session_id, kind, payload).await
+    }
+}
+
+async fn realtime_subscribe(
+    client: &WorkClient,
+    session_id: &str,
+    after: u64,
+) -> Result<EventStream, ClientError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        wasm_realtime_client::subscribe(client, session_id, after).await
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        realtime_client::subscribe(client, session_id, after).await
+    }
+}
+
 pub mod workspace;
 pub use workspace::WorkspaceClient;
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 mod local_workspace;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+mod local_workspace_adapter;
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub use local_workspace::{LocalError, LocalWorkspace};
 
@@ -68,12 +154,24 @@ pub enum ClientError {
     Json(#[from] serde_json::Error),
     #[error("invalid SSE stream: {0}")]
     Sse(String),
+    #[error("remembered session is invalid or expired")]
+    InvalidRememberedSession,
     #[error("node did not confirm authentication")]
     AuthenticationNotConfirmed,
+    #[error("QR authorization request failed")]
+    QrAuthorizationFailed,
     #[error("operation `{operation}` is unsupported by {protocol}")]
     Unsupported { operation: String, protocol: String },
     #[error("RPC transport error: {0}")]
     Rpc(String),
+    #[error("WebSocket transport handshake failed (HTTP status: {status:?})")]
+    WebSocket { status: Option<u16> },
+    #[error("authenticated node does not advertise realtime")]
+    RealtimeNotAdvertised,
+    #[error("operation outcome is unknown; query the returned operation reference before retrying")]
+    OperationOutcomeUnknown {
+        operation: work_core::api::realtime::OperationRef,
+    },
     #[error("ACP transport error: {0}")]
     Acp(String),
     #[error("agent protocol mismatch: {0}")]
@@ -86,744 +184,76 @@ pub enum ClientError {
     ChildExited(String),
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct Health {
-    #[serde(default = "default_health_ok")]
-    pub ok: bool,
-    #[serde(default)]
-    pub service: Option<String>,
-    #[serde(default)]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub protocol: Option<String>,
+impl From<work_core::api::AcpPermissionError> for ClientError {
+    fn from(error: work_core::api::AcpPermissionError) -> Self {
+        Self::Acp(error.to_string())
+    }
 }
 
-fn default_health_ok() -> bool {
-    true
+impl From<work_core::api::EventDecodeError> for ClientError {
+    fn from(error: work_core::api::EventDecodeError) -> Self {
+        Self::Sse(error.to_string())
+    }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct Capabilities {
-    pub protocol: String,
-    #[serde(default, rename = "piCompatibilityTarget")]
-    pub pi_compatibility_target: Option<String>,
-    #[serde(default, rename = "supportedCommands")]
-    pub supported_commands: Vec<String>,
-    #[serde(default, rename = "supportedActions")]
-    pub supported_actions: Vec<String>,
-    #[serde(default)]
-    pub semantics: Option<Value>,
-    #[serde(default)]
-    pub limits: Option<Value>,
-    #[serde(default, rename = "parityComplete")]
-    pub parity_complete: bool,
+// Never propagate a response body that may echo a QR credential.
+// map_err consumes the error; the source must not escape this boundary.
+#[allow(clippy::needless_pass_by_value)]
+fn qr_error(error: ClientError) -> ClientError {
+    match error {
+        ClientError::Api { status, .. } => ClientError::Api {
+            status,
+            message: "QR authorization failed".into(),
+        },
+        // Decode errors can quote a server-provided string too. Do not retain
+        // their source chain (or a request URL) for these credential endpoints.
+        _ => ClientError::QrAuthorizationFailed,
+    }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct AuthState {
-    pub required: bool,
-    pub authenticated: bool,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RemoteTransport {
+    HttpSseOnly,
+    WebSocketOnly,
+    #[default]
+    Auto,
 }
+
+impl RemoteTransport {
+    const fn code(self) -> u8 {
+        match self {
+            Self::HttpSseOnly => 0,
+            Self::WebSocketOnly => 1,
+            Self::Auto => 2,
+        }
+    }
+    const fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::WebSocketOnly,
+            2 => Self::Auto,
+            _ => Self::HttpSseOnly,
+        }
+    }
+}
+
+pub use work_core::api::{
+    AgentBackendOption, AuthState, AuthStatus, AuthStatusProvider, Capabilities, ChangedFile,
+    CompactionEntry, Diff, FileContent, FileEntry, FileListing, GitStatus, Health, History,
+    HostResponse, ModelDescriptor, PROJECT_IMAGE_MAX_BYTES, PendingDialog, Project,
+    ProjectCreation, ProjectFolder, ProjectFolders, ProjectImage, QrAuthorization,
+    QueueCancellation, QueueItem, QueueMutation, QueueSnapshot, RuntimeState, SessionAgentBinding,
+    SessionBranch, SessionMutation, SessionPreferences, SessionSummary, Snapshot, SnapshotEvent,
+    ToolCatalog, UiDialogOption, UiDialogPayload, WireEvent,
+};
 
 #[derive(Debug, Deserialize)]
 struct AuthAck {
     authenticated: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct Project {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ProjectCreation {
-    pub project: Project,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ProjectFolder {
-    pub name: String,
-    pub path: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ProjectFolders {
-    pub root: String,
-    pub path: String,
-    pub folders: Vec<ProjectFolder>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct FileEntry {
-    pub name: String,
-    pub path: String,
-    pub kind: String,
-    pub size: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct FileListing {
-    pub path: String,
-    pub entries: Vec<FileEntry>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct FileContent {
-    pub path: String,
-    pub content: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ChangedFile {
-    pub path: String,
-    #[serde(rename = "originalPath")]
-    pub original_path: Option<String>,
-    pub status: String,
-    pub staged: bool,
-    pub unstaged: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct GitStatus {
-    #[serde(rename = "isRepository")]
-    pub is_repository: bool,
-    pub branch: Option<String>,
-    #[serde(rename = "repositoryRoot")]
-    pub repository_root: Option<String>,
-    #[serde(rename = "worktreePath")]
-    pub worktree_path: Option<String>,
-    pub files: Vec<ChangedFile>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct Diff {
-    pub path: String,
-    pub patch: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct QueueItem {
-    #[serde(rename = "entryId")]
-    pub entry_id: String,
-    pub queue: String,
-    pub text: String,
-    pub status: Option<String>,
-    #[serde(rename = "completedSeq")]
-    pub completed_seq: Option<u64>,
-    pub message: Option<Value>,
-    #[serde(rename = "runId")]
-    pub run_id: Option<String>,
-    pub seq: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct QueueSnapshot {
-    pub items: Vec<QueueItem>,
-    pub count: u64,
-}
-
-/// Presentation data only; unknown fields (including questions[]) remain available
-/// to consumers so an unsupported request cannot silently become a different one.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct UiDialogPayload {
-    pub purpose: Option<String>,
-    pub question: Option<String>,
-    pub message: Option<String>,
-    pub context: Option<String>,
-    pub kind: Option<String>,
-    pub options: Vec<UiDialogOption>,
-    pub allow_freeform: bool,
-    pub allow_multiple: bool,
-    pub raw: Value,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct UiDialogOption {
-    pub title: Option<String>,
-    pub value: Option<Value>,
-    pub permission: Option<String>,
-    pub description: Option<String>,
-    pub raw: Value,
-}
-
-impl<'de> Deserialize<'de> for UiDialogPayload {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = Value::deserialize(deserializer)?;
-        if !raw.is_object() {
-            return Err(serde::de::Error::custom("dialog UI must be an object"));
-        }
-        let text = |key: &str| raw.get(key).and_then(Value::as_str).map(str::to_owned);
-        let flag = |keys: &[&str]| {
-            keys.iter()
-                .any(|key| raw.get(*key).and_then(Value::as_bool) == Some(true))
-        };
-        let options = raw
-            .get("options")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .cloned()
-                    .map(serde_json::from_value)
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()
-            .map_err(serde::de::Error::custom)?
-            .unwrap_or_default();
-        Ok(Self {
-            purpose: text("purpose"),
-            question: text("question"),
-            message: text("message"),
-            context: text("context"),
-            kind: text("kind"),
-            options,
-            allow_freeform: flag(&["allowFreeform", "allow_freeform", "allow_custom"]),
-            allow_multiple: flag(&["allowMultiple", "allow_multiple", "multiple"]),
-            raw,
-        })
-    }
-}
-
-impl<'de> Deserialize<'de> for UiDialogOption {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = Value::deserialize(deserializer)?;
-        let text = |keys: &[&str]| {
-            keys.iter()
-                .find_map(|key| raw.get(*key).and_then(Value::as_str).map(str::to_owned))
-        };
-        Ok(Self {
-            title: raw
-                .as_str()
-                .map(str::to_owned)
-                .or_else(|| text(&["title", "label", "text", "value", "name"])),
-            value: raw.get("value").cloned(),
-            permission: text(&["permission"]),
-            description: text(&["description"]),
-            raw,
-        })
-    }
-}
-
-impl Serialize for UiDialogPayload {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if self.raw.is_object()
-            && serde_json::from_value::<Self>(self.raw.clone()).is_ok_and(|parsed| &parsed == self)
-        {
-            return self.raw.serialize(serializer);
-        }
-        let mut raw = self.raw.as_object().cloned().unwrap_or_default();
-        for (key, value) in [
-            ("purpose", &self.purpose),
-            ("question", &self.question),
-            ("message", &self.message),
-            ("context", &self.context),
-            ("kind", &self.kind),
-        ] {
-            if let Some(value) = value {
-                raw.insert(key.into(), json!(value));
-            }
-        }
-        if !self.options.is_empty() {
-            raw.insert("options".into(), json!(self.options));
-        }
-        if self.allow_freeform {
-            raw.insert("allowFreeform".into(), json!(true));
-        }
-        if self.allow_multiple {
-            raw.insert("allowMultiple".into(), json!(true));
-        }
-        raw.serialize(serializer)
-    }
-}
-
-impl Serialize for UiDialogOption {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if serde_json::from_value::<Self>(self.raw.clone()).is_ok_and(|parsed| &parsed == self) {
-            return self.raw.serialize(serializer);
-        }
-        let mut raw = self.raw.as_object().cloned().unwrap_or_default();
-        for (key, value) in [
-            ("title", &self.title),
-            ("permission", &self.permission),
-            ("description", &self.description),
-        ] {
-            if let Some(value) = value {
-                raw.insert(key.into(), json!(value));
-            }
-        }
-        if let Some(value) = &self.value {
-            raw.insert("value".into(), value.clone());
-        }
-        raw.serialize(serializer)
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct PendingDialog {
-    #[serde(rename = "requestId")]
-    pub request_id: String,
-    #[serde(rename = "toolCallId")]
-    pub tool_call_id: Option<String>,
-    #[serde(rename = "responseId")]
-    pub response_id: Option<Value>,
-    pub ui: UiDialogPayload,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct QueueMutation {
-    pub accepted: Option<bool>,
-    #[serde(rename = "entryId")]
-    pub entry_id: Option<String>,
-    pub queue: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct QueueCancellation {
-    #[serde(rename = "entryId")]
-    pub entry_id: String,
-    pub outcome: String,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct SessionSummary {
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
-    #[serde(rename = "projectId")]
-    pub project_id: Option<String>,
-    pub title: Option<String>,
-    pub status: String,
-    #[serde(rename = "createdAt")]
-    pub created_at: u64,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: u64,
-    #[serde(rename = "lastSeq")]
-    pub last_seq: u64,
-    #[serde(default)]
-    pub error: Option<String>,
-    #[serde(default, rename = "pendingResume")]
-    pub pending_resume: bool,
-    #[serde(default, rename = "latestSettlement")]
-    pub latest_settlement: Option<Value>,
-    #[serde(default)]
-    pub archived: bool,
-    #[serde(default)]
-    pub pinned: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct SessionPreferences {
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
-    pub archived: bool,
-    pub pinned: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct RuntimeState {
-    #[serde(rename = "modelId")]
-    pub model_id: Option<String>,
-    pub provider: Option<String>,
-    #[serde(rename = "thinkingLevel")]
-    pub thinking_level: Option<String>,
-    #[serde(rename = "activeTools", default)]
-    pub active_tools: Vec<String>,
-    pub context: Option<Value>,
-    pub queue: Option<Value>,
-    pub stats: Option<Value>,
-    #[serde(rename = "activeOperation")]
-    pub active_operation: Option<Value>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ModelDescriptor {
-    pub id: String,
-    pub name: String,
-    pub provider: String,
-    #[serde(default)]
-    pub reasoning: bool,
-    #[serde(default)]
-    pub api: Option<String>,
-    #[serde(rename = "contextWindow", default)]
-    pub context_window: Option<u64>,
-    #[serde(rename = "maxTokens", default)]
-    pub max_tokens: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct AuthStatusProvider {
-    pub provider: String,
-    #[serde(default)]
-    pub ready: bool,
-    #[serde(default)]
-    pub source: Option<String>,
-    #[serde(default)]
-    pub status: Option<String>,
-    #[serde(default)]
-    pub oauth: bool,
-    #[serde(rename = "oauthAvailable", default)]
-    pub oauth_available: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Default)]
-pub struct AuthStatus {
-    #[serde(default)]
-    pub providers: Vec<AuthStatusProvider>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ToolCatalog {
-    #[serde(default)]
-    pub tools: Vec<String>,
-    #[serde(rename = "activeTools", default)]
-    pub active_tools: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct CompactionEntry {
-    pub id: Option<String>,
-    pub seq: Option<u64>,
-    pub summary: Option<String>,
-    #[serde(rename = "tokensBefore")]
-    pub tokens_before: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct SessionBranch {
-    #[serde(default)]
-    pub entries: Vec<Value>,
-    #[serde(default)]
-    pub count: u64,
-}
-
-impl SessionBranch {
-    /// Extract only public compaction summaries. Message entries, including
-    /// assistant thinking, are deliberately never returned to the UI.
-    #[must_use]
-    pub fn latest_compaction(&self) -> Option<CompactionEntry> {
-        self.entries
-            .iter()
-            .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("compaction"))
-            .map(|entry| CompactionEntry {
-                id: entry.get("id").and_then(Value::as_str).map(str::to_owned),
-                seq: entry.get("seq").and_then(Value::as_u64),
-                summary: entry
-                    .get("summary")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                tokens_before: entry.get("tokensBefore").and_then(Value::as_u64),
-            })
-            .max_by_key(|entry| entry.seq.unwrap_or_default())
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct History {
-    #[serde(default)]
-    pub records: Vec<Value>,
-    #[serde(default)]
-    pub total: u64,
-    #[serde(default)]
-    pub limit: u64,
-    #[serde(rename = "afterSeq", default)]
-    pub after_seq: Option<u64>,
-    #[serde(rename = "beforeSeq", default)]
-    pub before_seq: Option<u64>,
-    #[serde(rename = "firstSeq", default)]
-    pub first_seq: Option<u64>,
-    #[serde(rename = "lastSeq", default)]
-    pub last_seq: Option<u64>,
-    #[serde(rename = "hasMore", default)]
-    pub has_more: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct SessionMutation {
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
-    #[serde(rename = "sourceSessionId")]
-    pub source_session_id: Option<String>,
-    pub title: Option<String>,
-    pub status: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct Snapshot {
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
-    #[serde(default)]
-    pub messages: Vec<Value>,
-    #[serde(default)]
-    pub total: u64,
-    #[serde(default)]
-    pub truncated: bool,
-    #[serde(default, rename = "lastSeq")]
-    pub last_seq: u64,
-    #[serde(default, rename = "pendingResume")]
-    pub pending_resume: bool,
-    #[serde(default, rename = "pendingDialog")]
-    pub pending_dialog: Option<PendingDialog>,
-    #[serde(default, rename = "pendingDialogs")]
-    pub pending_dialogs: Vec<PendingDialog>,
-    #[serde(default, rename = "latestSettlement")]
-    pub latest_settlement: Option<Value>,
-    #[serde(default, rename = "firstId")]
-    pub first_id: Option<String>,
-    #[serde(default, rename = "lastId")]
-    pub last_id: Option<String>,
-    #[serde(default)]
-    pub has_more: bool,
-    #[serde(default)]
-    pub events: Vec<SnapshotEvent>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct SnapshotEvent {
-    pub seq: u64,
-    pub event: Value,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct HostResponse<T> {
-    #[serde(rename = "type")]
-    pub response_type: String,
-    pub id: Option<Value>,
-    pub command: String,
-    pub success: bool,
-    pub data: Option<T>,
-    pub error: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct WireEvent {
-    pub id: Option<String>,
-    pub seq: Option<u64>,
-    pub event_type: String,
-    pub data: Value,
-}
-
-impl WireEvent {
-    pub fn into_core_event(self) -> Result<Event, ClientError> {
-        let id = self
-            .id
-            .clone()
-            .or_else(|| self.seq.map(|seq| format!("seq-{seq}")))
-            .unwrap_or_else(|| {
-                let fingerprint = serde_json::to_string(&self.data).unwrap_or_default();
-                format!("event-{}-{fingerprint}", self.event_type)
-            });
-        let seq = self.seq;
-        let kind = normalize_event(&self.event_type, &self.data)?;
-        Ok(Event { id, seq, kind })
-    }
-}
-
-/// Convert rpi HTTP API wire event names to the transport-neutral core model.
-#[allow(clippy::too_many_lines)]
+/// Convert wire events while preserving the existing client error category.
 pub fn normalize_event(event_type: &str, data: &Value) -> Result<EventKind, ClientError> {
-    let object = data.as_object();
-    let string = |key: &str| object.and_then(|map| map.get(key)).and_then(Value::as_str);
-    let value_text = |value: Option<&Value>| -> Result<String, ClientError> {
-        Ok(value.map(display_text).unwrap_or_default())
-    };
-    let message = || {
-        object
-            .and_then(|map| map.get("message"))
-            .and_then(Value::as_object)
-    };
-    let message_id = || {
-        message()
-            .and_then(|map| {
-                map.get("entryId")
-                    .or_else(|| map.get("messageId"))
-                    .or_else(|| map.get("id"))
-            })
-            .and_then(Value::as_str)
-            .or_else(|| string("messageId"))
-            .or_else(|| string("entryId"))
-            .unwrap_or("assistant-message")
-    };
-    if matches!(
-        event_type,
-        "message_start" | "message_update" | "message_end"
-    ) && message()
-        .and_then(|map| map.get("role").or_else(|| map.get("kind")))
-        .and_then(Value::as_str)
-        .is_some_and(|role| role != "assistant")
-    {
-        return Ok(EventKind::Ignored);
-    }
-
-    match event_type {
-        // SSE ready confirms the subscription, not a newly accepted agent run.
-        // Treating it as Accepted makes an idle/reopened chat show Stop and
-        // sends the first user message to the queue instead of starting a run.
-        "operation_accepted" | "agent_start" => Ok(EventKind::Accepted),
-        "agent_end" => Ok(EventKind::AgentEnd),
-        "agent_settled" => Ok(EventKind::AgentSettled {
-            outcome: settlement(string("outcome"), data),
-            usage: usage(object.and_then(|map| map.get("usage"))),
-        }),
-        "resync_required" => Ok(EventKind::ResyncRequired {
-            reason: string("reason")
-                .unwrap_or("event history requires a snapshot")
-                .into(),
-        }),
-        "ui_dialog_request" => Ok(EventKind::AwaitingInput),
-        "tool_execution_start" => Ok(EventKind::ToolStarted {
-            tool_id: required_string(object, "toolCallId")?,
-            name: string("toolName").unwrap_or("tool").into(),
-            arguments: value_text(
-                object.and_then(|map| map.get("args").or_else(|| map.get("arguments"))),
-            )?,
-        }),
-        "tool_execution_update" => Ok(EventKind::ToolOutput {
-            tool_id: required_string(object, "toolCallId")?,
-            content: value_text(object.and_then(|map| map.get("partialResult")))?,
-            mode: OutputMode::Snapshot,
-        }),
-        "tool_execution_end" => {
-            let error = string("error").map(str::to_owned).or_else(|| {
-                object.and_then(|map| map.get("isError")).and_then(|value| {
-                    value
-                        .as_bool()
-                        .filter(|is_error| *is_error)
-                        .map(|_| "tool failed".into())
-                })
-            });
-            Ok(EventKind::ToolFinished {
-                tool_id: required_string(object, "toolCallId")?,
-                result: value_text(object.and_then(|map| map.get("result")))?,
-                error,
-            })
-        }
-        "message_update" => {
-            let event_kind = string("eventType").or_else(|| {
-                object
-                    .and_then(|map| map.get("assistantMessageEvent"))
-                    .and_then(|value| value.get("type"))
-                    .and_then(Value::as_str)
-            });
-            if matches!(event_kind, Some("text_delta")) {
-                return Ok(EventKind::TextDelta {
-                    block_id: format!(
-                        "{}-text-{}",
-                        message_id(),
-                        object
-                            .and_then(|map| map.get("contentIndex"))
-                            .and_then(Value::as_u64)
-                            .unwrap_or(0)
-                    ),
-                    delta: value_text(object.and_then(|map| map.get("delta")))?,
-                });
-            }
-            if matches!(event_kind, Some("thinking_delta" | "tool_call_delta")) {
-                return Ok(EventKind::Ignored);
-            }
-            let text = message()
-                .and_then(|map| map.get("content"))
-                .map(content_text)
-                .unwrap_or_default();
-            Ok(EventKind::TextSnapshot {
-                block_id: format!("{}-text-0", message_id()),
-                text,
-            })
-        }
-        "message_start" | "message_end" => {
-            let text = message()
-                .and_then(|map| map.get("content"))
-                .map(content_text)
-                .unwrap_or_default();
-            Ok(EventKind::TextSnapshot {
-                block_id: format!("{}-text-0", message_id()),
-                text,
-            })
-        }
-        "connection_reconnecting" => {
-            Ok(EventKind::ConnectionChanged(ConnectionState::Reconnecting))
-        }
-        "ready" | "connection_online" => Ok(EventKind::ConnectionChanged(ConnectionState::Online)),
-        "connection_offline" => Ok(EventKind::ConnectionChanged(ConnectionState::Offline)),
-        _ => Ok(EventKind::Ignored),
-    }
-}
-
-fn required_string(
-    object: Option<&serde_json::Map<String, Value>>,
-    key: &str,
-) -> Result<String, ClientError> {
-    object
-        .and_then(|map| map.get(key))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| ClientError::Sse(format!("event is missing {key}")))
-}
-
-fn settlement(value: Option<&str>, data: &Value) -> SettlementOutcome {
-    let value = value.or_else(|| {
-        data.get("aborted")
-            .and_then(|aborted| aborted.as_bool().filter(|value| *value).map(|_| "aborted"))
-    });
-    match value.unwrap_or("unknown") {
-        "completed" => SettlementOutcome::Completed,
-        "failed" => SettlementOutcome::Failed,
-        "interrupted" | "aborted" => SettlementOutcome::Interrupted,
-        "suspended" => SettlementOutcome::Suspended,
-        "compacted" => SettlementOutcome::Compacted,
-        "declined" | "skipped" => SettlementOutcome::Declined,
-        other => SettlementOutcome::Unknown(if other == "unknown" {
-            data.get("outcome")
-                .and_then(Value::as_str)
-                .unwrap_or(other)
-                .to_owned()
-        } else {
-            other.to_owned()
-        }),
-    }
-}
-
-fn usage(value: Option<&Value>) -> Option<Usage> {
-    let object = value?.as_object()?;
-    Some(Usage {
-        input_tokens: number(object, "input").or_else(|| number(object, "inputTokens")),
-        output_tokens: number(object, "output").or_else(|| number(object, "outputTokens")),
-        cache_read_tokens: number(object, "cache_read").or_else(|| number(object, "cacheRead")),
-        cache_write_tokens: number(object, "cache_write").or_else(|| number(object, "cacheWrite")),
-    })
-}
-
-fn number(object: &serde_json::Map<String, Value>, key: &str) -> Option<u64> {
-    object.get(key).and_then(Value::as_u64)
-}
-
-fn content_text(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Array(items) => items
-            .iter()
-            .map(display_text)
-            .filter(|text| !text.is_empty())
-            .collect(),
-        Value::Object(object) => object
-            .get("content")
-            .or_else(|| object.get("text"))
-            .map(display_text)
-            .unwrap_or_default(),
-        _ => String::new(),
-    }
-}
-
-fn display_text(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Array(_) => content_text(value),
-        Value::Object(object) if object.contains_key("content") || object.contains_key("text") => {
-            content_text(value)
-        }
-        Value::Object(_) | Value::Number(_) | Value::Bool(_) => {
-            serde_json::to_string(value).unwrap_or_default()
-        }
-        Value::Null => String::new(),
-    }
+    work_core::api::events::normalize_event(event_type, data).map_err(ClientError::from)
 }
 
 #[derive(Default)]
@@ -917,18 +347,18 @@ impl SseDecoder {
     }
 }
 
-fn payload_with_type(command: &str, payload: Value) -> Value {
-    let mut object = match payload {
-        Value::Object(object) => object,
-        _ => serde_json::Map::new(),
-    };
-    object.insert("type".into(), Value::String(command.into()));
-    Value::Object(object)
-}
+use work_core::api::payload_with_type;
 
 #[cfg(not(target_arch = "wasm32"))]
-fn build_http_client() -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder().cookie_store(true).build()
+fn build_http_client(
+    jar: std::sync::Arc<reqwest::cookie::Jar>,
+) -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .cookie_provider(jar)
+        // A scanned authorization ticket is bound to one endpoint. Never
+        // forward it (or a password) through an HTTP redirect.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -955,6 +385,16 @@ pub struct WorkClient {
     http: reqwest::Client,
     base_url: Url,
     bearer_token: Option<String>,
+    #[cfg(not(target_arch = "wasm32"))]
+    cookie_jar: std::sync::Arc<reqwest::cookie::Jar>,
+    realtime_mode: Arc<AtomicU8>,
+    realtime_epoch: Arc<AtomicU64>,
+    realtime_ids: Arc<AtomicU64>,
+    realtime_client_id: Arc<String>,
+    #[cfg(not(target_arch = "wasm32"))]
+    realtime: Arc<realtime_client::Hub>,
+    #[cfg(target_arch = "wasm32")]
+    realtime: Arc<wasm_realtime_client::Hub>,
 }
 
 fn authenticated(
@@ -991,10 +431,30 @@ impl WorkClient {
             .map(str::trim)
             .filter(|token| !token.is_empty())
             .map(str::to_owned);
+        #[cfg(not(target_arch = "wasm32"))]
+        let cookie_jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
         Ok(Self {
+            #[cfg(not(target_arch = "wasm32"))]
+            http: build_http_client(cookie_jar.clone())?,
+            #[cfg(target_arch = "wasm32")]
             http: build_http_client()?,
             base_url,
             bearer_token,
+            #[cfg(not(target_arch = "wasm32"))]
+            cookie_jar,
+            // HTTP remains the authentication/resource plane; Auto uses the
+            // authenticated realtime channel for session requests and events.
+            realtime_mode: Arc::new(AtomicU8::new(RemoteTransport::Auto.code())),
+            realtime_epoch: Arc::new(AtomicU64::new(0)),
+            realtime_ids: Arc::new(AtomicU64::new(0)),
+            realtime_client_id: Arc::new(format!(
+                "work-client-{}",
+                NEXT_REALTIME_CLIENT.fetch_add(1, Ordering::Relaxed)
+            )),
+            #[cfg(not(target_arch = "wasm32"))]
+            realtime: Arc::new(realtime_client::Hub::default()),
+            #[cfg(target_arch = "wasm32")]
+            realtime: Arc::new(wasm_realtime_client::Hub::default()),
         })
     }
 
@@ -1007,6 +467,7 @@ impl WorkClient {
     }
 
     pub async fn login(&self, password: &str) -> Result<AuthState, ClientError> {
+        let _auth_change = self.realtime_auth_change();
         let ack: AuthAck = self
             .post("api/v1/auth", json!({ "password": password }))
             .await?;
@@ -1018,7 +479,42 @@ impl WorkClient {
         Ok(state)
     }
 
+    /// Read public endpoint identity without sharing an authenticated transport.
+    /// Callers probing an advertised QR address must construct a fresh client.
+    pub async fn qr_authorization_node(&self) -> Result<Option<String>, ClientError> {
+        let health: Value = self.get("api/v1/health").await?;
+        Ok((health["sharingEnabled"].as_bool() == Some(true))
+            .then(|| {
+                health["nodeId"]
+                    .as_str()
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_owned)
+            })
+            .flatten())
+    }
+
+    pub async fn issue_qr_authorization(&self) -> Result<QrAuthorization, ClientError> {
+        self.post("api/v1/auth/qr", json!({}))
+            .await
+            .map_err(qr_error)
+    }
+
+    pub async fn redeem_qr_authorization(&self, ticket: &str) -> Result<AuthState, ClientError> {
+        let _auth_change = self.realtime_auth_change();
+        let ack: AuthAck = self
+            .post("api/v1/auth/qr/redeem", json!({"ticket": ticket}))
+            .await
+            .map_err(qr_error)?;
+        let _ = ack.authenticated;
+        let state = self.auth().await.map_err(qr_error)?;
+        if !state.authenticated {
+            return Err(ClientError::AuthenticationNotConfirmed);
+        }
+        Ok(state)
+    }
+
     pub async fn logout(&self) -> Result<AuthState, ClientError> {
+        let _auth_change = self.realtime_auth_change();
         let ack: AuthAck = self.delete_json("api/v1/auth").await?;
         let _ = ack.authenticated;
         self.auth().await
@@ -1087,6 +583,96 @@ impl WorkClient {
         let mut url = self.url(&format!("api/v1/projects/{project_id}/file"))?;
         url.query_pairs_mut().append_pair("path", path);
         self.get_url(url).await
+    }
+
+    /// Fetch a bounded raster using the shared authenticated API client.
+    pub async fn image(&self, project_id: &str, path: &str) -> Result<ProjectImage, ClientError> {
+        let mut url = self.url("api/v1/projects/")?;
+        url.path_segments_mut()
+            .expect("HTTP API URL")
+            .pop_if_empty()
+            .push(project_id)
+            .push("image");
+        url.query_pairs_mut().append_pair("path", path);
+        let response = authenticated(
+            self.http.get(url).header("x-rpi-web", "1"),
+            self.bearer_token.as_deref(),
+        )
+        .send()
+        .await?;
+        let status = response.status();
+        if !status.is_success() {
+            // Do not consume an unbounded error body or expose server diagnostics.
+            return Err(ClientError::Api {
+                status,
+                message: "project image read failed".into(),
+            });
+        }
+        let reject = |status, message: &str| ClientError::Api {
+            status,
+            message: message.into(),
+        };
+        if response
+            .content_length()
+            .is_some_and(|len| len > PROJECT_IMAGE_MAX_BYTES as u64)
+            || response
+                .headers()
+                .get(reqwest::header::CONTENT_LENGTH)
+                .and_then(|h| h.to_str().ok())
+                .and_then(|h| h.parse::<u64>().ok())
+                .is_some_and(|len| len > PROJECT_IMAGE_MAX_BYTES as u64)
+        {
+            return Err(reject(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "images are limited to 20 MiB",
+            ));
+        }
+        let media_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("")
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        if !matches!(
+            media_type.as_str(),
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/bmp"
+        ) {
+            return Err(reject(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "unsupported image format",
+            ));
+        }
+        let mut stream = response.bytes_stream();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            if chunk.len() > PROJECT_IMAGE_MAX_BYTES - bytes.len() {
+                return Err(reject(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "images are limited to 20 MiB",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let matches = match media_type.as_str() {
+            "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+            "image/jpeg" => bytes.starts_with(b"\xff\xd8\xff"),
+            "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+            "image/webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"),
+            "image/bmp" => bytes.starts_with(b"BM"),
+            _ => false,
+        };
+        if !matches {
+            return Err(reject(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "image signature does not match media type",
+            ));
+        }
+        Ok(ProjectImage { bytes, media_type })
     }
 
     pub async fn git_status(&self, project_id: &str) -> Result<GitStatus, ClientError> {
@@ -1338,12 +924,19 @@ impl WorkClient {
         request_id: &str,
         value: Value,
     ) -> Result<Value, ClientError> {
-        self.command_data(
-            session_id,
-            "ui_dialog_response",
-            json!({ "requestId": request_id, "answer": value }),
-        )
-        .await
+        let payload = json!({ "requestId": request_id, "answer": value });
+        if let Some(value) = self
+            .try_realtime_mutation(
+                session_id,
+                work_core::api::realtime::RealtimeOperationKind::DialogResponse,
+                &payload,
+            )
+            .await?
+        {
+            return Ok(value);
+        }
+        self.post(&format!("api/v1/sessions/{session_id}/dialogs"), payload)
+            .await
     }
 
     pub async fn cancel_dialog(
@@ -1351,12 +944,19 @@ impl WorkClient {
         session_id: &str,
         request_id: &str,
     ) -> Result<Value, ClientError> {
-        self.command_data(
-            session_id,
-            "ui_dialog_response",
-            json!({ "requestId": request_id, "cancelled": true }),
-        )
-        .await
+        let payload = json!({ "requestId": request_id, "cancelled": true });
+        if let Some(value) = self
+            .try_realtime_mutation(
+                session_id,
+                work_core::api::realtime::RealtimeOperationKind::CancelDialog,
+                &payload,
+            )
+            .await?
+        {
+            return Ok(value);
+        }
+        self.post(&format!("api/v1/sessions/{session_id}/dialogs"), payload)
+            .await
     }
 
     pub async fn open_session(&self, session_id: &str) -> Result<SessionSummary, ClientError> {
@@ -1369,13 +969,99 @@ impl WorkClient {
             .await
     }
 
+    pub async fn snapshot_with_limit(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Snapshot, ClientError> {
+        let mut url = self.url(&format!("api/v1/sessions/{session_id}/snapshot"))?;
+        url.query_pairs_mut()
+            .append_pair("limit", &limit.to_string());
+        self.get_url(url).await
+    }
+
+    #[must_use]
+    pub fn remote_transport(&self) -> RemoteTransport {
+        RemoteTransport::from_code(self.realtime_mode.load(Ordering::Acquire))
+    }
+
+    /// Selects remote session requests/events. Authentication, discovery and
+    /// resources retain HTTP. `Auto` uses realtime when advertised and falls
+    /// back only when authenticated discovery reports it is absent.
+    pub fn set_remote_transport(&self, transport: RemoteTransport) {
+        self.realtime_mode
+            .store(transport.code(), Ordering::Release);
+        self.fence_realtime();
+    }
+
+    fn fence_realtime(&self) {
+        let epoch = self.realtime_epoch.fetch_add(1, Ordering::AcqRel) + 1;
+        self.realtime.invalidate(epoch);
+    }
+
+    pub(crate) fn realtime_epoch(&self) -> u64 {
+        self.realtime_epoch.load(Ordering::Acquire)
+    }
+
     pub async fn command<T: for<'de> Deserialize<'de>>(
         &self,
         session_id: &str,
         payload: Value,
     ) -> Result<HostResponse<T>, ClientError> {
+        if self.remote_transport() != RemoteTransport::HttpSseOnly {
+            let epoch = self.realtime_epoch();
+            match realtime_command::<T>(self, session_id, payload.clone()).await {
+                Ok(value) => return Ok(value),
+                Err(error)
+                    if self.remote_transport() == RemoteTransport::Auto
+                        && self.realtime_epoch() == epoch
+                        && is_legacy_realtime_error(&error) => {}
+                Err(error) => return Err(error),
+            }
+        }
         self.post(&format!("api/v1/sessions/{session_id}/commands"), payload)
             .await
+    }
+
+    async fn try_realtime_mutation(
+        &self,
+        session_id: &str,
+        kind: work_core::api::realtime::RealtimeOperationKind,
+        payload: &Value,
+    ) -> Result<Option<Value>, ClientError> {
+        if self.remote_transport() != RemoteTransport::HttpSseOnly {
+            let epoch = self.realtime_epoch();
+            match realtime_mutation(self, session_id, kind, payload.clone()).await {
+                Ok(value) => return Ok(Some(value)),
+                Err(error)
+                    if self.remote_transport() == RemoteTransport::Auto
+                        && self.realtime_epoch() == epoch
+                        && is_legacy_realtime_error(&error) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
+    }
+
+    /// Queries a receipt without reserving or executing another operation.
+    pub async fn operation_status(
+        &self,
+        operation: &work_core::api::realtime::OperationRef,
+    ) -> Result<work_core::api::realtime::OperationStatus, ClientError> {
+        operation.validate().map_err(|_| ClientError::Api {
+            status: StatusCode::BAD_REQUEST,
+            message: "invalid operation reference".into(),
+        })?;
+        let mut url = self.url("api/v1/realtime/operations/")?;
+        url.path_segments_mut()
+            .map_err(|_| ClientError::Api {
+                status: StatusCode::BAD_REQUEST,
+                message: "invalid operation endpoint".into(),
+            })?
+            .pop_if_empty()
+            .push(&operation.owner_epoch)
+            .push(&operation.operation_id);
+        self.get_url(url).await
     }
 
     pub async fn command_data<T: for<'de> Deserialize<'de>>(
@@ -1418,6 +1104,17 @@ impl WorkClient {
         session_id: &str,
         after: u64,
     ) -> Result<EventStream, ClientError> {
+        if self.remote_transport() != RemoteTransport::HttpSseOnly {
+            let epoch = self.realtime_epoch();
+            match realtime_subscribe(self, session_id, after).await {
+                Ok(stream) => return Ok(stream),
+                Err(error)
+                    if self.remote_transport() == RemoteTransport::Auto
+                        && self.realtime_epoch() == epoch
+                        && is_legacy_realtime_error(&error) => {}
+                Err(error) => return Err(error),
+            }
+        }
         let url = self.url(&format!(
             "api/v1/sessions/{session_id}/events?after={after}"
         ))?;
@@ -1459,31 +1156,9 @@ impl WorkClient {
         &self,
         session_id: impl Into<String>,
     ) -> Result<SessionConnection, ClientError> {
-        let session_id = session_id.into();
-        self.open_session(&session_id).await?;
-        let snapshot = self.snapshot(&session_id).await?;
-        let after = snapshot.last_seq;
-        let projection = projection_from_snapshot(&snapshot)?;
-        let mut identity = MessageIdentity::default();
-        for item in &snapshot.events {
-            identity.annotate(&item.event, Some(item.seq));
-        }
-        let stream = self.subscribe(&session_id, after).await?;
-        let pending_dialogs = snapshot_dialogs(&snapshot);
-        let messages = snapshot.messages;
-        Ok(SessionConnection {
-            client: WorkspaceClient::Remote(self.clone()),
-            session_id,
-            projection,
-            stream,
-            history_len: messages.len(),
-            messages,
-            pending_dialogs,
-            reconnect_attempt: 0,
-            reconnecting: false,
-            connection_epoch: 0,
-            identity,
-        })
+        WorkspaceClient::Remote(self.clone())
+            .connect_session(session_id)
+            .await
     }
 
     async fn get_url<T: for<'de> Deserialize<'de>>(&self, url: Url) -> Result<T, ClientError> {
@@ -1588,6 +1263,8 @@ pub struct SessionConnection {
     session_id: String,
     projection: RunProjection,
     stream: EventStream,
+    snapshot_limit: bool,
+    message_page_info: MessagePageInfo,
     history_len: usize,
     messages: Vec<Value>,
     pending_dialogs: Vec<PendingDialog>,
@@ -1597,14 +1274,33 @@ pub struct SessionConnection {
     identity: MessageIdentity,
 }
 
+// Private provenance: a node ID that happens to start with `anonymous-` is
+// still authoritative. Only IDs allocated by this client get this marker.
+static NEXT_REALTIME_CLIENT: AtomicU64 = AtomicU64::new(1);
+
+const CLIENT_ANONYMOUS_ID: &str = "__rpiClientAnonymousId";
+const CLIENT_CANONICAL_ID: &str = "__rpiClientCanonicalId";
+// A lifecycle anchor, not evidence that any particular historical body is current.
+const CLIENT_STREAM_STARTED: &str = "__rpiClientStreamStarted";
+
 /// Tracks the current message when a host omits its entry ID.
 #[derive(Default)]
 struct MessageIdentity {
     current: Option<String>,
+    current_explicit: Option<String>,
+    current_role: Option<String>,
+    current_started: bool,
     counter: u64,
 }
 
 impl MessageIdentity {
+    fn clear_current(&mut self) {
+        self.current = None;
+        self.current_explicit = None;
+        self.current_role = None;
+        self.current_started = false;
+    }
+
     fn annotate(&mut self, data: &Value, seq: Option<u64>) -> Value {
         let mut data = data.clone();
         let kind = data
@@ -1612,8 +1308,11 @@ impl MessageIdentity {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        if kind == "agent_start" {
-            self.current = None;
+        if matches!(
+            kind.as_str(),
+            "operation_accepted" | "agent_start" | "agent_end" | "agent_settled"
+        ) {
+            self.clear_current();
         }
         if !matches!(
             kind.as_str(),
@@ -1621,25 +1320,67 @@ impl MessageIdentity {
         ) {
             return data;
         }
+        // Native RPC places the durable entry identity on the event envelope.
+        // Its default compact delta omits `message` entirely. Normalize only an
+        // internal identity shell, never a synthetic body or an SSE event ID.
+        let envelope_id = ["messageId", "entryId"]
+            .iter()
+            .find_map(|key| data.get(*key)?.as_str().filter(|id| !id.trim().is_empty()))
+            .map(str::to_owned);
+        if kind == "message_update" && data.get("message").is_none() {
+            // Compact message_update is assistant-only in the RPC contract;
+            // it must not inherit an unfinished user segment's role.
+            data["message"] = json!({"role":"assistant"});
+        }
         let Some(message) = data.get_mut("message").and_then(Value::as_object_mut) else {
             return data;
         };
-        if message
+        let role = message
             .get("role")
             .or_else(|| message.get("kind"))
-            .and_then(Value::as_str)
-            .is_some_and(|role| role != "assistant")
-        {
+            .and_then(Value::as_str);
+        if role.is_some_and(|role| !matches!(role, "assistant" | "user")) {
             return data;
         }
-        let explicit = message
-            .get("entryId")
-            .or_else(|| message.get("messageId"))
-            .or_else(|| message.get("id"))
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        if kind == "message_start" || self.current.is_none() {
-            self.current = explicit.or_else(|| {
+        let role = role
+            .or_else(|| {
+                (kind != "message_start")
+                    .then_some(self.current_role.as_deref())
+                    .flatten()
+            })
+            .unwrap_or("assistant")
+            .to_owned();
+        // Downstream live merging and event normalization must agree with the
+        // identity tracker even when the host omits role on updates/end.
+        message.entry("role").or_insert_with(|| json!(role));
+        // User segments must not inherit an unfinished assistant's identity,
+        // but their own start/update/end share one identity just like assistants.
+        if self.current_role.as_ref().is_some_and(|old| old != &role) {
+            self.clear_current();
+        }
+        let explicit = envelope_id.or_else(|| {
+            ["entryId", "messageId", "id"]
+                .iter()
+                .find_map(|key| {
+                    message
+                        .get(*key)?
+                        .as_str()
+                        .filter(|id| !id.trim().is_empty())
+                })
+                .map(str::to_owned)
+        });
+        // A changed host ID is a boundary even if message_start was omitted.
+        // The first host ID of an anonymous message is a promotion, not a new
+        // message. A host may revise timestamps at persistence; lifecycle and
+        // authoritative IDs, not mutable timestamps, delimit this open segment.
+        let changed_id = explicit
+            .as_ref()
+            .is_some_and(|id| self.current_explicit.as_ref().is_some_and(|old| old != id));
+        if kind == "message_start" || self.current.is_none() || changed_id {
+            self.current_started = kind == "message_start";
+            self.current_role = Some(role);
+            self.current_explicit = explicit.clone();
+            self.current = explicit.clone().or_else(|| {
                 self.counter += 1;
                 Some(format!(
                     "anonymous-{}-{}",
@@ -1647,12 +1388,26 @@ impl MessageIdentity {
                     self.counter
                 ))
             });
+        } else if explicit.is_some() {
+            self.current_explicit = explicit;
+        }
+        message.remove(CLIENT_ANONYMOUS_ID);
+        message.remove(CLIENT_CANONICAL_ID);
+        message.remove(CLIENT_STREAM_STARTED);
+        if self.current_started {
+            message.insert(CLIENT_STREAM_STARTED.into(), json!(true));
         }
         if let Some(id) = &self.current {
             message.insert("entryId".into(), json!(id));
+            if self.current != self.current_explicit {
+                message.insert(CLIENT_ANONYMOUS_ID.into(), json!(true));
+                if let Some(canonical) = &self.current_explicit {
+                    message.insert(CLIENT_CANONICAL_ID.into(), json!(canonical));
+                }
+            }
         }
         if kind == "message_end" {
-            self.current = None;
+            self.clear_current();
         }
         data
     }
@@ -1683,6 +1438,11 @@ impl SessionConnection {
     #[must_use]
     pub fn history_len(&self) -> usize {
         self.history_len
+    }
+
+    #[must_use]
+    pub fn message_page_info(&self) -> &MessagePageInfo {
+        &self.message_page_info
     }
 
     #[must_use]
@@ -1740,22 +1500,26 @@ impl SessionConnection {
         }
         let mut normalized = wire.clone();
         normalized.data = self.identity.annotate(&wire.data, wire.seq);
-        merge_live_message(&mut self.messages, &normalized.data, wire.seq);
-        let event = normalized.into_core_event()?;
-        let applied = self.projection.apply(event);
+        let applied =
+            apply_live_message_event(&mut self.messages, &mut self.projection, normalized)?;
         if matches!(applied, ApplyResult::RebuiltForResync) {
             self.reconnecting = true;
         }
-        if matches!(wire.event_type.as_str(), "agent_start" | "agent_settled") {
+        if self.snapshot_limit
+            && matches!(wire.event_type.as_str(), "agent_start" | "agent_settled")
+        {
             // Native RPC does not emit the user's persisted message as a live
             // message event. Read it at run start, then reconcile final entry IDs
             // at settlement without resubscribing or advancing the SSE cursor.
-            let snapshot = self.client.snapshot(&self.session_id);
+            let snapshot = self
+                .client
+                .snapshot_with_limit(&self.session_id, MESSAGE_PAGE_SIZE);
             let timeout = reconnect_sleep(Duration::from_secs(5));
             futures_util::pin_mut!(snapshot, timeout);
             if let futures_util::future::Either::Left((Ok(snapshot), _)) =
                 futures_util::future::select(snapshot, timeout).await
             {
+                self.message_page_info = MessagePageInfo::from_snapshot(&snapshot);
                 if wire.event_type == "agent_start" {
                     for message in snapshot
                         .messages
@@ -1765,7 +1529,12 @@ impl SessionConnection {
                         merge_live_message(&mut self.messages, &json!({"message":message}), None);
                     }
                 } else {
-                    reconcile_messages(&mut self.messages, &mut self.projection, snapshot.messages);
+                    reconcile_messages(
+                        &mut self.messages,
+                        &mut self.projection,
+                        snapshot.messages,
+                        snapshot.has_more || snapshot.truncated,
+                    );
                 }
             }
         }
@@ -1790,19 +1559,22 @@ impl SessionConnection {
     }
 
     async fn restore_snapshot(&mut self) -> Result<(), ClientError> {
-        let (snapshot, stream) = self.client.snapshot_stream(&self.session_id).await?;
+        let (snapshot, stream, snapshot_limit) =
+            self.client.snapshot_stream(&self.session_id).await?;
         let pending_dialogs = snapshot_dialogs(&snapshot);
-        let projection = projection_from_snapshot(&snapshot)?;
+        let (messages, projection) = snapshot_state(&snapshot)?;
         // Publish the new snapshot only once its subscription is ready.
         self.projection = projection;
         self.identity = MessageIdentity::default();
         for item in &snapshot.events {
             self.identity.annotate(&item.event, Some(item.seq));
         }
-        self.history_len = snapshot.messages.len();
-        self.messages = snapshot.messages;
+        self.history_len = messages.len();
+        self.message_page_info = MessagePageInfo::from_snapshot(&snapshot);
+        self.messages = messages;
         self.pending_dialogs = pending_dialogs;
         self.stream = stream;
+        self.snapshot_limit = snapshot_limit;
         Ok(())
     }
 
@@ -1838,29 +1610,117 @@ fn message_role(message: &Value) -> Option<&str> {
 }
 
 fn entry_id(message: &Value) -> Option<&str> {
-    message
-        .get("entryId")
-        .or_else(|| message.get("messageId"))
-        .or_else(|| message.get("id"))
-        .and_then(Value::as_str)
+    ["entryId", "messageId", "id"].iter().find_map(|key| {
+        message
+            .get(*key)?
+            .as_str()
+            .filter(|id| !id.trim().is_empty())
+    })
+}
+
+/// Authoritative message identity, including only client-proven promotions.
+/// Unresolved client-generated IDs have no canonical identity; callers that
+/// index loaded views may fall back to their physical entry ID.
+#[must_use]
+pub fn canonical_entry_id(message: &Value) -> Option<&str> {
+    if message[CLIENT_ANONYMOUS_ID] == true {
+        message
+            .get(CLIENT_CANONICAL_ID)
+            .and_then(Value::as_str)
+            .filter(|id| !id.trim().is_empty())
+    } else {
+        entry_id(message)
+    }
+}
+
+/// Host identity wins over weak metadata, regardless of candidate order.
+/// Timestamp matching is only safe when an identity is missing, or during
+/// canonical reconciliation of a client-generated anonymous identity. Even
+/// then, ambiguous candidates must stay separate rather than corrupt a turn.
+fn matching_message_index(
+    messages: &[Value],
+    incoming: &Value,
+    reconcile_anonymous: bool,
+) -> Option<usize> {
+    if let Some(id) = entry_id(incoming) {
+        if let Some(index) = messages.iter().position(|item| entry_id(item) == Some(id)) {
+            return Some(index);
+        }
+    }
+    if let Some(id) = canonical_entry_id(incoming) {
+        if let Some(index) = messages
+            .iter()
+            .position(|item| canonical_entry_id(item) == Some(id))
+        {
+            return Some(index);
+        }
+    }
+    let is_tool = |message: &Value| {
+        matches!(
+            message_role(message),
+            Some("tool" | "toolResult" | "tool_result")
+        )
+    };
+    if is_tool(incoming) {
+        if let Some(call) = incoming.get("toolCallId").and_then(Value::as_str) {
+            if let Some(index) = messages.iter().position(|item| {
+                is_tool(item) && item.get("toolCallId").and_then(Value::as_str) == Some(call)
+            }) {
+                return Some(index);
+            }
+        }
+    }
+    let timestamp = incoming.get("timestamp").and_then(Value::as_u64)?;
+    let mut candidates = messages.iter().enumerate().filter(|(_, item)| {
+        message_role(item) == message_role(incoming)
+            && item.get("timestamp").and_then(Value::as_u64) == Some(timestamp)
+            && !(canonical_entry_id(item).is_some()
+                && canonical_entry_id(incoming).is_some()
+                && canonical_entry_id(item) != canonical_entry_id(incoming))
+            && (entry_id(item).is_none()
+                || entry_id(incoming).is_none()
+                || (reconcile_anonymous
+                    && (incoming[CLIENT_ANONYMOUS_ID] == true
+                        || item[CLIENT_ANONYMOUS_ID] == true)))
+    });
+    let (index, _) = candidates.next()?;
+    candidates.next().is_none().then_some(index)
 }
 
 fn reconcile_messages(
     messages: &mut Vec<Value>,
     projection: &mut RunProjection,
     mut canonical: Vec<Value>,
+    truncated: bool,
 ) {
-    for live in messages.iter() {
-        let matched = canonical.iter().find(|item| {
-            (entry_id(live).is_some() && entry_id(item) == entry_id(live))
-                || (message_role(live) == message_role(item)
-                    && ((live.get("timestamp").and_then(Value::as_u64).is_some()
-                        && item.get("timestamp") == live.get("timestamp"))
-                        || (live.get("toolCallId").and_then(Value::as_str).is_some()
-                            && item.get("toolCallId") == live.get("toolCallId"))))
-        });
-        if let Some(matched) = matched {
-            if let (Some(old), Some(new)) = (entry_id(live), entry_id(matched)) {
+    // Resolve against the original snapshot, not live entries appended below.
+    // Weak matches must be unique in both directions: one canonical row must
+    // not consume multiple anonymous messages or steal an exact live match.
+    let matches: Vec<_> = messages
+        .iter()
+        .enumerate()
+        .map(|(index, live)| {
+            matching_message_index(&canonical, live, true).filter(|&candidate| {
+                (entry_id(live).is_some() && entry_id(live) == entry_id(&canonical[candidate]))
+                    || matching_message_index(messages, &canonical[candidate], true) == Some(index)
+            })
+        })
+        .collect();
+    // A bounded snapshot is a suffix. Retain pre-boundary entries *before* it;
+    // only missing recent live entries belong after the authoritative suffix.
+    let boundary = if truncated {
+        matches
+            .iter()
+            .position(Option::is_some)
+            .unwrap_or(messages.len())
+    } else {
+        0
+    };
+    let mut prefix = Vec::new();
+    for (index, live) in messages.iter().enumerate() {
+        let owner = matches[index].map(|candidate| &canonical[candidate]);
+        if let Some(owner) = owner {
+            if let (Some(old), Some(new)) = (entry_id(live), entry_id(owner)) {
                 for block in &mut projection.blocks {
                     let id = match block {
                         work_core::MessageBlock::Text { id, .. }
@@ -1874,17 +1734,290 @@ fn reconcile_messages(
                     }
                 }
             }
+        } else if index < boundary {
+            prefix.push(live.clone());
         } else {
             // Older nodes may omit a just-finished live message from snapshots.
             canonical.push(live.clone());
         }
     }
-    *messages = canonical;
+    prefix.extend(canonical);
+    *messages = prefix;
 }
 
-fn merge_live_message(messages: &mut Vec<Value>, data: &Value, seq: Option<u64>) {
-    let Some(message) = data.get("message").and_then(Value::as_object) else {
-        return;
+// Retained history owns its projection text, so public content-less deltas
+// must update that same row. Preserve structured images/tools and never replace
+// a body with an empty metadata-only event.
+fn retained_text_delta(
+    messages: &[Value],
+    data: &Value,
+    projection: Option<&RunProjection>,
+) -> Option<Value> {
+    let message = data.get("message")?;
+    let kind = data
+        .get("eventType")
+        .or_else(|| data.get("assistantMessageEvent")?.get("type"))?
+        .as_str()?;
+    if kind != "text_delta"
+        || message_role(message).is_some_and(|role| role != "assistant")
+        || message
+            .get("content")
+            .is_some_and(|v| !v.is_null() && v != &json!([]) && v != "")
+    {
+        return None;
+    }
+    let delta = data.get("delta")?.as_str()?;
+    let existing = &messages[matching_message_index(messages, message, false)?];
+    let block_index = data
+        .get("contentIndex")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let projected = projection.and_then(|projection| {
+        [entry_id(message), entry_id(existing)]
+            .into_iter()
+            .flatten()
+            .find_map(|id| {
+                let block_id = format!("{id}-text-{block_index}");
+                projection.blocks.iter().find_map(|block| match block {
+                    work_core::MessageBlock::Text { id, text } if *id == block_id => {
+                        Some(text.as_str())
+                    }
+                    _ => None,
+                })
+            })
+    });
+    if let Some(text) = existing.get("content").and_then(Value::as_str) {
+        let mut patched = existing.clone();
+        for (key, value) in message.as_object()? {
+            patched[key] = value.clone();
+        }
+        let text = projected.unwrap_or_else(|| {
+            if message[CLIENT_STREAM_STARTED] == true {
+                ""
+            } else {
+                text
+            }
+        });
+        patched["content"] = json!(format!("{text}{delta}"));
+        return Some(patched);
+    }
+    let mut content = existing.get("content")?.as_array()?.clone();
+    let index = data
+        .get("contentIndex")
+        .and_then(Value::as_u64)
+        .and_then(|index| usize::try_from(index).ok())
+        .unwrap_or_else(|| {
+            content
+                .iter()
+                .position(|item| item["type"] == "text")
+                .unwrap_or(content.len())
+        });
+    if let Some(item) = content.get_mut(index).filter(|item| {
+        matches!(
+            item["type"].as_str(),
+            Some("text" | "input_text" | "output_text")
+        )
+    }) {
+        let retained = item.get("text").and_then(Value::as_str).unwrap_or_default();
+        let mut text = if index as u64 == block_index {
+            projected.unwrap_or_else(|| {
+                if message[CLIENT_STREAM_STARTED] == true {
+                    ""
+                } else {
+                    retained
+                }
+            })
+        } else {
+            retained
+        }
+        .to_owned();
+        text.push_str(delta);
+        item["text"] = json!(text);
+    } else {
+        content.push(json!({"type":"text","text":delta}));
+    }
+    let mut patched = existing.clone();
+    for (key, value) in message.as_object()? {
+        patched[key] = value.clone();
+    }
+    patched["content"] = json!(content);
+    Some(patched)
+}
+
+/// A proven identity transfer, not a text/timestamp-based display filter.
+#[derive(Default)]
+struct LiveMessageMerge {
+    owner: Option<String>,
+    previous_ids: Vec<String>,
+}
+
+fn known_live_owner(messages: &mut Vec<Value>, incoming: &Value) -> LiveMessageMerge {
+    let Some(canonical) = canonical_entry_id(incoming) else {
+        return LiveMessageMerge::default();
+    };
+    let role = message_role(incoming);
+    let Some(owner) = messages
+        .iter()
+        .find(|item| message_role(item) == role && entry_id(item) == Some(canonical))
+        .and_then(entry_id)
+        .map(str::to_owned)
+    else {
+        return LiveMessageMerge::default();
+    };
+    let mut previous_ids = Vec::new();
+    if let Some(id) = entry_id(incoming).filter(|id| *id != owner) {
+        previous_ids.push(id.to_owned());
+    }
+    // Even a bodyless event can carry a proven promotion. Retire its old
+    // client row, but never replace the retained owner's body with no content.
+    messages.retain(|item| {
+        let duplicate = message_role(item) == role
+            && item[CLIENT_ANONYMOUS_ID] == true
+            && (entry_id(item) == entry_id(incoming)
+                || canonical_entry_id(item) == Some(canonical))
+            && entry_id(item) != Some(owner.as_str());
+        if duplicate {
+            if let Some(id) = entry_id(item) {
+                previous_ids.push(id.to_owned());
+            }
+        }
+        !duplicate
+    });
+    LiveMessageMerge {
+        owner: Some(owner),
+        previous_ids,
+    }
+}
+
+fn apply_live_message_event(
+    messages: &mut Vec<Value>,
+    projection: &mut RunProjection,
+    mut wire: WireEvent,
+) -> Result<ApplyResult, ClientError> {
+    // Boundary/summary events (notably native turn_end) also carry `message`,
+    // but do not publish another transcript entry. Only the message lifecycle
+    // may merge bodies; still apply every event's phase/tool/control semantics.
+    if !matches!(
+        wire.event_type.as_str(),
+        "message_start" | "message_update" | "message_end"
+    ) {
+        return Ok(projection.apply(wire.into_core_event()?));
+    }
+    // An empty start resets only this identity's public historical slots. Keep
+    // their real indices; manufacturing slot zero would misaddress compact deltas.
+    let reset_slots = if wire.event_type == "message_start"
+        && wire.data.get("message").is_some_and(|message| {
+            message_role(message) == Some("assistant")
+                && message
+                    .get("content")
+                    .is_none_or(|body| body == &json!([]) || body == "" || body.is_null())
+        }) {
+        let incoming = &wire.data["message"];
+        matching_message_index(messages, incoming, false).and_then(|index| {
+            let existing = &messages[index];
+            let owner = entry_id(existing)?;
+            let normalized = normalize_event("message_start", &json!({"message":existing})).ok()?;
+            let slots = match normalized {
+                EventKind::TextSnapshots { snapshots, .. } => snapshots
+                    .into_iter()
+                    .map(|(id, _)| (id, String::new()))
+                    .collect(),
+                EventKind::TextSnapshot { block_id, .. } => vec![(block_id, String::new())],
+                _ => return None,
+            };
+            Some((owner.to_owned(), slots))
+        })
+    } else {
+        None
+    };
+    // A retained row must use this stream's current text, not blindly append
+    // replayed deltas to a snapshot body that may already include those deltas.
+    let mut merge_data = wire.data.clone();
+    if let Some(message) = retained_text_delta(messages, &wire.data, Some(projection)) {
+        merge_data["message"] = message;
+    }
+    let merged = merge_live_message(messages, &merge_data, wire.seq);
+    let owner = merged.owner;
+    if let Some(owner) = owner.as_ref() {
+        // A snapshot may already own the canonical row while the restored
+        // stream still has an anonymous display ID. Transfer its text blocks
+        // before applying the next snapshot, keeping projection indices stable.
+        for old in merged.previous_ids {
+            for block in &mut projection.blocks {
+                if let work_core::MessageBlock::Text { id, .. } = block {
+                    if let Some(suffix) = id.strip_prefix(&format!("{old}-text-")) {
+                        *id = format!("{owner}-text-{suffix}");
+                    }
+                }
+            }
+        }
+        wire.data["message"]["entryId"] = json!(owner);
+    }
+    let block_index = wire
+        .data
+        .get("contentIndex")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let retained_text = owner.as_deref().and_then(|owner| {
+        let content = messages
+            .iter()
+            .find(|item| entry_id(item) == Some(owner))?
+            .get("content")?;
+        content
+            .as_str()
+            .or_else(|| {
+                let item = content
+                    .as_array()?
+                    .get(usize::try_from(block_index).ok()?)?;
+                matches!(
+                    item["type"].as_str(),
+                    Some("text" | "input_text" | "output_text")
+                )
+                .then(|| item.get("text").and_then(Value::as_str))
+                .flatten()
+            })
+            .map(str::to_owned)
+    });
+    let full_text_body = wire
+        .data
+        .get("message")
+        .and_then(|message| message.get("content"))
+        .is_some_and(|content| !content_text(content).is_empty());
+    let mut event = wire.into_core_event()?;
+    if let Some((message_id, snapshots)) = reset_slots {
+        event.kind = EventKind::TextSnapshots {
+            message_id,
+            snapshots,
+            authoritative: true,
+        };
+    }
+    let retained_block = match &event.kind {
+        EventKind::TextDelta { block_id, .. } => Some(block_id.clone()),
+        EventKind::TextSnapshot { block_id, .. } if full_text_body => Some(block_id.clone()),
+        _ => None,
+    };
+    if let (Some(block_id), Some(text)) = (retained_block, retained_text) {
+        // Keep each structured text part separate and the hidden projection in
+        // sync with its retained row. Empty starts still reset the stream, so
+        // replay cannot append a delta twice to an already persisted body.
+        event.kind = EventKind::TextSnapshot { block_id, text };
+    }
+    Ok(projection.apply(event))
+}
+
+#[allow(clippy::too_many_lines)] // Keep identity selection and its atomic owner transfer together.
+fn merge_live_message(
+    messages: &mut Vec<Value>,
+    data: &Value,
+    seq: Option<u64>,
+) -> LiveMessageMerge {
+    let patched = retained_text_delta(messages, data, None);
+    let Some(message) = patched
+        .as_ref()
+        .or_else(|| data.get("message"))
+        .and_then(Value::as_object)
+    else {
+        return LiveMessageMerge::default();
     };
     let role = message
         .get("role")
@@ -1895,68 +2028,105 @@ fn merge_live_message(messages: &mut Vec<Value>, data: &Value, seq: Option<u64>)
         role,
         "user" | "assistant" | "tool" | "toolResult" | "tool_result"
     ) {
-        return;
+        return LiveMessageMerge::default();
     }
     // During text streaming the assistant message_start/update often has no
     // body; projection owns that partial text until a complete snapshot
-    // arrives. Keeping an empty history row would make the UI's stable-ID
-    // deduplication hide the live projection.
+    // arrives. Tool-only snapshots still own the call's place in the transcript
+    // and its arguments; dropping them makes results appear as unrelated cards
+    // and bounded settlement snapshots cannot recover older call rows.
     if role == "assistant"
-        && message
-            .get("content")
-            .map(content_text)
-            .unwrap_or_default()
-            .is_empty()
+        && message.get("content").is_none_or(|content| {
+            content_text(content).is_empty()
+                && !has_image_content(content)
+                && !has_tool_call_content(content)
+        })
     {
-        return;
+        return known_live_owner(messages, &Value::Object(message.clone()));
     }
-    let id = message
-        .get("entryId")
-        .or_else(|| message.get("messageId"))
-        .or_else(|| message.get("id"))
-        .and_then(Value::as_str)
-        .map_or_else(
-            || {
-                if let Some(call) = message.get("toolCallId").and_then(Value::as_str) {
-                    format!("tool-result-{call}")
-                } else if let Some(timestamp) = message.get("timestamp").and_then(Value::as_u64) {
-                    format!("live-{role}-{timestamp}")
-                } else {
-                    format!("live-{role}-{}", seq.unwrap_or_default())
-                }
-            },
-            str::to_owned,
-        );
+    let explicit_id = ["entryId", "messageId", "id"].iter().find_map(|key| {
+        message
+            .get(*key)?
+            .as_str()
+            .filter(|id| !id.trim().is_empty())
+    });
+    let id = explicit_id.map_or_else(
+        || {
+            if let Some(call) = message.get("toolCallId").and_then(Value::as_str) {
+                format!("tool-result-{call}")
+            } else if let Some(timestamp) = message.get("timestamp").and_then(Value::as_u64) {
+                format!("live-{role}-{timestamp}")
+            } else {
+                format!("live-{role}-{}", seq.unwrap_or_default())
+            }
+        },
+        str::to_owned,
+    );
     let mut incoming = Value::Object(message.clone());
     if let Some(object) = incoming.as_object_mut() {
+        object.remove(CLIENT_STREAM_STARTED);
         object.insert("entryId".into(), json!(id));
+        if explicit_id.is_none() {
+            object.insert(CLIENT_ANONYMOUS_ID.into(), json!(true));
+        }
     }
-    if let Some(existing) = messages.iter_mut().find(|item| {
-        item.get("entryId")
-            .or_else(|| item.get("messageId"))
-            .or_else(|| item.get("id"))
-            .and_then(Value::as_str)
-            == Some(id.as_str())
-            || (item.get("toolCallId").and_then(Value::as_str).is_some()
-                && item.get("toolCallId") == message.get("toolCallId")
-                && matches!(role, "tool" | "toolResult" | "tool_result"))
-            || (item.get("timestamp").and_then(Value::as_u64).is_some()
-                && item.get("timestamp") == message.get("timestamp")
-                && item
-                    .get("role")
-                    .or_else(|| item.get("kind"))
-                    .and_then(Value::as_str)
-                    == Some(role))
-    }) {
-        if let (Some(existing), Some(incoming)) = (existing.as_object_mut(), incoming.as_object()) {
+    let canonical = canonical_entry_id(&incoming).map(str::to_owned);
+    // Prefer an already persisted owner when the open anonymous segment gains
+    // its real ID. An exact synthetic-ID match must not leave that proven
+    // canonical row and the live row side by side.
+    let canonical_owner = canonical.as_deref().and_then(|canonical| {
+        messages
+            .iter()
+            .position(|item| message_role(item) == Some(role) && entry_id(item) == Some(canonical))
+    });
+    let index = canonical_owner.or_else(|| matching_message_index(messages, &incoming, false));
+    let owner = if let Some(index) = index {
+        // Legacy snapshots can match by metadata without having any host ID.
+        // Give that local row the incoming ID rather than assuming one exists.
+        let owner = entry_id(&messages[index]).unwrap_or(&id).to_owned();
+        if let (Some(existing), Some(incoming)) =
+            (messages[index].as_object_mut(), incoming.as_object())
+        {
             for (key, value) in incoming {
                 if key != "entryId" {
                     existing.insert(key.clone(), value.clone());
                 }
             }
+            existing.insert("entryId".into(), json!(owner));
+            // Do not mark a real host ID as client-generated just because a
+            // late anonymous stream has now resolved to this existing owner.
+            if existing.get("entryId").and_then(Value::as_str) == canonical.as_deref() {
+                existing.remove(CLIENT_ANONYMOUS_ID);
+                existing.remove(CLIENT_CANONICAL_ID);
+            }
         }
+        owner
     } else {
         messages.push(incoming);
+        id.clone()
+    };
+    let mut previous_ids = Vec::new();
+    if id != owner {
+        previous_ids.push(id.clone());
+    }
+    if let Some(canonical) = canonical.as_deref() {
+        messages.retain(|item| {
+            let duplicate = message_role(item) == Some(role)
+                && item[CLIENT_ANONYMOUS_ID] == true
+                && (canonical_entry_id(item) == Some(canonical)
+                    || entry_id(item) == Some(id.as_str()))
+                && entry_id(item) != Some(owner.as_str());
+            if duplicate {
+                if let Some(old) = entry_id(item) {
+                    previous_ids.push(old.to_owned());
+                }
+            }
+            !duplicate
+        });
+    }
+    LiveMessageMerge {
+        owner: Some(owner),
+        previous_ids,
     }
 }
 
@@ -1973,32 +2143,42 @@ fn snapshot_dialogs(snapshot: &Snapshot) -> Vec<PendingDialog> {
 }
 
 pub fn dialog_from_wire(wire: &WireEvent) -> Result<Option<PendingDialog>, ClientError> {
-    let Some(request_id) = wire.data.get("requestId").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    let ui = wire
-        .data
-        .get("ui")
-        .cloned()
-        .unwrap_or_else(|| wire.data.clone());
-    Ok(Some(PendingDialog {
-        request_id: request_id.to_owned(),
-        tool_call_id: wire
-            .data
-            .get("toolCallId")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        response_id: wire.data.get("jsonRpcRequestId").cloned(),
-        ui: serde_json::from_value(ui)?,
-    }))
+    work_core::api::events::dialog_from_wire(wire).map_err(ClientError::from)
 }
 
+mod snapshot_replay;
+
 pub fn projection_from_snapshot(snapshot: &Snapshot) -> Result<RunProjection, ClientError> {
+    snapshot_state(snapshot).map(|(_, projection)| projection)
+}
+
+fn snapshot_state(snapshot: &Snapshot) -> Result<(Vec<Value>, RunProjection), ClientError> {
     let mut projection = RunProjection::new(snapshot.session_id.clone());
+    // The snapshot only includes events emitted while it was being read. A
+    // silent long-running tool (including a child agent) may have no deltas,
+    // so restore the host's boundary state before replaying newer events.
+    projection.phase = match snapshot.status.as_deref() {
+        Some("running") => work_core::RunPhase::Accepted,
+        Some("awaiting_input" | "waiting_for_input") => work_core::RunPhase::AwaitingInput,
+        Some("cancelling") => work_core::RunPhase::Cancelling,
+        _ => work_core::RunPhase::Ready,
+    };
     let mut identity = MessageIdentity::default();
+    // Identity consumes the complete sequence, including covered messages, so
+    // anonymous IDs stay consistent with the live connection's replay tracker.
+    let annotated: Vec<_> = snapshot
+        .events
+        .iter()
+        .map(|item| identity.annotate(&item.event, Some(item.seq)))
+        .collect();
+    let covered = snapshot_replay::covered_events(snapshot, &annotated);
+    // Replay needs the same owner-transfer evidence as live delivery. Keep a
+    // private copy: projection restoration must not rewrite snapshot history.
+    let mut replay_messages = snapshot.messages.clone();
+    let mut body_sources = std::collections::HashSet::new();
     let mut replayed_settlement = false;
-    for item in &snapshot.events {
-        let event = WireEvent {
+    for (index, item) in snapshot.events.iter().enumerate() {
+        let mut event = WireEvent {
             id: Some(item.seq.to_string()),
             seq: Some(item.seq),
             event_type: item
@@ -2007,15 +2187,45 @@ pub fn projection_from_snapshot(snapshot: &Snapshot) -> Result<RunProjection, Cl
                 .and_then(Value::as_str)
                 .unwrap_or("unknown")
                 .into(),
-            data: identity.annotate(&item.event, Some(item.seq)),
+            data: annotated[index].clone(),
         };
         replayed_settlement |= event.event_type == "agent_settled";
-        projection.apply(event.into_core_event()?);
+        if covered[index] {
+            continue;
+        }
+        if let Some(message) = event.data.get("message") {
+            if let Some(id) = entry_id(message) {
+                let has_body = message.get("content").is_some_and(|content| {
+                    !content_text(content).is_empty()
+                        || has_image_content(content)
+                        || has_tool_call_content(content)
+                });
+                if event.event_type == "message_start" || has_body {
+                    body_sources.insert(id.to_owned());
+                } else if !body_sources.contains(id)
+                    && event
+                        .data
+                        .get("eventType")
+                        .or_else(|| event.data.get("assistantMessageEvent")?.get("type"))
+                        .and_then(Value::as_str)
+                        == Some("text_delta")
+                    && let Some(existing) = matching_message_index(&replay_messages, message, false)
+                    && let Some(content) = replay_messages[existing].get("content").cloned()
+                {
+                    // An unanchored event window may already be included in the
+                    // persisted body. Without a start/full snapshot, keep that
+                    // body instead of appending its deltas a second time.
+                    event.data["message"]["content"] = content;
+                }
+            }
+        }
+        apply_live_message_event(&mut replay_messages, &mut projection, event)?;
     }
-    // Sequenced settlements already place completion in the event history. The
-    // unsequenced fallback may describe an older turn, not the active one after it.
+    // latestSettlement may belong to the previous turn. Only use this legacy
+    // fallback when neither the host state nor replay establishes an active or
+    // settled turn; newer deltas must always win over unsequenced history.
     if !replayed_settlement
-        && !matches!(projection.phase, work_core::RunPhase::Settled(_))
+        && matches!(projection.phase, work_core::RunPhase::Ready)
         && let Some(settlement_data) = snapshot.latest_settlement.as_ref()
     {
         let outcome = settlement(
@@ -2039,8 +2249,30 @@ pub fn projection_from_snapshot(snapshot: &Snapshot) -> Result<RunProjection, Cl
         });
     }
     projection.cursor = Some(snapshot.last_seq);
-    Ok(projection)
+    // Publish replayed bodies for existing history owners too; otherwise
+    // canonical projection text is hidden behind a stale snapshot body. Do not
+    // append event-only rows here: their chronological slots belong to projection.
+    let messages = snapshot
+        .messages
+        .iter()
+        .map(|original| {
+            entry_id(original)
+                .and_then(|id| {
+                    replay_messages.iter().find(|item| {
+                        entry_id(item) == Some(id) && message_role(item) == message_role(original)
+                    })
+                })
+                .unwrap_or(original)
+                .clone()
+        })
+        .collect();
+    Ok((messages, projection))
 }
+
+#[cfg(test)]
+mod duplicate_regression_tests;
+#[cfg(test)]
+mod snapshot_dedup_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2147,8 +2379,27 @@ mod tests {
                 });
                 requests.push(format!("{method} {path} cookie={has_cookie}"));
 
+                if method == "POST" && path.starts_with("/api/v1/auth/qr") {
+                    assert!(
+                        request_text
+                            .lines()
+                            .any(|line| line.eq_ignore_ascii_case("x-rpi-web: 1"))
+                    );
+                    let body: Value =
+                        serde_json::from_slice(&request[header_end..header_end + content_length])
+                            .expect("JSON body");
+                    if path.ends_with("/redeem") {
+                        assert_eq!(body, json!({"ticket": "a".repeat(64)}));
+                    } else {
+                        assert_eq!(body, json!({}));
+                    }
+                }
                 let (body, extra_headers) = match (method, path) {
-                    ("POST", "/api/v1/auth") => (
+                    ("POST", "/api/v1/auth/qr") => (
+                        r#"{"ticket":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expiresAt":1234,"nodeId":"test-node"}"#,
+                        "",
+                    ),
+                    ("POST", "/api/v1/auth" | "/api/v1/auth/qr/redeem") => (
                         r#"{"authenticated":true}"#,
                         if set_cookie_on_login {
                             "Set-Cookie: auth=1; Path=/; HttpOnly\r\n"
@@ -2181,6 +2432,123 @@ mod tests {
             requests
         });
         (format!("http://{address}/"), handle)
+    }
+
+    #[test]
+    fn qr_errors_do_not_expose_server_echoes_or_decode_sources() {
+        let secret = "test-only-credential";
+        let api = qr_error(ClientError::Api {
+            status: StatusCode::BAD_REQUEST,
+            message: secret.into(),
+        });
+        assert!(!format!("{api:?} {api}").contains(secret));
+        let decode = serde_json::from_str::<u64>(&format!("\"{secret}\"")).unwrap_err();
+        let error = qr_error(ClientError::Json(decode));
+        assert!(!format!("{error:?} {error}").contains(secret));
+        assert!(std::error::Error::source(&error).is_none());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn qr_redemption_never_forwards_credentials_through_redirects() {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            },
+        };
+        let redirected = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        redirected.set_nonblocking(true).unwrap();
+        let redirect_target = format!("http://{}/stolen", redirected.local_addr().unwrap());
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_probe = stop.clone();
+        let probe = std::thread::spawn(move || {
+            while !stop_probe.load(Ordering::SeqCst) {
+                match redirected.accept() {
+                    Ok((mut stream, _)) => {
+                        let _ = stream.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        return true;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                    Err(error) => panic!("redirect probe: {error}"),
+                }
+            }
+            false
+        });
+        let origin = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://{}/", origin.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = origin.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).unwrap();
+            write!(stream, "HTTP/1.1 307 Temporary Redirect\r\nLocation: {redirect_target}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        let client = WorkClient::new(&url).unwrap();
+        let result = run_native(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                client.redeem_qr_authorization(&"a".repeat(64)),
+            )
+            .await
+        });
+        stop.store(true, Ordering::SeqCst);
+        server.join().unwrap();
+        assert!(
+            !probe.join().unwrap(),
+            "must not send QR credentials to a redirect target"
+        );
+        assert!(result.unwrap().is_err());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn qr_issue_and_redeem_use_json_header_and_same_cookie_jar() {
+        let (url, server) = auth_test_server(true, 3);
+        let client = WorkspaceClient::new(&url).expect("client");
+        let code = run_native(client.issue_qr_authorization()).expect("issue QR");
+        assert_eq!(code.expires_at, 1234);
+        assert_eq!(code.node_id, "test-node");
+        let serialized = serde_json::to_value(&code).expect("serialize");
+        assert_eq!(serialized["expiresAt"], 1234);
+        assert_eq!(serialized["nodeId"], "test-node");
+        assert!(
+            run_native(client.redeem_qr_authorization(&code.ticket))
+                .expect("redeem")
+                .authenticated
+        );
+        assert_eq!(
+            server.join().expect("server"),
+            vec![
+                "POST /api/v1/auth/qr cookie=false",
+                "POST /api/v1/auth/qr/redeem cookie=false",
+                "GET /api/v1/auth cookie=true",
+            ]
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn qr_redeem_rejects_ack_without_authoritative_cookie_auth() {
+        let (url, server) = auth_test_server(false, 2);
+        let client = WorkClient::new(&url).expect("client");
+        assert!(matches!(
+            run_native(client.redeem_qr_authorization(&"a".repeat(64))),
+            Err(ClientError::AuthenticationNotConfirmed)
+        ));
+        assert_eq!(
+            server.join().expect("server"),
+            vec![
+                "POST /api/v1/auth/qr/redeem cookie=false",
+                "GET /api/v1/auth cookie=false",
+            ]
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -2299,9 +2667,212 @@ mod tests {
     }
 
     #[test]
+    fn explicit_ids_with_the_same_timestamp_never_overwrite_previous_turns() {
+        let old = json!({"entryId":"old","role":"assistant","timestamp":42,"content":"old answer"});
+        let new = json!({"entryId":"new","role":"assistant","timestamp":42,"content":"new answer"});
+        let mut messages = vec![old.clone()];
+        merge_live_message(&mut messages, &json!({"message":new}), Some(2));
+        assert_eq!(messages, vec![old.clone(), new.clone()]);
+        let mut projection = RunProjection::new("session");
+        for id in ["old", "new"] {
+            projection.blocks.push(work_core::MessageBlock::Text {
+                id: format!("{id}-text-0"),
+                text: id.into(),
+            });
+        }
+        // An exact match later in canonical history must win over the first
+        // message's colliding timestamp, including projection ID reconciliation.
+        reconcile_messages(
+            &mut messages,
+            &mut projection,
+            vec![old.clone(), new.clone()],
+            false,
+        );
+        assert_eq!(messages, vec![old, new]);
+        assert_eq!(projection.blocks[0].id(), "old-text-0");
+        assert_eq!(projection.blocks[1].id(), "new-text-0");
+    }
+
+    #[test]
+    fn changed_explicit_id_is_a_boundary_without_message_start() {
+        let mut identity = MessageIdentity::default();
+        let mut projection = RunProjection::new("session");
+        for (seq, key, id) in [
+            (1, "entryId", "old"),
+            (2, "messageId", "new"),
+            (3, "id", "last"),
+        ] {
+            let data = identity.annotate(
+                &json!({
+                    "type":"message_update", "eventType":"text_delta", "delta":id,
+                    "message":{"entryId":null,key:id,"role":"assistant","timestamp":42}
+                }),
+                Some(seq),
+            );
+            assert_eq!(data["message"]["entryId"], id);
+            assert!(data["message"].get(CLIENT_ANONYMOUS_ID).is_none());
+            projection.apply(Event {
+                id: format!("seq-{seq}"),
+                seq: Some(seq),
+                kind: normalize_event("message_update", &data).unwrap(),
+            });
+        }
+        assert_eq!(projection.blocks.len(), 3);
+        for (block, id) in projection.blocks.iter().zip(["old", "new", "last"]) {
+            assert!(
+                matches!(block, work_core::MessageBlock::Text { id: block_id, text }
+                if block_id == &format!("{id}-text-0") && text == id)
+            );
+        }
+    }
+
+    #[test]
+    fn run_and_user_boundaries_clear_unfinished_anonymous_identity() {
+        for boundary in [
+            json!({"type":"operation_accepted"}),
+            json!({"type":"agent_start"}),
+            json!({"type":"agent_end"}),
+            json!({"type":"agent_settled"}),
+            json!({"type":"message_end","message":{"entryId":"user","role":"user","content":"next"}}),
+        ] {
+            let mut identity = MessageIdentity::default();
+            let delta = json!({"type":"message_update","eventType":"text_delta","delta":"text","message":{"role":"assistant"}});
+            let before = identity.annotate(&delta, Some(1));
+            identity.annotate(&boundary, Some(2));
+            assert!(identity.current.is_none(), "{boundary}");
+            let after = identity.annotate(&delta, Some(3));
+            assert_ne!(before["message"]["entryId"], after["message"]["entryId"]);
+            assert_eq!(after["message"][CLIENT_ANONYMOUS_ID], true);
+        }
+        // Tool results are not a new assistant message boundary.
+        let mut identity = MessageIdentity::default();
+        let first = identity.annotate(
+            &json!({"type":"message_start","message":{"role":"assistant"}}),
+            Some(1),
+        );
+        identity.annotate(&json!({"type":"message_end","message":{"role":"toolResult","toolCallId":"tool","content":"result"}}), Some(2));
+        let after = identity.annotate(
+            &json!({"type":"message_update","message":{"role":"assistant"}}),
+            Some(3),
+        );
+        assert_eq!(first["message"]["entryId"], after["message"]["entryId"]);
+    }
+
+    #[test]
+    fn timestamp_fallback_is_unique_and_only_for_real_anonymous_reconciliation() {
+        let canonical = vec![
+            json!({"entryId":"a","role":"assistant","timestamp":42,"content":"a"}),
+            json!({"entryId":"b","role":"assistant","timestamp":42,"content":"b"}),
+        ];
+        let synthetic = json!({"entryId":"local","role":"assistant","timestamp":42, "__rpiClientAnonymousId":true});
+        assert_eq!(matching_message_index(&canonical, &synthetic, true), None);
+        assert_eq!(
+            matching_message_index(&canonical[..1], &synthetic, false),
+            None
+        );
+        assert_eq!(
+            matching_message_index(&canonical[..1], &synthetic, true),
+            Some(0)
+        );
+        let host_id = json!({"entryId":"anonymous-host-id","role":"assistant","timestamp":42});
+        assert_eq!(
+            matching_message_index(&canonical[..1], &host_id, true),
+            None
+        );
+        let exact =
+            json!({"entryId":"b","role":"assistant","timestamp":42, "__rpiClientAnonymousId":true});
+        assert_eq!(matching_message_index(&canonical, &exact, true), Some(1));
+        let promoted = json!({"entryId":"local","role":"assistant","timestamp":42,
+            "__rpiClientAnonymousId":true,"__rpiClientCanonicalId":"b"});
+        assert_eq!(matching_message_index(&canonical, &promoted, true), Some(1));
+        assert_eq!(
+            matching_message_index(&canonical[..1], &promoted, true),
+            None
+        );
+    }
+
+    #[test]
+    fn separate_anonymous_messages_with_shared_timestamps_stay_separate_live() {
+        let mut identity = MessageIdentity::default();
+        let mut messages = Vec::new();
+        for (seq, kind, text) in [
+            (1, "message_start", "first"),
+            (2, "message_end", "first"),
+            (3, "message_start", "second"),
+            (4, "message_end", "second"),
+        ] {
+            let data = identity.annotate(
+                &json!({"type":kind,"message":{"role":"assistant","timestamp":42,"content":text}}),
+                Some(seq),
+            );
+            merge_live_message(&mut messages, &data, Some(seq));
+        }
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["content"], "first");
+        assert_eq!(messages[1]["content"], "second");
+        let retained = messages.clone();
+        // Appending the first missing entry must not turn it into a weak
+        // canonical match that swallows the second one.
+        reconcile_messages(
+            &mut messages,
+            &mut RunProjection::new("session"),
+            Vec::new(),
+            false,
+        );
+        assert_eq!(messages, retained);
+        let canonical =
+            vec![json!({"entryId":"host","role":"assistant","timestamp":42,"content":"canonical"})];
+        reconcile_messages(
+            &mut messages,
+            &mut RunProjection::new("session"),
+            canonical.clone(),
+            false,
+        );
+        assert_eq!(
+            messages,
+            [canonical, retained].concat(),
+            "ambiguous live candidates must not share one canonical identity"
+        );
+    }
+
+    #[test]
+    fn anonymous_promotion_keeps_host_identity_even_without_a_timestamp() {
+        let mut identity = MessageIdentity::default();
+        let delta = identity.annotate(&json!({"type":"message_update","eventType":"text_delta","delta":"answer","message":{"role":"assistant"}}), Some(1));
+        let canonical = json!({"entryId":"host","role":"assistant","content":"answer"});
+        let end = identity.annotate(&json!({"type":"message_end","message":canonical}), Some(2));
+        assert_eq!(delta["message"]["entryId"], end["message"]["entryId"]);
+        assert_eq!(end["message"][CLIENT_CANONICAL_ID], "host");
+        let mut messages = Vec::new();
+        merge_live_message(&mut messages, &end, Some(2));
+        let mut projection = RunProjection::new("session");
+        projection.blocks.push(work_core::MessageBlock::Text {
+            id: format!("{}-text-0", entry_id(&end["message"]).unwrap()),
+            text: "answer".into(),
+        });
+        reconcile_messages(
+            &mut messages,
+            &mut projection,
+            vec![canonical.clone()],
+            false,
+        );
+        assert_eq!(messages, vec![canonical]);
+        assert_eq!(projection.blocks[0].id(), "host-text-0");
+    }
+
+    #[test]
+    fn image_delta_does_not_patch_a_previous_message_with_a_shared_timestamp() {
+        let messages = vec![
+            json!({"entryId":"old","role":"assistant","timestamp":42,"content":[{"type":"image","mimeType":"image/png","data":"AA=="}]}),
+        ];
+        let delta = json!({"type":"message_update","eventType":"text_delta","delta":"new caption","message":{"entryId":"new","role":"assistant","timestamp":42}});
+        assert!(retained_text_delta(&messages, &delta, None).is_none());
+    }
+
+    #[test]
     fn settlement_reconciliation_adds_native_user_messages_and_rekeys_live_blocks() {
         let mut messages = vec![
-            json!({"role":"assistant","entryId":"anonymous","timestamp":42,"content":"answer"}),
+            json!({"role":"assistant","entryId":"anonymous","timestamp":42,"content":"answer","__rpiClientAnonymousId":true}),
         ];
         let mut projection = RunProjection::new("session");
         projection.blocks.push(work_core::MessageBlock::Text {
@@ -2312,23 +2883,116 @@ mod tests {
             json!({"role":"user","entryId":"user-id","timestamp":41,"content":"question"}),
             json!({"role":"assistant","entryId":"persisted","timestamp":42,"content":"answer"}),
         ];
-        reconcile_messages(&mut messages, &mut projection, canonical.clone());
+        reconcile_messages(&mut messages, &mut projection, canonical.clone(), false);
         assert_eq!(messages, canonical);
         assert_eq!(projection.blocks[0].id(), "persisted-text-0");
         assert_eq!(projection.cursor, None);
-        reconcile_messages(&mut messages, &mut projection, Vec::new());
+        reconcile_messages(&mut messages, &mut projection, Vec::new(), false);
         assert_eq!(messages, canonical);
     }
 
     #[test]
-    fn non_assistant_events_do_not_mutate_identity_or_create_assistant_blocks() {
+    fn bounded_settlement_keeps_historical_prefix_before_the_new_suffix() {
+        let message =
+            |n| json!({"entryId":format!("e{n}"),"role":"user","content":format!("message {n}")});
+        let canonical: Vec<_> = (3..=50).map(message).collect();
+        for old_range in [1..=51, 1..=2] {
+            let mut messages: Vec<_> = old_range.clone().map(message).collect();
+            let mut projection = RunProjection::new("session");
+            reconcile_messages(&mut messages, &mut projection, canonical.clone(), true);
+            let last = if *old_range.end() == 51 { 51 } else { 50 };
+            assert_eq!(messages, (1..=last).map(message).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn tool_only_assistant_snapshots_keep_call_rows_before_results_and_next_turn() {
+        for role_key in ["role", "kind"] {
+            for kind in ["toolCall", "tool_call", "tool_use"] {
+                let call = json!({"entryId":"call-row",role_key:"assistant","content":[
+                    {"type":kind,"id":"child","name":"subagent","arguments":{"task":"inspect"}}
+                ]});
+                let result = json!({"entryId":"result-row","role":"toolResult","toolCallId":"child","content":"done"});
+                let user = json!({"entryId":"next-user","role":"user","content":"continue"});
+                let mut messages = Vec::new();
+                for (seq, message) in [
+                    (1, &call),
+                    (2, &call),
+                    (3, &result),
+                    (4, &result),
+                    (5, &user),
+                ] {
+                    merge_live_message(&mut messages, &json!({"message":message}), Some(seq));
+                }
+                assert_eq!(messages, vec![call, result, user]);
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_tool_turn_reconciliation_keeps_old_calls_with_their_results() {
+        let mut messages = vec![json!({"entryId":"user","role":"user","content":"work"})];
+        let mut canonical = messages.clone();
+        for index in 0..60 {
+            let call = json!({"entryId":format!("call-{index}"),"role":"assistant","content":[
+                {"type":"toolCall","id":format!("tool-{index}"),"name":"read","arguments":{"path":format!("file-{index}")}}
+            ]});
+            let result = json!({"entryId":format!("result-{index}"),"role":"toolResult",
+                "toolCallId":format!("tool-{index}"),"content":"done"});
+            for message in [call, result] {
+                merge_live_message(&mut messages, &json!({"message":message}), None);
+                canonical.push(message);
+            }
+        }
+        let suffix = canonical[canonical.len() - 48..].to_vec();
+        reconcile_messages(
+            &mut messages,
+            &mut RunProjection::new("session"),
+            suffix,
+            true,
+        );
+        assert_eq!(messages, canonical);
+    }
+
+    #[test]
+    fn empty_and_thinking_only_snapshots_do_not_hide_public_streaming_blocks() {
+        for content in [
+            Value::Null,
+            json!([]),
+            json!([{"type":"thinking","thinking":"private"}]),
+            json!([{"type":"thinking","content":[{"type":"toolCall","id":"private"}]}]),
+            json!([{"type":"text","text":"","metadata":{"type":"toolCall"}}]),
+        ] {
+            let mut messages = Vec::new();
+            merge_live_message(
+                &mut messages,
+                &json!({"message":{
+                    "entryId":"partial","role":"assistant","content":content
+                }}),
+                None,
+            );
+            assert!(messages.is_empty(), "content: {content}");
+        }
+    }
+
+    #[test]
+    fn non_assistant_events_do_not_create_assistant_blocks_and_tools_keep_identity() {
         let mut identity = MessageIdentity::default();
         for role in ["user", "tool", "toolResult"] {
             for kind in ["message_start", "message_update", "message_end"] {
                 let data = json!({"type":kind,"message":{"role":role,"content":"not assistant"}});
-                assert_eq!(identity.annotate(&data, Some(1)), data);
-                assert_eq!(normalize_event(kind, &data).unwrap(), EventKind::Ignored);
-                assert!(identity.current.is_none());
+                let annotated = identity.annotate(&data, Some(1));
+                assert_eq!(
+                    normalize_event(kind, &annotated).unwrap(),
+                    EventKind::Ignored
+                );
+                if role == "user" {
+                    assert!(entry_id(&annotated["message"]).is_some());
+                    assert_eq!(identity.current.is_none(), kind == "message_end");
+                } else {
+                    assert_eq!(annotated, data);
+                    assert!(identity.current.is_none());
+                }
             }
         }
         for key in ["entryId", "messageId", "id"] {
@@ -2601,6 +3265,199 @@ mod tests {
     }
 
     #[test]
+    fn image_only_assistant_snapshots_merge_but_empty_streaming_does_not() {
+        let mut messages = Vec::new();
+        for content in [json!([]), json!([{"type":"thinking","text":"private"}])] {
+            merge_live_message(
+                &mut messages,
+                &json!({"message":{"role":"assistant","entryId":"answer","content":content}}),
+                Some(1),
+            );
+        }
+        assert_eq!(messages, Vec::<Value>::new());
+
+        let image = json!({"type":"image","data":"aW1hZ2U=","mimeType":"image/png"});
+        let snapshot = json!({"message":{"role":"assistant","entryId":"answer","content":[image]}});
+        merge_live_message(&mut messages, &snapshot, Some(2));
+        merge_live_message(&mut messages, &snapshot, Some(3));
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0], snapshot["message"]);
+
+        // A later empty partial snapshot must not replace the image row.
+        merge_live_message(
+            &mut messages,
+            &json!({"message":{"role":"assistant","entryId":"answer","content":[]}}),
+            Some(4),
+        );
+        assert_eq!(messages[0], snapshot["message"]);
+    }
+
+    #[test]
+    fn assistant_normalization_only_exposes_public_text() {
+        let image =
+            json!({"type":"image","data":"aW1hZ2U=","mimeType":"image/png","text":"not public"});
+        let content = json!([
+            {"type":"text","text":"public "},
+            {"type":"input_text","text":"input "},
+            {"type":"output_text","text":"output "},
+            {"text":"legacy"},
+            image,
+            {"type":"thinking","text":"private"},
+            {"thinking":"private","text":"also private"},
+            {"type":"reasoning","content":[{"type":"text","text":"private"}]},
+            {"type":"toolCall","name":"internal","arguments":{"text":"private"}},
+            {"type":"unknown","text":"not public"},
+            {"type":null,"text":"not public"},
+            {"unexpected":"not public"},
+            42,
+            true
+        ]);
+        for kind in ["message_start", "message_update", "message_end"] {
+            for (content, snapshots) in [
+                (
+                    content.clone(),
+                    vec![
+                        (0, "public "),
+                        (1, "input "),
+                        (2, "output "),
+                        (3, "legacy"),
+                        (11, ""),
+                    ],
+                ),
+                (json!([image]), vec![]),
+            ] {
+                let event = normalize_event(
+                    kind,
+                    &json!({"message":{"role":"assistant","entryId":"answer","content":content}}),
+                )
+                .unwrap();
+                assert_eq!(
+                    event,
+                    EventKind::TextSnapshots {
+                        message_id: "answer".into(),
+                        snapshots: snapshots
+                            .into_iter()
+                            .map(|(index, text)| (format!("answer-text-{index}"), text.into()))
+                            .collect(),
+                        authoritative: true,
+                    }
+                );
+            }
+            assert_eq!(normalize_event(kind, &json!({"message":{"role":"assistant","entryId":"answer","content":"legacy string"}})).unwrap(),
+                EventKind::TextSnapshot { block_id: "answer-text-0".into(), text: "legacy string".into() });
+        }
+        // Even a malformed text delta must not stringify a content object.
+        for delta in [image, json!({"type":"thinking","text":"private"})] {
+            assert_eq!(
+                normalize_event(
+                    "message_update",
+                    &json!({"eventType":"text_delta","delta":delta}),
+                )
+                .unwrap(),
+                EventKind::TextDelta {
+                    block_id: "assistant-message-text-0".into(),
+                    delta: String::new(),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn retained_image_snapshots_receive_contentless_caption_deltas() {
+        for content_index in [None, Some(1), Some(0)] {
+            let mut messages = vec![
+                json!({"entryId":"image","role":"assistant","content":[{"type":"image","mimeType":"image/png","data":"AA=="}]}),
+            ];
+            for delta in ["cap", "tion"] {
+                let mut event =
+                    json!({"eventType":"text_delta","delta":delta,"message":{"entryId":"image"}});
+                if let Some(index) = content_index {
+                    event["contentIndex"] = json!(index);
+                }
+                merge_live_message(&mut messages, &event, None);
+            }
+            assert_eq!(content_text(&messages[0]["content"]), "caption");
+            assert!(has_image_content(&messages[0]["content"]));
+            assert_eq!(messages.len(), 1);
+            merge_live_message(
+                &mut messages,
+                &json!({"eventType":"thinking_delta","delta":"private","message":{"entryId":"image","role":"assistant"}}),
+                None,
+            );
+            assert_eq!(content_text(&messages[0]["content"]), "caption");
+        }
+    }
+
+    #[test]
+    fn tool_image_results_remain_structured_for_progress_and_completion() {
+        let image = json!({"type":"image","data":"aW1hZ2U=","mimeType":"image/png"});
+        for result in [
+            json!({"content":[{"type":"text","text":"caption"},image],"details":{"width":1}}),
+            json!([image]),
+            image,
+        ] {
+            for (kind, field) in [
+                ("tool_execution_update", "partialResult"),
+                ("tool_execution_end", "result"),
+            ] {
+                let event = normalize_event(kind, &json!({"toolCallId":"image-call",field:result}))
+                    .unwrap();
+                let encoded = match event {
+                    EventKind::ToolOutput {
+                        content,
+                        mode: OutputMode::Snapshot,
+                        ..
+                    } => content,
+                    EventKind::ToolFinished {
+                        result,
+                        error: None,
+                        ..
+                    } => result,
+                    _ => panic!("expected tool result"),
+                };
+                assert_eq!(serde_json::from_str::<Value>(&encoded).unwrap(), result);
+            }
+        }
+    }
+
+    #[test]
+    fn plain_tool_results_keep_their_display_text() {
+        for (result, expected) in [
+            (json!("plain"), "plain"),
+            (
+                json!({"content":[{"type":"text","text":"one"},{"type":"text","text":"two"}]}),
+                "onetwo",
+            ),
+            (json!([{"type":"text","text":"array"}]), "array"),
+            (json!({"answer":42}), r#"{"answer":42}"#),
+            (json!([{"answer":42}, true, 7]), r#"{"answer":42}true7"#),
+            (
+                json!({"content":[{"type":"text","text":"caption"}],"details":{"type":"image","data":"not-content"}}),
+                "caption",
+            ),
+            (
+                json!({"type":"thinking","content":[{"type":"image","data":"private"}]}),
+                "",
+            ),
+            (Value::Null, ""),
+        ] {
+            for (kind, field) in [
+                ("tool_execution_update", "partialResult"),
+                ("tool_execution_end", "result"),
+            ] {
+                let event = normalize_event(kind, &json!({"toolCallId":"plain-call",field:result}))
+                    .unwrap();
+                let text = match event {
+                    EventKind::ToolOutput { content, .. } => content,
+                    EventKind::ToolFinished { result, .. } => result,
+                    _ => panic!("expected tool result"),
+                };
+                assert_eq!(text, expected);
+            }
+        }
+    }
+
+    #[test]
     fn event_identity_without_server_id_includes_payload() {
         let first = WireEvent {
             id: None,
@@ -2636,6 +3493,113 @@ mod tests {
             work_core::RunPhase::Settled(SettlementOutcome::Interrupted)
         );
         assert_eq!(projection.cursor, Some(12));
+    }
+
+    #[test]
+    fn snapshot_status_preserves_long_running_tools_without_new_events() {
+        for (status, expected) in [
+            ("running", work_core::RunPhase::Accepted),
+            ("awaiting_input", work_core::RunPhase::AwaitingInput),
+            ("waiting_for_input", work_core::RunPhase::AwaitingInput),
+            ("cancelling", work_core::RunPhase::Cancelling),
+        ] {
+            for latest in [Value::Null, json!({"outcome":"completed"})] {
+                let snapshot: Snapshot = serde_json::from_value(json!({
+                    "sessionId":"session-1", "status":status, "lastSeq":12,
+                    "latestSettlement":latest, "events":[]
+                }))
+                .unwrap();
+                let projection = projection_from_snapshot(&snapshot).unwrap();
+                assert_eq!(
+                    projection.phase, expected,
+                    "status: {status}, latest: {latest}"
+                );
+                assert_eq!(projection.cursor, Some(12));
+            }
+        }
+    }
+
+    #[test]
+    fn snapshot_active_events_without_prior_settlement_are_not_completed_by_fallback() {
+        for (event, expected) in [
+            (json!({"type":"agent_start"}), work_core::RunPhase::Accepted),
+            (
+                json!({"type":"tool_execution_start","toolCallId":"child","toolName":"subagent","args":{}}),
+                work_core::RunPhase::Tool,
+            ),
+            (
+                json!({"type":"tool_execution_start","toolCallId":"children","toolName":"dispatch","args":{}}),
+                work_core::RunPhase::Tool,
+            ),
+            (
+                json!({"type":"agent_end"}),
+                work_core::RunPhase::AwaitingSettlement,
+            ),
+            (
+                json!({"type":"ui_dialog_request"}),
+                work_core::RunPhase::AwaitingInput,
+            ),
+        ] {
+            // Legacy hosts may omit status; a current event still outranks the
+            // previous turn's unsequenced settlement.
+            let snapshot: Snapshot = serde_json::from_value(json!({
+                "sessionId":"session-1", "lastSeq":13,
+                "latestSettlement":{"outcome":"completed"},
+                "events":[{"seq":13,"event":event}]
+            }))
+            .unwrap();
+            let projection = projection_from_snapshot(&snapshot).unwrap();
+            assert_eq!(projection.phase, expected, "event: {event}");
+            assert_eq!(projection.cursor, Some(13));
+        }
+    }
+
+    #[test]
+    fn snapshot_delta_settlement_and_new_turn_outrank_initial_status() {
+        for (status, events, expected) in [
+            (
+                "running",
+                json!([{"seq":13,"event":{"type":"agent_settled","outcome":"aborted"}}]),
+                work_core::RunPhase::Settled(SettlementOutcome::Interrupted),
+            ),
+            (
+                "running",
+                json!([
+                    {"seq":13,"event":{"type":"agent_settled","outcome":"completed"}},
+                    {"seq":14,"event":{"type":"agent_start"}}
+                ]),
+                work_core::RunPhase::Accepted,
+            ),
+            (
+                "ready",
+                json!([{"seq":13,"event":{"type":"agent_start"}}]),
+                work_core::RunPhase::Accepted,
+            ),
+        ] {
+            let snapshot: Snapshot = serde_json::from_value(json!({
+                "sessionId":"session-1", "status":status, "lastSeq":14,
+                "latestSettlement":{"outcome":"completed"}, "events":events
+            }))
+            .unwrap();
+            let projection = projection_from_snapshot(&snapshot).unwrap();
+            assert_eq!(projection.phase, expected);
+            assert_eq!(projection.cursor, Some(14));
+        }
+    }
+
+    #[test]
+    fn idle_and_legacy_snapshot_statuses_still_restore_latest_settlement() {
+        for status in [Value::Null, json!("ready"), json!("idle"), json!("unknown")] {
+            let snapshot: Snapshot = serde_json::from_value(json!({
+                "sessionId":"session-1", "status":status,
+                "latestSettlement":{"outcome":"completed"}
+            }))
+            .unwrap();
+            assert_eq!(
+                projection_from_snapshot(&snapshot).unwrap().phase,
+                work_core::RunPhase::Settled(SettlementOutcome::Completed)
+            );
+        }
     }
 
     #[test]
