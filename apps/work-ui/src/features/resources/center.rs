@@ -83,8 +83,8 @@ fn ResourceCenterState(
                 button { class: "button", onclick: move |_| onback.call(()), "返回对话" }
             }
             div { class: "resource-center-context",
-                span { "当前项目：{project_label}" }
-                span { if online { "节点在线" } else { "节点离线" } }
+                span { class: "resource-context-project", "当前项目：{project_label}" }
+                span { class: if online { "resource-context-status online" } else { "resource-context-status offline" }, role: "status", if online { "节点在线" } else { "节点离线" } }
                 button { class: "button", disabled: session.is_none(), onclick: move |_| onconfigure.call(()), "会话资源设置" }
             }
             nav { class: "resource-center-views", aria_label: "资源视图",
