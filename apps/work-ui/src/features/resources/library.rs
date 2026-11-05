@@ -5,7 +5,7 @@ use crate::{
 use dioxus::{core::Task, prelude::*};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use work_client::{AgentClient, RuntimeState, WorkspaceClient};
+use work_client::{RuntimeState, WorkspaceClient};
 use work_core::extensions::{ExtensionManifest, ExtensionPin, UiExtensionPreference};
 
 pub const CSS: &str = concat!(
@@ -568,9 +568,9 @@ pub fn ResourcePage(
     let mut import_error = use_signal(String::new);
     let mut import_notice = use_signal(String::new);
     let title = match kind.as_str() {
-        "skills" => "Skills，清楚地用在每一步",
-        "extensions" => "扩展",
-        _ => "Packages，给会话一组能力",
+        "skills" => "Skill 设计",
+        "extensions" => "扩展设计",
+        _ => "Package 设计",
     };
     let subtitle = match kind.as_str() {
         "skills" => "找到技能、明确来源，再查看它是否被获取或引用。",
@@ -659,8 +659,8 @@ pub fn ResourcePage(
             }
             div { class: "resource-notice",
                 if kind == "extensions" {
-                    "这里管理扩展设计。Agent 由执行节点运行，UI 由客户端呈现；导入、会话选择和 UI 显示互不代替。节点扩展管理尚未接入。"
-                } else { "下载后安装，安装后配置会话。状态会区分本地内容、节点安装与会话选择。" }
+                    "这里只管理本地扩展设计，不代表节点已安装或会话已加载。Agent 执行与客户端 UI 显示独立；节点安装与管理请使用“当前节点”。"
+                } else { "这里只管理本地设计与引用偏好，不授予节点执行权限。节点安装请使用“当前节点”；会话选择与实际加载请在会话资源设置中核对。" }
             }
             if session_name.is_some() || on_back.is_some() {
                 div { class: "resource-context-strip",
@@ -1006,15 +1006,24 @@ fn ExtensionDetail(extension: ExtensionResource, library: Signal<ResourceLibrary
 #[component]
 pub fn SessionResources(
     session_id: String,
+    #[props(default)] native_project: Option<String>,
+    #[props(default = false)] native_online: bool,
+    connection_epoch: Signal<u64>,
+    on_native_open: EventHandler<String>,
     #[props(default = false)] compact: bool,
+    #[props(default)] embedded: bool,
     #[props(default)] session_title: Option<String>,
     #[props(default)] on_browse: Option<EventHandler<()>>,
     #[props(default = true)] extension_config_locked: bool,
+    #[props(default)] backend_options: Vec<work_client::AgentBackendOption>,
+    #[props(default = "rpi".to_owned())] selected_backend: String,
+    #[props(default)] backend_binding: Option<work_client::SessionAgentBinding>,
+    #[props(default)] backend_busy: bool,
+    #[props(default)] onbackendchange: Option<EventHandler<String>>,
     selected_session: Signal<Option<String>>,
     library: Signal<ResourceLibrary>,
     onquote: EventHandler<String>,
     shared_client: Signal<Option<WorkspaceClient>>,
-    native_agents: Signal<std::collections::HashMap<String, AgentClient>>,
     session_generation: Signal<u64>,
     requests: Signal<Vec<Task>>,
     runtime_state: Signal<Option<RuntimeState>>,
@@ -1078,57 +1087,111 @@ pub fn SessionResources(
         .collect::<BTreeSet<_>>()
         .len();
     let package_label = if packages.is_empty() {
-        "未绑定 Package".into()
+        "未引用设计 Package".into()
     } else {
-        format!("{} 个 Package", packages.len())
+        format!("{} 个设计 Package", packages.len())
     };
     let session_title_label = session_title.as_deref().unwrap_or("当前会话");
-    rsx! {
-        div { class: "session-resource-entry",
-            button { class: "session-config-summary", onclick: move |_| { tab.set("packages".into()); open.set(true); }, aria_label: "打开会话资源配置", title: "{package_label} · r{binding.revision} · {skill_count} Skills · {tool_count} Tools · {prompt_count} prompts",
-                Icon { name: "blocks" }, span { class: "session-config-label", "会话配置" }, b { "{config_count}" }
+    let backend_locked = crate::features::conversation::execution_backend::switch_locked(
+        native_online,
+        backend_busy || onbackendchange.is_none(),
+        selected_session.read().is_some(),
+        backend_binding.is_some(),
+    );
+    let content = rsx! {
+        if let Some(project) = native_project.clone() {
+            super::native::NativeResources {
+                key: "native-session-{project}-{selected_session:?}-{connection_epoch}-{session_generation}",
+                project, session: selected_session.read().clone(), shared_client,
+                connection_epoch, session_generation, idle: !extension_config_locked, online: native_online, configuration_only: true,
+                onopen: on_native_open,
             }
-            for (key, label, count) in [("skills", "Skills", skill_count), ("tools", "Tools", tool_count), ("prompts", "提示词", prompt_count)] {
-                button { class: "session-capability-trigger", aria_label: "打开会话{label}配置", onclick: move |_| { tab.set(key.to_owned()); open.set(true); }, span { "{label}" } b { "{count}" } }
+        }
+        p { class: "resource-boundary", "以下为旧惰性设计/引用偏好，不是 native installed、loaded 或模型有效状态。" }
+        if let Some(storage_error) = storage_error { small { class: "resource-error", role: "alert", "{storage_error}" } }
+        div { class: "resource-session-heading",
+            div { strong { "{session_title_label}" } small { "{package_label}" } }
+            span { "设计引用 r{binding.revision}" }
+        }
+        div { class: "resource-segments",
+            for (key, label) in [("packages", "Packages"), ("extensions", "扩展"), ("skills", "Skills"), ("tools", "Tools"), ("prompts", "提示词"), ("backend", "执行后端")] {
+                button { class: if *tab.read() == key { "active" } else { "" }, onclick: move |_| tab.set(key.to_owned()), "{label}" }
             }
-            if !compact {
-                span { class: "session-resource-caption", "{package_label} · {skill_count} Skills · {tool_count} Tools · {prompt_count} prompts" }
-            }
-            if *open.read() {
-                Modal { id: "session-resources", title: "会话资源配置", class: "resource-modal", onclose: move |()| open.set(false),
-                    div { class: "modal-body session-resource-body",
-                        if let Some(storage_error) = storage_error { small { class: "resource-error", role: "alert", "{storage_error}" } }
-                        div { class: "resource-session-heading",
-                            div { strong { "{session_title_label}" } small { "{package_label}" } }
-                            span { "会话配置 r{binding.revision}" }
-                        }
-                        div { class: "resource-segments",
-                            for (key, label) in [("packages", "Packages"), ("extensions", "扩展"), ("skills", "Skills"), ("tools", "Tools"), ("prompts", "提示词")] {
-                                button { class: if *tab.read() == key { "active" } else { "" }, onclick: move |_| tab.set(key.to_owned()), "{label}" }
+        }
+        if *tab.read() == "backend" {
+            section { class: "session-backend-settings", aria_label: "执行后端配置",
+                // Iterator-root keys remount confirmation state on scope changes.
+                for backend_key in [format!("session-backend-{session_id}-{}-{}", *session_generation.read(), *connection_epoch.read())] {
+                    crate::features::conversation::execution_backend::BackendMenu {
+                        key: "{backend_key}", inline: true,
+                        options: backend_options.clone(), selected: selected_backend.clone(),
+                        binding: backend_binding.clone(), has_session: selected_session.read().is_some(),
+                        busy: backend_locked,
+                        onchange: move |backend| {
+                            if backend_locked { return; }
+                            if let Some(handler) = onbackendchange {
+                                handler.call(backend);
+                                open.set(false);
                             }
-                        }
-                        if *tab.read() == "packages" {
-                            SessionPackages {
-                                session_id: session_id.clone(), library, binding: binding.clone(),
-                                on_browse, package_detail, onclose: move |()| open.set(false),
-                            }
-                        }
-                        if *tab.read() == "extensions" {
-                            SessionExtensions { session_id: session_id.clone(), library, binding: binding.clone(), locked: extension_config_locked }
-                        }
-                        if *tab.read() == "skills" { SessionSkills { session_id: session_id.clone(), library, binding: binding.clone(), onquote } }
-                        if *tab.read() == "tools" {
-                            SessionTools { packages: packages.clone() }
-                            crate::features::resources::session_config::SessionConfig { shared_client, native_agents, selected_session, session_generation, requests, runtime_state, status, tools_only: true }
-                        }
-                        if *tab.read() == "prompts" { SessionPrompts { session_id: session_id.clone(), packages: packages.clone(), binding: binding.clone(), library, onquote } }
+                        },
                     }
                 }
-                if let Some(resource_key) = package_detail.read().clone() {
-                    ResourceDetail {
-                        resource_key, kind: "packages".to_owned(), library,
-                        onclose: move |()| package_detail.set(None),
+                if let Some(id) = selected_session.read().clone() {
+                    div { key: "resources-config-{id}-{session_generation}",
+                        h3 { "当前会话协商配置" }
+                        crate::features::conversation::execution_backend::NegotiatedConfig {
+                            shared_client, session_id: id, session_generation, requests,
+                            idle: !extension_config_locked,
+                        }
                     }
+                }
+            }
+        }
+        if *tab.read() == "packages" {
+            SessionPackages {
+                session_id: session_id.clone(), library, binding: binding.clone(),
+                on_browse, package_detail, onclose: move |()| open.set(false),
+            }
+        }
+        if *tab.read() == "extensions" {
+            SessionExtensions { session_id: session_id.clone(), library, binding: binding.clone(), locked: extension_config_locked }
+        }
+        if *tab.read() == "skills" { SessionSkills { session_id: session_id.clone(), library, binding: binding.clone(), onquote } }
+        if *tab.read() == "tools" {
+            SessionTools { packages: packages.clone() }
+            crate::features::resources::session_config::SessionConfig { shared_client, selected_session, session_generation, requests, runtime_state, status, tools_only: true, config_idle: !extension_config_locked }
+        }
+        if *tab.read() == "prompts" { SessionPrompts { session_id: session_id.clone(), packages: packages.clone(), binding: binding.clone(), library, onquote } }
+    };
+    rsx! {
+        style { {crate::features::conversation::execution_backend::CSS} }
+        if embedded {
+            {content}
+        } else {
+            div { class: "session-resource-entry",
+                button { class: "session-config-summary", onclick: move |_| { tab.set("packages".into()); open.set(true); }, aria_label: "打开会话资源配置", aria_haspopup: "dialog", title: "设计引用（非加载状态）：{package_label} · r{binding.revision} · {skill_count} Skills · {tool_count} Tools · {prompt_count} prompts",
+                    Icon { name: "blocks" }, span { class: "session-config-label", "资源配置" }, b { "设计 {config_count}" }
+                    span { class: "session-config-mobile-label", "设计引用" }
+                    span { class: "session-config-expand", Icon { name: "chevron" } }
+                }
+                for (key, label, count) in [("skills", "Skills", skill_count), ("tools", "Tools", tool_count), ("prompts", "提示词", prompt_count)] {
+                    button { class: "session-capability-trigger", aria_label: "打开会话{label}配置", onclick: move |_| { tab.set(key.to_owned()); open.set(true); }, span { "设计 {label}" } b { "{count}" } }
+                }
+                if !compact {
+                    span { class: "session-resource-caption", "设计引用（非加载状态）：{package_label} · {skill_count} Skills · {tool_count} Tools · {prompt_count} prompts" }
+                }
+                if *open.read() {
+                    Modal { id: "session-resources", title: "会话资源配置", class: "resource-modal", onclose: move |()| open.set(false),
+                        div { class: "modal-body session-resource-body", {content} }
+                    }
+                }
+            }
+        }
+        if embedded || *open.read() {
+            if let Some(resource_key) = package_detail.read().clone() {
+                ResourceDetail {
+                    resource_key, kind: "packages".to_owned(), library,
+                    onclose: move |()| package_detail.set(None),
                 }
             }
         }

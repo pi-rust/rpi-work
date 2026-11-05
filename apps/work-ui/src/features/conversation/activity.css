@@ -1,9 +1,18 @@
 .reply-waiting{display:flex;align-items:center;gap:8px;padding:8px 0;margin:4px 0;color:var(--muted);font-size:calc(12px * var(--type-scale, 1));min-height:32px}
 .activity-spinner{display:inline-block;box-sizing:border-box;width:14px;height:14px;flex:0 0 14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:activity-spin .8s linear infinite}
 .reply-waiting .activity-spinner{color:var(--accent)}.reply-paused{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:var(--warning)}
-.composer-main .send-button.is-loading:disabled{opacity:1;cursor:wait;background:var(--panel);color:var(--muted);border-color:var(--line)}
-.composer-main .send-button.is-stop{position:relative;display:grid;place-items:center}
-.send-button.is-stop .activity-spinner{position:absolute;width:22px;height:22px}
-.composer-stop-icon{display:block;width:8px;height:8px;border-radius:1px;background:currentColor}
+.composer-main .send-button{display:grid;place-items:center;flex-shrink:0;gap:0;line-height:1;overflow:hidden}
+.composer-main .send-button.is-loading:disabled{opacity:1;cursor:wait}
+.composer-main .send-button>:is(.activity-spinner,.composer-stop-icon,.icon){grid-area:1/1;margin:0}
+.composer-main .send-button>.activity-spinner{width:14px;height:14px;flex:none}
+.composer-stop-icon{display:block;width:8px;height:8px;border-radius:2px;background:currentColor}
+/* One compact disk for send, loading and stop; retain the larger hit target. */
+.composer-main .composer-actions .send-button,.composer-main .composer-actions .send-button.is-loading:disabled{position:relative;isolation:isolate;background:transparent;border-color:transparent}
+.composer-main .composer-actions .send-button::before{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(28px,100%);height:min(28px,100%);border-radius:50%;background:var(--accent);z-index:0;pointer-events:none}
+.composer-main .composer-actions .send-button>:is(.icon,.activity-spinner,.composer-stop-icon){z-index:1}
+.composer-main .composer-actions .send-button>.icon{width:12px;height:12px;flex:0 0 12px}
+/* Continue shares the compact disk; only its play triangle is filled. */
+.composer-main .composer-actions .send-button.is-continue>.icon{fill:currentColor;stroke:none}
 @keyframes activity-spin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.activity-spinner{animation:none}}
+/* Essential progress stays visible; reduced motion slows only this small ring. */
+@media(prefers-reduced-motion:reduce){.activity-spinner{animation:activity-spin 1.6s linear infinite !important}}

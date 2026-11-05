@@ -1,0 +1,20 @@
+{
+  "source": "rpi.svg",
+  "sourceSha256": "67f5fd2e2791443e3dace12dc02219a387248f4948e2bd840bf34c88bba36744",
+  "generator": "tools/dev/generate-brand-icons.cjs",
+  "adaptive": {
+    "layerPixels": 432,
+    "markPixels": 256,
+    "insetPixels": 88
+  },
+  "hashes": {
+    "mipmap-mdpi/ic_launcher.png": "9a56300e725476238c9ae872d179f74f329dd393e845a7764f676b59aed1f92e",
+    "mipmap-hdpi/ic_launcher.png": "d6e9e1ceb227a07dc95c420f332d8551755103b08b51cdc131a35a54f65e222d",
+    "mipmap-xhdpi/ic_launcher.png": "9378cbacf42cda61feb2bce7db17d0f1f716c46ad26cd1f5e69702c7856a375d",
+    "mipmap-xxhdpi/ic_launcher.png": "988653e62b636798686a557958bb3217ef520be1e0e42a34ba613dd5fe9f6aaa",
+    "mipmap-xxxhdpi/ic_launcher.png": "b45723da3689e1528a99f206703f4fc49fb1e74881a21a2a738b68f5d86ffdb0",
+    "drawable-nodpi/rpi_launcher_foreground.png": "11c8e3920435af816472e9bea9a75ec9391083a40b1b9432aa18eb0cd01ccdcb",
+    "values/rpi_launcher.xml": "2e3cf973038e4fb4d709d044f54fe3fa943fd00d56ab05eb66af522e313b1dde",
+    "mipmap-anydpi-v26/ic_launcher.xml": "b7586ee1b60d828b523390778f937a49edfebf57a9b5308c8191a4eedee4ff82"
+  }
+}

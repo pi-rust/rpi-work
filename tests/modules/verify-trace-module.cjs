@@ -6,7 +6,7 @@ const {chromium}=require('../support/browser.cjs');
  const results=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
  const pass=name=>{results.push(name);console.log('PASS',name)};
  try{
-  await page.goto('http://127.0.0.1:4182/modules/trace/');
+  await page.goto('http://127.0.0.1:14182/modules/trace/');
   await page.getByRole('button',{name:'traces',exact:true}).click();
   const open=()=>page.getByRole('button',{name:'查看会话追踪与耗时',exact:true}).click();
   await open();await page.getByRole('heading',{name:'此会话暂无追踪',exact:true}).waitFor();await page.keyboard.press('Escape');

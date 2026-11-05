@@ -1,5 +1,9 @@
 //! Standalone conversation widgets. The parent owns history deduplication, HTTP,
 //! and scope/request keys. Render functions consume the current snapshot only.
+use super::message_image::{ImageBlock, MessageImage, image_block};
+use super::message_presentation::{CodeBlock, CopyButton, task_item};
+use crate::features::observability::traces::{ToolTiming, tool_timing};
+use crate::shared::components::Icon;
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 use std::fmt::Write as _;
@@ -26,21 +30,168 @@ fn text_field(value: &Value, keys: &[&str]) -> Option<String> {
 
 // Only public text blocks are read. In particular, a thinking block carrying a
 // `text` field is never promoted to public assistant content.
+fn public_block_text(item: &Value) -> Option<&str> {
+    match item.get("type") {
+        Some(Value::String(kind))
+            if matches!(kind.as_str(), "text" | "input_text" | "output_text") =>
+        {
+            item.get("text").and_then(Value::as_str)
+        }
+        None if item.get("thinking").is_none() => item.get("text").and_then(Value::as_str),
+        _ => None,
+    }
+}
+
 fn public_text(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
         Value::Array(items) => items
             .iter()
-            .filter_map(|item| match item.get("type").and_then(Value::as_str) {
-                Some("text" | "input_text" | "output_text") => {
-                    item.get("text").and_then(Value::as_str)
-                }
-                None if item.get("thinking").is_none() => item.get("text").and_then(Value::as_str),
-                _ => None,
-            })
+            .filter_map(public_block_text)
             .collect::<Vec<_>>()
             .join(""),
         _ => String::new(),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum PublicPart {
+    Text(String),
+    Image(Result<ImageBlock, String>),
+}
+
+fn public_parts(value: &Value) -> Vec<PublicPart> {
+    let Some(items) = value.as_array() else {
+        let text = public_text(value);
+        return if text.trim().is_empty() {
+            Vec::new()
+        } else {
+            vec![PublicPart::Text(text)]
+        };
+    };
+    let mut parts = Vec::new();
+    for item in items {
+        if let Some(image) = image_block(item) {
+            parts.push(PublicPart::Image(image));
+        } else {
+            let text = public_block_text(item).unwrap_or_default();
+            if !text.is_empty() {
+                if let Some(PublicPart::Text(previous)) = parts.last_mut() {
+                    previous.push_str(text);
+                } else {
+                    parts.push(PublicPart::Text(text.to_owned()));
+                }
+            }
+        }
+    }
+    // Test after joining adjacent text chunks: a standalone streamed "\n"
+    // can be the authored separator between two nonblank chunks. Keep that
+    // whitespace verbatim, but do not give whitespace-only parts visual rows.
+    parts.retain(|part| !matches!(part, PublicPart::Text(text) if text.trim().is_empty()));
+    parts
+}
+
+// Split at tool boundaries before collecting public chunks: text must never
+// jump across a call, and private thinking must never become public prose.
+#[derive(Debug, PartialEq)]
+enum HistoryPart {
+    Public(PublicPart),
+    Tool(usize, Value),
+}
+
+fn history_parts(content: &Value) -> Vec<HistoryPart> {
+    let Some(items) = content.as_array() else {
+        return public_parts(content)
+            .into_iter()
+            .map(HistoryPart::Public)
+            .collect();
+    };
+    let mut parts = Vec::new();
+    let mut pending = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        if matches!(
+            item["type"].as_str(),
+            Some("toolCall" | "tool_use" | "tool_call")
+        ) {
+            parts.extend(
+                public_parts(&Value::Array(std::mem::take(&mut pending)))
+                    .into_iter()
+                    .map(HistoryPart::Public),
+            );
+            parts.push(HistoryPart::Tool(index, item.clone()));
+        } else {
+            pending.push(item.clone());
+        }
+    }
+    parts.extend(
+        public_parts(&Value::Array(pending))
+            .into_iter()
+            .map(HistoryPart::Public),
+    );
+    parts
+}
+
+// Both projection and history use this exact keyed sibling list. In particular,
+// a tool-only projection becoming history must not acquire a new article parent
+// and reset the native disclosure state.
+fn render_regions(regions: Vec<(String, Element)>) -> Element {
+    rsx! {
+        for (key, content) in regions {
+            div {
+                key: "{key}",
+                class: if key.starts_with("tool-") { "timeline-content-region timeline-tool-region timeline-message" } else { "timeline-content-region" },
+                {content}
+            }
+        }
+    }
+}
+
+/// Preserve image-bearing tool payloads only until the tool renderer separates
+/// public text from raster blocks. Never copy or display their encoded data.
+fn history_tool_output(message: &Value) -> String {
+    let content = message.get("content").or_else(|| message.get("result"));
+    if let Some(content) = content {
+        let body = content.get("content").unwrap_or(content);
+        if body["type"] == "image"
+            || body
+                .as_array()
+                .is_some_and(|items| items.iter().any(|item| item["type"] == "image"))
+        {
+            return serde_json::to_string(content).unwrap_or_default();
+        }
+    }
+    let text = message.get("content").map(public_text).unwrap_or_default();
+    if text.is_empty() {
+        message.get("result").map(public_result).unwrap_or_default()
+    } else {
+        text
+    }
+}
+
+fn tool_output_parts(output: &str) -> (String, Vec<Result<ImageBlock, String>>) {
+    if let Ok(value) = serde_json::from_str::<Value>(output) {
+        let body = value.get("content").unwrap_or(&value);
+        if let Some(image) = image_block(body) {
+            return (String::new(), vec![image]);
+        }
+        if let Some(items) = body.as_array() {
+            let images: Vec<_> = items.iter().filter_map(image_block).collect();
+            if !images.is_empty() {
+                return (public_text(body), images);
+            }
+        }
+    }
+    (output.to_owned(), Vec::new())
+}
+
+fn assistant_heading() -> Element {
+    rsx! {
+        div { class: "message-heading assistant-message-heading",
+            span { class: "assistant-avatar", aria_hidden: "true",
+                Icon { name: "code" }
+            }
+            strong { "rpi" }
+        }
     }
 }
 
@@ -66,16 +217,20 @@ pub fn message_has_tool_call(message: &Value, id: &str) -> bool {
         })
 }
 
+fn history_role(message: &Value) -> &str {
+    message
+        .get("role")
+        .or_else(|| message.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}
+
 pub fn render_history_in_context(
     message: &Value,
     messages: &[Value],
     blocks: &[MessageBlock],
 ) -> Element {
-    let role = message
-        .get("role")
-        .or_else(|| message.get("kind"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let role = history_role(message);
     if !matches!(
         role,
         "user" | "assistant" | "tool" | "toolResult" | "tool_result"
@@ -96,77 +251,105 @@ pub fn render_history_in_context(
             // The matching assistant call displays the result in its own card.
             return rsx! {};
         }
-        return render_tool_result(message, text);
+        return render_tool_result(message);
     }
     let user = role == "user";
-    let calls = message
-        .get("content")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .enumerate()
-                .filter(|(_, item)| {
-                    matches!(
-                        item.get("type").and_then(Value::as_str),
-                        Some("toolCall" | "tool_use" | "tool_call")
-                    )
-                })
-                .map(|(index, item)| {
-                    let name = text_field(item, &["name", "toolName"])
-                        .unwrap_or_else(|| "工具调用".into());
-                    let args = item
-                        .get("arguments")
-                        .or_else(|| item.get("input"))
-                        .or_else(|| item.get("args"))
-                        .map(pretty_value)
-                        .unwrap_or_default();
-                    let key = text_field(item, &["id", "toolCallId"])
-                        .unwrap_or_else(|| format!("content-{index}"));
-                    (key, name, args)
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if text.is_empty() && calls.is_empty() {
-        return rsx! {};
-    }
-    rsx! {
-        article { class: if user { "conversation-widget message timeline-message user-message" } else { "conversation-widget message timeline-message agent-message" }, aria_label: if user { "你的消息" } else { "助手消息" },
-            div { class: "message-content",
-                if user { div { class: "conversation-user-text", "{text}" } }
-                else { {markdown_view(&text)} }
-                for (key, name, args) in calls {
-                    div { key: "{key}",
-                        {
-                            let result = messages.iter().rev().find(|item| {
-                                matches!(item.get("role").or_else(|| item.get("kind")).and_then(Value::as_str), Some("tool" | "toolResult" | "tool_result"))
-                                    && item.get("toolCallId").and_then(Value::as_str) == Some(key.as_str())
-                            });
-                            if let Some(result) = result {
-                                let output = result.get("content").map(public_text).or_else(|| result.get("result").map(public_result)).unwrap_or_default();
-                                let status = if result.get("isError").and_then(Value::as_bool) == Some(true) { ToolStatus::Failed } else { ToolStatus::Completed };
-                                tool_view(&name, &args, &output, &status)
-                            } else if let Some(block) = blocks.iter().find(|block| block.id() == key) {
-                                render_message_block(block)
-                            } else {
-                                tool_view_with_label(&name, &args, "", "等待工具结果", false)
-                            }
+    if user {
+        let mut parts = message.get("content").map(public_parts).unwrap_or_default();
+        if parts.is_empty() && !text.trim().is_empty() {
+            parts.push(PublicPart::Text(text));
+        }
+        if parts.is_empty() {
+            return rsx! {};
+        }
+        return rsx! {
+            article { class: "conversation-widget message timeline-message user-message", aria_label: "你的消息",
+                div { class: "message-heading user-message-heading", strong { "你" } }
+                div { class: "message-content",
+                    for (index, part) in parts.into_iter().enumerate() {
+                        match part {
+                            PublicPart::Text(text) => rsx! { div { key: "public-text-{index}", class: "message-text-part", div { class: "conversation-user-text", "{text}" } } },
+                            PublicPart::Image(image) => rsx! { MessageImage { key: "public-image-{index}", image } },
                         }
                     }
                 }
             }
-        }
+        };
+    }
+    let parts = message
+        .get("content")
+        .map(history_parts)
+        .unwrap_or_else(|| history_parts(&Value::String(text)));
+    let regions = parts
+        .into_iter()
+        .enumerate()
+        .map(|(index, part)| match part {
+            HistoryPart::Public(part) => (format!("public-{index}"), render_public_part(part)),
+            HistoryPart::Tool(source_index, item) => {
+                let name =
+                    text_field(&item, &["name", "toolName"]).unwrap_or_else(|| "工具调用".into());
+                let args = item
+                    .get("arguments")
+                    .or_else(|| item.get("input"))
+                    .or_else(|| item.get("args"))
+                    .map(pretty_value)
+                    .unwrap_or_default();
+                let key = text_field(&item, &["id", "toolCallId"])
+                    .unwrap_or_else(|| format!("content-{source_index}"));
+                let timing = tool_timing(&item).filter(|timing| !timing.running);
+                let result = messages.iter().rev().find(|item| {
+                    matches!(history_role(item), "tool" | "toolResult" | "tool_result")
+                        && item.get("toolCallId").and_then(Value::as_str) == Some(key.as_str())
+                });
+                let view = if let Some(result) = result {
+                    let output = history_tool_output(result);
+                    let status = if result.get("isError").and_then(Value::as_bool) == Some(true) {
+                        ToolStatus::Failed
+                    } else {
+                        ToolStatus::Completed
+                    };
+                    let timing = tool_timing(result)
+                        .filter(|timing| !timing.running)
+                        .or(timing);
+                    tool_view_with_timing(&key, &name, &args, &output, &status, timing)
+                } else if let Some(MessageBlock::ToolCall {
+                    name,
+                    arguments,
+                    output,
+                    status,
+                    ..
+                }) = blocks.iter().find(|block| block.id() == key)
+                {
+                    tool_view_with_timing(&key, name, arguments, output, status, timing)
+                } else {
+                    tool_view_with_label(&key, &name, &args, "", "等待工具结果", false, timing)
+                };
+                (format!("tool-{key}"), view)
+            }
+        })
+        .collect();
+    render_regions(regions)
+}
+
+fn render_public_part(part: PublicPart) -> Element {
+    match part {
+        PublicPart::Text(text) => rsx! {
+            article { class: "conversation-widget message timeline-message agent-message", aria_label: "助手消息",
+                {assistant_heading()}
+                div { class: "message-content",
+                    div { class: "message-text-part", {markdown_view(&text)} }
+                }
+            }
+        },
+        PublicPart::Image(image) => rsx! {
+            div { class: "timeline-image-region", MessageImage { image } }
+        },
     }
 }
 
-fn render_tool_result(message: &Value, text: String) -> Element {
+fn render_tool_result(message: &Value) -> Element {
     let name = text_field(message, &["toolName", "name"]).unwrap_or_else(|| "工具结果".into());
-    let output = if text.is_empty() {
-        message.get("result").map(public_result).unwrap_or_default()
-    } else {
-        text
-    };
+    let output = history_tool_output(message);
     let status = if message.get("isError").and_then(Value::as_bool) == Some(true) {
         ToolStatus::Failed
     } else {
@@ -177,13 +360,32 @@ fn render_tool_result(message: &Value, text: String) -> Element {
         .or_else(|| message.get("args"))
         .map(pretty_value)
         .unwrap_or_default();
-    tool_view(&name, &args, &output, &status)
+    let id = text_field(message, &["toolCallId", "tool_call_id"]).unwrap_or_default();
+    render_regions(vec![(
+        format!("tool-{id}"),
+        tool_view_with_timing(
+            &id,
+            &name,
+            &args,
+            &output,
+            &status,
+            tool_timing(message).filter(|timing| !timing.running),
+        ),
+    )])
 }
 
 pub fn render_message_block(block: &MessageBlock) -> Element {
+    render_message_block_with_timing(block, None)
+}
+
+fn render_message_block_with_timing(block: &MessageBlock, timing: Option<ToolTiming>) -> Element {
     match block {
+        // Empty snapshots still clear projection state and retain their stable
+        // slot; they must not create an avatar, a message gap or a blank line.
+        MessageBlock::Text { text, .. } if text.trim().is_empty() => rsx! {},
         MessageBlock::Text { text, .. } => rsx! {
             article { class: "conversation-widget message timeline-message agent-message", aria_label: "助手消息",
+                {assistant_heading()}
                 div { class: "message-content",
                     {markdown_view(text)}
                 }
@@ -196,12 +398,15 @@ pub fn render_message_block(block: &MessageBlock) -> Element {
             }
         },
         MessageBlock::ToolCall {
+            id,
             name,
             arguments,
             output,
             status,
-            ..
-        } => tool_view(name, arguments, output, status),
+        } => render_regions(vec![(
+            format!("tool-{id}"),
+            tool_view_with_timing(id, name, arguments, output, status, timing),
+        )]),
     }
 }
 
@@ -223,66 +428,140 @@ fn public_result(value: &Value) -> String {
 }
 
 fn tool_summary(name: &str, args: &str) -> String {
-    let value = serde_json::from_str::<Value>(args).unwrap_or(Value::Null);
-    let fields = [
-        "path",
-        "paths",
-        "command",
-        "query",
-        "pattern",
-        "url",
-        "file",
-        "directory",
-    ];
-    let summary = fields
-        .iter()
-        .find_map(|key| {
-            let value = value.get(*key)?;
-            let text = value.as_str().map(str::to_owned).or_else(|| {
-                value.as_array().map(|items| {
-                    items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-            })?;
-            (!text.trim().is_empty()).then(|| format!("{key}={text}"))
-        })
-        .unwrap_or_else(|| name.to_owned());
-    let mut result = summary.chars().take(96).collect::<String>();
-    if summary.chars().count() > 96 {
-        result.push('…');
-    }
-    result
+    super::tool_display::target(name, args)
 }
 
-fn tool_view(name: &str, args: &str, output: &str, status: &ToolStatus) -> Element {
+/// Empty protocol payloads do not deserve an empty details section. Keep
+/// false/zero, nonempty collections and partial streamed JSON inspectable.
+fn has_tool_arguments(args: &str) -> bool {
+    if args.trim().is_empty() {
+        return false;
+    }
+    match serde_json::from_str::<Value>(args) {
+        Ok(Value::Null) => false,
+        Ok(Value::String(value)) => !value.trim().is_empty(),
+        Ok(Value::Array(value)) => !value.is_empty(),
+        Ok(Value::Object(value)) => !value.is_empty(),
+        _ => true,
+    }
+}
+
+fn tool_icon(name: &str) -> &'static str {
+    super::tool_display::icon(name)
+}
+
+fn tool_view_with_timing(
+    id: &str,
+    name: &str,
+    args: &str,
+    output: &str,
+    status: &ToolStatus,
+    timing: Option<ToolTiming>,
+) -> Element {
     let label = match status {
         ToolStatus::Running => "运行中",
         ToolStatus::Completed => "已完成",
         ToolStatus::Failed => "失败",
         ToolStatus::Cancelled => "已取消",
     };
-    tool_view_with_label(name, args, output, label, *status == ToolStatus::Failed)
+    tool_view_with_label(
+        id,
+        name,
+        args,
+        output,
+        label,
+        *status == ToolStatus::Failed,
+        timing,
+    )
 }
 
 fn tool_view_with_label(
+    id: &str,
     name: &str,
     args: &str,
     output: &str,
     label: &str,
     failed: bool,
+    timing: Option<ToolTiming>,
 ) -> Element {
+    rsx! {
+        ToolCallView {
+            key: "tool-{id}",
+            id: id.to_owned(), name: name.to_owned(), args: args.to_owned(),
+            output: output.to_owned(), label: label.to_owned(), failed, timing,
+        }
+    }
+}
+
+#[component]
+fn ToolCallView(
+    id: String,
+    name: String,
+    args: String,
+    output: String,
+    label: String,
+    failed: bool,
+    timing: Option<ToolTiming>,
+) -> Element {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_INSTANCE: AtomicU64 = AtomicU64::new(1);
+    let instance = use_hook(|| NEXT_INSTANCE.fetch_add(1, Ordering::Relaxed));
+    let disclosure_id = format!("rpi-tool-disclosure-{instance}");
+    // Freeze the native initial attribute. Later output/timing updates cannot
+    // undo user toggles; only a transition into failure opens the same row once.
+    let initial_open = use_signal(|| failed);
+    let mount_id = serde_json::to_string(&disclosure_id).unwrap();
+    let effect_id = disclosure_id.clone();
+    use_effect(use_reactive((&failed,), move |(failed,)| {
+        let encoded = serde_json::to_string(&effect_id).unwrap();
+        let _ = document::eval(&format!(
+            "const row=document.getElementById({encoded});if(row){{if(row.__rpiToolDisclosureFailure)row.__rpiToolDisclosureFailure({failed});else if({failed})row.open=true;}}"
+        ));
+    }));
+    let (output, images) = tool_output_parts(&output);
+    let has_arguments = has_tool_arguments(&args);
     let args =
-        serde_json::from_str::<Value>(args).map_or_else(|_| args.to_owned(), |v| pretty_value(&v));
-    let summary = tool_summary(name, &args);
-    let plan = plan_items(name, &args, output);
+        serde_json::from_str::<Value>(&args).map_or_else(|_| args.clone(), |v| pretty_value(&v));
+    let summary = tool_summary(&name, &args);
+    let command = super::command_preview::command_argument(&args);
+    let plan = plan_items(&name, &args, &output);
+    let preview = super::tool_display::edit_preview(&name, &args);
+    let edit_counts = preview
+        .as_ref()
+        .map(super::tool_display::EditPreview::line_counts);
+    let reading = super::tool_display::is_read(&name);
+    let skill_read = super::tool_display::is_skill_read(&name, &args);
+    let action = if skill_read {
+        super::tool_display::skill_read_action(&label, failed)
+    } else {
+        &name
+    };
+    let shell = super::tool_display::is_shell(&name);
+    let running = matches!(label.as_str(), "运行中" | "等待工具结果");
+    let state_class = if failed {
+        "tool-error failed"
+    } else if running {
+        "tool-running"
+    } else if label == "已取消" {
+        "tool-cancelled"
+    } else {
+        "tool-done"
+    };
+    let kind_class = if shell {
+        "shell-card"
+    } else if skill_read {
+        "read-card skill-card"
+    } else if reading {
+        "read-card"
+    } else if preview.is_some() {
+        "edit-card"
+    } else {
+        ""
+    };
     let finished = plan
         .iter()
         .filter(|item| item.status == "completed")
         .count();
-    let status_class = if failed { "failed" } else { "" };
     rsx! {
         div { class: "conversation-widget conversation-tool",
             if !plan.is_empty() {
@@ -305,22 +584,86 @@ fn tool_view_with_label(
                     }
                 }
             }
-            details { class: "tool-call inline-call {status_class}",
+            details { id: "{disclosure_id}", class: "tool-call inline-call tool-card {state_class} {kind_class}", open: initial_open(), "data-tool-id": "{id}",
+                onmounted: move |_| {
+                    let script = format!("const id={mount_id};const failed={failed};{}", include_str!("tool_disclosure.js"));
+                    let _ = document::eval(&script);
+                },
                 summary {
-                    span { class: "call-icon", {glyph("tool")} }
-                    div { class: "call-name", strong { "{name}" } code { "{summary}" } }
-                    span { class: "call-status", "{label}" }
-                    {glyph("chevron")}
+                    span { class: "call-icon call-status tool-status", title: "{label}", role: "img", aria_label: "{label}",
+                        if running { span { class: "tool-running-spinner", aria_hidden: "true" } }
+                        else { {glyph(if failed { "info" } else if label == "已取消" { "close" } else if skill_read { "skills" } else { tool_icon(&name) })} }
+                    }
+                    div { class: "call-name tool-summary-text",
+                        strong { class: "tool-action", title: "{name}", "{action}" }
+                        if !summary.is_empty() { code { class: "tool-target", title: "{summary}", "{summary}" } }
+                    }
+                    if let Some((added, removed)) = edit_counts {
+                        span { class: "tool-summary-meta edit-count", title: "调用参数中的增删行数预览，不代表实际落盘改动", aria_label: "变更预览：新增 {added} 行，删除 {removed} 行",
+                            span { class: "add", "+{added}" }
+                            span { class: "remove", "−{removed}" }
+                        }
+                    }
+                    super::turn_timing::ToolElapsed { id: id.clone(), timing }
+                    if !failed && label == "已完成" {
+                        span { class: "tool-success-mark", aria_hidden: "true", {glyph("check")} }
+                    }
+                    {glyph("chevron-right")}
                 }
                 if failed { div { class: "inline-call-warning", role: "status", "工具执行失败，请查看工具结果。" } }
-                div { class: "call-body",
-                    div { class: "call-section-title", "调用参数" }
-                    pre { class: "call-arguments", "{args}" }
-                    div { class: "call-section-title conversation-output-heading",
-                        span { "工具结果" }
-                        CopyOutput { text: output.to_owned() }
+                div { class: "call-body tool-detail",
+                    if let Some(command) = command {
+                        super::command_preview::CommandPreview { command }
+                        details { class: "command-raw-arguments",
+                            summary { aria_label: "完整调用参数", title: "完整调用参数",
+                                ToolLabel { label: "完整调用参数", icon: "settings" }
+                                {glyph("chevron")}
+                            }
+                            pre { class: "call-arguments", "{args}" }
+                        }
+                    } else if has_arguments && preview.is_some() {
+                        details { class: "command-raw-arguments tool-raw-arguments",
+                            summary { aria_label: "完整调用参数", title: "完整调用参数",
+                                ToolLabel { label: "完整调用参数", icon: "settings" }
+                                {glyph("chevron")}
+                            }
+                            pre { class: "call-arguments", "{args}" }
+                        }
+                    } else if has_arguments {
+                        div { class: "call-section-title", ToolLabel { label: "调用参数", icon: "settings" } }
+                        pre { class: "call-arguments", "{args}" }
                     }
-                    pre { class: if failed { "call-output error-text" } else { "call-output" }, "{output}" }
+                    if let Some(preview) = preview {
+                        div { class: "tool-edit-preview",
+                            div { class: "call-section-title", "变更预览 · 调用参数" }
+                            if !preview.path.is_empty() { div { class: "tool-read-path", "{preview.path}" } }
+                            div { class: "tool-edit-lines",
+                                for (index, (old, new)) in preview.changes.into_iter().enumerate() {
+                                    div { key: "edit-{index}", class: "tool-edit-hunk",
+                                        for line in old.lines() { div { class: "tool-edit-line remove", span { "−" } code { "{line}" } } }
+                                        for line in new.lines() { div { class: "tool-edit-line add", span { "+" } code { "{line}" } } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    div { class: "call-section-title conversation-output-heading",
+                        ToolLabel { label: "工具结果", icon: "terminal" }
+                        CopyOutput { text: output.clone() }
+                    }
+                    if reading && !summary.is_empty() { div { class: "tool-read-path", "{summary}" } }
+                    if !failed && !reading && !shell && super::tool_display::is_markdown(&output) {
+                        div { class: "call-output tool-markdown-output", {markdown_view(&output)} }
+                    } else {
+                        pre { class: if failed { "call-output error-text" } else { "call-output" },
+                            if output.is_empty() && images.is_empty() {
+                                span { class: "tool-empty-output", if running { "等待工具输出…" } else { "无输出" } }
+                            } else { "{output}" }
+                        }
+                    }
+                    for (index, image) in images.into_iter().enumerate() {
+                        MessageImage { key: "tool-image-{index}", image }
+                    }
                 }
             }
         }
@@ -328,34 +671,26 @@ fn tool_view_with_label(
 }
 
 fn glyph(name: &str) -> Element {
-    let path = match name {
-        "check" => "M20 6 9 17l-5-5",
-        "chevron" => "m6 9 6 6 6-6",
-        "clock" => "M12 8v4l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
-        "ask" => "M21 11a8 8 0 0 1-8 8H7l-5 3V11a9 9 0 0 1 19 0M8 9h8M8 13h5",
-        "plan" => "M9 6h12M9 12h12M9 18h12M2 6l1 1 2-2M2 12l1 1 2-2M2 18l1 1 2-2",
-        _ => "m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5",
-    };
-    rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.6", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true", path { d: path } } }
+    rsx! { Icon { name: name.to_owned() } }
+}
+
+/// Small visual marker with a name available to assistive technology and hover.
+#[component]
+pub(super) fn ToolLabel(label: String, icon: String) -> Element {
+    rsx! {
+        span { class: "tool-label", role: "img", aria_label: "{label}", title: "{label}",
+            Icon { name: icon }
+            span { class: "tool-label-text", "{label}" }
+        }
+    }
 }
 
 #[component]
-fn CopyOutput(text: String) -> Element {
-    let mut notice = use_signal(String::new);
+pub(super) fn CopyOutput(text: String, #[props(default)] command: bool) -> Element {
     rsx! {
-        span { class: "conversation-copy",
-            button { r#type: "button", class: "button", aria_label: "复制工具输出", disabled: text.is_empty(),
-                onclick: move |_| {
-                    let encoded = serde_json::to_string(&text).unwrap_or_else(|_| "\"\"".into());
-                    spawn(async move {
-                        let script = format!("try {{ await navigator.clipboard.writeText({encoded}); dioxus.send(true); }} catch (_) {{ dioxus.send(false); }}");
-                        let copied = document::eval(&script).recv::<bool>().await.unwrap_or(false);
-                        notice.set(if copied { "已复制".into() } else { "复制失败，请手动选择输出".into() });
-                    });
-                },
-                "复制输出"
-            }
-            span { role: "status", "{notice}" }
+        CopyButton {
+            text,
+            label: if command { "复制完整命令" } else { "复制工具输出" },
         }
     }
 }
@@ -494,6 +829,7 @@ enum Inline {
     Code(String),
     Strong(Vec<Inline>),
     Link(String, String),
+    FileLink(String, String),
 }
 
 fn safe_link(url: &str) -> bool {
@@ -542,11 +878,17 @@ fn parse_inline(text: &str, depth: usize) -> Vec<Inline> {
                 let destination = &after[end + 2..];
                 if let Some(close) = destination.find(')') {
                     let target = &destination[..close];
-                    if safe_link(target) {
-                        matched = Some((
-                            end + close + 4,
-                            Inline::Link(after[..end].into(), target.into()),
-                        ));
+                    if safe_link(target)
+                        || super::message_links::looks_like_file(target)
+                        || super::message_links::resolve_file("/__message_root", target).is_some()
+                    {
+                        let label = after[..end].to_owned();
+                        let node = if safe_link(target) {
+                            Inline::Link(label, target.into())
+                        } else {
+                            Inline::FileLink(label, target.into())
+                        };
+                        matched = Some((end + close + 4, node));
                     }
                 }
             }
@@ -557,6 +899,15 @@ fn parse_inline(text: &str, depth: usize) -> Vec<Inline> {
                 literal.push(c);
                 rest = &rest[1 + c.len_utf8()..];
                 continue;
+            }
+        }
+        if matched.is_none()
+            && literal.chars().last().is_none_or(|c| {
+                !c.is_alphanumeric() && !matches!(c, '_' | '/' | ':' | '.' | '@' | '-')
+            })
+        {
+            if let Some(url) = super::message_links::bare_url(rest) {
+                matched = Some((url.len(), Inline::Link(url.into(), url.into())));
             }
         }
         if let Some((consumed, node)) = matched {
@@ -577,14 +928,31 @@ fn parse_inline(text: &str, depth: usize) -> Vec<Inline> {
     result
 }
 
+// A source newline has one rendering owner. Emit one explicit break rather
+// than relying on inherited pre-wrap (which can also preserve DOM whitespace).
+// Code blocks and plain user messages keep their own verbatim whitespace.
+fn inline_text(text: &str) -> Element {
+    rsx! {
+        for (index, line) in text.split('\n').enumerate() {
+            Fragment { key: "line-{index}",
+                if index > 0 { br {} }
+                "{line}"
+            }
+        }
+    }
+}
+
 fn inline_nodes(nodes: &[Inline]) -> Element {
     rsx! { for (index, node) in nodes.iter().enumerate() {
         Fragment { key: "inline-{index}",
             {match node {
-                Inline::Text(text) => rsx! { "{text}" },
-                Inline::Code(text) => rsx! { code { "{text}" } },
+                Inline::Text(text) => inline_text(text),
+                Inline::Code(text) => if super::message_links::looks_like_file(text) {
+                    rsx! { super::message_links::MessageFileLink { label: text.clone(), target: text.clone(), code: true } }
+                } else { rsx! { code { "{text}" } } },
                 Inline::Strong(children) => rsx! { strong { {inline_nodes(children)} } },
-                Inline::Link(label, url) => rsx! { a { href: "{url}", rel: "noopener noreferrer", target: "_blank", "{label}" } },
+                Inline::Link(label, url) => rsx! { a { href: "{url}", rel: "noopener noreferrer", target: "_blank", {inline_text(label)} } },
+                Inline::FileLink(label, target) => rsx! { super::message_links::MessageFileLink { label: label.clone(), target: target.clone(), code: false } },
             }}
         }
     } }
@@ -658,6 +1026,21 @@ fn starts_block(lines: &[&str], index: usize) -> bool {
                 .is_some_and(|next| table_separator(next)))
 }
 
+fn list_item(text: &str) -> Element {
+    if let Some((checked, content)) = task_item(text) {
+        rsx! {
+            li { class: "task-list-item",
+                input { r#type: "checkbox", checked, disabled: true,
+                    aria_label: if content.is_empty() { "任务状态" } else { content },
+                }
+                span { {inline(content)} }
+            }
+        }
+    } else {
+        rsx! { li { {inline(text)} } }
+    }
+}
+
 pub fn markdown_view(text: &str) -> Element {
     markdown_blocks(text, 0)
 }
@@ -686,13 +1069,15 @@ fn markdown_blocks(text: &str, depth: usize) -> Element {
                 i += 1;
             }
             let code = lines[start..i].join("\n");
-            if i < lines.len() {
+            let closed = i < lines.len();
+            if closed {
                 i += 1;
             }
-            blocks.push(rsx! { div { class: "conversation-code",
-                if !language.is_empty() { div { class: "code-language", "{language}" } }
-                pre { code { "{code}" } }
-            } });
+            blocks.push(if super::mermaid::is_mermaid(&language) {
+                rsx! { super::mermaid::MermaidDiagram { source: code, closed } }
+            } else {
+                rsx! { CodeBlock { source: code, language } }
+            });
         } else if let Some((level, content)) = heading(line) {
             blocks.push(match level {
                 1 => rsx! { h1 { {inline(content)} } },
@@ -726,9 +1111,9 @@ fn markdown_blocks(text: &str, depth: usize) -> Element {
                 i += 1;
             }
             blocks.push(if ordered {
-                rsx! { ol { start: "{start}", for (index, item) in items.iter().enumerate() { li { key: "{index}", {inline(item)} } } } }
+                rsx! { ol { start: "{start}", for (index, item) in items.iter().enumerate() { Fragment { key: "{index}", {list_item(item)} } } } }
             } else {
-                rsx! { ul { for (index, item) in items.iter().enumerate() { li { key: "{index}", {inline(item)} } } } }
+                rsx! { ul { for (index, item) in items.iter().enumerate() { Fragment { key: "{index}", {list_item(item)} } } } }
             });
         } else if line.contains('|') && lines.get(i + 1).is_some_and(|next| table_separator(next)) {
             let headers = table_cells(line);
@@ -1107,6 +1492,169 @@ fn permission_label(permission: Option<&str>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_tool_arguments_hide_only_empty_payloads() {
+        for empty in [
+            "", " \n ", "null", "{}", "{ }", "[]", "[ ]", "\"\"", "\"  \"",
+        ] {
+            assert!(!has_tool_arguments(empty), "empty payload {empty:?}");
+        }
+        for meaningful in [
+            "false",
+            "0",
+            "[null]",
+            "{\"path\":null}",
+            "{\"path\":\"\"}",
+            "\"null\"",
+            "{\"path\":",
+            "plain argument",
+        ] {
+            assert!(
+                has_tool_arguments(meaningful),
+                "meaningful payload {meaningful:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tool_icons_use_explicit_semantics_with_an_unknown_fallback() {
+        for (name, icon) in [
+            ("bash", "terminal"),
+            ("Bash", "terminal"),
+            ("read_file", "file"),
+            ("write", "edit"),
+            ("apply_patch", "edit"),
+            ("grep", "search"),
+            ("websearch", "search"),
+            ("update_plan", "plan"),
+            ("mcp_custom__read", "tool"),
+            ("unfamiliar", "tool"),
+        ] {
+            assert_eq!(tool_icon(name), icon, "{name}");
+        }
+    }
+
+    #[test]
+    fn public_content_preserves_text_image_order_and_hides_private_blocks() {
+        let parts = public_parts(&json!([
+            {"type":"text","text":"before"}, {"text":" adjacent"},
+            {"type":"image","mimeType":"image/png","data":"AA=="},
+            {"type":"thinking","text":"private","content":[{"type":"image","data":"hidden"}]},
+            {"type":"text","text":"after"},
+            {"type":"image","mimeType":"image/svg+xml","data":"secret"}
+        ]));
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], PublicPart::Text("before adjacent".into()));
+        assert!(matches!(&parts[1], PublicPart::Image(Ok(image)) if image.data == "AA=="));
+        assert_eq!(parts[2], PublicPart::Text("after".into()));
+        assert!(matches!(&parts[3], PublicPart::Image(Err(error)) if !error.contains("secret")));
+        assert_eq!(
+            public_parts(&json!([{"type":"text","text":"a"},{"type":"text","text":"b"}])),
+            vec![PublicPart::Text("ab".into())]
+        );
+    }
+
+    #[test]
+    fn history_regions_follow_content_order_without_crossing_tools() {
+        let call = json!({"type":"toolCall","id":"a","name":"bash","arguments":{}});
+        let parts = history_parts(&json!([
+            {"type":"text","text":"first"}, {"type":"text","text":"\n"},
+            {"type":"text","text":"second"}, call,
+            {"type":"thinking","text":"private"},
+            {"type":"text","text":"after\n\ncall"},
+            {"type":"image","mimeType":"image/png","data":"AA=="},
+            {"type":"tool_use","id":"b","name":"read"},
+            {"type":"text","text":"\r\n \t"},
+            {"type":"tool_call","id":"c","name":"read"},
+            {"type":"image","mimeType":"image/svg+xml","data":"secret"}
+        ]));
+        assert_eq!(parts.len(), 7);
+        assert_eq!(
+            parts[0],
+            HistoryPart::Public(PublicPart::Text("first\nsecond".into()))
+        );
+        assert_eq!(parts[1], HistoryPart::Tool(3, call));
+        assert_eq!(
+            parts[2],
+            HistoryPart::Public(PublicPart::Text("after\n\ncall".into()))
+        );
+        assert!(
+            matches!(&parts[3], HistoryPart::Public(PublicPart::Image(Ok(image))) if image.data == "AA==")
+        );
+        assert!(matches!(&parts[4], HistoryPart::Tool(7, call) if call["id"] == "b"));
+        assert!(matches!(&parts[5], HistoryPart::Tool(9, call) if call["id"] == "c"));
+        assert!(
+            matches!(&parts[6], HistoryPart::Public(PublicPart::Image(Err(error))) if !error.contains("secret"))
+        );
+        assert!(
+            history_parts(
+                &json!([{"type":"thinking","text":"private"},{"type":"text","text":"\n"}])
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            history_parts(&json!("real\n\ntext")),
+            vec![HistoryPart::Public(PublicPart::Text("real\n\ntext".into()))]
+        );
+    }
+
+    #[test]
+    fn whitespace_only_public_parts_do_not_turn_tools_into_prose() {
+        for content in [
+            json!(" \r\n\t"),
+            json!([{"type":"text","text":"\n"}, {"type":"text","text":" \t"}]),
+            json!([
+                {"type":"text","text":"\r\n\n"},
+                {"type":"thinking","text":"private"},
+                {"type":"toolCall","id":"t","name":"bash","arguments":{}}
+            ]),
+        ] {
+            assert!(public_parts(&content).is_empty(), "{content}");
+        }
+        let parts = public_parts(&json!([
+            {"type":"text","text":"  first"},
+            {"type":"text","text":"\n"},
+            {"type":"text","text":"second  "},
+            {"type":"image","mimeType":"image/png","data":"AA=="},
+            {"type":"text","text":"\n\n"}
+        ]));
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], PublicPart::Text("  first\nsecond  ".into()));
+        assert!(matches!(&parts[1], PublicPart::Image(Ok(_))));
+        assert_eq!(
+            public_parts(&json!("  first\n\nsecond  ")),
+            vec![PublicPart::Text("  first\n\nsecond  ".into())]
+        );
+        // Tool output uses public_text, not the whitespace-only prose filter.
+        assert_eq!(public_text(&json!([{"type":"text","text":"\n\n"}])), "\n\n");
+    }
+
+    #[test]
+    fn tool_images_are_separated_from_display_and_copy_text() {
+        let result = json!({"content":[
+            {"type":"text","text":"result"},
+            {"type":"image","mimeType":"image/png","data":"AA=="},
+            {"type":"thinking","text":"private"}
+        ],"details":{"secret":"not-public"}});
+        let raw = history_tool_output(&result);
+        let (text, images) = tool_output_parts(&raw);
+        assert_eq!(text, "result");
+        assert_eq!(images.len(), 1);
+        assert_eq!(
+            tool_output_parts(&result["content"].to_string()),
+            (text, images)
+        );
+        assert_eq!(
+            tool_output_parts("plain output"),
+            ("plain output".into(), Vec::new())
+        );
+        assert_eq!(
+            history_tool_output(&json!({"content":[],"result":"fallback"})),
+            "fallback"
+        );
+    }
+
     fn pending(ui: Value) -> PendingDialog {
         PendingDialog {
             request_id: "d".into(),

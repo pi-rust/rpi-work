@@ -2,14 +2,14 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
 const {chromium}=require('../support/browser.cjs');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH}),page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true}),results=[],errors=[],external=[];
- page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:4173/'))external.push(r.url());});
+ page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:14173/'))external.push(r.url());});
  const pass=t=>{results.push(t);console.log('PASS '+t);},close=()=>page.locator('#modal .modal-header [data-close-modal]').click();
  const session=async view=>{const button=page.locator(`#session-resources [data-view="${view}"]`);if(await button.isVisible())await button.click();else{await page.locator('.session-config-summary').click();await page.locator(`#modal [data-view="${view}"]`).click();}};
  const card=key=>page.locator(`[data-package-key="${key}"]`),library=()=>page.locator('.primary-nav [data-nav="packages"]').click();
  const acquire=async key=>{if(!await page.evaluate(key=>packageStore.downloaded.has(key),key)){await card(key).locator('[data-package="download"]').click();await page.waitForFunction(key=>packageStore.downloaded.has(key),key);}};
  const download=async(key)=>{await acquire(key);const event=page.waitForEvent('download');await card(key).locator('[data-package="export"]').click();const d=await event;const dest=path.resolve('artifacts',d.suggestedFilename());await d.saveAs(dest);return JSON.parse(fs.readFileSync(dest,'utf8'));};
  const importFile=async data=>{const event=page.waitForEvent('filechooser');await page.locator('#page-view [data-package="import"]').click();const c=await event;await c.setFiles({name:'package.rpi-package.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});};
- await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:4182/prototype/');
+ await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:14182/prototype/');
  const layout=await page.locator('#session-resources').evaluate(e=>({bottom:e.getBoundingClientRect().bottom,tabs:document.querySelector('.tabs').getBoundingClientRect().top}));assert.ok(layout.bottom<=layout.tabs+44);
  assert.equal(await page.getByRole('tab').count(),2);assert.equal(await page.locator('.session-config-summary b').innerText(),'2');assert.equal(await page.locator('#skills-context').count(),0);
  assert.equal(await page.locator('.composer [data-harness="tool-settings"]').count(),0);assert.equal(await page.locator('.composer [data-capability="skill-picker"]').count(),1);

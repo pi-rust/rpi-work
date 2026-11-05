@@ -1,92 +1,34 @@
-//! Desktop RPC workspace ownership. Mobile and Web only connect remotely.
+//! Platform capability adapter. Only an owning desktop launches a local host.
 pub(crate) const LOCAL_ADDRESS: &str = "rpi-work://local";
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-mod native {
-    use std::sync::OnceLock;
-    use work_client::WorkspaceClient;
-    use work_node::local::LocalRuntime;
+static REQUESTED_ADDRESS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-    pub(super) static CONNECTION: OnceLock<Result<WorkspaceClient, String>> = OnceLock::new();
-
-    pub(crate) struct LocalGuard(LocalRuntime);
-
-    pub(crate) fn start() -> Option<LocalGuard> {
-        let result = LocalRuntime::prepare().and_then(|runtime| {
-            let client = WorkspaceClient::local_rpc(runtime.rpi.clone(), runtime.data.clone())
-                .map_err(|error| error.to_string())?;
-            Ok((runtime, client))
-        });
-        match result {
-            Ok((runtime, client)) => {
-                let _ = CONNECTION.set(Ok(client));
-                Some(LocalGuard(runtime))
-            }
-            Err(error) => {
-                let _ = CONNECTION.set(Err(error));
-                None
-            }
-        }
-    }
-
-    impl LocalGuard {
-        /// Never block an executor on itself. The shutdown thread owns the data
-        /// lock until every core child has stopped. Bound the event-loop wait;
-        /// on timeout the thread retains the lock rather than releasing it early.
-        pub(crate) fn shutdown(self) {
-            let client = super::client();
-            let (done, completed) = std::sync::mpsc::sync_channel(1);
-            let guard = std::sync::Arc::new(std::sync::Mutex::new(Some(self)));
-            let owned_guard = guard.clone();
-            let spawned = std::thread::Builder::new()
-                .name("workspace-shutdown".into())
-                .spawn(move || {
-                    let runtime = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build();
-                    if let Ok(runtime) = runtime {
-                        runtime.block_on(async {
-                            if let Some(client) = client {
-                                client.shutdown().await;
-                            }
-                        });
-                        // Explicitly release the LocalRuntime only after shutdown.
-                        if let Some(LocalGuard(lock)) = owned_guard.lock().unwrap().take() {
-                            drop(lock);
-                        }
-                        let _ = done.send(());
-                    } else {
-                        // No executor means shutdown could not be confirmed.
-                        std::mem::forget(owned_guard);
-                    }
-                });
-            if spawned.is_err() {
-                std::mem::forget(guard);
-                eprintln!("Unable to start workspace shutdown; retaining data lock until exit");
-                return;
-            }
-            if completed
-                .recv_timeout(std::time::Duration::from_secs(10))
-                .is_err()
-            {
-                eprintln!(
-                    "Workspace shutdown exceeded 10 seconds; data lock retained until cleanup or exit"
-                );
-            }
-        }
-    }
+/// Set before launching Dioxus. Explicit remote mode never touches the local
+/// data directory, tries its lock, or starts another owner as a fallback.
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+pub(crate) fn set_requested_address(address: String) {
+    let _ = REQUESTED_ADDRESS.set(address);
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-pub(crate) use native::start;
+pub(crate) fn requested_address() -> Option<&'static str> {
+    REQUESTED_ADDRESS.get().map(String::as_str)
+}
+
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+pub(crate) fn start() -> Option<work_host::LocalGuard> {
+    if requested_address().is_some_and(|address| !is_local(address)) {
+        None
+    } else {
+        work_host::start()
+    }
+}
 
 pub(crate) fn client() -> Option<work_client::WorkspaceClient> {
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
-        native::CONNECTION
-            .get()
-            .and_then(|result| result.as_ref().ok())
-            .cloned()
+        work_host::client()
     }
     #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
@@ -113,10 +55,7 @@ pub(crate) fn authorize(
 pub(crate) fn startup_error() -> Option<&'static str> {
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
-        native::CONNECTION
-            .get()
-            .and_then(|result| result.as_ref().err())
-            .map(String::as_str)
+        work_host::startup_error()
     }
     #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {

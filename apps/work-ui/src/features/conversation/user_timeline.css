@@ -1,0 +1,208 @@
+/* Only the transcript frame is reserved; this rail never overlays the composer. */
+.transcript-frame {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.transcript-frame:has(> .conversation-timeline:not([hidden])) > .transcript {
+  padding-left: var(--conversation-gutter-left, 40px);
+}
+.empty-conversation .transcript-frame { flex: 0 1 auto; }
+.empty-conversation .transcript-frame > .conversation-timeline { display: none; height: 0; }
+.conversation-timeline {
+  --timeline-step: 15px;
+  --timeline-history-step: 0px;
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 5px;
+  width: 24px;
+  max-width: 24px;
+  height: max(0px, min(calc(10 * var(--timeline-step) + var(--timeline-history-step)), calc(100% - 24px)));
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  color: var(--muted);
+}
+.conversation-timeline:has(.timeline-load-earlier) { --timeline-history-step: 24px; }
+.conversation-timeline[hidden] { display: none; }
+.conversation-timeline .timeline-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  pointer-events: auto;
+}
+.conversation-timeline .timeline-list {
+  position: relative;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  max-height: calc(10 * var(--timeline-step));
+  overflow-anchor: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* Match Web: touch drag previews/scrubs ticks instead of cancelling into a pan.
+     This is restricted to the 24/32px rail; prose remains natively scrollable. */
+  touch-action: none;
+  user-select: none;
+  cursor: ns-resize;
+  border-radius: 6px;
+  scroll-behavior: auto;
+}
+.conversation-timeline .timeline-list[data-scrubbing] { cursor: grabbing; }
+.conversation-timeline .timeline-list::-webkit-scrollbar { display: none; }
+.conversation-timeline .timeline-list > li { margin: 0; padding: 0; }
+/* Specificity intentionally beats the application's generic button rules. */
+.conversation-timeline .timeline-node,
+.conversation-timeline .timeline-load-earlier {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 24px;
+  min-width: 24px;
+  height: var(--timeline-step);
+  min-height: var(--timeline-step);
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.conversation-timeline .timeline-load-earlier {
+  height: 24px;
+  min-height: 24px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  font-size: 14px;
+}
+.conversation-timeline .timeline-load-earlier:disabled { cursor: default; opacity: .5; }
+.conversation-timeline .timeline-mark {
+  display: block;
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: .4;
+  transition: width 120ms ease, opacity 120ms ease;
+  pointer-events: none;
+}
+.conversation-timeline .timeline-node[aria-current="location"] { color: var(--text); }
+.conversation-timeline .timeline-node[aria-current="location"] .timeline-mark {
+  width: 16px;
+  height: 3px;
+  opacity: 1;
+}
+.conversation-timeline .timeline-node:hover,
+.conversation-timeline .timeline-node:focus-visible,
+.conversation-timeline .timeline-load-earlier:not(:disabled):hover,
+.conversation-timeline .timeline-load-earlier:focus-visible {
+  background: var(--panel, var(--card));
+  color: var(--text);
+}
+.conversation-timeline .timeline-node:hover .timeline-mark,
+.conversation-timeline .timeline-node:focus-visible .timeline-mark { width: 16px; opacity: 1; }
+.conversation-timeline .timeline-node:focus-visible,
+.conversation-timeline .timeline-load-earlier:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+.conversation-timeline .timeline-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* This 8px hoverable bridge is a root child, so moving into the tooltip does
+   not dismiss it. It exists only while the native tooltip is actually shown. */
+.conversation-timeline:has(> .timeline-preview:not([hidden]))::before {
+  content: "";
+  position: absolute;
+  left: 100%;
+  width: 8px;
+  top: 0;
+  bottom: 0;
+  pointer-events: auto;
+}
+.conversation-timeline > .timeline-preview {
+  position: absolute;
+  left: calc(100% + 8px);
+  transform: translateY(-50%);
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 64px));
+  max-height: 100%;
+  overflow: hidden;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 3px 12px #00000012;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  pointer-events: auto;
+}
+.conversation-timeline > .timeline-preview[hidden] { display: none; }
+.conversation-timeline .timeline-preview-index {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.conversation-timeline .timeline-label {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@media (max-width: 767px) {
+  .transcript-frame:has(> .conversation-timeline:not([hidden])) > .transcript { padding-left: var(--conversation-gutter-left, 36px); }
+  /* The rail's marks stay in the reserved gutter. Its composite scrub surface
+     must not steal taps from the first letters of prose at x=36px. */
+  .conversation-timeline { --timeline-step: 15px; left: 0; width: 32px; max-width: 32px; }
+  .conversation-timeline .timeline-node,
+  .conversation-timeline .timeline-load-earlier { width: 32px; min-width: 32px; }
+  .conversation-timeline > .timeline-preview { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conversation-timeline .timeline-mark { transition: none; }
+}
+/* A replaceable reading window, never prepended to the live transcript. */
+.timeline-history-reader {
+  position: absolute; inset: 0 0 0 40px; z-index: 3;
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--bg); color: var(--text); overflow: hidden;
+}
+.timeline-history-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); }
+.timeline-history-controls strong { margin-right: auto; }
+.timeline-history-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px; }
+.timeline-history-content > div { margin-bottom: 24px; }
+.timeline-history-reader > p { padding-inline: 12px; overflow-wrap: anywhere; }
+.timeline-query-error { position: absolute; left: 100%; width: min(260px, 70vw); padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; pointer-events: auto; }
+@media (max-width: 767px) { .timeline-history-reader { left: 36px; } }
+

@@ -1,8 +1,10 @@
 # Skills 与交互工具展示 · v0.4
 
+> 设计参考：本页混合原型探索与局部实现更新，不是当前功能清单。实际使用以[交互指南](../guides/codex-interactions.md)、[扩展边界](../architecture/extensions.md)和[主题规格](../guides/theme-design.md)为准；原型场景与历史验证不能替代正式实现或本次验收。
+
 本稿补充 `ask_user`、BTW、todo、goal 和 Skills。任务仍然只有「对话 / 变更」两个标签，新增侧栏 Skills 目录和独立旁问区域。当前全部为本地交互样例，未调用真实工具或读取真实技能文件。
 
-v0.6 更新：当前 Skills/Tools/提示词配置以会话为范围，入口统一放到会话顶部；输入框保留单次消息的技能选择。侧栏目录改名「技能库」，用于发现资源。具名 Package、下载与版本绑定以 [会话资源设计](session-packages.md) 为准。
+v0.6 更新：当前 Skills/Tools/提示词配置以会话为范围，入口统一放到会话顶部；输入框保留单次消息的技能选择。侧栏目录改名「技能库」，用于发现资源。具名 Package、下载与版本绑定以 [会话资源设计](../archive/prototype/session-packages.md) 为准。
 
 ## 1. 先区分几种能力
 

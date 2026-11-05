@@ -1,5 +1,7 @@
 # 工作台主题系统 · v0.7
 
+> 设计参考：本页混合原型探索与局部实现更新，不是当前功能清单。实际使用以[交互指南](../guides/codex-interactions.md)、[扩展边界](../architecture/extensions.md)和[主题规格](../guides/theme-design.md)为准；原型场景与历史验证不能替代正式实现或本次验收。
+
 > 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](../guides/testing-artifacts.md)。
 
 2026-10-24。把整体视觉设计抽象为「主题定义 → 语义变量 → 组件」三层，主题切换覆盖会话、工具、Skills、Package、队列、Provider、统计、变更、弹窗和手机布局。
@@ -19,6 +21,12 @@
 Codex 的视觉默认值由 `ThemeDesign::codex()` 提供：消息 15px / 1.7 行高、导航 14px、标题 16px / 600 字重，圆角 4/8/12/16/20px、40px 控件、44px 手机触控目标及 subtle 阴影。输入正文至少 16px，输入区使用更柔和的圆角表面，发送按钮为圆形，键盘焦点继续清晰可见。旧 v1 Codex JSON 仍按原 ID/字段往返，其未显式描述的视觉参数跟随当前内置默认值；显式 v2 `design` 始终优先，其他四套主题不跟随这组调整。
 
 [`codex-components.css`](../../apps/work-ui/src/shared/theme/codex-components.css) 仅在 Codex 下减轻顶部操作边框和侧栏徽章的视觉重量。手机会话标题可正确省略，不覆盖状态区域；360px 以下，低优先级的空闲/完成徽章只对辅助技术保留，给会话标题让出空间，运行/错误与节点状态仍可见。工具栏在窄屏水平滚动，保留完整可读的资源入口及触控尺寸，不再把文字挤成小字或多行。浅/深/390/320px 截图由 `tests/e2e/verify-codex-theme.cjs` 使用已选择会话的正式应用与本地 HTTP fixture 生成，路径为 `artifacts/codex-theme-{light,dark,mobile-390,mobile-320}.png`。
+
+第二轮功能面打磨仍限定 `[data-theme="codex"]`：空会话去掉通用虚线框并突出原有下一步操作；工具标题与桌面模型控制使用导航字号，参数 / 输出使用代码字号，状态 / 统计使用辅助字号，资源与设置说明使用正文字号。默认对应 14 / 12 / 12 / 15px，随 token 而非写死；手机输入控件仍遵守至少 16px 的安全下限。统计栏和能力区可换行，主要操作沿用 `--hit-size`，窄屏设置导航保留图标返回按钮，资源标题平衡换行。Diff 画布不再误用终端黑底，增删及运行状态语义色保留。没有改变空态文案、按钮条件、节点协议、其余主题或自定义主题样式。
+
+新增 `tests/e2e/verify-codex-surfaces.cjs` 复核对话 / 工具、资源、设置、Inspector、统计、项目文件和 diff，产物为 `artifacts/codex-surfaces-*`。实测基线、八套回归及未解决项见 [Codex 功能面审阅](../archive/codex-visual-review.md)：包括自定义主题在 320px + 大字号组合下仍有统计栏溢出，不应把本轮 Codex 修复理解为所有自定义布局都已统一。
+
+独立于以上 Codex 配色打磨，工具展示现已抽象为共享主题配置：默认跟随主题，所有未指定模式的主题使用 **简单**。在「外观与主题 → 工具展示」可显式选择简单或详情；简单为无边框紧凑摘要，可展开完整结果，详情保留当前卡片。v2 主题通过 `theme.design.toolRendering` 设置默认，本机选择可覆盖；优先级、可移植偏好和严格枚举校验见 [主题视觉规格](../guides/theme-design.md#toolrendering简单--详情)。这一受控展示设置适用于所有配色，不改变执行、确认或工具状态。新增 `tests/e2e/verify-tool-rendering.cjs` 生成 `artifacts/tool-rendering-*` 截图并验证保存、撤销、主题往返和手机布局。
 
 正式实现以 [`theme_contract.rs`](../../apps/work-ui/src/shared/theme/theme_contract.rs) 的 palette / `build_tokens` 为来源；[`codex.css`](../../apps/work-ui/src/shared/theme/codex.css) 是生成结果，包含启动 fallback 及 light/dark/system 规则，与 JSON 导入导出共用同一组 token。正式应用与模块 harness 加载同一套 stylesheet。
 

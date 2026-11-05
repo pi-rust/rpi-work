@@ -1,28 +1,42 @@
 # 真实节点聊天
 
-正式客户端通过 `work-client` 调用 rpi-http / rpi-web 的 HTTP API，并订阅当前会话的 SSE。Provider和模型密钥由节点宿主管理；浏览器只使用节点密码登录。
+桌面是节点宿主：本机 RPC 与内嵌 HTTP/SSE 共用同一份 `LocalWorkspace`，Web/手机是访问入口。独立 `rpi-http` 不等于桌面 owner。旧迁移副本不自动搬回或合并。
 
 ## 本机启动
 
-先启动已经配置好模型的 rpi-http 节点，默认地址为 `http://127.0.0.1:3030`。构建并运行 Web 客户端：
+配置 Git ignored `.env.local` 的 `RPI_WORK_HTTP_PASSWORD`（兼容 `RPI_HTTP_PASSWORD`，勿提交实际密码），安装兼容 rpi 后运行：
 
 ```powershell
-pwsh -File tools/dev/build-ui-web.ps1
-$env:PORT = '4180'
-$env:RPI_UI_HOST = '127.0.0.1'
-node tools/dev/dev-web.mjs
+task dev
 ```
 
-打开 http://127.0.0.1:4180/ ，进入“设置 → 执行节点”，连接本机并输入已有节点密码。登录后返回会话，从项目侧栏打开或新建任务。输入栏可选择节点实际提供的模型和思考等级，然后发送消息。
+它并行启动桌面节点与 Web 热刷新，不需要再运行 `task desktop` 或 `task node`。Web 页面 **http://127.0.0.1:14180/** 的 API 同源代理到桌面 **127.0.0.1:13031**；首次缺少共享偏好时默认开启“允许共享这台电脑”，已保存关闭时需要手动开启；让 Web 连接当前页面 origin 并使用桌面 HTTP 密码。桌面默认直接访问同一个内存 owner，不用改连外部 HTTP。
 
-Web会话可通过 `/?session=<sessionId>` 直接打开：连接的是该页面的服务节点，认证有效时进入会话，需要密码时先打开节点登录页，登录成功后进入目标会话。链接不携带密码，也不会跳到本设备记住的其他节点。
+只需桌面时用 `task desktop`；`task node` 保留为明确独立节点（通常3030），不与桌面共享 owner。独立节点原有数据与已迁移副本继续保留。当前已经运行的旧桌面或 Web 代理不会因源码改变自动切换，不能擅自中断当前会话来启用新能力。
 
-`RPI_API_HOST` / `RPI_API_PORT` 可指定被代理的节点，`--watch-build` 可在源码变化后重新构建。默认API端口3030。开发服务器校验请求Host和Origin，仅把已接受的本界面来源转换为节点来源，不删除上游认证与请求标记。自定义域名需要在 `RPI_UI_ALLOWED_HOSTS` 显式配置（逗号分隔，包含实际非默认端口）。
+## 端口、二维码与手机
 
-本机验证只绑定回环地址。手机真机访问需要另行配置可达的监听地址、节点Host和网络入口；移动视口截图不能替代手机网络和相机验证。
+- `RPI_WORK_HTTP_PORT` 更改桌面入口与 `task dev` 的代理目标；`PORT` 更改 Web 端口。
+- 局域网可使用 `http://<电脑IP>:14180/` 的同源 Web 代理；桌面 API 可以继续仅回环监听。
+- 直接提供桌面 Web 页面需配置显式监听、可达 origin 和已构建 assets 目录；见[桌面 HTTP 入口](desktop-http.md)。
+- HTTPS 外部域名须由明确配置的同源反向代理提供，校验 Host/Origin，不删除认证；现有代理仍指向旧3030时不会自动访问桌面，应由用户择时更改并验证。
+- 桌面“执行节点”展示 listener 状态及密码查看入口。二维码只包含地址；手机识码、确认和密码登录后读取同一会话。
+- 手机 HTTP 页面的相机需要安全上下文，普通 LAN HTTP 可使用相册；桌面浏览器移动模拟不能替代实体手机验收。
+
+## 手动启动 Web
+
+在新桌面已运行且入口3031可用时，另开终端启动 Web（不启动第二个 owner）：
+
+```powershell
+$env:RPI_API_PORT = "13031"
+node tools/dev/dev-web.mjs --watch-build --debug-build
+```
+
+手动脚本仍可通过 `RPI_API_HOST` / `RPI_API_PORT` 代理其他明确选择的节点。默认值不代表其与桌面相同；检查实际目标，避免读到 standalone 的会话库。自定义域名用 `RPI_UI_ALLOWED_HOSTS` 显式配置。
 
 ## 对话生命周期
 
+- 项目/会话目录在可见窗口中每 3 秒刷新，focus 或恢复 visible 时立即刷新（在途请求完成后补刷），隐藏时暂停；失败保留目录并自动重试。节点与连接 epoch 隔离迟到结果，并检查本端并发目录修改，避免覆盖改名或归档。目录刷新不等于历史全量同步，当前会话仍使用下述 SSE 与历史校准。
 - SSE `ready` 表示订阅在线，不能使空闲会话进入运行状态。
 - `prompt` 接受后由 `agent_start` / `operation_accepted` 驱动运行，文本增量和工具事件都在同一对话内显示。
 - rpi的用户消息可能只写入持久化历史，不另发消息事件。客户端在运行开始读取已落盘的用户消息，在 `agent_settled` 后对齐正式历史与流式消息ID；读取最多等待5秒，不推进SSE游标、不重发prompt。
@@ -40,8 +54,8 @@ node tests/e2e/verify-dev-proxy.cjs
 真实模型检查需要明确传入 `--run-model`，会在当前工作区对应项目中创建或复用专门的验证会话，实际调用模型两轮，其中一轮仅开放read工具读取README。结束时恢复该验证会话原有的工具集合，不修改其他会话。验证记录保存在本机 `target/live-chat-session.json`；不会自动进入普通CI。
 
 ```powershell
-$env:WORK_UI_URL = 'http://127.0.0.1:4180/'
-$env:RPI_WORK_NODE_URL = 'http://127.0.0.1:3030'
+$env:WORK_UI_URL = 'http://127.0.0.1:14180/'
+$env:RPI_WORK_NODE_URL = 'http://127.0.0.1:13030'
 # 从本地服务环境JSON读取RPI_HTTP_PASSWORD或RPI_WEB_PASSWORD，避免把密码写进命令或报告。
 $env:RPI_WORK_NODE_ENV_FILE = 'C:/path/to/private-node-environment.json'
 # 可选：provider/model；省略则使用该验证会话当前模型。

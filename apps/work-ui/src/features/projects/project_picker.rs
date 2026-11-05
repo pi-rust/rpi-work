@@ -145,7 +145,7 @@ fn is_windows_path(path: &str) -> bool {
     path.as_bytes().get(1) == Some(&b':') || path.starts_with("//")
 }
 
-fn project_label(projects: &[Project], id: Option<&str>) -> String {
+pub(super) fn project_label(projects: &[Project], id: Option<&str>) -> String {
     id.and_then(|project_id| projects.iter().find(|project| project.id == project_id))
         .map_or_else(|| "独立会话".to_owned(), |project| project.name.clone())
 }
@@ -972,47 +972,4 @@ pub fn SearchDialog(
     }
 }
 
-#[component]
-pub fn SessionSwitcher(
-    projects: Vec<Project>,
-    sessions: Vec<SessionSummary>,
-    current_session: Option<String>,
-    onsession: EventHandler<String>,
-    onclose: EventHandler<()>,
-) -> Element {
-    let mut query = use_signal(String::new);
-    let needle = query.read().trim().to_lowercase();
-    rsx! {
-        Modal { id: "session-switcher", title: "切换会话", class: "session-switcher-modal", onclose,
-            div { class: "modal-body",
-                div { class: "session-switcher-toolbar", span { "所有项目" } }
-                div { class: "global-search-input", Icon { name: "search".to_owned() } input { aria_label: "搜索会话或项目", placeholder: "搜索会话或项目…", value: "{query}", autofocus: true, oninput: move |event| query.set(event.value()) } }
-                div { class: "session-switcher-results",
-                    for session in sessions.iter().filter(|session| {
-                        let title = session.title.as_deref().unwrap_or("未命名会话");
-                        let project = projects.iter().find(|project| session.project_id.as_deref() == Some(project.id.as_str()));
-                        format!("{} {} {}", title, project.map_or("", |project| &project.name), project.map_or("", |project| &project.path)).to_lowercase().contains(&needle)
-                    }) {
-                        {
-                            let session_id = session.session_id.clone();
-                            let current = current_session.as_deref() == Some(session.session_id.as_str());
-                            let title = session.title.as_deref().unwrap_or("未命名会话").to_owned();
-                            rsx! {
-                                button { class: if current { "session-switcher-row current" } else { "session-switcher-row" }, aria_current: if current { "true" } else { "false" }, onclick: move |_| onsession.call(session_id.clone()),
-                                    Icon { name: "message".to_owned() }
-                                    span { strong { "{title}" } small { "{project_label(&projects, session.project_id.as_deref())}" } }
-                                    if current { em { "当前" } } else { Icon { name: "chevron".to_owned() } }
-                                }
-                            }
-                        }
-                    }
-                    if sessions.iter().all(|session| {
-                        let title = session.title.as_deref().unwrap_or("未命名会话");
-                        let project = projects.iter().find(|project| session.project_id.as_deref() == Some(project.id.as_str()));
-                        !format!("{} {} {}", title, project.map_or("", |project| &project.name), project.map_or("", |project| &project.path)).to_lowercase().contains(&needle)
-                    }) { p { class: "search-empty", "没有匹配的会话，试试其他名称或项目。" } }
-                }
-            }
-        }
-    }
-}
+pub use super::session_switcher::SessionSwitcher;

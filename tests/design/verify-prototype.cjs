@@ -14,7 +14,7 @@ const { chromium } = require('../support/browser.cjs');
   page.on('requestfailed',req=>errors.push(req.url()));
   const results=[];
   const pass=(text)=>{results.push(text);console.log('PASS '+text);};
-  const url=process.env.PROTOTYPE_URL||'http://127.0.0.1:4182/prototype/';
+  const url=process.env.PROTOTYPE_URL||'http://127.0.0.1:14182/prototype/';
   await page.goto(url);
   await page.getByRole('heading',{name:'为工作台添加深色模式',exact:true}).waitFor();
   fs.mkdirSync('artifacts',{recursive:true});

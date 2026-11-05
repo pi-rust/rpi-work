@@ -14,9 +14,9 @@
 .theme-design-summary dt { color: var(--muted); }
 .theme-design-summary dd { margin: 0; overflow-wrap: anywhere; }
 .theme-design-summary p { margin: var(--space-10) 0 0; font-size: var(--font-assist); color: var(--muted); overflow-wrap: anywhere; }
-@media (max-width: 700px) {
-  /* Imported scale/compact values must never lower mobile input or primary touch safety. */
-  body input:not([type="checkbox"]):not([type="radio"]), body select, body textarea {
+@media (max-width: 767px) {
+  /* Text entry keeps the no-zoom floor; compact composer selectors use assist tokens. */
+  body input:not([type="checkbox"]):not([type="radio"]), body select:not(.composer-select), body textarea {
     font-size: max(16px, var(--font-body)) !important;
   }
   .app-dialog .modal-header > .icon-button, .app-dialog.appearance-modal .modal-actions > button:is(.button, .secondary) {

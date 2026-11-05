@@ -1,19 +1,170 @@
-const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require('../support/browser.cjs');
-const {startFixture}=require('../fixtures/ui-fixture.cjs');
-(async()=>{
- const node=await startFixture(),browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH}),page=await browser.newPage({viewport:{width:1440,height:1000}}),results=[],errors=[];page.setDefaultTimeout(7500);page.on('pageerror',e=>errors.push(e.message));const pass=name=>{results.push(name);console.log('PASS',name)},dialog=()=>page.getByRole('dialog',{name:'消息队列',exact:true}),panel=()=>dialog().getByRole('region',{name:'本地队列提案编辑区',exact:true}),edit=()=>panel().getByLabel('本地提案编辑文本',{exact:true}),draft=()=>dialog().getByLabel('队列消息草稿',{exact:true}),writes=()=>node.requests.filter(r=>r.path.endsWith('/commands')&&!/^get_/.test(r.body.type||'')).length;
- const seed=[{entryId:'proposal-first',queue:'followUp',status:'queued',text:'真实服务端第一条消息'},{entryId:'proposal-second',queue:'steer',status:'queued',text:'真实服务端第二条消息'},{entryId:'proposal-claimed',queue:'followUp',status:'claimed',text:'已经预留不能修改的消息'}];node.setQueue(seed);node.setQueue(seed,'architecture');
- async function open(){await page.locator('.inspector').getByRole('button',{name:/^队列/}).click();await dialog().getByText(seed[2].text,{exact:true}).waitFor()}
- try{
-  await page.goto('http://127.0.0.1:4180/');await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(node.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.getByRole('status').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();await page.locator('.project-row').filter({hasText:'rpi-work'}).click();await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).waitFor();await open();const before=writes();assert.equal(await panel().count(),0);assert(await dialog().getByRole('button',{name:'暂停提案',exact:true}).isEnabled());const claimed=dialog().locator('.queue-item').filter({hasText:seed[2].text});assert(await claimed.getByRole('button',{name:'取消此队列消息',exact:true}).isDisabled());await dialog().locator('.queue-item').first().getByRole('button',{name:'编辑此消息的本地提案',exact:true}).click();await edit().waitFor();assert.equal(await edit().inputValue(),seed[0].text);assert.match(await panel().innerText(),/仅本地提案.*不会暂停\/重排\/修改节点/);pass('prototype edit, order and pause entry points open a clearly local proposal while claimed server entries remain protected');
-  await edit().fill('只在本地编辑的第一条');assert(await panel().getByRole('button',{name:'上移本地提案',exact:true}).isDisabled());await panel().getByRole('button',{name:'下移本地提案',exact:true}).click();assert.equal(await panel().getByLabel('选择本地提案条目',{exact:true}).inputValue(),'1');assert.equal(await edit().inputValue(),'只在本地编辑的第一条');assert.deepEqual(await dialog().locator('.queue-item-text').allTextContents(),seed.map(s=>s.text));assert.equal(writes(),before);pass('editing and reordering change only the local copy and never the real queue order or RPC state');
-  await dialog().getByRole('button',{name:'暂停提案',exact:true}).click();assert(await edit().isDisabled());assert(await panel().getByRole('button',{name:'复制到队列草稿',exact:true}).isDisabled());assert.match(await panel().innerText(),/不会暂停节点队列/);await dialog().getByRole('button',{name:'恢复提案',exact:true}).click();assert(await edit().isEnabled());await dialog().getByRole('button',{name:'刷新',exact:true}).click();assert.equal(await edit().inputValue(),'只在本地编辑的第一条');assert.equal(writes(),before);pass('pause freezes only local edits and real refresh does not erase the proposal');
-  await panel().getByLabel('消息投递方式',{exact:true}).selectOption('steer');await panel().getByRole('button',{name:'复制到队列草稿',exact:true}).click();assert.equal(await draft().inputValue(),'只在本地编辑的第一条');assert.equal(await dialog().locator('.queue-composer').getByLabel('消息投递方式',{exact:true}).inputValue(),'steer');assert.equal(writes(),before);await edit().fill('新提案不得覆盖已有草稿');assert(await panel().getByRole('button',{name:'复制到队列草稿',exact:true}).isDisabled());assert.equal(await draft().inputValue(),'只在本地编辑的第一条');pass('copy transfers text and delivery to an explicit draft and protects existing draft content without enqueueing');
-  await panel().getByRole('button',{name:'关闭提案',exact:true}).click();await dialog().locator('.queue-item').nth(1).getByRole('button',{name:'编辑此消息的本地提案',exact:true}).click();const confirm=dialog().getByRole('group',{name:'替换本地提案确认',exact:true});await confirm.waitFor();await confirm.getByRole('button',{name:'保留已有提案',exact:true}).click();assert.equal(await edit().inputValue(),'新提案不得覆盖已有草稿');assert.equal(writes(),before);pass('opening a different snapshot requires an explicit choice and retaining it preserves the local edits');
-  await page.keyboard.press('Escape');await dialog().waitFor({state:'hidden'});await page.locator('.sidebar-sessions').getByRole('button',{name:'梳理 Agent 架构',exact:true}).click();await page.locator('.transcript').getByText('这是 梳理 Agent 架构 的独立历史。',{exact:true}).waitFor();await open();assert.equal(await dialog().getByRole('button',{name:'继续本地提案',exact:true}).count(),0);await dialog().locator('.queue-item').first().getByRole('button',{name:'编辑此消息的本地提案',exact:true}).click();assert.equal(await edit().inputValue(),seed[0].text);await page.keyboard.press('Escape');await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).waitFor();await open();await dialog().getByRole('button',{name:'继续本地提案',exact:true}).click();assert.equal(await edit().inputValue(),'新提案不得覆盖已有草稿');assert.equal(await draft().inputValue(),'只在本地编辑的第一条');pass('proposal edits, order and queue drafts survive closing but remain isolated between sessions');
-  for(const width of [390,320]){await page.setViewportSize({width,height:844});assert(await dialog().evaluate(e=>e.scrollWidth<=e.clientWidth+1));assert(await panel().evaluate(e=>e.scrollWidth<=e.clientWidth+1));assert((await panel().getByRole('button',{name:'下移本地提案',exact:true}).boundingBox()).height>=36);const footer=await dialog().getByRole('button',{name:'完成',exact:true}).boundingBox();assert(footer.y+footer.height<=844);await page.screenshot({path:`artifacts/ui-queue-proposals-${width}.png`,animations:'disabled'});}pass('local proposal controls remain readable within mobile bounds and preserve the fixed queue footer');
-  assert.equal(writes(),before);await dialog().getByRole('button',{name:'加入队列',exact:true}).click();await page.waitForFunction(()=>{const e=document.querySelector('[aria-label="队列消息草稿"]');return !e||e.value===''});if(!await draft().isVisible())await dialog().getByRole('button',{name:'+ 添加',exact:true}).click();assert.equal(await draft().inputValue(),'');assert.equal(node.requests.filter(r=>r.body.type==='queue_message').length,1);assert.equal(node.requests.find(r=>r.body.type==='queue_message').body.message,'只在本地编辑的第一条');assert.equal(node.requests.find(r=>r.body.type==='queue_message').body.deliverAs,'steer');assert.equal(node.requests.filter(r=>/pause|reorder|edit_queue|cancel_queued/.test(r.body.type)).length,0);assert.equal(node.requests.filter(r=>r.body.type==='prompt').length,0);pass('only explicit enqueue sends one real command; proposal actions never pause, edit, cancel or prompt the node');
-  assert.deepEqual(errors,[]);pass('no application JavaScript errors');
- }catch(error){console.error('REVIEW RPC',JSON.stringify(node.requests.filter(r=>r.path.endsWith('/commands')&&!/^get_/.test(r.body.type||'')).map(r=>({type:r.body.type,message:r.body.message,deliverAs:r.body.deliverAs}))));await page.screenshot({path:'artifacts/ui-queue-proposals-failure.png',animations:'disabled'});throw error}finally{fs.writeFileSync('artifacts/ui-queue-proposals-validation.json',JSON.stringify({results,errors},null,2));await browser.close();await node.close()}
-})().catch(error=>{console.error(error);process.exitCode=1});
+// Queue actions use the normal composer lifecycle; there is no proposal editor.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const { chromium } = require('../support/browser.cjs');
+const { startFixture } = require('../fixtures/ui-fixture.cjs');
+
+const UI = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(test, message = 'expected queue operation did not arrive') {
+  for (let i = 0; i < 180; i++) { if (await test()) return; await pause(25); }
+  throw new Error(message);
+}
+
+(async () => {
+  fs.mkdirSync('artifacts', { recursive: true });
+  const node = await startFixture(0);
+  const seed = [
+    { entryId: 'send-first', queue: 'followUp', status: 'queued', text: '立即发送的第一条消息' },
+    { entryId: 'send-second', queue: 'steer', status: 'queued', text: '立即发送失败后恢复的第二条消息' },
+  ];
+  node.setQueue(seed);
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(10000);
+  const errors = [], results = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const pass = name => { results.push(name); console.log('PASS', name); };
+  const panel = () => page.locator('.message-queue.composer-queue-panel');
+  const row = id => panel().locator(`.composer-queue-item[data-entry-id="${id}"]`);
+  const draft = () => page.getByLabel('发送给 agent 的消息', { exact: true });
+  const commands = type => node.requests.filter(request => request.body?.type === type);
+  const reloadQueue = async () => { await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); await draft().waitFor(); };
+
+  try {
+    await page.addInitScript(address => {
+      localStorage.setItem('rpi-work-nodes-v1', JSON.stringify({ version: 1, recent: [address], selected: address }));
+      localStorage.setItem('rpi-work-appearance-v1', JSON.stringify({ theme: 'codex', mode: 'light', density: 'standard' }));
+    }, node.url);
+    await page.route('https://api.github.com/**', route => route.fulfill({ status: 404, body: '{}' }));
+    await page.goto(UI);
+    await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。', { exact: true }).waitFor();
+    await draft().waitFor();
+    assert.equal(await row('send-first').getByRole('button', { name: '立即发送排队消息', exact: true }).isEnabled(), true);
+    assert.equal(await page.locator('.composer-main textarea[aria-label="发送给 agent 的消息"]').count(), 1);
+    assert.equal(await page.locator('.composer-main textarea').count(), 1);
+    assert.equal(await page.getByText(/本地提案|提案编辑/, { exact: false }).count(), 0);
+
+    // Immediate send is cancel-confirmed and then invokes exactly one ordinary prompt.
+    await draft().fill('保留在主编辑器的草稿');
+    const attachment = page.getByLabel('选择本地附件，可多选', { exact: true });
+    await attachment.setInputFiles({ name: 'keep.md', mimeType: 'text/markdown', buffer: Buffer.from('# keep') });
+    await page.getByRole('button', { name: '移除 keep.md', exact: true }).waitFor();
+    const promptBefore = commands('prompt').length;
+    const queueBefore = commands('queue_message').length;
+    await row('send-first').getByRole('button', { name: '立即发送排队消息', exact: true }).click();
+    await until(() => commands('cancel_queued').some(request => request.body.entryId === 'send-first'));
+    await until(() => commands('prompt').length === promptBefore + 1);
+    const prompt = commands('prompt').at(-1);
+    assert.equal(prompt.body.message, '立即发送的第一条消息');
+    assert.equal(commands('queue_message').length, queueBefore, 'immediate send does not queue a second message');
+    assert(commands('cancel_queued').at(-1).body.entryId === 'send-first');
+    assert(commands('cancel_queued').at(-1).path === prompt.path, 'prompt stays in the selected session');
+    assert.equal(await draft().inputValue(), '保留在主编辑器的草稿');
+    assert.equal(await page.getByRole('button', { name: '移除 keep.md', exact: true }).count(), 1, 'main attachments survive immediate send');
+    await row('send-first').waitFor({ state: 'hidden' });
+    pass('immediate send cancels first, prompts once with only that row, and preserves the main draft and attachment');
+
+    // A prompt failure recovers only the explicitly sent row into the scoped draft.
+    await reloadQueue();
+    node.controls.failPrompt = true;
+    await draft().fill('draft retained on retry');
+    const failedPromptBefore = commands('prompt').length;
+    await row('send-second').getByRole('button', { name: '立即发送排队消息', exact: true }).click();
+    await until(() => commands('cancel_queued').filter(request => request.body.entryId === 'send-second').length === 1);
+    await until(() => commands('prompt').length === failedPromptBefore + 1);
+    await panel().getByRole('alert').waitFor();
+    const recovered = await draft().inputValue();
+    assert(recovered.includes('draft retained on retry'));
+    assert(recovered.includes('立即发送失败后恢复的第二条消息'));
+    assert.equal(commands('queue_message').length, queueBefore);
+    node.controls.failPrompt = false;
+    pass('failed immediate prompt recovers only that row into the session draft and does not create queue_message or another send');
+
+    // A negative cancellation response must prevent the prompt entirely.
+    node.setQueue([{ entryId: 'not-found-send', queue: 'followUp', status: 'queued', text: '取消未确认不能发送' }]);
+    node.controls.cancelOutcome = 'not_found';
+    await reloadQueue();
+    const blockedPromptBefore = commands('prompt').length;
+    await row('not-found-send').getByRole('button', { name: '立即发送排队消息', exact: true }).click();
+    await panel().getByRole('alert').waitFor();
+    await pause(100);
+    assert.equal(commands('prompt').length, blockedPromptBefore);
+    assert.equal(await row('not-found-send').count(), 1);
+    node.controls.cancelOutcome = null;
+    pass('immediate send does not prompt after a not_found cancellation outcome');
+
+    // A newly started run can overtake the cancellation round trip.
+    node.setQueue([{ entryId: 'runtime-race', queue: 'followUp', status: 'queued', text: '状态变化后应取回的消息' }]);
+    await reloadQueue();
+    await draft().fill('运行状态变化时的新草稿');
+    const racePromptBefore = commands('prompt').length;
+    node.controls.cancelDelayMs = 350;
+    await row('runtime-race').getByRole('button', { name: '立即发送排队消息', exact: true }).click();
+    await until(() => commands('cancel_queued').some(request => request.body.entryId === 'runtime-race'));
+    node.emit({ type: 'agent_start', runId: 'overtook-withdrawal' });
+    await page.getByRole('button', { name: '停止运行', exact: true }).waitFor();
+    await until(async () => (await draft().inputValue()).includes('状态变化后应取回的消息'));
+    assert((await draft().inputValue()).includes('运行状态变化时的新草稿'));
+    assert.equal(commands('prompt').length, racePromptBefore);
+    node.controls.cancelDelayMs = 0;
+    node.emit({ type: 'agent_settled', runId: 'overtook-withdrawal', outcome: 'completed' });
+    pass('runtime changes during withdrawal recover the item into the latest main draft instead of starting another task');
+
+    // Busy Enter has the existing default followUp behavior; modifiers and IME do not send.
+    node.setQueue([]);
+    await reloadQueue();
+    node.emit({ type: 'agent_start', runId: 'busy-queue-contract' });
+    await page.getByRole('button', { name: '停止运行', exact: true }).waitFor();
+    const busyQueueBefore = commands('queue_message').length;
+    const busyPromptBefore = commands('prompt').length;
+    await draft().fill('忙碌时回车默认排队');
+    await draft().press('Enter');
+    await until(() => commands('queue_message').length === busyQueueBefore + 1);
+    assert.equal(commands('queue_message').at(-1).body.message, '忙碌时回车默认排队');
+    assert.equal(commands('queue_message').at(-1).body.deliverAs, 'followUp');
+    assert.equal(commands('prompt').length, busyPromptBefore);
+    assert.equal(await page.getByRole('button', { name: '停止运行', exact: true }).isVisible(), true);
+    const modifierBefore = commands('queue_message').length;
+    await draft().fill('ShiftEnter 不应发送');
+    await draft().press('Shift+Enter');
+    await pause(100);
+    assert.equal(commands('queue_message').length, modifierBefore);
+    await draft().evaluate(element => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229, bubbles: true, cancelable: true })));
+    await pause(100);
+    assert.equal(commands('queue_message').length, modifierBefore, 'IME Enter does not enqueue');
+    const busyImmediate = panel().getByRole('button', { name: '立即发送排队消息', exact: true });
+    assert.equal(await busyImmediate.count(), 0, 'immediate send is unavailable while the agent is running');
+    node.emit({ type: 'agent_settled', runId: 'busy-queue-contract', outcome: 'completed' });
+    pass('busy Enter queues followUp, ShiftEnter/IME do not send, and the running composer remains a stop control');
+
+    // Once idle, ordinary queue actions become available again and remain bounded on mobile.
+    await until(async () => await page.getByRole('button', { name: '发送消息', exact: true }).count() > 0);
+    node.setQueue([{ entryId: 'touch-row', queue: 'followUp', status: 'queued', text: '移动端触摸消息' }]);
+    await reloadQueue();
+    for (const mode of ['light', 'dark']) {
+      await page.evaluate(value => localStorage.setItem('rpi-work-appearance-v1', JSON.stringify({ theme: 'codex', mode: value, density: 'standard' })), mode);
+      await reloadQueue();
+      assert.equal(await panel().getByRole('button', { name: '立即发送排队消息', exact: true }).isEnabled(), true);
+      for (const width of [390, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        const box = await panel().boundingBox();
+        assert(box && box.x >= 0 && box.x + box.width <= width + 1);
+        const buttonBox = await panel().getByRole('button', { name: '立即发送排队消息', exact: true }).boundingBox();
+        assert(buttonBox && buttonBox.width >= 44 && buttonBox.height >= 44, `${mode} ${width}: immediate send touch target`);
+      }
+    }
+    pass('idle immediate-send controls remain available with 44px touch targets at 320/390px in light and dark modes');
+    assert.deepEqual(errors, []);
+    pass('no application JavaScript errors');
+    fs.writeFileSync('artifacts/ui-queue-proposals-validation.json', JSON.stringify({ results, errors }, null, 2));
+  } catch (error) {
+    await page.screenshot({ path: 'artifacts/ui-queue-proposals-failure.png', animations: 'disabled' });
+    fs.writeFileSync('artifacts/ui-queue-proposals-validation.json', JSON.stringify({ results, errors, fatal: error.message }, null, 2));
+    throw error;
+  } finally {
+    await browser.close();
+    await node.close();
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

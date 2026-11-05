@@ -14,7 +14,7 @@ const {chromium}=require('../support/browser.cjs');
  const pass=name=>{results.push(name);console.log('PASS',name)};
  const open=async()=>{await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类',exact:true}).getByRole('button',{name:'应用更新',exact:true}).click()};
  try{
-  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');
+  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
   await open();await page.getByRole('status').filter({hasText:'当前已是最新已发布版本'}).waitFor();pass('no published release is a nonblocking current state');
   const automatic=page.getByRole('checkbox',{name:'自动检查更新'});await automatic.uncheck();
   await page.reload();await open();await automatic.waitFor();assert.equal(await automatic.isChecked(),false);await page.getByText('尚未检查更新',{exact:true}).waitFor();pass('automatic-check preference persists across reload');

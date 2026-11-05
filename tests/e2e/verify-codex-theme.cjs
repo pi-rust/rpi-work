@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
-const url = process.env.WORK_UI_URL || 'http://127.0.0.1:4182/app/';
+const url = process.env.WORK_UI_URL || 'http://127.0.0.1:14182/app/';
 
 (async () => {
   fs.mkdirSync('artifacts', { recursive: true });

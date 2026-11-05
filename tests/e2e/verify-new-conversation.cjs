@@ -29,7 +29,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     assert(predicate(), message);
   };
   try {
-    await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:4180/');
+    await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:14180/');
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
     await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
@@ -42,17 +42,38 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await title('为工作台添加深色模式').waitFor();
     await composer().fill('原会话未发送的草稿');
 
+    // Real HTTP nodes may return a valid detail response without projectId.
+    // The POST still supplies the authoritative creation project.
+    const detailRoute = /\/api\/v1\/sessions\/[^/?]+$/;
+    let omittedSummaries = 0;
+    const omitProject = async route => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      const summary = await response.json();
+      delete summary.projectId;
+      omittedSummaries++;
+      await route.fulfill({ response, json: summary });
+    };
+    await context.route(detailRoute, omitProject);
     node.controls.sessionDelayMs = 300;
     await row('pi-rust').getByRole('button', { name: '在 pi-rust 中新建会话', exact: true }).dblclick();
     await ready();
+    await row('pi-rust').getByRole('button', { name: '新会话', exact: true }).waitFor();
     assert.equal(creates().length, 1);
     assert.equal(creates()[0].body.projectId, 'pi-rust');
     assert.equal(node.requests.filter(r => r.path.endsWith('/rename')).length, 0);
     pass('project + opens a focused blank conversation in that project with one POST and no title dialog');
+    assert(omittedSummaries > 0, 'regression must exercise a detail response without projectId');
+    assert.equal(await row('pi-rust').locator('.session-entry').filter({ has: page.getByRole('button', { name: '新会话', exact: true }) }).count(), 1);
+    pass('missing projectId in a session detail response retains the explicit creation project');
+    await context.unroute(detailRoute, omitProject);
     node.controls.sessionDelayMs = 0;
     await row('rpi-work').locator('.project-row').click();
     await row('rpi-work').getByRole('button', { name: '为工作台添加深色模式', exact: true }).click();
     await title('为工作台添加深色模式').waitFor();
+    // The header and scope-keyed textarea can land in separate render batches.
+    // Wait for the restored value instead of sampling the previous blank input.
+    await page.waitForFunction(() => document.querySelector('.composer textarea')?.value === '原会话未发送的草稿');
     assert.equal(await composer().inputValue(), '原会话未发送的草稿');
     await row('pi-rust').locator('.project-row').click();
     await row('pi-rust').getByRole('button', { name: '新会话', exact: true }).click();

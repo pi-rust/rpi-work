@@ -22,7 +22,7 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    app::connections::use_connections("http://127.0.0.1:3030/");
+    app::connections::use_connections("http://127.0.0.1:13030/");
     features::settings::updates::use_updates();
     #[cfg(feature = "resources")]
     {
@@ -128,29 +128,131 @@ fn ScrollContent() -> Element {
 fn QueueContent() -> Element {
     #[cfg(feature = "queue")]
     {
+        use message_queue::{QueueAction, QueueStatus};
         let mut client = use_signal(|| None::<work_client::WorkspaceClient>);
         let mut url = use_signal(String::new);
+        let mut connected_url = use_signal(String::new);
         let mut selected = use_signal(|| "dark".to_owned());
         let mut snapshot = use_signal(|| None::<work_client::QueueSnapshot>);
-        let drafts = message_queue::use_queue_drafts();
-        let native_agents =
-            use_signal(std::collections::HashMap::<String, work_client::AgentClient>::new);
-        let mut open = use_signal(|| false);
-        let scope = format!("review-node/{}", selected.read());
-        let session_id = selected.read().clone();
+        let mut history = use_signal(|| None::<work_client::QueueSnapshot>);
+        let mut session_access = use_signal(|| None::<work_client::SessionAccess>);
+        let mut access_epoch = use_signal(|| 0u64);
+        let mut busy = use_signal(|| false);
+        let mut error = use_signal(|| None::<String>);
+        // These are main drafts, not queue-specific editors. A late confirmed
+        // withdrawal belongs to its original node/session, even after navigation.
+        let mut drafts = use_signal(std::collections::HashMap::<(String, String), String>::new);
+        let mut invalidate = move || {
+            let next = access_epoch.peek().wrapping_add(1);
+            access_epoch.set(next);
+            session_access.set(None);
+            snapshot.set(None);
+            history.set(None);
+            error.set(None);
+            busy.set(true);
+        };
+        use_effect(move || {
+            let epoch = *access_epoch.read();
+            let node = client.peek().clone();
+            let id = selected.peek().clone();
+            let Some(node) = node else { busy.set(false); return; };
+            spawn(async move {
+                let access = node.session_access(&id).await;
+                if *access_epoch.peek() != epoch || *selected.peek() != id { return; }
+                match access {
+                    Ok(access) => {
+                        let supported = access.supports_command("get_queue");
+                        session_access.set(Some(access));
+                        if supported {
+                            let result = node.queue(&id, false).await;
+                            if *access_epoch.peek() != epoch || *selected.peek() != id { return; }
+                            match result {
+                                Ok(value) => snapshot.set(Some(value)),
+                                Err(failure) => error.set(Some(failure.to_string())),
+                            }
+                        } else {
+                            error.set(Some("此会话不支持读取队列".into()));
+                        }
+                    }
+                    Err(failure) => error.set(Some(failure.to_string())),
+                }
+                busy.set(false);
+            });
+        });
+        let mut act = move |action: QueueAction| {
+            let (Some(node), Some(access)) = (client.peek().clone(), session_access.peek().clone()) else { return; };
+            if *busy.peek() || !access.supports_command(action.command())
+                || matches!(action, QueueAction::SendNow(_)) { return; }
+            if let Some(item) = action.item() {
+                if !snapshot.peek().as_ref().is_some_and(|value| value.items.iter().any(|current|
+                    current == item && QueueStatus::from_wire(current.status.as_deref()).can_cancel())) { return; }
+            }
+            let epoch = *access_epoch.peek();
+            let id = selected.peek().clone();
+            let scope = (connected_url.peek().clone(), id.clone());
+            busy.set(true);
+            error.set(None);
+            spawn(async move {
+                let result = async {
+                    match &action {
+                        QueueAction::Refresh | QueueAction::History => {}
+                        QueueAction::Clear => { node.clear_queue(&id).await.map_err(|e| e.to_string())?; }
+                        QueueAction::Remove(item) | QueueAction::Edit(item) => {
+                            let result = node.cancel_queued(&id, &item.entry_id).await.map_err(|e| e.to_string())?;
+                            if result.entry_id != item.entry_id || !message_queue::cancellation_confirmed(&result.outcome) {
+                                return Err(format!("消息未能撤回（{}），请刷新队列。", result.outcome));
+                            }
+                            if matches!(action, QueueAction::Edit(_)) {
+                                let existing = drafts.peek().get(&scope).cloned().unwrap_or_default();
+                                drafts.write().insert(scope.clone(), message_queue::recovered_text(&existing, &item.text));
+                            }
+                        }
+                        QueueAction::SendNow(_) => unreachable!(),
+                    }
+                    Ok::<(), String>(())
+                }.await;
+                // Never let an old request overwrite the selected node/session,
+                // including switching A -> B -> A or reconnecting the same URL.
+                if *access_epoch.peek() != epoch || *selected.peek() != id { return; }
+                let readback = node.queue(&id, matches!(action, QueueAction::History)).await;
+                if *access_epoch.peek() != epoch || *selected.peek() != id { return; }
+                match readback {
+                    Ok(value) => {
+                        if matches!(action, QueueAction::History) { history.set(Some(value.clone())); }
+                        else { history.set(None); }
+                        snapshot.set(Some(value));
+                    }
+                    Err(failure) => error.set(Some(failure.to_string())),
+                }
+                if let Err(failure) = result { error.set(Some(failure)); }
+                busy.set(false);
+            });
+        };
+        let scope = (connected_url.read().clone(), selected.read().clone());
+        let draft = drafts.read().get(&scope).cloned().unwrap_or_default();
+        let panel_key = format!("{scope:?}/{}", access_epoch.read());
+        let can_cancel = session_access.read().as_ref().is_some_and(|access| access.supports_command("cancel_queued"));
+        let can_clear = session_access.read().as_ref().is_some_and(|access| access.supports_command("clear_queue"));
         return rsx! {
             style { {message_queue::CSS} }
             div {class:"module-nav",
                 input {aria_label:"Fixture node URL",value:"{url}",oninput:move |e|url.set(e.value())}
-                button {onclick:move |_|client.set(work_client::WorkspaceClient::new(&url.read()).ok()),"Connect fixture"}
-                button {onclick:move |_|{selected.set("dark".into());snapshot.set(None);},"Session A"}
-                button {onclick:move |_|{selected.set("architecture".into());snapshot.set(None);},"Session B"}
-                message_queue::QueueEntry {snapshot:snapshot.read().clone(),onopen:move |_|open.set(true)}
+                button {onclick:move |_|{
+                    connected_url.set(app::identity::node_origin(&url.peek()));
+                    client.set(work_client::WorkspaceClient::new(&url.peek()).ok());
+                    invalidate();
+                },"Connect fixture"}
+                button {onclick:move |_|{selected.set("dark".into());invalidate();},"Session A"}
+                button {onclick:move |_|{selected.set("architecture".into());invalidate();},"Session B"}
             }
-            div {class:"review-queue-shelf",message_queue::QueueShelf {snapshot:snapshot.read().clone(),onopen:move |_|open.set(true)}}
-            if *open.read(){for (scope,session_id) in [(scope,session_id)]{
-                message_queue::QueueDialog {key:"{scope}",scope,session_id,client,native_agents,drafts,snapshot:snapshot.read().clone(),onchange:move |value|snapshot.set(Some(value)),onclose:move |_|open.set(false)}
-            }}
+            div {class:"composer-main review-queue",style:"padding:12px;min-width:0;max-width:850px;margin:auto", "data-busy":"{busy}",
+                message_queue::QueuePanel {
+                    key:"{panel_key}", snapshot:snapshot.read().clone(), history:history.read().clone(),
+                    busy:*busy.read(), error:error.read().clone(), can_cancel, can_clear, can_send:false,
+                    onaction:move |action|act(action)
+                }
+                textarea {aria_label:"Main draft",value:"{draft}",style:"box-sizing:border-box;width:100%;min-width:0;min-height:100px",oninput:move |e|{drafts.write().insert(scope.clone(),e.value());}}
+            }
         };
     }
     #[cfg(not(feature = "queue"))]
@@ -161,30 +263,40 @@ fn QueueContent() -> Element {
 fn SettingsContent() -> Element {
     #[cfg(feature = "settings")]
     {
+        settings::use_pairing();
         let appearance = appearance::use_appearance();
         let mut appearance_open = use_signal(|| false);
         let mut client = use_signal(|| None::<work_client::WorkspaceClient>);
         let requests = use_signal(Vec::<dioxus::core::Task>::new);
         let active_page = use_signal(|| "settings".to_owned());
         let section = use_signal(|| "settings".to_owned());
-        let url = use_signal(|| "http://127.0.0.1:3030/".to_owned());
+        let url = use_signal(|| "http://127.0.0.1:13030/".to_owned());
         let mut status = use_signal(|| "未连接".to_owned());
         let mut auth = use_signal(|| None::<work_client::AuthState>);
-        let password = use_signal(String::new);
+        let password = use_signal(crate::app::connections::NodePassword::default);
         let runtime = use_signal(|| None::<work_client::RuntimeState>);
         let mut caps = use_signal(|| None::<work_client::Capabilities>);
         let selected_session = use_signal(|| Some("dark".to_owned()));
         let session_generation = use_signal(|| 0u64);
+        let mut connection_epoch = use_signal(|| 0u64);
+        let mut online = use_signal(|| false);
         return rsx! {
-            settings::SettingsPage {shared_client:client,requests,active_page,settings_section:section,base_url:url,status,auth_state:auth,password,node_token:use_signal(String::new),runtime_state:runtime,capabilities:caps,selected_session,session_generation,
+            settings::DesktopPairing { shared_client: client, base_url: url, auth_state: auth, view: section.read().clone() }
+            settings::SettingsPage {shared_client:client,requests,active_page,settings_section:section,base_url:url,status,auth_state:auth,password,runtime_state:runtime,capabilities:caps,selected_session,session_generation,connection_epoch,online:online(),
                 onconnect:move |_| {
+                    let next=connection_epoch.peek().wrapping_add(1);
+                    connection_epoch.set(next);
+                    online.set(false);
+                    client.set(None);
                     let endpoint=url.read().clone();
                     spawn(async move {
                         match work_client::WorkspaceClient::new(&endpoint) {
                             Ok(node)=> {
                                 match node.health().await {Ok(_)=>status.set("节点在线".into()),Err(error)=>status.set(error.to_string())}
                                 if let Ok(value)=node.auth().await {auth.set(Some(value));}
-                                if let Ok(value)=node.capabilities().await {caps.set(Some(value));}
+                                let capabilities=node.capabilities().await;
+                                if *connection_epoch.peek()!=next {return;}
+                                if let Ok(value)=capabilities {caps.set(Some(value));online.set(true);}
                                 client.set(Some(node));
                             },
                             Err(error)=>status.set(error.to_string()),
@@ -391,8 +503,6 @@ fn ResourceContent(kind: String) -> Element {
         let library = use_context::<Signal<resources::ResourceLibrary>>();
         let mut session = use_signal(|| "review-session-a".to_owned());
         let selected_session = use_signal(|| Some("review-session-a".to_owned()));
-        let native_agents =
-            use_signal(std::collections::HashMap::<String, work_client::AgentClient>::new);
         let shared_client = use_signal(|| None::<work_client::WorkspaceClient>);
         let session_generation = use_signal(|| 0u64);
         let requests = use_signal(Vec::<dioxus::core::Task>::new);
@@ -407,7 +517,7 @@ fn ResourceContent(kind: String) -> Element {
                 button { onclick:move |_|session.set("review-session-a".into()), "Session A" }
                 button { onclick:move |_|session.set("review-session-b".into()), "Session B" }
                 button { onclick:move |_| { let locked = *extension_locked.read(); extension_locked.set(!locked); }, "Toggle extension lock" }
-                resources::SessionResources {session_id:session.read().clone(), extension_config_locked:*extension_locked.read(), library, selected_session,shared_client,native_agents,session_generation,requests,runtime_state,status,open_requested,onquote:move |text|quoted.set(text)}
+                resources::SessionResources {session_id:session.read().clone(), extension_config_locked:*extension_locked.read(), library, selected_session,shared_client,session_generation,requests,runtime_state,status,open_requested,onquote:move |text|quoted.set(text)}
                 resources::SkillPicker {session_id:session.read().clone(), library, open_session_config, onquote:move |text|quoted.set(text)}
             }
             resources::ResourcePage { kind, library }

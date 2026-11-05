@@ -13,7 +13,7 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
  const openSessionMenu=async id=>{await session(id).locator('.session-row-menu').click();await menu().waitFor()};
  const message=()=>page.locator('.workspace-notice');
  try{
-  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');
+  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
   await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
   await page.getByRole('button',{name:'连接其他节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(node.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.locator('.server-details [role=status]').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();
   await row('rpi-work').locator('.project-row').click();await session('dark').locator('.session-item').click();
@@ -44,10 +44,20 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
   await page.getByRole('button',{name:'已归档',exact:true}).click();await archive.getByRole('button',{name:'恢复项目 pi-rust',exact:true}).click();await page.keyboard.press('Escape');await row('pi-rust').waitFor();
   pass('project sidebar archives persist locally and restore without deleting project or session data');
 
-  await row('rpi-work').locator('.project-row').click();await session('dark').locator('.session-item').click();const composer=page.getByRole('textbox',{name:'发送给 agent 的消息',exact:true});await composer.fill('保留在原会话的草稿');await page.getByRole('button',{name:'从这条消息新建分支',exact:true}).first().click();await page.locator('.app-header h1').filter({hasText:'分支'}).waitFor();
+  await row('rpi-work').locator('.project-row').click();await session('dark').locator('.session-item').click();const composer=page.getByRole('textbox',{name:'发送给 agent 的消息',exact:true});await composer.fill('保留在原会话的草稿');
+  const fork=page.getByRole('button',{name:'从这条消息新建分支',exact:true}).first();
+  for(const width of [1440,390,320]){
+   await page.setViewportSize({width,height:900});await fork.focus();
+   assert.equal(await fork.innerText(),'');assert.equal(await fork.getAttribute('title'),'从这条消息新建分支');
+   const proof=await fork.evaluate(button=>{const r=button.getBoundingClientRect(),svg=button.querySelector('svg');const i=svg.getBoundingClientRect();return {width:r.width,height:r.height,left:r.left,right:r.right,icon:svg.dataset.icon,size:[i.width,i.height]}});
+   assert.equal(proof.icon,'branch');assert.deepEqual(proof.size,[12,12]);assert.equal(proof.width,width<=700?44:28);assert(proof.height>=(width<=700?44:28));assert(proof.left>=0&&proof.right<=width+1);
+   assert.equal(await composer.inputValue(),'保留在原会话的草稿');
+   await page.screenshot({path:`artifacts/message-fork-icon-${width}.png`,animations:'disabled'});
+  }
+  await page.setViewportSize({width:1440,height:1000});await fork.focus();await page.keyboard.press('Enter');await page.locator('.app-header h1').filter({hasText:'分支'}).waitFor();
   assert.equal(node.requests.filter(r=>r.path.endsWith('/fork')).at(-1).body.entryId,'user-dark');assert.equal(await composer.inputValue(),'');
-  await session('dark').locator('.session-item').click();assert.equal(await composer.inputValue(),'保留在原会话的草稿');
-  pass('fork from a canonical message opens a new branch and retains the source conversation draft');
+  await session('dark').locator('.session-item').click();await page.waitForFunction(()=>document.querySelector('.composer textarea')?.value==='保留在原会话的草稿');assert.equal(await composer.inputValue(),'保留在原会话的草稿');
+  pass('icon-only canonical message fork has 12px visual/44px mobile targets, keyboard activation, and retains the source draft');
   await page.locator('.app-header .session-row-menu').click();await menu().getByRole('menuitem',{name:'复制会话（Clone）',exact:true}).click();await page.locator('.app-header h1').filter({hasText:'副本'}).waitFor();
   node.controls.failFork=true;await page.locator('.app-header .session-row-menu').click();await menu().getByRole('menuitem',{name:'新建分支（Fork）',exact:true}).click();await message().filter({hasText:'操作失败'}).waitFor();await page.locator('.app-header h1').filter({hasText:'副本'}).waitFor();node.controls.failFork=false;
   pass('clone opens the resulting conversation; a failed fork leaves its source selected');

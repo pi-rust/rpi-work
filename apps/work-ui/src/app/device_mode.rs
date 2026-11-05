@@ -27,7 +27,7 @@ pub fn use_device_mode() -> Signal<DeviceMode> {
             let mut stream = document::eval(
                 r"
                 window.__rpiDeviceModeDispose?.();
-                const narrow=matchMedia('(max-width:700px)');
+                const narrow=matchMedia('(max-width:767px)');
                 const mobile=()=>navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1) || narrow.matches;
                 const update=()=>dioxus.send(Boolean(mobile()));
                 narrow.addEventListener('change',update);

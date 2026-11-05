@@ -16,17 +16,59 @@ const events = [
   {type:'tool_execution_end',toolCallId:'shell-1',toolName:'bash',result:{content:[{type:'text',text:'12 passed; 0 failed (test fixture)'}]}},
   {type:'agent_settled',outcome:'completed',pendingResume:false},
 ];
+// Normalize logical actions for assertions without changing recorded wire bodies.
+function fixtureCommand(request) {
+  return request.method === 'POST' && /\/sessions\/[^/]+\/dialogs$/.test(request.path)
+    ? 'ui_dialog_response' : request.body.type;
+}
 async function startFixture(port=0,options={}){
   const requests=[], streams=new Map(), sockets=new Set();
   const fixtureProjects=structuredClone(projects);
-  const controls={failPrompt:false,failDialog:false,failQueue:false,uncertainQueue:false,queueDelayMs:0,failProject:false,projectDelayMs:0,failSession:false,sessionDelayMs:0,failRenameCount:0,failCompact:false,compactDelayMs:0};
+  const controls={failPrompt:false,failDialog:false,failQueue:false,uncertainQueue:false,queueDelayMs:0,cancelDelayMs:0,failCancel:false,cancelOutcome:null,failProject:false,projectDelayMs:0,failSession:false,sessionDelayMs:0,failRenameCount:0,failCompact:false,compactDelayMs:0};
+  const defaultCommands=['prompt','abort','get_state',...(options.pagedHistory&&!options.noMessagePaging?['get_messages']:[]),...(options.nativeQueries?['get_message_summaries','get_message_window']:[]),'get_queue','queue_message','cancel_queued','clear_queue','ui_dialog_response','resume_pending','get_available_models','set_model','get_available_thinking_levels','set_thinking_level','get_available_tools','set_active_tools','get_session_branch','compact',...(options.setApiKeySupported?['set_api_key']:[]),...(options.authStatusSupported?['get_auth_status']:[])];
+  // These restrictions are session observations, never global capability fallbacks.
+  function sessionAccess(id) {
+    const restriction=controls.sessionAccessById?.[id]??controls.sessionAccess??options.sessionAccessById?.[id]??options.sessionAccess??{};
+    const supportedCommands=defaultCommands.filter(command=>!restriction.supportedCommands||restriction.supportedCommands.includes(command));
+    const dialogReply=supportedCommands.includes('ui_dialog_response')&&restriction.dialogReply!==false;
+    const capabilities={sessions:true,sessionLoad:true,sessionResume:false,prompt:supportedCommands.includes('prompt'),streaming:true,abort:supportedCommands.includes('abort'),dialogs:dialogReply,projects:true,files:true,gitDiff:true,models:supportedCommands.includes('get_available_models'),thinkingLevels:supportedCommands.includes('get_available_thinking_levels'),tools:supportedCommands.includes('get_available_tools'),providerManagement:supportedCommands.includes('set_api_key'),queue:supportedCommands.includes('get_queue'),history:supportedCommands.includes('get_session_branch')};
+    for(const key of Object.keys(capabilities))if(restriction.capabilities?.[key]===false)capabilities[key]=false;
+    return {descriptor:{identity:{protocol:'rpi',version:null,transport:'http',agentName:'ui-fixture'},capabilities},supportedCommands,snapshotLimit:restriction.snapshotLimit!==false,dialogReply:dialogReply&&capabilities.dialogs,...((controls.promptContent??options.promptContent)?{promptContent:controls.promptContent??options.promptContent}:{})};
+  }
+  function replyDialog(id,data) {
+    if(controls.failDialog)return 'Test fixture: dialog response rejected';
+    pendingDialogs.set(id,(pendingDialogs.get(id)||[]).filter(p=>p.requestId!==data.requestId));
+    return null;
+  }
   const pendingDialogs=new Map(),sessionQueues=new Map();
   let queueCounter=0;
   const sessionEvents=new Map(seedSessions.map(s=>[s.sessionId,events.map((event,i)=>({seq:i+1,event:structuredClone(event)}))]));
   const sessionMessages=new Map(seedSessions.map(s=>[s.sessionId,[{entryId:`user-${s.sessionId}`,role:'user',content:s.sessionId==='dark'?'帮我为工作台增加一个深色主题，并保持手机端可用。':`这是 ${s.title} 的独立历史。`},...(options.includeHistoryAssistant?[{entryId:'answer',role:'assistant',content:[{type:'text',text:'主题切换已经准备好，接下来运行组件测试。'}]}]:[])]]));
   let sessions=structuredClone(seedSessions);
+  // Backend catalog/bindings are opt-in; existing fixtures remain RPI-only.
+  const sessionBackends=new Map(seedSessions.map(s=>[s.sessionId,options.sessionBackends?.[s.sessionId]||'rpi']));
   const sessionConfigs=new Map();
   function sessionConfig(id){if(!sessionConfigs.has(id))sessionConfigs.set(id,{model:'deepseek/deepseek-v4-pro',thinking:'high',activeTools:['read','bash','edit','write']});return sessionConfigs.get(id)}
+  // Native-query controls are opt-in; legacy fixtures retain their exact wire shape.
+  // leafId/leafIdById override the selected branch leaf. Each endpoint supports
+  // DelayMs, Status (404/501/409/etc), and optional FailCount for one-shot errors.
+  function selectedLeaf(id) {
+    return controls.leafIdById?.[id] ?? controls.leafId ?? sessionMessages.get(id)?.at(-1)?.entryId ?? null;
+  }
+  function selectedMessages(id) {
+    const all = sessionMessages.get(id) || [];
+    if (!options.nativeQueries) return all;
+    const leaf = selectedLeaf(id), end = all.findIndex(message => message.entryId === leaf);
+    return end < 0 ? [] : all.slice(0, end + 1);
+  }
+  function messagePage(id, limit, beforeId = null) {
+    const all = selectedMessages(id);
+    const end = beforeId === null ? all.length : all.findIndex(m => m.entryId === beforeId);
+    if (end < 0) return null;
+    const start = Math.max(0, end - Math.max(1, Math.min(400, Number(limit) || 48)));
+    const messages = structuredClone(all.slice(start, end));
+    return { messages, total: all.length, firstId: messages[0]?.entryId || null, lastId: messages.at(-1)?.entryId || null, hasMore: start > 0, truncated: start > 0, beforeId };
+  }
   const server=http.createServer(async(req,res)=>{
     const origin=req.headers.origin;
     res.setHeader('Access-Control-Allow-Origin',origin || '*');
@@ -53,7 +95,8 @@ async function startFixture(port=0,options={}){
       return json({required:Boolean(options.authRequired),authenticated:!options.authRequired||authenticated});
     }
     if(options.authRequired&&!authenticated)return json({error:'Fixture authentication required'},401);
-    if(route==='/api/v1/capabilities')return json({protocol:'rpi-web-v1',supportedCommands:['prompt','abort','get_state','get_queue','queue_message','cancel_queued','clear_queue','ui_dialog_response','resume_pending','get_available_models','set_model','get_available_thinking_levels','set_thinking_level','get_available_tools','set_active_tools','get_session_branch','compact',...(options.setApiKeySupported?['set_api_key']:[]),...(options.authStatusSupported?['get_auth_status']:[])],supportedActions:['projects','files','sessions','session_metadata','fork','clone'],parityComplete:false});
+    if(route==='/api/v1/capabilities')return json({protocol:'rpi-web-v1',supportedCommands:defaultCommands,supportedActions:['projects','files','sessions','session_metadata','fork','clone'],parityComplete:false});
+    if(route==='/api/v1/agent-backends')return json({backends:options.agentBackends||[{id:'rpi',name:'RPI fixture',available:true,reason:null}]});
     if(route==='/api/v1/projects'){
       if(req.method==='POST'){
         if(controls.projectDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.projectDelayMs));
@@ -70,7 +113,7 @@ async function startFixture(port=0,options={}){
       return json({root:'D:/Projects',path:current,folders:current===''?projects.map(p=>({name:p.name,path:p.path.slice('D:/Projects/'.length)})):[{name:'src',path:`${current.replace(/\/$/,'')}/src`}]});
     }
     if(route==='/api/v1/sessions'){
-      if(req.method==='POST'){if(controls.sessionDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.sessionDelayMs));if(controls.failSession)return json({error:'Test fixture: session creation rejected'},500);const s={...seedSessions[0],sessionId:`new-${sessions.length}`,projectId:data.projectId,title:'新会话'};sessions.push(s);return json({sessionId:s.sessionId});}
+      if(req.method==='POST'){if(controls.sessionDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.sessionDelayMs));if(controls.failSession)return json({error:'Test fixture: session creation rejected'},500);const s={...seedSessions[0],sessionId:`new-${sessions.length}`,projectId:data.projectId,title:'新会话'};sessions.push(s);sessionBackends.set(s.sessionId,options.agentBackends?(data.backend||'rpi'):'rpi');return json({sessionId:s.sessionId});}
       return json({sessions});
     }
     if(route.endsWith('/files')){
@@ -93,9 +136,56 @@ async function startFixture(port=0,options={}){
       const [,id,action]=match,s=sessions.find(s=>s.sessionId===id)||seedSessions[0];
       if(!action)return json(s);
       if(action==='open')return json(s);
+      if(action==='agent-binding'){
+        // Opt-in faults let browser tests observe unknown binding without ACP.
+        if(options.agentBackends&&controls.bindingDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.bindingDelayMs));
+        if(options.agentBackends&&controls.failBinding)return json({error:'Test fixture: binding unavailable'},503);
+        return json({backend:sessionBackends.get(id)||'rpi',externalSessionId:null});
+      }
       if(action==='snapshot'){
         const history=sessionEvents.get(id)||[];
-        return json({sessionId:id,messages:sessionMessages.get(id)||[],lastSeq:history.at(-1)?.seq||0,events:history,pendingDialogs:pendingDialogs.get(id)||[],latestSettlement:history.findLast(e=>e.event.type==='agent_settled')?.event});
+        const page = options.pagedHistory || options.nativeQueries ? messagePage(id, u.searchParams.get('limit')) : { messages:sessionMessages.get(id)||[] };
+        return json({sessionId:id,...page,...(options.nativeQueries?{leafId:selectedLeaf(id)}:{}),lastSeq:history.at(-1)?.seq||0,events:history,pendingDialogs:pendingDialogs.get(id)||[],latestSettlement:history.findLast(e=>e.event.type==='agent_settled')?.event});
+      }
+      if(options.nativeQueries&&(action==='message-summaries'||action==='message-window')){
+        if(req.method!=='GET')return json({error:'Unsupported fixture method'},405);
+        if(!sessions.some(session=>session.sessionId===id))return json({error:'Unknown fixture session'},404);
+        const prefix=action==='message-summaries'?'messageSummaries':'messageWindow';
+        const delay=controls[`${prefix}DelayMs`]??controls.nativeQueryDelayMs??0;
+        // Capture both the branch and fault before waiting, so delayed replies
+        // faithfully test a late response after controls/session selection change.
+        const leafId=selectedLeaf(id),all=structuredClone(selectedMessages(id));
+        const countKey=`${prefix}FailCount`,status=controls[`${prefix}Status`]??controls.nativeQueryStatus;
+        const fail=status&&(controls[countKey]===undefined||controls[countKey]>0);
+        if(fail&&controls[countKey]>0)controls[countKey]--;
+        if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+        if(fail)return json({error:`Test fixture: ${action} unavailable (${status})`},status);
+        const pin=u.searchParams.get('leafId');
+        if(pin&&pin!==leafId)return json({error:'Test fixture: selected leaf changed'},409);
+        const limit=Number(u.searchParams.get('limit')||(action==='message-summaries'?10:48));
+        if(!Number.isInteger(limit)||limit<1||limit>100)return json({error:'Invalid native query limit'},400);
+        const before=u.searchParams.get('beforeId'),after=u.searchParams.get('afterId'),anchor=u.searchParams.get('anchorId');
+        const index=cursor=>all.findIndex(message=>message.entryId===cursor);
+        if([before,after,anchor].some(cursor=>cursor!==null&&index(cursor)<0))return json({error:'Test fixture: cursor is not on selected leaf'},409);
+        if(action==='message-summaries'){
+          if((u.searchParams.get('role')||'user')!=='user'||anchor||after)return json({error:'Invalid summary query'},400);
+          const users=all.slice(0,before?index(before):all.length).filter(message=>message.role==='user');
+          const messages=users.slice(-limit).map(message=>{
+            const text=typeof message.content==='string'?message.content:(message.content||[]).filter(block=>block.type==='text').map(block=>block.text||'').join(' ');
+            const preview=Array.from(text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2060-\u2069]/gu,' ').replace(/\s+/gu,' ').trim()).slice(0,140).join('');
+            return {entryId:message.entryId,role:'user',preview,timestamp:0,hasImages:false};
+          });
+          const firstId=messages[0]?.entryId||null,lastId=messages.at(-1)?.entryId||null,hasMore=users.length>messages.length;
+          return json({filtered:true,role:'user',messages,firstId,lastId,nextBeforeId:hasMore?firstId:null,hasMore,leafId});
+        }
+        if([before,after,anchor].filter(cursor=>cursor!==null).length!==1)return json({error:'Exactly one window cursor required'},400);
+        let start,end;
+        if(before){end=index(before);start=Math.max(0,end-limit);}
+        else if(after){start=index(after)+1;end=Math.min(all.length,start+limit);}
+        else {start=Math.max(0,index(anchor)-Math.floor(limit/2));end=Math.min(all.length,start+limit);start=Math.max(0,end-limit);}
+        const messages=all.slice(start,end),firstId=messages[0]?.entryId||null,lastId=messages.at(-1)?.entryId||null;
+        const hasMoreBefore=start>0,hasMoreAfter=end<all.length;
+        return json({messages,firstId,lastId,nextBeforeId:hasMoreBefore?firstId:null,nextAfterId:hasMoreAfter?lastId:null,hasMoreBefore,hasMoreAfter,leafId});
       }
       if(action==='events'){
         res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache','connection':'keep-alive'});
@@ -104,10 +194,44 @@ async function startFixture(port=0,options={}){
       if(action==='rename'){if(controls.failRenameCount>0){controls.failRenameCount--;return json({error:'Test fixture: rename temporarily failed'},500);}s.title=data.title;return json({sessionId:id,title:s.title,status:s.status});}
       if(action==='metadata'){if(controls.failMetadata)return json({error:'Metadata rejected'},500);if(typeof data.archived==='boolean')s.archived=data.archived;if(typeof data.pinned==='boolean')s.pinned=data.pinned;return json({sessionId:id,archived:!!s.archived,pinned:!!s.pinned});}
       if(action==='fork'||action==='clone'){if(controls.failFork)return json({error:'Fork rejected'},500);const nextId=`branch-${sessions.length}`;let history=structuredClone(sessionMessages.get(id)||[]);if(data.entryId){const cut=history.findIndex(message=>message.entryId===data.entryId);if(cut<0)return json({error:'Unknown entry'},400);history=history.slice(0,cut+1);}const branch={...structuredClone(s),sessionId:nextId,title:data.title||'分支',archived:false,pinned:false,status:'idle'};sessions.push(branch);sessionMessages.set(nextId,history);sessionEvents.set(nextId,[]);return json({sessionId:nextId,sourceSessionId:id,title:branch.title,status:'idle'});}
+      if(action==='access'||action==='dialogs'){
+        res.setHeader('Cache-Control','no-store');
+        if(!sessions.some(session=>session.sessionId===id))return json({error:'Unknown fixture session'},404);
+        if(action==='access'){
+          if(req.method!=='GET')return json({error:'Unsupported fixture method'},405);
+          if(controls.accessStatus)return json({error:'Test fixture: session access unavailable'},controls.accessStatus);
+          return json(sessionAccess(id));
+        }
+        if(req.method!=='POST')return json({error:'Unsupported fixture method'},405);
+        if(!data||typeof data!=='object'||Array.isArray(data)||typeof data.requestId!=='string'||!data.requestId||Object.keys(data).some(key=>!['requestId','answer','cancelled'].includes(key))||!(Object.hasOwn(data,'answer')&&!Object.hasOwn(data,'cancelled')||!Object.hasOwn(data,'answer')&&data.cancelled===true))return json({error:'Invalid fixture dialog reply'},400);
+        if(!sessionAccess(id).dialogReply)return json({error:'Test fixture: dialog reply unsupported'},501);
+        const error=replyDialog(id,data);
+        return error?json({error},400):json({accepted:true,requestId:data.requestId});
+      }
+      if(action==='configuration'){
+        if(!sessions.some(session=>session.sessionId===id))return json({error:'Unknown fixture session'},404);
+        res.setHeader('Cache-Control','no-store');
+        if(req.method==='GET')return json({protocol:'rpi',supportedCommands:controls.configurationCommands||['get_available_models','set_model','get_available_thinking_levels','set_thinking_level','get_state','get_available_tools','set_active_tools','get_session_branch','compact'],configOptions:[]});
+        if(req.method!=='POST')return json({error:'Unsupported fixture method'},405);
+        if(!Object.hasOwn(data,'value')||typeof data.configId!=='string'||typeof data.value!=='string')return json({error:'Invalid fixture configuration'},400);
+        const config=sessionConfig(id);
+        if(data.configId==='model')config.model=data.value;
+        else if(data.configId==='thinking')config.thinking=data.value;
+        else return json({error:'Unsupported fixture option'},501);
+        return json({accepted:true});
+      }
       if(action==='commands'){
         const command=data.type,config=sessionConfig(id);
         let queue=sessionQueues.get(id)||[];
         const response=value=>json({type:'response',id:data.id??null,command,success:true,data:value,error:null});
+        if(!sessionAccess(id).supportedCommands.includes(command))return json({type:'response',id:data.id??null,command,success:false,error:`Test fixture: unsupported command ${command}`});
+        if (command === 'get_messages' && options.pagedHistory) {
+          if (controls.historyDelayMs) await new Promise(resolve => setTimeout(resolve, controls.historyDelayMs));
+          if (controls.failHistoryCount > 0) { controls.failHistoryCount--; return json({type:'response',command,success:false,error:'Fixture history temporarily unavailable'}); }
+          const page = messagePage(id, data.limit, controls.ignoreHistoryCursor ? null : (data.beforeId || null));
+          if (!page) return json({type:'response',command,success:false,error:'beforeId not found'});
+          return response(page);
+        }
         if(command==='prompt'&&controls.promptDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.promptDelayMs));
         if(command==='prompt'&&controls.failPrompt)return json({type:'response',id:data.id??null,command,success:false,data:null,error:'Test fixture: prompt rejected'});
         const runtime=()=>({modelId:config.model,provider:config.model.split('/')[0],thinkingLevel:config.thinking,...(controls.omitActiveTools?{}:{activeTools:config.activeTools}),context:controls.runtimeContext===undefined?{tokens:38000,window:100000,threshold:84000,percent:38,estimated:false}:controls.runtimeContext,stats:controls.runtimeStats===undefined?{cachedTokens:24000,uncachedTokens:8000,totalTokens:36800,costTotal:0.0184,cacheHitRatio:0.75}:controls.runtimeStats,queue:{count:queue.length}});
@@ -144,11 +268,17 @@ async function startFixture(port=0,options={}){
           if(controls.failQueue)return json({type:'response',command,success:false,error:'Test fixture: queue rejected'});
           const item={entryId:`q-${queueCounter++}`,queue:data.deliverAs||'followUp',text:data.message,status:'queued'};queue.push(item);sessionQueues.set(id,queue);return response({...(controls.uncertainQueue?{}:{accepted:true}),entryId:item.entryId,queue:item.queue,status:'queued',outcome:'queued'});
         }
-        if(command==='cancel_queued'){const found=queue.find(item=>item.entryId===data.entryId);sessionQueues.set(id,queue.filter(item=>item.entryId!==data.entryId));return response({entryId:data.entryId,cancelled:Boolean(found),outcome:found?'cancelled':'not_found'});}
+        if(command==='cancel_queued'){
+          if(controls.cancelDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.cancelDelayMs));
+          if(controls.failCancel)return json({type:'response',id:data.id??null,command,success:false,error:'Test fixture: cancellation rejected'});
+          const found=queue.find(item=>item.entryId===data.entryId),outcome=controls.cancelOutcome|| (found?'cancelled':'not_found');
+          if(outcome==='cancelled'||outcome==='canceled')sessionQueues.set(id,queue.filter(item=>item.entryId!==data.entryId));
+          return response({entryId:data.entryId,cancelled:outcome==='cancelled'||outcome==='canceled',outcome});
+        }
         if(command==='clear_queue'){sessionQueues.set(id,[]);return response({count:0});}
         if(command==='ui_dialog_response'){
-          if(controls.failDialog)return json({type:'response',command,success:false,error:'Test fixture: dialog response rejected'});
-          pendingDialogs.set(id,(pendingDialogs.get(id)||[]).filter(p=>p.requestId!==data.requestId));return response({accepted:true,requestId:data.requestId});
+          const error=replyDialog(id,data);
+          return error?json({type:'response',command,success:false,error}):response({accepted:true,requestId:data.requestId});
         }
         return response({accepted:true});
       }
@@ -160,6 +290,7 @@ async function startFixture(port=0,options={}){
   return {
     url:`http://127.0.0.1:${server.address().port}/`,requests,controls,
     setQueue(items,sessionId='dark'){sessionQueues.set(sessionId,structuredClone(items));},
+    setMessages(items,sessionId='dark'){sessionMessages.set(sessionId,structuredClone(items));},
     emit(event,sessionId='dark'){
       const history=sessionEvents.get(sessionId)||[],seq=(history.at(-1)?.seq||0)+1;
       history.push({seq,event:structuredClone(event)});sessionEvents.set(sessionId,history);
@@ -184,5 +315,5 @@ async function startFixture(port=0,options={}){
     async close(){for(const s of sockets)s.destroy();await new Promise(resolve=>server.close(resolve));}
   };
 }
-module.exports={startFixture};
+module.exports={startFixture,fixtureCommand};
 

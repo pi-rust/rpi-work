@@ -11,7 +11,7 @@ const manifest=(id='review.owner-a',version='0.1.0',name='Roundtrip Package')=>(
   async function sessionPins(sessionId){return page.evaluate(id=>JSON.parse(localStorage.getItem('rpi-work-resources-v1')).sessions.find(session=>session.session_id===id)?.package_pins||[],sessionId);}
   async function exportCard(name,version){const [download]=await Promise.all([page.waitForEvent('download'),card(name,version).getByRole('button',{name:'导出 JSON',exact:true}).click()]);return JSON.parse(fs.readFileSync(await download.path(),'utf8'));}
   try{
-    await page.goto('http://127.0.0.1:4182/modules/all/');
+    await page.goto('http://127.0.0.1:14182/modules/all/');
     await page.getByRole('button',{name:'packages',exact:true}).click();
     const original=manifest();
     await importPackage(original);await card('Roundtrip Package','0.1.0').waitFor();

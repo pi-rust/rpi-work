@@ -1,3 +1,4 @@
+pub(crate) mod node;
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -123,6 +124,8 @@ pub struct MetaResource {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MetaStore {
+    pub storage_error: Option<String>,
+    pub original: Option<String>,
     pub resources: Vec<MetaResource>,
     pub selected_by_project: BTreeMap<String, String>,
 }
@@ -218,6 +221,8 @@ impl MetaStore {
             })
             .unwrap_or_default();
         Self {
+            storage_error: None,
+            original: None,
             resources,
             selected_by_project,
         }
@@ -291,54 +296,71 @@ fn data_path() -> Option<std::path::PathBuf> {
         });
     root.map(|p| p.join("rpi-work").join("meta-agent.json"))
 }
+fn decode_legacy(bytes: String) -> MetaStore {
+    let parsed = serde_json::from_str::<Value>(&bytes).and_then(|value| {
+        if !value["resources"].is_array() || !value["selected"].is_object() {
+            return Err(serde::de::Error::custom("invalid legacy meta store schema"));
+        }
+        Ok(MetaStore::from_json(&value))
+    });
+    match parsed {
+        Ok(mut store) => {
+            store.original = Some(bytes);
+            store
+        }
+        Err(error) => MetaStore {
+            storage_error: Some(format!(
+                "Legacy read/schema failed; original bytes preserved, autosave disabled: {error}"
+            )),
+            original: Some(bytes),
+            ..Default::default()
+        },
+    }
+}
 fn load_store() -> MetaStore {
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    if let Some(store) = data_path()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .as_ref()
-        .map(MetaStore::from_json)
-    {
-        return store;
+    if let Some(path) = data_path() {
+        return match std::fs::read_to_string(path) {
+            Ok(bytes) => decode_legacy(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => MetaStore::default(),
+            Err(error) => MetaStore {
+                storage_error: Some(format!(
+                    "Legacy store unreadable; no reset or autosave: {error}"
+                )),
+                ..Default::default()
+            },
+        };
     }
     MetaStore::default()
 }
 
+/// Legacy drafts are read-only migration input. There are deliberately NO legacy
+/// writes/effects: neither failed reads nor stale async UI effects can erase bytes.
 pub fn use_meta_store() -> Signal<MetaStore> {
     let store = use_signal(load_store);
     #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    {
-        let mut ready = use_signal(|| false);
-        use_effect(move || {
-            let mut store = store;
-            spawn(async move {
-                if let Ok(value) = document::eval(&format!("try {{ dioxus.send(JSON.parse(localStorage.getItem('{STORAGE_KEY}') || 'null')); }} catch (_) {{ dioxus.send(null); }}")).recv::<Value>().await {
-                    if !value.is_null() { store.set(MetaStore::from_json(&value)); }
-                }
-                ready.set(true);
-            });
-        });
-        use_effect(move || {
-            let serialized = store.read().to_json().to_string();
-            if *ready.read() {
-                spawn(async move {
-                    let script = format!(
-                        "try {{ localStorage.setItem('{STORAGE_KEY}', {serialized:?}); }} catch (_) {{}} dioxus.send(true);"
-                    );
-                    let _ = document::eval(&script).recv::<bool>().await;
-                });
-            }
-        });
-    }
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     use_effect(move || {
-        let serialized = store.read().to_json().to_string();
-        if let Some(path) = data_path() {
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+        let mut store = store;
+        spawn(async move {
+            let result = document::eval(&format!("try {{ dioxus.send({{bytes:localStorage.getItem('{STORAGE_KEY}')}}); }} catch(error) {{ dioxus.send({{error:String(error)}}); }}")).recv::<Value>().await;
+            match result {
+                Ok(value) if value["error"].is_string() => store.set(MetaStore {
+                    storage_error: Some(
+                        "Legacy browser storage unreadable; original storage untouched".into(),
+                    ),
+                    ..Default::default()
+                }),
+                Ok(value) => {
+                    if let Some(bytes) = value["bytes"].as_str() {
+                        store.set(decode_legacy(bytes.into()));
+                    }
+                }
+                Err(error) => store.set(MetaStore {
+                    storage_error: Some(format!("Legacy read failed; no autosave: {error}")),
+                    ..Default::default()
+                }),
             }
-            let _ = std::fs::write(path, serialized);
-        }
+        });
     });
     store
 }

@@ -1,0 +1,103 @@
+/* Shared disclosure semantics mirror rpi-web; detailed keeps its card chrome. */
+.conversation-widget .tool-success-mark {
+  display: inline-flex; align-items: center; flex: 0 0 12px; color: var(--success);
+}
+.conversation-widget .tool-success-mark > .icon { width: 12px; height: 12px; flex-basis: 12px; }
+.conversation-widget .tool-summary-meta {
+  flex-shrink: 0; white-space: nowrap; font-size: calc(10px * var(--type-scale, 1));
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.conversation-widget .edit-count { display: inline-flex; align-items: baseline; gap: 6px; }
+.conversation-widget .edit-count .add { color: var(--success); }
+.conversation-widget .edit-count .remove { color: var(--danger); }
+.conversation-widget .inline-call.tool-card > summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
+.appearance-modal .tool-rendering-field { grid-column: 1 / -1; }
+.appearance-modal .tool-rendering-field > small { color: var(--muted); font-size: var(--font-assist); line-height: 1.6; }
+.conversation-widget .inline-call.tool-card > summary > svg:last-child { width: 14px; flex-basis: 14px; transform: none; }
+.conversation-widget .inline-call.tool-card[open] > summary > svg:last-child { transform: rotate(90deg); }
+.conversation-widget .call-icon.call-status {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; flex: 0 0 14px; min-width: 14px;
+  background: transparent; color: var(--muted);
+}
+.conversation-widget .call-icon.call-status > .icon { width: 14px; height: 14px; flex-basis: 14px; }
+.conversation-widget .tool-done .call-status { opacity: .55; }
+.conversation-widget .failed .call-status { color: var(--danger); }
+.tool-running-spinner {
+  display: block; box-sizing: border-box; width: 14px; height: 14px;
+  border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: tool-status-spin .8s linear infinite;
+}
+@keyframes tool-status-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tool-running-spinner { animation: tool-status-spin 1.6s linear infinite !important; } }
+.conversation-widget .tool-label { gap: 6px; }
+.conversation-widget .tool-label-text { font-size: var(--font-assist); }
+.conversation-widget .call-body > pre.call-arguments { max-height: 140px; color: var(--muted); }
+.conversation-widget .call-body > .call-output { max-height: 360px; overflow: auto; overscroll-behavior: contain; }
+.tool-empty-output { color: var(--muted); }
+.tool-read-path { margin: 0 0 6px; font: var(--font-assist)/1.6 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.tool-markdown-output { min-width: 0; margin-bottom: 12px; }
+.tool-edit-preview { margin-block: 8px 12px; min-width: 0; }
+.tool-edit-lines { max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.tool-edit-hunk + .tool-edit-hunk { border-top: 1px solid var(--line); }
+.tool-edit-line { display: flex; gap: 8px; padding: 2px 8px; font: var(--font-code)/1.65 var(--mono); }
+.tool-edit-line > span { flex: 0 0 12px; user-select: none; }
+.tool-edit-line > code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-edit-line.add { background: var(--success-bg); color: var(--success); }
+.tool-edit-line.remove { background: var(--danger-bg); color: var(--danger); }
+
+/* rpi-web workspace: tool icon, target, optional edit counts, timing and success. */
+:root:not([data-tool-rendering="detailed"]) .conversation-tool { margin-block: 0; }
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call {
+  border: 0; border-radius: 0;
+  background: transparent; overflow: clip;
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary {
+  min-height: 34px; padding: 5px 4px; gap: 8px; border-radius: 5px; color: var(--muted);
+}
+@media (hover: hover) {
+  :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary:hover { background: var(--panel); }
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name {
+  display: flex; align-items: baseline; gap: 7px; min-width: 0; overflow: hidden;
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name > strong {
+  flex: 0 1 auto; max-width: 70%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: var(--font-assist); font-weight: 450; color: var(--muted);
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name > strong:only-child { max-width: 100%; }
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name > code {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: var(--font-assist)/1.65 var(--mono); color: var(--text);
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .tool-elapsed { font-size: calc(10px * var(--type-scale, 1)); }
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > .call-body {
+  margin: 2px 0 12px 10px; padding: 5px 0 10px 22px;
+  border: 0; border-left: 1px solid var(--line); background: transparent;
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .call-section-title { margin: 10px 0 6px; }
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .call-body pre {
+  font: var(--font-assist)/1.65 var(--mono); padding: 4px; border: 0; background: transparent;
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .call-body > pre.call-output {
+  padding: 8px 10px; background: var(--panel);
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call-warning {
+  padding: 5px 0 5px 32px; color: var(--danger);
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .command-preview-surface {
+  padding: 6px 0 8px 16px; border: 0; border-radius: 0; background: transparent;
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .shell-card .call-body > pre.call-output {
+  padding: 5px 0 2px 16px; border-left: 1px solid var(--line); background: transparent; color: var(--muted);
+}
+@media (max-width: 767px) {
+  :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary {
+    min-height: 36px; padding: 4px 6px; gap: 7px;
+  }
+  :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > .call-body {
+    margin-bottom: 6px; padding-bottom: 6px;
+  }
+}

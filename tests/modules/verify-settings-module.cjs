@@ -14,7 +14,7 @@ const formalUrl=process.env.WORK_UI_URL;
    HTMLMediaElement.prototype.play=()=>Promise.resolve();HTMLMediaElement.prototype.pause=()=>{};
    window.BarcodeDetector=class{async detect(){return window.__cameraMode==='decode'?[{rawValue:JSON.stringify({v:1,type:'rpi-work-node-address',address:'https://192.168.50.8:3030'})}]:[]}};
   });
-  await page.goto(formalUrl||'http://127.0.0.1:4182/modules/settings/');await page.getByRole('button',{name:formalUrl?'打开设置':'settings',exact:true}).click();
+  await page.goto(formalUrl||'http://127.0.0.1:14182/modules/settings/');await page.getByRole('button',{name:formalUrl?'打开设置':'settings',exact:true}).click();
   await nav().getByRole('button',{name:'执行节点',exact:true}).click();if(formalUrl)await page.getByRole('button',{name:'连接其他节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(fixture.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();if(formalUrl){await page.getByRole('status').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();await page.locator('.project-row').filter({hasText:'rpi-work'}).click();await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).waitFor();await page.getByRole('button',{name:'打开设置',exact:true}).click();await nav().getByRole('button',{name:'执行节点',exact:true}).click();}else await page.getByText('节点在线',{exact:true}).first().waitFor();
   pass('computer role retains real execution-node address and connection');
   const qr=page.getByRole('dialog',{name:'手机连接这台电脑',exact:true});

@@ -5,7 +5,7 @@ const {chromium}=require('../support/browser.cjs');
  const results=[],errors=[];page.on('pageerror',e=>errors.push(e.message));const pass=name=>{results.push(name);console.log('PASS',name)};
  async function answer(id){await page.waitForFunction(id=>{try{return JSON.parse(document.querySelector('.module-answers')?.textContent).requestId===id}catch{return false}},id);return JSON.parse(await page.locator('.module-answers').innerText());}
  try{
-  await page.goto('http://127.0.0.1:4182/modules/conversation/');await page.getByRole('button',{name:'conversation',exact:true}).click();
+  await page.goto('http://127.0.0.1:14182/modules/conversation/');await page.getByRole('button',{name:'conversation',exact:true}).click();
   await page.getByRole('heading',{name:'公开回答',exact:true}).waitFor();assert.match(await page.locator('pre code').first().innerText(),/fn main/);assert.equal(await page.locator('a[href^="javascript:"]').count(),0);assert.equal(await page.evaluate(()=>window.__markdownExecuted),undefined);assert.match(await page.locator('.conversation-module-content').innerText(),/<script>/);
   pass('assistant Markdown renders structure while script markup and unsafe links remain inert');
   const submit=id=>page.getByRole('button',{name:`${id} · 提交回答`,exact:true});

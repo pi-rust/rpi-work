@@ -1,12 +1,19 @@
-use crate::features::resources::session_config::NativeSessionAccess;
-use crate::shared::components::{Icon, Modal};
+use crate::shared::components::Modal;
 use dioxus::{core::Task, prelude::*};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use work_client::{AgentClient, RuntimeState, SessionBranch, WorkspaceClient};
+use work_client::{RuntimeState, SessionAccess, WorkspaceClient};
 use work_core::{ConnectionState, MessageBlock, RunPhase, RunProjection, ToolStatus};
 
 pub const CSS: &str = include_str!("runtime_stats.css");
+
+// Epochs invalidate observations, not the lifetime of a same-scope write.
+fn observation_matches(
+    expected: (&str, Option<&str>, u64, u64),
+    current: (&str, Option<&str>, u64, u64),
+) -> bool {
+    expected == current
+}
 
 fn number(source: Option<&Value>, keys: &[&str]) -> Option<f64> {
     let source = source?;
@@ -255,28 +262,31 @@ pub fn RuntimeFooter(
     runtime_state: Signal<Option<RuntimeState>>,
     projection: Signal<Option<RunProjection>>,
     transcript: Signal<Vec<Value>>,
-    stats_open: Signal<bool>,
-    context_open: Signal<bool>,
-    ontools: EventHandler,
+    online: bool,
 ) -> Element {
     let runtime = runtime_state.read().clone();
     let metrics = Metrics::session(runtime.as_ref().and_then(|r| r.stats.as_ref()));
     let context = Context::reported(runtime.as_ref().and_then(|r| r.context.as_ref()));
-    let (calls, _) = tool_counts(&transcript.read(), projection.read().as_ref());
-    let used = context.percent.unwrap_or(0.0).clamp(0.0, 100.0);
-    rsx! {
-        footer { class: "runtime-footer", aria_label: "Agent 运行统计",
-            div { class: "footer-metrics",
-                button { title: "输入总量，含缓存读写；点击查看统计", onclick: move |_| stats_open.set(true), Icon { name: "diff" } span { "↑ {tokens(metrics.input)}" } span { "↓ {tokens(metrics.output)}" } }
-                button { class: "cache-metric", onclick: move |_| stats_open.set(true), "缓存 " b { "{percent(metrics.cache_percent)}" } }
-                button { class: "context-meter", onclick: move |_| context_open.set(true), span { class: "context-ring", style: "--used:{used}%" } "上下文 {percent(context.percent)}" }
-                button { class: "cost-metric", onclick: move |_| stats_open.set(true), "{cost(metrics.cost)}" }
-                button { class: "speed-metric", onclick: move |_| stats_open.set(true), "{shown(metrics.speed)} tok/s" }
-                button { class: "tool-metric", onclick: move |_| ontools.call(()), "{calls} tools" }
-            }
-            button { class: "footer-detail", onclick: move |_| stats_open.set(true), "会话累计" Icon { name: "chevron" } }
-        }
-    }
+    let (tool_calls, tool_failures) = tool_counts(&transcript.read(), projection.read().as_ref());
+    let snapshot = super::footer_plugins::FooterContext {
+        scope,
+        provider: runtime.as_ref().and_then(|state| state.provider.clone()),
+        model: runtime.as_ref().and_then(|state| state.model_id.clone()),
+        thinking: runtime
+            .as_ref()
+            .and_then(|state| state.thinking_level.clone()),
+        metrics,
+        context,
+        tool_calls,
+        tool_failures,
+        online: online
+            && runtime.is_some()
+            && projection
+                .read()
+                .as_ref()
+                .is_some_and(|run| run.connection == ConnectionState::Online),
+    };
+    rsx! { super::footer_plugins::FooterHost { context: snapshot } }
 }
 
 #[allow(clippy::single_match_else)]
@@ -288,7 +298,6 @@ pub fn RuntimeDialogs(
     transcript: Signal<Vec<Value>>,
     last_turn: Signal<Option<(String, Value)>>,
     shared_client: Signal<Option<WorkspaceClient>>,
-    native_agents: Signal<std::collections::HashMap<String, AgentClient>>,
     selected_session: Signal<Option<String>>,
     session_generation: Signal<u64>,
     compact_revision: Signal<u64>,
@@ -317,18 +326,34 @@ pub fn RuntimeDialogs(
     let captured_generation = *session_generation.read();
     let captured_scope = scope.clone();
     let tasks = use_signal(Vec::<Task>::new);
+    let mut session_access = use_signal(|| None::<SessionAccess>);
+    let mut access_identity = use_signal(|| None::<(String, Option<String>, u64)>);
+    let mut access_epoch = use_signal(|| 0u64);
+    let mut access_refresh = use_signal(|| 0u64);
+    let mut access_error = use_signal(String::new);
+    let mut access_loading = use_signal(|| false);
     let mut observed_scope = use_signal(|| captured_scope.clone());
     let mut observed_generation = use_signal(|| captured_generation);
+    let mut observed_session = use_signal(|| selected_session.peek().clone());
     // Initialize to this render's identity: the first effect must not cancel
     // requests or clear inputs submitted before it runs. Visibility is not scope.
+    // Reset the old context and start its replacement observation in one
+    // effect. Separate effects can cancel the freshly spawned access task when
+    // session signals and the scope prop arrive in adjacent renders.
     use_effect(use_reactive!(|scope| {
+        let _ = access_refresh.read();
         let generation = *session_generation.read();
         let previous_scope = observed_scope.peek().clone();
         let previous_generation = *observed_generation.peek();
-        if previous_scope != scope || previous_generation != generation {
+        let id = selected_session.read().clone();
+        if previous_scope != scope
+            || previous_generation != generation
+            || *observed_session.peek() != id
+        {
             crate::shared::state::cancel_requests(tasks);
             observed_scope.set(scope.clone());
             observed_generation.set(generation);
+            observed_session.set(id.clone());
             turn_scope.set(false);
             branch_summary.set(None);
             branch_error.set(None);
@@ -344,6 +369,49 @@ pub fn RuntimeDialogs(
             preview.set(false);
             busy.set(false);
         }
+        // Observe the bound session, never infer commands from the node descriptor.
+        let client = shared_client.read().clone();
+        let epoch = access_epoch.peek().wrapping_add(1);
+        access_epoch.set(epoch);
+        session_access.set(None);
+        access_identity.set(None);
+        // Invalidate reads, but retain the same-scope write guard until the
+        // actual request completes. compact_pending belongs to node settlement.
+        access_error.set(String::new());
+        access_loading.set(false);
+        branch_loading.set(false);
+        branch_summary.set(None);
+        branch_empty.set(false);
+        branch_error.set(None);
+        let revision = summary_request_revision.peek().wrapping_add(1);
+        summary_request_revision.set(revision);
+        let (Some(client), Some(id)) = (client, id) else {
+            access_error.set("会话能力未知：尚未连接或选择会话。".into());
+            return;
+        };
+        access_loading.set(true);
+        crate::shared::state::scoped_spawn(tasks, async move {
+            let result = client.session_access(&id).await;
+            if !observation_matches(
+                (&scope, Some(id.as_str()), generation, epoch),
+                (
+                    observed_scope.peek().as_str(),
+                    selected_session.peek().as_deref(),
+                    *session_generation.peek(),
+                    *access_epoch.peek(),
+                ),
+            ) {
+                return;
+            }
+            access_loading.set(false);
+            match result {
+                Ok(access) => {
+                    session_access.set(Some(access));
+                    access_identity.set(Some((scope, Some(id), generation)));
+                }
+                Err(e) => access_error.set(format!("会话能力未知，读取失败：{e}")),
+            }
+        });
     }));
     let mut observed_compact_revision = use_signal(|| *compact_revision.read());
     use_effect(move || {
@@ -365,11 +433,26 @@ pub fn RuntimeDialogs(
     use_drop(move || crate::shared::state::cancel_requests(tasks));
 
     let runtime = runtime_state.read().clone();
-    let selected_native = selected_session
-        .read()
+    let captured_access_epoch = *access_epoch.read();
+    let identity = (
+        scope.clone(),
+        selected_session.read().clone(),
+        captured_generation,
+    );
+    let access = if access_identity.read().as_ref() == Some(&identity) {
+        session_access.read().clone()
+    } else {
+        None
+    };
+    let state_supported = access
         .as_ref()
-        .and_then(|id| native_agents.read().get(id).cloned());
-    let access = NativeSessionAccess::for_agent(selected_native.as_ref());
+        .is_some_and(|access| access.supports_command("get_state"));
+    let summary_supported = access
+        .as_ref()
+        .is_some_and(|access| access.supports_command("get_session_branch"));
+    let compact_supported = access
+        .as_ref()
+        .is_some_and(|access| access.supports_command("compact"));
     let context = Context::reported(runtime.as_ref().and_then(|r| r.context.as_ref()));
     let session_metrics = Metrics::session(runtime.as_ref().and_then(|r| r.stats.as_ref()));
     let metrics = if *turn_scope.read() {
@@ -433,12 +516,13 @@ pub fn RuntimeDialogs(
 
     let captured_scope = scope.clone();
     let compact = move |_| {
-        if !access.compact
+        if !compact_supported
             || blocked
             || *busy.peek()
             || compact_pending.peek().is_some()
             || *node_compacting.peek()
             || *session_generation.peek() != captured_generation
+            || *access_epoch.peek() != captured_access_epoch
             || observed_scope.peek().as_str() != captured_scope
         {
             return;
@@ -450,10 +534,6 @@ pub fn RuntimeDialogs(
             return;
         };
         let preserve = instructions.read().clone();
-        let native_agent = selected_session
-            .read()
-            .as_ref()
-            .and_then(|id| native_agents.read().get(id).cloned());
         let submitted_revision = *compact_revision.peek();
         compact_pending.set(Some(submitted_revision));
         compact_result.set(None);
@@ -462,14 +542,29 @@ pub fn RuntimeDialogs(
         notice.set("正在请求节点压缩…".into());
         let captured_scope = captured_scope.clone();
         crate::shared::state::scoped_spawn(tasks, async move {
-            let result = if let Some(agent) = native_agent.clone() {
-                agent.compact(&id, Some(&preserve)).await
-            } else {
-                client.compact(&id, Some(&preserve)).await
-            };
+            let result = client.compact(&id, Some(&preserve)).await;
             if *session_generation.peek() != captured_generation
+                || selected_session.peek().as_ref() != Some(&id)
                 || observed_scope.peek().as_str() != captured_scope
             {
+                return;
+            }
+            if *access_epoch.peek() != captured_access_epoch {
+                // An observation revision invalidates read data, not the
+                // same-context write outcome. A rejected request has no future
+                // settlement to release its pending guard.
+                busy.set(false);
+                if let Err(e) = result
+                    && *compact_pending.peek() == Some(submitted_revision)
+                {
+                    compact_pending.set(None);
+                    compact_result.set(Some(CompactResult {
+                        outcome: "failed".into(),
+                        summary: None,
+                        error: Some(e.to_string()),
+                    }));
+                    notice.set(String::new());
+                }
                 return;
             }
             match result {
@@ -486,21 +581,26 @@ pub fn RuntimeDialogs(
                 Ok(_) => {
                     // HTTP accepted only starts the operation. The scoped
                     // agent_settled event is the authoritative result.
-                    let refreshed = if let Some(agent) = native_agent {
-                        agent.state(&id).await.and_then(|value| {
-                            serde_json::from_value(value).map_err(work_client::ClientError::from)
-                        })
+                    let refreshed = if state_supported {
+                        client.runtime_state(&id).await.map(Some)
                     } else {
-                        client.runtime_state(&id).await
+                        Ok(None)
                     };
                     match refreshed {
                         Ok(state) => {
                             if *session_generation.peek() != captured_generation
+                                || selected_session.peek().as_ref() != Some(&id)
                                 || observed_scope.peek().as_str() != captured_scope
                             {
                                 return;
                             }
-                            runtime_state.set(Some(state));
+                            busy.set(false);
+                            if *access_epoch.peek() != captured_access_epoch {
+                                return;
+                            }
+                            if let Some(state) = state {
+                                runtime_state.set(Some(state));
+                            }
                             notice.set(
                                 "节点已接受压缩请求，已重新读取当前上下文；等待实际压缩结算。"
                                     .into(),
@@ -508,8 +608,13 @@ pub fn RuntimeDialogs(
                         }
                         Err(e) => {
                             if *session_generation.peek() != captured_generation
+                                || selected_session.peek().as_ref() != Some(&id)
                                 || observed_scope.peek().as_str() != captured_scope
                             {
+                                return;
+                            }
+                            busy.set(false);
+                            if *access_epoch.peek() != captured_access_epoch {
                                 return;
                             }
                             error.set(format!("节点已响应，刷新上下文失败：{e}"));
@@ -523,10 +628,11 @@ pub fn RuntimeDialogs(
     };
     let captured_scope = scope.clone();
     let load_summary = Callback::new(move |()| {
-        if !access.summary {
+        if !summary_supported {
             return;
         }
         if *session_generation.peek() != captured_generation
+            || *access_epoch.peek() != captured_access_epoch
             || observed_scope.peek().as_str() != captured_scope
         {
             return;
@@ -534,10 +640,6 @@ pub fn RuntimeDialogs(
         let request_revision = *summary_request_revision.peek() + 1;
         summary_request_revision.set(request_revision);
         let expected_compact_revision = *compact_revision.peek();
-        let native_agent = selected_session
-            .read()
-            .as_ref()
-            .and_then(|session_id| native_agents.read().get(session_id).cloned());
         let (Some(client), Some(id)) = (
             shared_client.read().clone(),
             selected_session.read().clone(),
@@ -551,18 +653,10 @@ pub fn RuntimeDialogs(
         branch_summary.set(None);
         let captured_scope = captured_scope.clone();
         crate::shared::state::scoped_spawn(tasks, async move {
-            let result = if let Some(agent) = native_agent {
-                agent
-                    .session_branch(&id, None, None)
-                    .await
-                    .and_then(|value| {
-                        serde_json::from_value::<SessionBranch>(value)
-                            .map_err(work_client::ClientError::from)
-                    })
-            } else {
-                client.session_branch(&id).await
-            };
+            let result = client.session_branch(&id).await;
             if *session_generation.peek() != captured_generation
+                || selected_session.peek().as_ref() != Some(&id)
+                || *access_epoch.peek() != captured_access_epoch
                 || observed_scope.peek().as_str() != captured_scope
                 || *compact_revision.peek() != expected_compact_revision
                 || *summary_request_revision.peek() != request_revision
@@ -595,17 +689,14 @@ pub fn RuntimeDialogs(
     });
     let captured_scope = scope.clone();
     let refresh = move |_| {
-        if !access.state
+        if !state_supported
             || *busy.peek()
             || *session_generation.peek() != captured_generation
+            || *access_epoch.peek() != captured_access_epoch
             || observed_scope.peek().as_str() != captured_scope
         {
             return;
         }
-        let native_agent = selected_session
-            .read()
-            .as_ref()
-            .and_then(|session_id| native_agents.read().get(session_id).cloned());
         let (Some(client), Some(id)) = (
             shared_client.read().clone(),
             selected_session.read().clone(),
@@ -615,16 +706,15 @@ pub fn RuntimeDialogs(
         busy.set(true);
         let captured_scope = captured_scope.clone();
         crate::shared::state::scoped_spawn(tasks, async move {
-            let result = if let Some(agent) = native_agent {
-                agent.state(&id).await.and_then(|value| {
-                    serde_json::from_value(value).map_err(work_client::ClientError::from)
-                })
-            } else {
-                client.runtime_state(&id).await
-            };
+            let result = client.runtime_state(&id).await;
             if *session_generation.peek() != captured_generation
+                || selected_session.peek().as_ref() != Some(&id)
                 || observed_scope.peek().as_str() != captured_scope
             {
+                return;
+            }
+            busy.set(false);
+            if *access_epoch.peek() != captured_access_epoch {
                 return;
             }
             match result {
@@ -673,6 +763,9 @@ pub fn RuntimeDialogs(
         if *context_open.read() {
             Modal { id: "runtime-context", title: "上下文与压缩", class: "runtime-modal".to_owned(), onclose: move |()| { context_open.set(false); preview.set(false); },
                 div { class: "modal-body",
+                    if *access_loading.read() { p { role: "status", "正在读取会话能力；未确认的操作保持禁用。" } }
+                    if !access_error.read().is_empty() { p { role: "alert", class: "error-text", "{access_error}" } }
+                    button { class: "button", disabled: *access_loading.read(), onclick: move |_| access_refresh += 1, "刷新会话能力" }
                     if *preview.read() {
                         if let Some(result) = compact_result.read().as_ref() {
                             p { class: "runtime-outcome", "压缩结算：{compact_outcome_label(&result.outcome)}" }
@@ -691,7 +784,7 @@ pub fn RuntimeDialogs(
                         } else {
                             p { class: "runtime-help", "点击刷新摘要读取当前分支最新公开压缩摘要。" }
                         }
-                        button { class: "button", disabled: !access.summary || *branch_loading.read(), onclick: move |_| load_summary.call(()), if branch_error.read().is_some() { "重试" } else { "刷新摘要" } }
+                        button { class: "button", disabled: !summary_supported || *branch_loading.read(), onclick: move |_| load_summary.call(()), if branch_error.read().is_some() { "重试" } else { "刷新摘要" } }
                         button { class: "button", onclick: move |_| preview.set(false), "返回上下文" }
                     } else {
                         div { class: "context-hero",
@@ -732,17 +825,51 @@ pub fn RuntimeDialogs(
                         if !error.read().is_empty() { p { role: "alert", class: "error-text", "{error}" } }
                     }
                 }
-                if selected_native.is_some() && (!access.state || !access.summary || !access.compact) {
-                    p { class: "runtime-help", "当前原生 transport 未提供的状态查询、完整摘要或压缩操作已禁用；未上报的数据保持未知。" }
+                if !state_supported || !summary_supported || !compact_supported {
+                    p { class: "runtime-help", "当前会话未提供或尚未确认的状态查询、完整摘要或压缩操作已禁用；未上报的数据保持未知。" }
                 }
                 if !*preview.read() {
                     div { class: "runtime-modal-actions",
-                        button { class: "button", disabled: !access.summary, onclick: move |_| { preview.set(true); load_summary.call(()); }, "查看摘要" }
-                        button { class: "button", disabled: !access.state || *busy.read() || offline, onclick: refresh, "刷新状态" }
-                        button { class: "button primary", disabled: !access.compact || blocked, onclick: compact, if *busy.read() || awaiting_compact { "等待节点…" } else { "手动压缩" } }
+                        button { class: "button", disabled: !summary_supported, onclick: move |_| { preview.set(true); load_summary.call(()); }, "查看摘要" }
+                        button { class: "button", disabled: !state_supported || *busy.read() || offline, onclick: refresh, "刷新状态" }
+                        button { class: "button primary", disabled: !compact_supported || blocked, onclick: compact, if *busy.read() || awaiting_compact { "等待节点…" } else { "手动压缩" } }
                     }
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn access_observation_rejects_stale_epoch_generation_scope_and_session() {
+        let expected = ("node/a", Some("a"), 7, 3);
+        assert!(observation_matches(expected, expected));
+        for stale in [
+            ("node/a", Some("a"), 7, 2),
+            ("node/a", Some("a"), 6, 3),
+            ("other/a", Some("a"), 7, 3),
+            ("node/a", Some("b"), 7, 3),
+            ("node/a", None, 7, 3),
+        ] {
+            assert!(!observation_matches(expected, stale));
+        }
+    }
+
+    #[test]
+    fn unknown_metrics_remain_unknown_and_explicit_uncached_is_not_added_twice() {
+        assert_eq!(Metrics::session(None), Metrics::default());
+        let state = serde_json::json!({
+            "uncachedTokens": 15, "cacheReadTokens": 30,
+            "cacheWriteTokens": 5, "outputTokens": 10
+        });
+        let metrics = Metrics::session(Some(&state));
+        assert_eq!(metrics.uncached, Some(15.0));
+        assert_eq!(metrics.input, Some(45.0));
+        assert_eq!(metrics.total, Some(55.0));
+        assert_eq!(shown(None), "—");
     }
 }

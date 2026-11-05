@@ -111,22 +111,106 @@ pub fn relative_updated_at(updated_at: u64, now: u64) -> String {
     }
 }
 
+/// Live activity takes precedence over persisted session summaries, including explicit idle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SidebarActivity {
+    Loading,
+    Sending,
+    WaitingReply,
+    Running,
+    AwaitingInput,
+    Cancelling,
+    Disconnected,
+    Idle,
+}
+
+impl SidebarActivity {
+    pub fn status(self) -> Option<(&'static str, &'static str)> {
+        match self {
+            Self::Loading => Some(("loading", "加载中")),
+            Self::Sending => Some(("sending", "发送中")),
+            Self::WaitingReply => Some(("loading", "等待回复")),
+            Self::Running => Some(("running", "运行中")),
+            Self::AwaitingInput => Some(("waiting", "等待确认")),
+            Self::Cancelling => Some(("cancelling", "停止中")),
+            Self::Disconnected => Some(("offline", "已断开")),
+            Self::Idle => None,
+        }
+    }
+
+    pub fn spinning(self) -> bool {
+        matches!(
+            self,
+            Self::Loading | Self::Sending | Self::WaitingReply | Self::Running | Self::Cancelling
+        )
+    }
+}
+
 pub fn sidebar_session_status(
     session: &work_client::SessionSummary,
 ) -> Option<(&'static str, &'static str)> {
     if session.error.is_some() || matches!(session.status.as_str(), "error" | "failed") {
         Some(("failed", "执行失败"))
-    } else if session.pending_resume
-        || matches!(
-            session.status.as_str(),
-            "waiting" | "waiting_for_input" | "awaiting_approval"
-        )
-    {
+    } else if session.pending_resume {
+        Some(("waiting", "待恢复"))
+    } else if matches!(
+        session.status.as_str(),
+        "waiting" | "waiting_for_input" | "awaiting_approval"
+    ) {
         Some(("waiting", "等待处理"))
     } else if matches!(session.status.as_str(), "running" | "streaming" | "busy") {
         Some(("running", "运行中"))
+    } else if session.status == "loading" {
+        SidebarActivity::Loading.status()
+    } else if session.status == "sending" {
+        SidebarActivity::Sending.status()
+    } else if session.status == "cancelling" {
+        SidebarActivity::Cancelling.status()
     } else {
         None
+    }
+}
+
+fn sidebar_activity_status(
+    session: &work_client::SessionSummary,
+    activity: Option<SidebarActivity>,
+) -> Option<(&'static str, &'static str)> {
+    match activity {
+        Some(activity) => activity.status(),
+        None => sidebar_session_status(session),
+    }
+}
+
+/// Switcher rows always have a state; idle is not evidence of completion.
+pub fn switcher_session_status(
+    session: &work_client::SessionSummary,
+    activity: Option<SidebarActivity>,
+) -> (&'static str, &'static str) {
+    match activity {
+        Some(SidebarActivity::Loading) => return ("loading", "加载中"),
+        Some(SidebarActivity::Sending) => return ("running", "发送中"),
+        Some(SidebarActivity::WaitingReply | SidebarActivity::AwaitingInput) => return ("waiting", "等待回答"),
+        Some(SidebarActivity::Running) => return ("running", "运行中"),
+        Some(SidebarActivity::Cancelling) => return ("running", "停止中"),
+        Some(SidebarActivity::Disconnected) => return ("failed", "连接异常"),
+        _ => {}
+    }
+    if session.error.is_some() { return ("failed", "异常"); }
+    if session.pending_resume { return ("waiting", "待恢复"); }
+    match session.status.as_str() {
+        "running" | "streaming" | "busy" | "sending" | "cancelling" => ("running", "运行中"),
+        "waiting" | "waiting_for_input" | "awaiting_approval" | "awaiting_input" | "waiting_for_answer" | "waiting_reply" => ("waiting", "等待回答"),
+        "error" | "failed" | "offline" | "disconnected" => ("failed", "异常"),
+        "completed" | "done" | "succeeded" => ("completed", "完成"),
+        "loading" => ("loading", "加载中"),
+        "aborted" | "interrupted" | "cancelled" => ("idle", "已停止"),
+        "idle" | "ready" => match session.latest_settlement.as_ref().and_then(|value| value.get("outcome")).and_then(serde_json::Value::as_str) {
+            Some("completed") => ("completed", "完成"),
+            Some("failed") => ("failed", "异常"),
+            Some("interrupted" | "declined") => ("idle", "已停止"),
+            _ => ("idle", "空闲"),
+        },
+        _ => ("unknown", "状态未知"),
     }
 }
 
@@ -141,12 +225,24 @@ pub fn SidebarSession(
     selected: bool,
     busy: bool,
     now: u64,
+    #[props(default)] activity: Option<SidebarActivity>,
+    #[props(default)] scope: String,
+    #[props(default)] onnodeinfo: Option<EventHandler>,
     onopen: EventHandler<String>,
     onaction: EventHandler<SessionAction>,
 ) -> Element {
     let id = session.session_id.clone();
     let title = session.title.clone().unwrap_or_else(|| "未命名会话".into());
-    let status = sidebar_session_status(&session);
+    let status = sidebar_activity_status(&session, activity);
+    let spinning = activity.map_or_else(
+        || {
+            matches!(
+                status,
+                Some(("loading" | "sending" | "running" | "cancelling", _))
+            )
+        },
+        SidebarActivity::spinning,
+    );
     let description =
         status.map_or_else(|| title.clone(), |(_, label)| format!("{title} · {label}"));
     let menu = format!("session-menu-{id}");
@@ -155,17 +251,29 @@ pub fn SidebarSession(
         div { class: if selected { "session-entry selected" } else { "session-entry" }, "data-session-id": "{id}",
             button {
                 class: if selected { "session-item current" } else { "session-item" },
-                aria_label: "{title}", aria_current: if selected { "true" } else { "false" }, title: "{description}",
+                aria_label: "{title}", "aria-description": status.map(|(_, label)| label),
+                aria_busy: if spinning { "true" } else { "false" },
+                aria_current: if selected { "true" } else { "false" }, title: "{description}",
                 onclick: { let id=id.clone(); move |_| onopen.call(id.clone()) },
                 oncontextmenu: move |event| { event.prevent_default(); open_menu(&menu); },
-                if let Some((tone, label)) = status {
+                if let Some((tone, label)) = status.filter(|_| !spinning) {
                     span { class: "session-dot {tone}", title: "{label}", "aria-hidden": "true" }
                 }
                 span { class: "session-title", "{title}" }
+                if let Some((tone, label)) = status {
+                    if spinning {
+                        crate::features::conversation::activity::Spinner {
+                            scope: Some(scope), class: "session-activity-spinner {tone}", title: label.to_owned(),
+                        }
+                    }
+                    small { class: "session-activity-label {tone}", "aria-hidden": "true", "{label}" }
+                }
                 if session.pinned { small { class: "session-pin", "置顶" } }
-                small { class: "session-updated", "aria-hidden": "true", "{updated}" }
+                if !spinning {
+                    small { class: "session-updated", "aria-hidden": "true", "{updated}" }
+                }
             }
-            SessionMenu { id: id.clone(), title: title.clone(), archived: session.archived, pinned: session.pinned, busy, onaction }
+            SessionMenu { id: id.clone(), title: title.clone(), archived: session.archived, pinned: session.pinned, busy, onaction, onnodeinfo }
         }
     }
 }
@@ -209,13 +317,19 @@ pub fn SessionMenu(
     pinned: bool,
     busy: bool,
     #[props(default = "session".to_owned())] prefix: String,
+    #[props(default)] onnodeinfo: Option<EventHandler>,
+    #[props(default)] extra_actions: Option<Element>,
     onaction: EventHandler<SessionAction>,
 ) -> Element {
     let menu_id = format!("{prefix}-menu-{id}");
+    let header = prefix == "header";
+    let menu_label = if header { "更多操作" } else { "会话操作" };
+    let trigger_label = if header { "更多操作".to_owned() } else { format!("{title} 的会话操作") };
     rsx! {
-        button { class: "session-row-menu", title: "会话操作", aria_label: "{title} 的会话操作", "popovertarget": "{menu_id}", Icon { name: "more" } }
-        div { id: "{menu_id}", class: "workspace-menu", popover: "auto", role: "menu", aria_label: "会话操作",
+        button { class: if header { "session-row-menu header-more" } else { "session-row-menu" }, title: "{menu_label}", aria_label: "{trigger_label}", aria_haspopup: "menu", "popovertarget": "{menu_id}", Icon { name: "more" } }
+        div { id: "{menu_id}", class: "workspace-menu", popover: "auto", role: "menu", aria_label: "{menu_label}",
             onkeydown: move |event| event.stop_propagation(),
+            {extra_actions}
             button { role: "menuitem", disabled: busy, onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Rename(id.clone())) }, "重命名" }
             button { role: "menuitem", disabled: busy, onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Pin(id.clone(), !pinned)) }, if pinned { "取消置顶" } else { "置顶" } }
             button { role: "menuitem", disabled: busy, onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Fork(id.clone(), None)) }, "新建分支（Fork）" }
@@ -223,6 +337,9 @@ pub fn SessionMenu(
             hr {}
             button { role: "menuitem", onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Copy(id.clone())) }, "复制会话标识" }
             button { role: "menuitem", onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Details(id.clone())) }, "详情与配置" }
+            if let Some(onnodeinfo) = onnodeinfo {
+                button { role: "menuitem", onclick: move |_| onnodeinfo.call(()), "节点信息" }
+            }
             hr {}
             button { role: "menuitem", disabled: busy, onclick: move |_| onaction.call(SessionAction::Archive(id.clone(), !archived)), if archived { "恢复会话" } else { "归档会话" } }
         }

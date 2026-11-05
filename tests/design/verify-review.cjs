@@ -7,7 +7,7 @@ const {chromium}=require('../support/browser.cjs');
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],results=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   const pass=t=>{results.push(t);console.log('PASS '+t);};
-  await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:4182/prototype/');
+  await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:14182/prototype/');
   assert.equal(await page.getByRole('tab').count(),2);
   assert.equal(await page.locator('.tool-call').count(),11);
   assert.equal(await page.locator('#timeline-plan').count(),1);

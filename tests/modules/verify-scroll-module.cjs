@@ -7,7 +7,7 @@ const {chromium}=require('../support/browser.cjs');
  const atBottom=()=>page.waitForFunction(()=>{const e=document.querySelector('.review-scroll-container');return e&&e.scrollHeight>2000&&e.scrollHeight-e.clientHeight-e.scrollTop<3});
  const move=async top=>{await scroll().evaluate((e,top)=>{e.scrollTop=top;e.dispatchEvent(new Event('scroll'))},top);await page.waitForFunction(top=>Math.abs(document.querySelector('.review-scroll-container').scrollTop-top)<3,top)};
  try{
-  await page.goto('http://127.0.0.1:4182/modules/scroll/');await page.getByRole('button',{name:'scroll',exact:true}).click();await atBottom();assert.equal(await page.getByRole('button',{name:'回到最新消息',exact:true}).count(),0);pass('first history opens at bottom without fake unread progress');
+  await page.goto('http://127.0.0.1:14182/modules/scroll/');await page.getByRole('button',{name:'scroll',exact:true}).click();await atBottom();assert.equal(await page.getByRole('button',{name:'回到最新消息',exact:true}).count(),0);pass('first history opens at bottom without fake unread progress');
   await page.getByRole('button',{name:'Append progress',exact:true}).click();await atBottom();pass('new progress follows when reader is at bottom');
   await move(420);await page.getByRole('button',{name:'Append progress',exact:true}).click();await page.getByRole('button',{name:'回到最新消息',exact:true}).waitFor();assert(Math.abs(await scroll().evaluate(e=>e.scrollTop)-420)<3);pass('new progress preserves reading position and reveals jump button');
   await page.getByRole('button',{name:'回到最新消息',exact:true}).click();await atBottom();await page.getByRole('button',{name:'回到最新消息',exact:true}).waitFor({state:'hidden'});pass('jump button restores follow mode and clears unread');

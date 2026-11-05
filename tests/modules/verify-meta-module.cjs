@@ -6,7 +6,7 @@ const {chromium}=require('../support/browser.cjs');
   const errors=[],results=[];page.on('pageerror',e=>errors.push(e.message));
   const pass=name=>{results.push(name);console.log('PASS',name)};
   try{
-    await page.goto('http://127.0.0.1:4182/modules/all/');
+    await page.goto('http://127.0.0.1:14182/modules/all/');
     await page.getByRole('button',{name:'+ 新建能力',exact:true}).click();
     await page.getByLabel('名称',{exact:true}).fill('独立审查包');
     await page.getByLabel('资源 ID',{exact:true}).fill('personal.review-package');

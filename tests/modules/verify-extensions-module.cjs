@@ -48,7 +48,7 @@ function design(id, name, agent, ui, version = '1.0.0') {
     }, { key: KEY, source: predicate.toString() });
   }
   try {
-    await page.goto(process.env.EXTENSION_REVIEW_URL || 'http://127.0.0.1:4182/modules/all/');
+    await page.goto(process.env.EXTENSION_REVIEW_URL || 'http://127.0.0.1:14182/modules/all/');
     await page.getByRole('button', { name: 'extensions', exact: true }).click();
     const combined = design('qa.combined', 'Combined Design', true, true);
     for (const document of [design('qa.agent', 'Agent Design', true, false), design('qa.ui', 'UI Design', false, true), combined]) await importDesign(document);

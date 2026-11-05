@@ -33,9 +33,154 @@ impl InteractionState {
         }
     }
 
-    pub(crate) fn composer_loading(self, draft: &str, submitting_original: bool) -> bool {
-        self.is_active() && (draft.trim().is_empty() || submitting_original)
+    pub(crate) fn sidebar_activity(
+        self,
+        awaiting_reply: bool,
+    ) -> crate::features::projects::management::SidebarActivity {
+        use crate::features::projects::management::SidebarActivity;
+        match self {
+            Self::Disconnected => SidebarActivity::Disconnected,
+            Self::Ready => SidebarActivity::Idle,
+            Self::Sending => SidebarActivity::Sending,
+            Self::Running if awaiting_reply => SidebarActivity::WaitingReply,
+            Self::Running => SidebarActivity::Running,
+            Self::AwaitingInput => SidebarActivity::AwaitingInput,
+            Self::Cancelling => SidebarActivity::Cancelling,
+        }
     }
+
+    pub(crate) fn primary_action_is_stop(self) -> bool {
+        matches!(self, Self::Running | Self::AwaitingInput | Self::Cancelling)
+    }
+
+    pub(crate) fn composer_loading(self, draft_empty: bool, submitting_original: bool) -> bool {
+        self.is_active() && (draft_empty || submitting_original)
+    }
+}
+
+/// Small, node-epoch-scoped evidence retained when a conversation is not selected.
+/// Unlike a catalog error or latestSettlement, this phase belongs to this cursor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SessionObservation {
+    pub cursor: Option<u64>,
+    pub phase: RunPhase,
+}
+
+impl From<&RunProjection> for SessionObservation {
+    fn from(run: &RunProjection) -> Self {
+        Self {
+            cursor: run.cursor,
+            phase: run.phase.clone(),
+        }
+    }
+}
+
+/// A response can settle while this UI is watching another session. Retire only
+/// the list's waiting badge, not the optimistic message or the user's draft.
+pub(crate) fn switcher_waiting_reply(
+    session: &SessionSummary,
+    pending: &crate::features::conversation::activity::PendingReply,
+    observed: Option<&SessionObservation>,
+) -> bool {
+    if pending.responded {
+        return false;
+    }
+    let Some(before) = pending.cursor_before.filter(|_| pending.accepted) else {
+        return true;
+    };
+    if observed.is_some_and(|observed| {
+        matches!(observed.phase, RunPhase::Settled(_))
+            && observed
+                .cursor
+                .is_some_and(|cursor| cursor > before && cursor >= session.last_seq)
+    }) {
+        return false;
+    }
+    let catalog_settled = matches!(
+        session.status.as_str(),
+        "completed"
+            | "done"
+            | "succeeded"
+            | "failed"
+            | "error"
+            | "aborted"
+            | "interrupted"
+            | "cancelled"
+    ) || (matches!(session.status.as_str(), "idle" | "ready")
+        && session
+            .latest_settlement
+            .as_ref()
+            .is_some_and(|value| value.get("outcome").is_some()));
+    !(session.last_seq > before && catalog_settled)
+}
+
+pub(crate) fn switcher_session_state(
+    session: &SessionSummary,
+    activity: Option<crate::features::projects::management::SidebarActivity>,
+    observed: Option<&SessionObservation>,
+) -> (&'static str, &'static str) {
+    use crate::features::projects::management::{SidebarActivity, switcher_session_status};
+    // Local requests and current transport failures have no server cursor yet.
+    if matches!(
+        activity,
+        Some(
+            SidebarActivity::Loading
+                | SidebarActivity::Sending
+                | SidebarActivity::WaitingReply
+                | SidebarActivity::Disconnected
+        )
+    ) {
+        return switcher_session_status(session, activity);
+    }
+    let Some(observed) = observed else {
+        return switcher_session_status(session, activity);
+    };
+    if !observed
+        .cursor
+        .is_some_and(|cursor| cursor >= session.last_seq)
+    {
+        // A newer server summary outranks an older stream/snapshot observation.
+        return switcher_session_status(session, None);
+    }
+    match &observed.phase {
+        RunPhase::Ready => switcher_session_status(session, activity),
+        RunPhase::Accepted
+        | RunPhase::Preparing
+        | RunPhase::Text
+        | RunPhase::Tool
+        | RunPhase::AwaitingSettlement => {
+            if activity == Some(SidebarActivity::Cancelling) {
+                ("running", "停止中")
+            } else {
+                ("running", "运行中")
+            }
+        }
+        RunPhase::AwaitingInput => ("waiting", "等待回答"),
+        RunPhase::Cancelling => ("running", "停止中"),
+        RunPhase::Settled(outcome) => match outcome {
+            SettlementOutcome::Completed => ("completed", "完成"),
+            SettlementOutcome::Failed => ("failed", "异常"),
+            SettlementOutcome::Interrupted | SettlementOutcome::Declined => ("idle", "已停止"),
+            SettlementOutcome::Suspended => ("waiting", "待恢复"),
+            SettlementOutcome::Compacted => ("idle", "空闲"),
+            SettlementOutcome::Unknown(_) => ("unknown", "状态未知"),
+        },
+    }
+}
+
+/// Retain the last observed protocol phase when the reader switches conversations.
+/// This is not a background subscription or proof of an unobserved settlement.
+pub(crate) fn sync_sidebar_session(session: &mut SessionSummary, run: &RunProjection) {
+    session.status = match (&run.connection, &run.phase) {
+        (ConnectionState::Offline, _) => "offline",
+        (ConnectionState::Reconnecting | ConnectionState::Resyncing, _) => "loading",
+        (_, RunPhase::Settled(SettlementOutcome::Failed)) => "failed",
+        (_, RunPhase::Ready | RunPhase::Settled(_)) => "idle",
+        (_, RunPhase::AwaitingInput) => "waiting_for_input",
+        (_, RunPhase::Cancelling) => "cancelling",
+        _ => "running",
+    }
+    .into();
 }
 
 pub(crate) fn interaction_state(
@@ -224,7 +369,10 @@ pub(crate) fn default_node_url() -> String {
     }
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
-        super::local_node::address()
+        // Bootstrap validates explicit CLI/env selection before touching a lock.
+        // The same selection initializes both the client and the startup effect.
+        super::local_node::requested_address()
+            .or_else(super::local_node::address)
             .unwrap_or("about:blank")
             .to_owned()
     }
@@ -287,6 +435,256 @@ pub(crate) fn session_matches(session: &SessionSummary, query: &str, projects: &
 mod status_tests {
     use super::{super::connections::Phase, interaction_state, projection_status, task_status};
     use work_core::{ConnectionState, RunPhase, RunProjection, SettlementOutcome};
+
+    #[test]
+    fn sidebar_activity_follows_protocol_and_pending_reply_without_a_draft_dependency() {
+        use super::InteractionState;
+        use crate::features::projects::management::SidebarActivity;
+        for (state, pending, expected) in [
+            (InteractionState::Sending, true, SidebarActivity::Sending),
+            (
+                InteractionState::Running,
+                true,
+                SidebarActivity::WaitingReply,
+            ),
+            (InteractionState::Running, false, SidebarActivity::Running),
+            (
+                InteractionState::AwaitingInput,
+                true,
+                SidebarActivity::AwaitingInput,
+            ),
+            (
+                InteractionState::Cancelling,
+                true,
+                SidebarActivity::Cancelling,
+            ),
+            (
+                InteractionState::Disconnected,
+                true,
+                SidebarActivity::Disconnected,
+            ),
+            (InteractionState::Ready, false, SidebarActivity::Idle),
+        ] {
+            assert_eq!(state.sidebar_activity(pending), expected);
+        }
+    }
+
+    #[test]
+    fn switcher_keeps_cursor_bound_outcomes_even_after_switching_away() {
+        use crate::features::projects::management::SidebarActivity;
+        let session: work_client::SessionSummary = serde_json::from_value(serde_json::json!({
+            "sessionId":"observed", "status":"failed", "error":"previous run failed",
+            "pendingResume":true, "latestSettlement":{"outcome":"completed"},
+            "createdAt":0, "updatedAt":0, "lastSeq":10
+        }))
+        .unwrap();
+        for (phase, expected) in [
+            (RunPhase::Accepted, ("running", "运行中")),
+            (RunPhase::Tool, ("running", "运行中")),
+            (RunPhase::AwaitingInput, ("waiting", "等待回答")),
+            (RunPhase::Cancelling, ("running", "停止中")),
+            (
+                RunPhase::Settled(SettlementOutcome::Completed),
+                ("completed", "完成"),
+            ),
+            (
+                RunPhase::Settled(SettlementOutcome::Failed),
+                ("failed", "异常"),
+            ),
+            (
+                RunPhase::Settled(SettlementOutcome::Interrupted),
+                ("idle", "已停止"),
+            ),
+            (
+                RunPhase::Settled(SettlementOutcome::Declined),
+                ("idle", "已停止"),
+            ),
+            (
+                RunPhase::Settled(SettlementOutcome::Suspended),
+                ("waiting", "待恢复"),
+            ),
+            (
+                RunPhase::Settled(SettlementOutcome::Compacted),
+                ("idle", "空闲"),
+            ),
+            (
+                RunPhase::Settled(SettlementOutcome::Unknown("new-outcome".into())),
+                ("unknown", "状态未知"),
+            ),
+        ] {
+            let observed = super::SessionObservation {
+                cursor: Some(10),
+                phase,
+            };
+            for activity in [None, Some(SidebarActivity::Idle)] {
+                assert_eq!(
+                    super::switcher_session_state(&session, activity, Some(&observed)),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn switcher_newer_catalog_outranks_old_observations_and_does_not_invent_completion() {
+        use crate::features::projects::management::SidebarActivity;
+        let mut session: work_client::SessionSummary = serde_json::from_value(serde_json::json!({
+            "sessionId":"observed", "status":"running", "createdAt":0, "updatedAt":0, "lastSeq":12
+        }))
+        .unwrap();
+        let mut observed = super::SessionObservation {
+            cursor: Some(11),
+            phase: RunPhase::Settled(SettlementOutcome::Completed),
+        };
+        assert_eq!(
+            super::switcher_session_state(&session, None, Some(&observed)),
+            ("running", "运行中")
+        );
+        session.status = "failed".into();
+        observed.phase = RunPhase::Tool;
+        assert_eq!(
+            super::switcher_session_state(
+                &session,
+                Some(SidebarActivity::Running),
+                Some(&observed)
+            ),
+            ("failed", "异常")
+        );
+        for status in ["idle", "unknown"] {
+            session.status = status.into();
+            let expected = if status == "idle" {
+                ("idle", "空闲")
+            } else {
+                ("unknown", "状态未知")
+            };
+            assert_eq!(
+                super::switcher_session_state(&session, None, None),
+                expected
+            );
+            assert_eq!(
+                super::switcher_session_state(&session, None, Some(&observed)),
+                expected
+            );
+        }
+        observed.cursor = None;
+        session.last_seq = 0;
+        observed.phase = RunPhase::Settled(SettlementOutcome::Completed);
+        assert_eq!(
+            super::switcher_session_state(&session, None, Some(&observed)),
+            ("unknown", "状态未知")
+        );
+    }
+
+    #[test]
+    fn switcher_only_retires_waiting_after_a_newer_settlement() {
+        let mut session: work_client::SessionSummary = serde_json::from_value(serde_json::json!({
+            "sessionId":"observed", "status":"idle", "createdAt":0, "updatedAt":0,
+            "lastSeq":10, "latestSettlement":{"outcome":"completed"}
+        }))
+        .unwrap();
+        let mut pending = crate::features::conversation::activity::PendingReply {
+            text: "new send".into(),
+            draft_text: None,
+            content: None,
+            users_before: 1,
+            user_boundary: None,
+            cursor_before: Some(10),
+            accepted: true,
+            responded: false,
+        };
+        assert!(super::switcher_waiting_reply(&session, &pending, None));
+        let mut observed = super::SessionObservation {
+            cursor: Some(10),
+            phase: RunPhase::Settled(SettlementOutcome::Completed),
+        };
+        assert!(super::switcher_waiting_reply(
+            &session,
+            &pending,
+            Some(&observed)
+        ));
+        session.last_seq = 12;
+        assert!(!super::switcher_waiting_reply(&session, &pending, None));
+        session.status = "running".into();
+        assert!(super::switcher_waiting_reply(
+            &session,
+            &pending,
+            Some(&observed)
+        ));
+        observed.cursor = Some(12);
+        assert!(!super::switcher_waiting_reply(
+            &session,
+            &pending,
+            Some(&observed)
+        ));
+        observed.phase = RunPhase::Text;
+        assert!(super::switcher_waiting_reply(
+            &session,
+            &pending,
+            Some(&observed)
+        ));
+        pending.accepted = false;
+        session.status = "completed".into();
+        assert!(super::switcher_waiting_reply(&session, &pending, None));
+        pending.accepted = true;
+        pending.cursor_before = None;
+        assert!(super::switcher_waiting_reply(&session, &pending, None));
+    }
+
+    #[test]
+    fn switcher_local_submission_and_transport_feedback_remain_visible() {
+        use crate::features::projects::management::SidebarActivity;
+        let session: work_client::SessionSummary = serde_json::from_value(serde_json::json!({
+            "sessionId":"observed", "status":"idle", "createdAt":0, "updatedAt":0, "lastSeq":10
+        }))
+        .unwrap();
+        let observed = super::SessionObservation {
+            cursor: Some(10),
+            phase: RunPhase::Settled(SettlementOutcome::Completed),
+        };
+        for (activity, expected) in [
+            (SidebarActivity::Loading, ("loading", "加载中")),
+            (SidebarActivity::Sending, ("running", "发送中")),
+            (SidebarActivity::WaitingReply, ("waiting", "等待回答")),
+            (SidebarActivity::Disconnected, ("failed", "连接异常")),
+        ] {
+            assert_eq!(
+                super::switcher_session_state(&session, Some(activity), Some(&observed)),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn sidebar_summary_retains_only_observed_phase_and_never_invents_a_settlement() {
+        let mut session: work_client::SessionSummary = serde_json::from_value(serde_json::json!({
+            "sessionId":"sidebar", "status":"idle", "createdAt":0, "updatedAt":0, "lastSeq":4
+        }))
+        .unwrap();
+        let mut run = RunProjection::new("sidebar");
+        for (phase, expected) in [
+            (RunPhase::Accepted, "running"),
+            (RunPhase::Text, "running"),
+            (RunPhase::Tool, "running"),
+            (RunPhase::AwaitingInput, "waiting_for_input"),
+            (RunPhase::Cancelling, "cancelling"),
+            (RunPhase::AwaitingSettlement, "running"),
+            (RunPhase::Settled(SettlementOutcome::Completed), "idle"),
+            (RunPhase::Settled(SettlementOutcome::Failed), "failed"),
+            (RunPhase::Settled(SettlementOutcome::Interrupted), "idle"),
+        ] {
+            run.phase = phase;
+            super::sync_sidebar_session(&mut session, &run);
+            assert_eq!(session.status, expected);
+            assert!(session.latest_settlement.is_none());
+            assert_eq!(session.last_seq, 4);
+        }
+        run.connection = ConnectionState::Reconnecting;
+        super::sync_sidebar_session(&mut session, &run);
+        assert_eq!(session.status, "loading");
+        run.connection = ConnectionState::Offline;
+        super::sync_sidebar_session(&mut session, &run);
+        assert_eq!(session.status, "offline");
+    }
 
     #[test]
     fn extension_config_stays_locked_until_the_session_has_a_synchronized_projection() {
@@ -507,8 +905,8 @@ mod status_tests {
             projection.phase = phase;
             let state = interaction_state(Some(&projection), true, false, false);
             assert_eq!(state.activity_label(false), Some("正在处理…"));
-            assert!(state.composer_loading(" \n", false));
-            assert!(!state.composer_loading("继续检查", false));
+            assert!(state.composer_loading(true, false));
+            assert!(!state.composer_loading(false, false));
         }
         for phase in [
             RunPhase::Ready,
@@ -520,15 +918,35 @@ mod status_tests {
             projection.phase = phase;
             let state = interaction_state(Some(&projection), true, false, false);
             assert_eq!(state.activity_label(false), None);
-            assert!(!state.composer_loading("", false));
+            assert!(!state.composer_loading(true, false));
+        }
+    }
+
+    #[test]
+    fn active_primary_action_stays_stop_independently_of_draft_or_queue_submission() {
+        use super::InteractionState;
+        for state in [
+            InteractionState::Running,
+            InteractionState::AwaitingInput,
+            InteractionState::Cancelling,
+        ] {
+            assert!(state.primary_action_is_stop());
+        }
+        for state in [
+            InteractionState::Ready,
+            InteractionState::Disconnected,
+            InteractionState::Sending,
+        ] {
+            assert!(!state.primary_action_is_stop());
         }
     }
 
     #[test]
     fn composer_loading_distinguishes_submitted_text_from_a_new_draft() {
         use super::InteractionState;
-        assert!(InteractionState::Sending.composer_loading("提交中的原文", true));
-        assert!(!InteractionState::Sending.composer_loading("新的草稿", false));
+        assert!(InteractionState::Sending.composer_loading(false, true));
+        assert!(!InteractionState::Sending.composer_loading(false, false));
+        assert!(InteractionState::Running.composer_loading(true, false));
         assert_eq!(
             InteractionState::Sending.activity_label(true),
             Some("正在发送…")
@@ -546,7 +964,7 @@ mod status_tests {
             Some("正在停止…")
         );
         assert_eq!(InteractionState::Disconnected.activity_label(true), None);
-        assert!(!InteractionState::Disconnected.composer_loading("", true));
+        assert!(!InteractionState::Disconnected.composer_loading(true, true));
     }
 
     #[test]

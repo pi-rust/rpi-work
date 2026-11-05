@@ -11,7 +11,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   page.setDefaultTimeout(8000);
   page.on('pageerror', error => errors.push(error.message));
   const pass = name => { results.push(name); console.log('PASS', name); };
-  const add = () => page.getByRole('button', { name: '添加项目', exact: true });
+  const add = () => page.locator('.sidebar button[title="添加项目"]');
   const picker = () => page.getByRole('dialog', { name: '添加项目', exact: true });
   const folders = () => page.getByRole('dialog', { name: '选择项目文件夹', exact: true });
   const online = () => page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
@@ -28,7 +28,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await folders().waitFor();
   };
   try {
-    await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:4180/');
+    await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:14180/');
     await add().click();
     await page.locator('.devices-page').waitFor();
     assert.equal(await picker().count(), 0);

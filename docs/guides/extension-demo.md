@@ -23,7 +23,7 @@
 
 ## 目录
 
-- [`examples/extension-demo/`](../../examples/extension-demo/)：独立 Cargo workspace，真实 `cdylib` 与锁文件，不依赖邻接仓库。
+- [`examples/extension-demo/`](../../examples/extension-demo)：独立 Cargo workspace，真实 `cdylib` 与锁文件，不依赖邻接仓库。
 - [`tools/dev/extension-demo.mjs`](../../tools/dev/extension-demo.mjs)：隔离安装、RPC 驱动、本地模型 fixture、loopback 开发适配器与清理。
 - [`tests/harness/ui-modules/src/extension_demo.rs`](../../tests/harness/ui-modules/src/extension_demo.rs)：测试专用 Dioxus 页面。
 - [`apps/work-ui/src/features/extensions/mod.rs`](../../apps/work-ui/src/features/extensions/mod.rs)：复用的宿主纯数据 widget 渲染器。
@@ -84,7 +84,7 @@ node tools/dev/extension-demo.mjs
 
 等待输出 `DEMO_READY`，其中包含本次随机端口与 token 的 `endpoint`。保持终端 B 打开：
 
-1. 浏览器打开 `http://127.0.0.1:4182/modules/all/`。
+1. 浏览器打开 `http://127.0.0.1:14182/modules/all/`。
 2. 点击顶部 `extension-demo`。
 3. 将本次 `endpoint` 粘到 **Demo endpoint**，点击“连接真实 Demo”。
 4. 确认显示原生安装、DLL 加载均为 `true`，初始计数为 0。
@@ -104,7 +104,7 @@ pwsh -File tools/review/build-module-review.ps1 -Feature all
 node tests/modules/verify-extension-demo.cjs
 ```
 
-测试自行选择端口并启动/关闭测试服务器与 Demo runner，不需要占用现有 4182 服务。检查实际中间进度、UI 隐藏后继续执行、第二轮计数、重复运行拒绝、token/CORS、320px 布局，以及卸载后的新宿主。
+测试自行选择端口并启动/关闭测试服务器与 Demo runner，不需要占用现有 14182 服务。检查实际中间进度、UI 隐藏后继续执行、第二轮计数、重复运行拒绝、token/CORS、320px 布局，以及卸载后的新宿主。
 
 另有负向回归，确认“工具完成但 Agent 后续失败”不能误报成功、缺失宿主程序不挂起、启动阶段收到 `stop` 也执行清理：
 

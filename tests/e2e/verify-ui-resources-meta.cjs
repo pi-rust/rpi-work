@@ -6,7 +6,7 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
  const results=[],errors=[];page.on('pageerror',e=>errors.push(e.message));const pass=name=>{results.push(name);console.log('PASS',name)};
  const sidebar=()=>page.locator('.sidebar');
  try{
-  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');
+  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
   await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
   await page.getByRole('button',{name:'连接其他节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(fixture.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.getByRole('status').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();
   await page.locator('.project-row').filter({hasText:'rpi-work'}).click();await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();

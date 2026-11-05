@@ -21,5 +21,5 @@ try {
   @'
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Test-only Dioxus module review</title><link rel="icon" href="data:,"></head><body><div id="main"></div><script type="module">import init from './work-ui.js'; await init();</script></body></html>
 '@ | Set-Content -LiteralPath (Join-Path $outputDirectory 'index.html') -Encoding utf8
-  Write-Output "Test-only module URL: http://127.0.0.1:4182/modules/$Feature/"
+  Write-Output "Test-only module URL: http://127.0.0.1:14182/modules/$Feature/"
 } finally { Pop-Location }

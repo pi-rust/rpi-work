@@ -12,7 +12,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
   const results = [], errors = [];
   const pass = name => { results.push(name); console.log('PASS', name); };
-  const app = process.env.WORK_UI_URL || 'http://127.0.0.1:4180/';
+  const app = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
   await context.route('https://api.github.com/**', route => route.fulfill({ status: 404, body: '{}', headers: { 'access-control-allow-origin': '*' } }));
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
@@ -51,7 +51,8 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await status().filter({ hasText: '在线' }).waitFor();
     await waitSaved(protectedNode.url);
     assert(protectedNode.requests.some(request => request.path === '/api/v1/projects' && request.authenticated));
-    assert.equal(await page.getByLabel('节点密码', { exact: true }).count(), 0);
+    assert.equal(await page.getByLabel('节点密码', { exact: true }).count(), 1);
+    assert.equal(await page.getByLabel('节点密码', { exact: true }).inputValue(), '');
     pass('real cookie authentication loads projects and sessions immediately without a second Connect');
 
     await page.reload();

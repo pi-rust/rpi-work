@@ -5,8 +5,8 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const { chromium } = require('../support/browser.cjs');
 if (!process.argv.includes('--run-model')) throw new Error('Pass --run-model to invoke a real provider.');
-const base = process.env.RPI_WORK_NODE_URL || 'http://127.0.0.1:3030';
-const ui = process.env.WORK_UI_URL || 'http://127.0.0.1:4173/';
+const base = process.env.RPI_WORK_NODE_URL || 'http://127.0.0.1:13030';
+const ui = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
 assert.equal(new URL(base).hostname, '127.0.0.1', 'Live verification uses a local node.');
 const report = { startedAt: new Date().toISOString(), node: base, ui, passed: false, checks: [], events: {}, errors: [] };
 const recordPath = 'target/live-chat-session.json';
@@ -110,7 +110,15 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     await page.locator('.project-row').filter({ hasText: project.name }).click();
     await page.locator('.sidebar-sessions').getByRole('button', { name: title, exact: true }).click();
-    await page.getByRole('combobox', { name: '模型', exact: true }).selectOption(model.id);
+    const modelTrigger = page.getByRole('button', { name: '选择供应商与模型', exact: true });
+    await modelTrigger.click();
+    const modelDialog = page.getByRole('dialog', { name: '选择供应商与模型', exact: true });
+    await modelDialog.waitFor();
+    // Match reported identities, not display names or a provider's first model.
+    const provider = modelDialog.locator(`.composer-provider-group[data-provider=${JSON.stringify(model.provider)}]`);
+    if (!await provider.evaluate(element => element.open)) await provider.locator('summary').click();
+    await provider.locator(`.composer-model-option[data-provider=${JSON.stringify(model.provider)}][data-model-id=${JSON.stringify(model.id)}]`).click();
+    await modelDialog.waitFor({ state: 'hidden' });
     let state;
     for (let index = 0; index < 60; index++) {
       state = await command('get_state');
@@ -118,10 +126,26 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
       await pause(100);
     }
     assert.equal(state.modelId, model.id); assert.equal(state.provider, model.provider);
-    assert.equal(await page.getByRole('combobox', { name: '模型', exact: true }).inputValue(), model.id);
+    await page.waitForFunction(({ provider, id }) => document.querySelector('.composer-model-picker')?.title === `${provider} / ${id}`, { provider: model.provider, id: model.id });
+    assert.equal(await modelTrigger.getAttribute('title'), `${model.provider} / ${model.id}`);
     pass('the composer model selector applies the real session model');
-    const thinking = page.getByRole('combobox', { name: '思考等级', exact: true });
-    if (await thinking.locator('option[value=off]').count()) await thinking.selectOption('off');
+    const thinking = page.getByRole('button', { name: '思考等级', exact: true });
+    if (!await thinking.isDisabled()) {
+      await thinking.click();
+      const thinkingDialog = page.getByRole('dialog', { name: '选择思考等级', exact: true });
+      await thinkingDialog.waitFor();
+      // Never invent an off choice: only select the raw level reported by this
+      // runtime. Unsupported/empty controls remain untouched.
+      const off = thinkingDialog.locator('.composer-thinking-option[data-thinking-level="off"]');
+      if (await off.count() && !await off.isDisabled()) {
+        await off.click(); await thinkingDialog.waitFor({ state: 'hidden' });
+        await page.waitForFunction(() => document.querySelector('button[aria-label="思考等级"]')?.dataset.thinkingLevel === 'off');
+        assert.equal(await thinking.getAttribute('data-thinking-level'), 'off');
+      } else {
+        await thinkingDialog.getByRole('button', { name: '关闭弹框', exact: true }).click();
+        await thinkingDialog.waitFor({ state: 'hidden' });
+      }
+    }
 
     const send = async (prompt, expected, tool) => {
       const oldRun = (await api(prefix)).latestSettlement?.runId;

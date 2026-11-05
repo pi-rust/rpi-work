@@ -105,6 +105,15 @@ pub(crate) fn render_project_file(
     mode: &str,
     wrap: bool,
 ) -> Element {
+    render_project_file_at(content, mode, wrap, None)
+}
+
+pub(crate) fn render_project_file_at(
+    content: &work_client::FileContent,
+    mode: &str,
+    wrap: bool,
+    selected_lines: Option<(usize, usize)>,
+) -> Element {
     let kind = project_file_kind(&content.path);
     if mode == "preview" && kind == "markdown" {
         return rsx! { article { class: "project-markdown", dangerous_inner_html: markdown_static_html(&content.content) } };
@@ -132,7 +141,7 @@ pub(crate) fn render_project_file(
     rsx! {
         pre { class: if wrap { "project-code wrap-lines" } else { "project-code" },
             for (number, line) in lines {
-                span { class: "project-code-line", i { "{number}" } code { "{line}" } }
+                span { class: "project-code-line", "data-line": "{number}", style: if selected_lines.is_some_and(|(start, end)| number >= start && number <= end) { "background:rgba(235,180,50,.22);outline:1px solid rgba(235,180,50,.3)" } else { "" }, i { "{number}" } code { "{line}" } }
             }
         }
     }

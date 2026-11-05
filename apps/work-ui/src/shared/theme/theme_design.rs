@@ -1,6 +1,39 @@
-//! Bounded design tokens, never arbitrary CSS, font URLs, or component layout.
+//! Bounded visual tokens and tool presentation, never arbitrary CSS or font URLs.
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
+
+// Serde's omission predicate receives &T; keep that callback generic.
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    value == &T::default()
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolRendering {
+    #[default]
+    Simple,
+    Detailed,
+}
+impl ToolRendering {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Simple => "simple",
+            Self::Detailed => "detailed",
+        }
+    }
+    pub const fn is_simple(self) -> bool {
+        matches!(self, Self::Simple)
+    }
+    pub fn parse_optional(value: Option<&Value>) -> Result<Option<Self>, String> {
+        value
+            .map(|value| {
+                serde_json::from_value(value.clone())
+                    .map_err(|_| "工具展示必须是 simple 或 detailed。".into())
+            })
+            .transpose()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -90,6 +123,8 @@ pub struct Motion {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ThemeDesign {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tool_rendering: ToolRendering,
     pub typography: Typography,
     pub geometry: Geometry,
     pub shadow: Shadow,
@@ -119,6 +154,7 @@ impl ThemeDesign {
 
     pub fn legacy(body: &str, heading: &str, shape: &str) -> Self {
         Self {
+            tool_rendering: ToolRendering::Simple,
             typography: Typography {
                 body_font: FontFamily::legacy(body),
                 heading_font: FontFamily::legacy(heading),
@@ -280,6 +316,34 @@ impl ThemeDesign {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tool_rendering_is_bounded_and_old_designs_round_trip_unchanged() {
+        let design = ThemeDesign::codex();
+        let old = serde_json::to_value(&design).unwrap();
+        assert!(old.get("toolRendering").is_none());
+        assert_eq!(
+            serde_json::from_value::<ThemeDesign>(old.clone())
+                .unwrap()
+                .tool_rendering,
+            ToolRendering::Simple
+        );
+        let mut detailed = old.clone();
+        detailed["toolRendering"] = serde_json::json!("detailed");
+        let parsed: ThemeDesign = serde_json::from_value(detailed.clone()).unwrap();
+        assert_eq!(parsed.tool_rendering, ToolRendering::Detailed);
+        assert_eq!(serde_json::to_value(parsed).unwrap(), detailed);
+        for bad in [
+            Value::Null,
+            serde_json::json!(true),
+            serde_json::json!("card"),
+            serde_json::json!({"css":"display:none"}),
+        ] {
+            let mut invalid = old.clone();
+            invalid["toolRendering"] = bad;
+            assert!(serde_json::from_value::<ThemeDesign>(invalid).is_err());
+        }
+    }
+
     #[test]
     fn defaults_are_valid_and_density_composes_without_mutating_design() {
         let design = ThemeDesign::legacy("humanist", "code", "crisp");

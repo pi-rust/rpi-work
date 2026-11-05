@@ -1,0 +1,981 @@
+{
+  "package": "lucide-react",
+  "version": "0.468.0",
+  "map": {
+    "menu": "menu",
+    "search": "search",
+    "plus": "plus",
+    "refresh": "refresh-cw",
+    "play": "play",
+    "more": "ellipsis",
+    "close": "x",
+    "chevron": "chevron-down",
+    "chevron-right": "chevron-right",
+    "phone": "smartphone",
+    "info": "circle-alert",
+    "image": "image",
+    "folder": "folder",
+    "file": "file-text",
+    "panel": "panel-right",
+    "layout": "panels-top-left",
+    "blocks": "blocks",
+    "check": "check",
+    "copy": "copy",
+    "branch": "git-branch",
+    "skills": "list-checks",
+    "settings": "settings-2",
+    "message": "message-circle",
+    "diff": "file-diff",
+    "arrow": "arrow-up",
+    "back": "arrow-left",
+    "sparkles": "sparkles",
+    "monitor": "monitor",
+    "cloud": "cloud",
+    "server": "server",
+    "code": "code-xml",
+    "terminal": "terminal",
+    "edit": "pencil",
+    "globe": "globe",
+    "clock": "clock",
+    "ask": "message-circle-question",
+    "plan": "list-checks",
+    "shield": "shield-check",
+    "tool": "wrench",
+    "download": "download",
+    "paperclip": "paperclip"
+  },
+  "catalog": {
+    "menu": {
+      "nodes": [
+        [
+          "line",
+          {
+            "x1": "4",
+            "x2": "20",
+            "y1": "12",
+            "y2": "12"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "4",
+            "x2": "20",
+            "y1": "6",
+            "y2": "6"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "4",
+            "x2": "20",
+            "y1": "18",
+            "y2": "18"
+          }
+        ]
+      ],
+      "sourceSha256": "2893e9df64c9230cc058655429a722e817cbf6dc0e8aa7c732d4b2006941e034"
+    },
+    "search": {
+      "nodes": [
+        [
+          "circle",
+          {
+            "cx": "11",
+            "cy": "11",
+            "r": "8"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m21 21-4.3-4.3"
+          }
+        ]
+      ],
+      "sourceSha256": "396bb76f9187a26eb72f612f45f9c29673839e92b6e734c0f80191ae1ab77941"
+    },
+    "plus": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M5 12h14"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 5v14"
+          }
+        ]
+      ],
+      "sourceSha256": "4b1370bdf1eda14303b5cbdc00beda5f10753f6f83a7618995af5cbddd9f7855"
+    },
+    "refresh-cw": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M21 3v5h-5"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M8 16H3v5"
+          }
+        ]
+      ],
+      "sourceSha256": "25b6399146808678d3ce8f3dd4967ca103c5c8e912d02b2fc8a0616d510775f8"
+    },
+    "play": {
+      "nodes": [
+        [
+          "polygon",
+          {
+            "points": "6 3 20 12 6 21 6 3"
+          }
+        ]
+      ],
+      "sourceSha256": "28a8734af6173552c80472895cf6039562921f314603b0b63f635c1111eb37c6"
+    },
+    "ellipsis": {
+      "nodes": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "1"
+          }
+        ],
+        [
+          "circle",
+          {
+            "cx": "19",
+            "cy": "12",
+            "r": "1"
+          }
+        ],
+        [
+          "circle",
+          {
+            "cx": "5",
+            "cy": "12",
+            "r": "1"
+          }
+        ]
+      ],
+      "sourceSha256": "bec2aef1bec168dab5c58e8e6f56eab3e0b73f38a26e318d2683f47dbb983b14"
+    },
+    "x": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M18 6 6 18"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m6 6 12 12"
+          }
+        ]
+      ],
+      "sourceSha256": "47a0aa6a24bd8a2bbe86d0e56532b20cfe651ea2419b5553843e991f037acb84"
+    },
+    "chevron-down": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "m6 9 6 6 6-6"
+          }
+        ]
+      ],
+      "sourceSha256": "a1630e574527024f46a4c49f80e0a2d38bca3f2ce35baf7be632ed6101966cb3"
+    },
+    "chevron-right": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "m9 18 6-6-6-6"
+          }
+        ]
+      ],
+      "sourceSha256": "4a26373403aa35ba876af5a6619764839cda9672e257efb3f0af216597fb9e11"
+    },
+    "smartphone": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "14",
+            "height": "20",
+            "x": "5",
+            "y": "2",
+            "rx": "2",
+            "ry": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 18h.01"
+          }
+        ]
+      ],
+      "sourceSha256": "36f88ada8fe43fe1fa4437368f0154805b5bc743f998e91f1af6f57f8a92e80d"
+    },
+    "circle-alert": {
+      "nodes": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "10"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "12",
+            "x2": "12",
+            "y1": "8",
+            "y2": "12"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "12",
+            "x2": "12.01",
+            "y1": "16",
+            "y2": "16"
+          }
+        ]
+      ],
+      "sourceSha256": "2fdc774eb05c44b864a70020def224be0a0a1cab01e06070b5a98ccef887a4e0"
+    },
+    "image": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "18",
+            "height": "18",
+            "x": "3",
+            "y": "3",
+            "rx": "2",
+            "ry": "2"
+          }
+        ],
+        [
+          "circle",
+          {
+            "cx": "9",
+            "cy": "9",
+            "r": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"
+          }
+        ]
+      ],
+      "sourceSha256": "273c9e7a6930283e815e2493d42d3db185971c9159cec17251c22ced58a8d46f"
+    },
+    "folder": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+          }
+        ]
+      ],
+      "sourceSha256": "edd86a211cd68ba62003c801ab5efc04ed01dd01d9ee8a0efa727f587ad87705"
+    },
+    "file-text": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M14 2v4a2 2 0 0 0 2 2h4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M10 9H8"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M16 13H8"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M16 17H8"
+          }
+        ]
+      ],
+      "sourceSha256": "225eb4bf9bb2fbce57368bed00e0c695381e7dc4a9dc878895f5ba6d77aeb812"
+    },
+    "panel-right": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "18",
+            "height": "18",
+            "x": "3",
+            "y": "3",
+            "rx": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M15 3v18"
+          }
+        ]
+      ],
+      "sourceSha256": "c5cba9593a49a7a2a542a3cbfd8c8eb5c8658186569e146845fd0bc39b32118f"
+    },
+    "panels-top-left": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "18",
+            "height": "18",
+            "x": "3",
+            "y": "3",
+            "rx": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M3 9h18"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M9 21V9"
+          }
+        ]
+      ],
+      "sourceSha256": "3c8ac7a7a67da13630f419a75ba3ec2ef0e08737ee9f672c93bc598f1a2688aa"
+    },
+    "blocks": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "7",
+            "height": "7",
+            "x": "14",
+            "y": "3",
+            "rx": "1"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"
+          }
+        ]
+      ],
+      "sourceSha256": "ee8ed139cdb23b1b8ac13e03ae9c01a769093dc6d725aad98910795c6f234689"
+    },
+    "check": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M20 6 9 17l-5-5"
+          }
+        ]
+      ],
+      "sourceSha256": "4ed0383658264e54eed77d1efc5acc72cc1b33d0f12d7f5100c9ebdfca4b8fc2"
+    },
+    "copy": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "14",
+            "height": "14",
+            "x": "8",
+            "y": "8",
+            "rx": "2",
+            "ry": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+          }
+        ]
+      ],
+      "sourceSha256": "a1493ffd2fd67ac33569820b5db71cb1ccc9da2013a3ddd8b79c36013b6d4b98"
+    },
+    "git-branch": {
+      "nodes": [
+        [
+          "line",
+          {
+            "x1": "6",
+            "x2": "6",
+            "y1": "3",
+            "y2": "15"
+          }
+        ],
+        [
+          "circle",
+          {
+            "cx": "18",
+            "cy": "6",
+            "r": "3"
+          }
+        ],
+        [
+          "circle",
+          {
+            "cx": "6",
+            "cy": "18",
+            "r": "3"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M18 9a9 9 0 0 1-9 9"
+          }
+        ]
+      ],
+      "sourceSha256": "f6ee11c429afc56a426ccfae10a1841dc02ebd9043f66e97282195f47e881148"
+    },
+    "list-checks": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "m3 17 2 2 4-4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m3 7 2 2 4-4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M13 6h8"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M13 12h8"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M13 18h8"
+          }
+        ]
+      ],
+      "sourceSha256": "c7ea083ec894f859d5341261a1753338eda3590f4ecdde39bf23eda8627467e4"
+    },
+    "settings-2": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M20 7h-9"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M14 17H5"
+          }
+        ],
+        [
+          "circle",
+          {
+            "cx": "17",
+            "cy": "17",
+            "r": "3"
+          }
+        ],
+        [
+          "circle",
+          {
+            "cx": "7",
+            "cy": "7",
+            "r": "3"
+          }
+        ]
+      ],
+      "sourceSha256": "4b99e0a137ec9499fb5045d6c9887d18f6c911b866a91d41b7d6f58cdde45b7b"
+    },
+    "message-circle": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M7.9 20A9 9 0 1 0 4 16.1L2 22Z"
+          }
+        ]
+      ],
+      "sourceSha256": "c87514b4689e60a7b0cd5556bc31a9299c716c55e8d57a1f85501b33b9f7ccc4"
+    },
+    "file-diff": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M9 10h6"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 13V7"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M9 17h6"
+          }
+        ]
+      ],
+      "sourceSha256": "b955c9ac12463d4059e9707f428611ea9ca5f191b5e5b8e62c7cf7fec99933f7"
+    },
+    "arrow-up": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "m5 12 7-7 7 7"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 19V5"
+          }
+        ]
+      ],
+      "sourceSha256": "d3aff24edb0e743f1a89ee02e8962b92caad9dfb01361e99fe703b0e29a3cae9"
+    },
+    "arrow-left": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "m12 19-7-7 7-7"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M19 12H5"
+          }
+        ]
+      ],
+      "sourceSha256": "e872eee927c65800f0487b685ae5de4d4b60b75402d644e9183d316aa4e67b6f"
+    },
+    "sparkles": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M20 3v4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M22 5h-4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M4 17v2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M5 18H3"
+          }
+        ]
+      ],
+      "sourceSha256": "2150eaa0ab1421279f96fd98e246de249c639742dd676a0fe68af92e8a6e7b8d"
+    },
+    "monitor": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "20",
+            "height": "14",
+            "x": "2",
+            "y": "3",
+            "rx": "2"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "8",
+            "x2": "16",
+            "y1": "21",
+            "y2": "21"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "12",
+            "x2": "12",
+            "y1": "17",
+            "y2": "21"
+          }
+        ]
+      ],
+      "sourceSha256": "adf1a55ab0c2eb7b90d9afed63abe630ca34f3c249b71950afbc027567de221d"
+    },
+    "cloud": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"
+          }
+        ]
+      ],
+      "sourceSha256": "12b0bf2cf55847a505bfaa3701cc59757f7bac0e22b54d1b2be9d00bb76de35d"
+    },
+    "server": {
+      "nodes": [
+        [
+          "rect",
+          {
+            "width": "20",
+            "height": "8",
+            "x": "2",
+            "y": "2",
+            "rx": "2",
+            "ry": "2"
+          }
+        ],
+        [
+          "rect",
+          {
+            "width": "20",
+            "height": "8",
+            "x": "2",
+            "y": "14",
+            "rx": "2",
+            "ry": "2"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "6",
+            "x2": "6.01",
+            "y1": "6",
+            "y2": "6"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "6",
+            "x2": "6.01",
+            "y1": "18",
+            "y2": "18"
+          }
+        ]
+      ],
+      "sourceSha256": "a63982a9761be5214cd7dbd7564630759c4b0dcd9f783a69a0d408c37886e8cb"
+    },
+    "code-xml": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "m18 16 4-4-4-4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m6 8-4 4 4 4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m14.5 4-5 16"
+          }
+        ]
+      ],
+      "sourceSha256": "14e98f1e050999605f8c9e1f12feb1fc0c26aaa7fc526240c7741a961a6563c4"
+    },
+    "terminal": {
+      "nodes": [
+        [
+          "polyline",
+          {
+            "points": "4 17 10 11 4 5"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "12",
+            "x2": "20",
+            "y1": "19",
+            "y2": "19"
+          }
+        ]
+      ],
+      "sourceSha256": "d1c3bc74fe3929161abdb9b09cf39663895dc4f5ef96a0b7623d9074c84ff418"
+    },
+    "pencil": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m15 5 4 4"
+          }
+        ]
+      ],
+      "sourceSha256": "fc7162a19f4c8a503475317ea4bc6cb57a9e1e8eb1b14b97a68144217411f1e6"
+    },
+    "globe": {
+      "nodes": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "10"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M2 12h20"
+          }
+        ]
+      ],
+      "sourceSha256": "9017e1293fc4bbf56ad61cefb0e41068eae6ebc6b1090d3136ee939944035574"
+    },
+    "clock": {
+      "nodes": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "10"
+          }
+        ],
+        [
+          "polyline",
+          {
+            "points": "12 6 12 12 16 14"
+          }
+        ]
+      ],
+      "sourceSha256": "5407f2f8ce5a1de40361f21b31f2643972c8119469cccbe21a3a2fbe0367f827"
+    },
+    "message-circle-question": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M7.9 20A9 9 0 1 0 4 16.1L2 22Z"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 17h.01"
+          }
+        ]
+      ],
+      "sourceSha256": "0fa9c7f5b371db78aa97c20a818c6d8e398407b4e7aab93125079a3362c4ca0a"
+    },
+    "shield-check": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m9 12 2 2 4-4"
+          }
+        ]
+      ],
+      "sourceSha256": "b9da867fcb4df5e750aaaf4d327100bded5332e25ed49aa5c4b248868d96b6b1"
+    },
+    "wrench": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+          }
+        ]
+      ],
+      "sourceSha256": "1b15cbad7e93abd6b9b963375823105df45b5386c7938b9f4ebef5086b424249"
+    },
+    "download": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+          }
+        ],
+        [
+          "polyline",
+          {
+            "points": "7 10 12 15 17 10"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "12",
+            "x2": "12",
+            "y1": "15",
+            "y2": "3"
+          }
+        ]
+      ],
+      "sourceSha256": "843a9d5764c65594e0b5d85808c41373ee9096e10177d369a2da9e31b32fb19a"
+    },
+    "paperclip": {
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M13.234 20.252 21 12.3"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"
+          }
+        ]
+      ],
+      "sourceSha256": "64dde6a129bc12f0617446de5864520a8267ccaa18dcaa66fa5a55b2c00793dd"
+    },
+    "circle-help": {
+      "nodes": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "10"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 17h.01"
+          }
+        ]
+      ],
+      "sourceSha256": "fc0afa1bdd8a60afe6f0179355ee54e8cd13ab4400dae82cfc88a24cf7eae429"
+    }
+  }
+}

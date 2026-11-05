@@ -1,332 +1,299 @@
-use serde_json::json;
-use std::{env, error::Error, process::ExitCode};
-use work_client::{AgentClient, WorkClient};
+mod args;
+mod compat;
+mod password;
+
+use args::{Action, Cli, Transport};
+use serde::Serialize;
+use serde_json::{Value, json};
+use std::{env, future::Future, io::Write, process::ExitCode, time::Duration};
+use work_client::{AuthState, ClientError, WorkClient};
+
+pub(crate) const DEADLINE: Duration = Duration::from_secs(15);
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, Box<dyn Error>> {
-    let mut args = env::args().skip(1);
-    let base_url = env::var("RPI_WORK_URL").unwrap_or_else(|_| "http://127.0.0.1:3030/".into());
-    let transport = env::var("RPI_WORK_TRANSPORT").unwrap_or_else(|_| default_transport().into());
-    let command = args
-        .next()
-        .unwrap_or_else(|| default_command(&transport).into());
-    if transport != "http" {
-        return run_native_agent(&transport, command, args.collect()).await;
-    }
-    let client = WorkClient::new(&base_url)?;
-
-    match command.as_str() {
-        "health" => print_json(&client.health().await?),
-        "capabilities" => print_json(&client.capabilities().await?),
-        "projects" => print_json(&client.projects().await?),
-        "folders" => {
-            let path = args.next().unwrap_or_default();
-            print_json(&client.project_folders(&path).await?);
+async fn main() -> ExitCode {
+    // Parsing and command validation always precede stdin, client construction,
+    // network traffic, or explicit compatibility-mode process creation.
+    let arguments: Result<Vec<String>, _> = env::args_os()
+        .skip(1)
+        .map(|arg| {
+            arg.into_string()
+                .map_err(|_| "arguments must be UTF-8 (input omitted)".to_string())
+        })
+        .collect();
+    let cli = match arguments.and_then(|arguments| {
+        args::parse_environment(
+            arguments,
+            env::var("RPI_WORK_TRANSPORT"),
+            env::var("RPI_WORK_URL"),
+        )
+    }) {
+        Ok(cli) => cli,
+        Err(error) => {
+            work_host::report_error(&error);
+            return ExitCode::from(2);
         }
-        "sessions" => print_json(&client.sessions().await?),
-        "state" => {
-            let session_id = args.next().ok_or("state requires a session id")?;
-            print_json(&client.runtime_state(&session_id).await?);
-        }
-        "history" => {
-            let session_id = args.next().ok_or("history requires a session id")?;
-            print_json(&client.history(&session_id, None, None, 100).await?);
-        }
-        "models" => {
-            let session_id = args.next().ok_or("models requires a session id")?;
-            print_json(&client.models(&session_id).await?);
-        }
-        "tools" => {
-            let session_id = args.next().ok_or("tools requires a session id")?;
-            print_json(&client.tools(&session_id).await?);
-        }
-        "watch" => {
-            let session_id = args.next().ok_or("watch requires a session id")?;
-            let mut connection = client.connect_session(session_id).await?;
-            while let Some(event) = connection.next().await? {
-                println!(
-                    "{}",
-                    serde_json::to_string(&json!({
-                        "seq": event.wire.seq,
-                        "id": event.wire.id,
-                        "event": event.wire.event_type,
-                        "data": event.wire.data,
-                        "applied": format!("{:?}", event.applied),
-                    }))?
-                );
-            }
-        }
-        _ => {
-            eprintln!(
-                "usage: work-cli [agent-info|load-session SESSION_ID|resume-session SESSION_ID|set-config OPTION VALUE|prompt MESSAGE] (native default: rpc; use RPI_WORK_TRANSPORT=http for HTTP commands)"
-            );
-            return Ok(ExitCode::from(2));
-        }
-    }
-    Ok(ExitCode::SUCCESS)
-}
-
-#[allow(clippy::too_many_lines)]
-async fn run_native_agent(
-    transport: &str,
-    command: String,
-    arguments: Vec<String>,
-) -> Result<ExitCode, Box<dyn Error>> {
-    let executable = env::var_os("RPI_WORK_RPI_BIN").unwrap_or_else(|| "rpi".into());
-    let cwd = env::var_os("RPI_WORK_PROJECT").map_or(env::current_dir()?, std::path::PathBuf::from);
-    let client = match transport {
-        "rpc" => AgentClient::spawn_rpc(&executable, &cwd).await?,
-        "acp" => AgentClient::spawn_acp(&executable, &["--acp".into()], &cwd).await?,
-        other => return Err(format!("unsupported RPI_WORK_TRANSPORT `{other}`").into()),
     };
-    let result: Result<(), Box<dyn Error>> = match command.as_str() {
-        "agent-info" => {
-            let descriptor = client.descriptor();
-            print_json(&json!({
-                "identity": {
-                    "protocol": descriptor.identity.protocol,
-                    "version": descriptor.identity.version,
-                    "transport": descriptor.identity.transport,
-                    "agentName": descriptor.identity.agent_name,
-                },
-                "capabilities": {
-                    "sessions": descriptor.capabilities.sessions,
-                    "sessionLoad": descriptor.capabilities.session_load,
-                    "sessionResume": descriptor.capabilities.session_resume,
-                    "prompt": descriptor.capabilities.prompt,
-                    "streaming": descriptor.capabilities.streaming,
-                    "abort": descriptor.capabilities.abort,
-                    "dialogs": descriptor.capabilities.dialogs,
-                    "models": descriptor.capabilities.models,
-                    "thinkingLevels": descriptor.capabilities.thinking_levels,
-                    "tools": descriptor.capabilities.tools,
-                    "history": descriptor.capabilities.history,
-                }
-            }));
-            Ok(())
+    match run(cli).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            work_host::report_error(&error);
+            ExitCode::FAILURE
         }
-        "load-session" => {
-            let session_id = arguments
-                .first()
-                .ok_or("load-session requires SESSION_ID")?;
-            let session = client
-                .load_session(session_id, &cwd.to_string_lossy())
-                .await?;
-            let descriptor = client.descriptor();
-            print_json(&json!({
-                "sessionId": session.id(),
-                "history": descriptor.capabilities.history,
-                "models": descriptor.capabilities.models,
-                "thinkingLevels": descriptor.capabilities.thinking_levels,
-            }));
-            Ok(())
-        }
-        "resume-session" => {
-            let session_id = arguments
-                .first()
-                .ok_or("resume-session requires SESSION_ID")?;
-            let session = client
-                .resume_session(session_id, &cwd.to_string_lossy())
-                .await?;
-            let descriptor = client.descriptor();
-            print_json(&json!({
-                "sessionId": session.id(),
-                "sessionResume": descriptor.capabilities.session_resume,
-            }));
-            Ok(())
-        }
-        "state" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&client.state(session.id()).await?);
-            Ok(())
-        }
-        "messages" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            let limit = arguments.first().and_then(|value| value.parse().ok());
-            let before_id = arguments.get(1).map(String::as_str);
-            print_json(&client.messages(session.id(), limit, before_id).await?);
-            Ok(())
-        }
-        "history" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            let limit = arguments.first().and_then(|value| value.parse().ok());
-            let after_seq = arguments.get(1).and_then(|value| value.parse().ok());
-            let before_seq = arguments.get(2).and_then(|value| value.parse().ok());
-            print_json(&client.history(session.id(), limit, after_seq, before_seq).await?);
-            Ok(())
-        }
-        "queue" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            let include_completed = arguments.first().is_some_and(|value| value == "--all");
-            print_json(&client.queue(session.id(), include_completed).await?);
-            Ok(())
-        }
-        "models" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&client.models(session.id()).await?);
-            Ok(())
-        }
-        "thinking-levels" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&client.thinking_levels(session.id()).await?);
-            Ok(())
-        }
-        "tools" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&client.tools(session.id()).await?);
-            Ok(())
-        }
-        "commands" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&client.commands(session.id()).await?);
-            Ok(())
-        }
-        "auth-status" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&client.auth_status(session.id()).await?);
-            Ok(())
-        }
-        "resume-pending" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&client.request(session.id(), "resume_pending", json!({})).await?);
-            Ok(())
-        }
-        "compact" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            let instructions = arguments.join(" ");
-            print_json(&client.request(
-                session.id(),
-                "compact",
-                if instructions.trim().is_empty() {
-                    json!({})
-                } else {
-                    json!({"customInstructions": instructions})
-                },
-            ).await?);
-            Ok(())
-        }
-        "set-tools" => {
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            let tools = arguments
-                .iter()
-                .flat_map(|value| value.split(','))
-                .filter(|value| !value.trim().is_empty())
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
-            print_json(&client.set_active_tools(session.id(), tools).await?);
-            Ok(())
-        }
-        "set-config" => {
-            let config_id = arguments
-                .first()
-                .ok_or("set-config requires OPTION VALUE")?;
-            let raw_value = arguments.get(1).ok_or("set-config requires OPTION VALUE")?;
-            let value = serde_json::from_str(raw_value)
-                .unwrap_or_else(|_| serde_json::Value::String(raw_value.clone()));
-            let session = client.open_session(&cwd.to_string_lossy()).await?;
-            print_json(&session.set_config_option(config_id, value).await?);
-            Ok(())
-        }
-        "prompt" => run_native_prompt(&client, transport, &cwd, arguments).await,
-        _ => Err(
-            "native transport supports: agent-info, state, messages [LIMIT] [BEFORE_ID], history [LIMIT] [AFTER_SEQ] [BEFORE_SEQ], queue [--all], models, thinking-levels, tools, commands, auth-status, resume-pending, compact [INSTRUCTIONS], set-tools TOOL[,TOOL], load-session SESSION_ID, resume-session SESSION_ID, set-config OPTION VALUE, prompt MESSAGE".into(),
-        ),
-    };
-    let stop_result = client.stop().await;
-    result?;
-    stop_result?;
-    Ok(ExitCode::SUCCESS)
+    }
 }
-async fn run_native_prompt(
-    client: &AgentClient,
-    transport: &str,
-    cwd: &std::path::Path,
-    arguments: Vec<String>,
-) -> Result<(), Box<dyn Error>> {
-    let mut prompt_arguments = arguments;
-    let allow_permissions = prompt_arguments.first().map(String::as_str) == Some("--allow");
-    if allow_permissions {
-        prompt_arguments.remove(0);
-    }
-    let session = client.open_session(&cwd.to_string_lossy()).await?;
-    let mut connection = session.connect().await?;
-    let prompt = prompt_arguments.join(" ");
-    if prompt.trim().is_empty() {
-        return Err("prompt requires message text".into());
-    }
-    let prompt_future = session.prompt(&prompt);
-    tokio::pin!(prompt_future);
-    let mut prompt_result = None;
-    let mut settled = false;
-    while !settled || prompt_result.is_none() {
-        tokio::select! {
-            result = &mut prompt_future, if prompt_result.is_none() => {
-                let failed = result.is_err();
-                prompt_result = Some(result);
-                if failed {
-                    settled = true;
+
+async fn run(cli: Cli) -> Result<(), String> {
+    match cli.action {
+        Action::Help => {
+            println!("{}", args::HELP);
+            Ok(())
+        }
+        Action::Serve(shutdown_stdin) => work_host::run_headless(shutdown_stdin).await,
+        Action::Command { name, args } if cli.transport != Transport::Http => {
+            // Compatibility mode is explicitly opt-in. Do not echo native errors:
+            // an agent can include private content in its error text.
+            compat::run_native_agent(cli.transport.name(), name, args)
+                .await
+                .map(|_| ())
+                .map_err(|_| "native compatibility operation failed (details omitted)".into())
+        }
+        Action::Command { name, args } => {
+            let client = WorkClient::new(&cli.endpoint)
+                .map_err(|_| "could not construct HTTP client".to_string())?;
+            let password = if cli.password_stdin {
+                Some(password::stdin_password().await?)
+            } else {
+                match env::var("RPI_WORK_PASSWORD") {
+                    Ok(value) => Some(password::Password::from_env(value)?),
+                    Err(env::VarError::NotPresent) => None,
+                    Err(_) => return Err("RPI_WORK_PASSWORD must be UTF-8 (input omitted)".into()),
                 }
+            };
+            let state = authenticate(&client, password.as_ref()).await;
+            drop(password); // No saved draft, credential file, or persistent jar.
+            let state = state?;
+            if name == "auth" {
+                return output(&state);
             }
-            event = connection.next() => {
-                let Some(event) = event? else {
-                    return Err("native event stream ended before prompt completion".into());
-                };
-                println!(
-                    "{}",
-                    serde_json::to_string(&json!({
-                        "seq": event.wire.seq,
-                        "id": event.wire.id,
-                        "event": event.wire.event_type,
-                        "data": event.wire.data,
-                        "applied": format!("{:?}", event.applied),
-                    }))?
-                );
-                if transport == "acp" && event.wire.event_type == "ui_dialog_request" {
-                    if let Some(request_id) = event.wire.data.get("jsonRpcRequestId") {
-                        let dialog = work_client::dialog_from_wire(&event.wire)?
-                            .ok_or("ACP permission request omitted metadata")?;
-                        let result = dialog.acp_permission_policy(allow_permissions)?;
-                        client
-                            .respond_to_agent_request(request_id.clone(), result)
-                            .await?;
-                    }
-                }
-                settled = event.wire.event_type == "agent_settled";
+            if name == "logout" {
+                let state = operation(client.logout(), true).await?;
+                return output(&state);
             }
+            // required=false alone is NOT an authorization grant. Standalone
+            // nodes legitimately report {required:false, authenticated:true}.
+            require_authenticated(&state)?;
+            if name == "watch" {
+                return watch(&client, &args[0]).await;
+            }
+            execute(&client, &name, &args).await
         }
     }
-    prompt_result.expect("prompt future completes before native loop exits")?;
-    Ok(())
 }
 
-fn print_json<T: serde::Serialize>(value: &T) {
-    match serde_json::to_string_pretty(value) {
-        Ok(json) => println!("{json}"),
-        Err(error) => eprintln!("serialization error: {error}"),
+async fn authenticate(
+    client: &WorkClient,
+    password: Option<&password::Password>,
+) -> Result<AuthState, String> {
+    // login itself performs a confirming auth read; one deadline covers both.
+    let result = tokio::time::timeout(DEADLINE, async {
+        if let Some(password) = password {
+            client.login(password.as_str()).await
+        } else {
+            client.auth().await
+        }
+    })
+    .await;
+    match result {
+        Ok(Ok(state)) => Ok(state),
+        Ok(Err(_)) => {
+            Err("authentication failed; verify node and password (details omitted)".into())
+        }
+        Err(_) => Err("authentication deadline exceeded (15s); no command was sent".into()),
     }
 }
 
-fn default_transport() -> &'static str {
-    "rpc"
-}
-
-fn default_command(transport: &str) -> &'static str {
-    if transport == "http" {
-        "health"
+fn require_authenticated(state: &AuthState) -> Result<(), String> {
+    if state.authenticated {
+        return Ok(());
+    }
+    if state.required {
+        Err("node requires a password: use RPI_WORK_PASSWORD or --password-stdin (no login is saved across commands)".into())
     } else {
-        "agent-info"
+        Err("node has not authorized this client (required=false is not authorization); provide a password or check node sharing policy".into())
+    }
+}
+
+async fn operation<T>(
+    future: impl Future<Output = Result<T, ClientError>>,
+    write: bool,
+) -> Result<T, String> {
+    match tokio::time::timeout(DEADLINE, future).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(safe_error(&error, write)),
+        Err(_) => Err(timeout_error(write)),
+    }
+}
+fn timeout_error(write: bool) -> String {
+    if write {
+        "write deadline exceeded (15s): result UNKNOWN; inspect state before retrying; command was not resent".into()
+    } else {
+        "operation deadline exceeded (15s)".into()
+    }
+}
+fn safe_error(error: &ClientError, write: bool) -> String {
+    // Never format server bodies, URLs, JSON decoder errors or source chains:
+    // they may echo credentials, private prompts or dialog values.
+    match error {
+        ClientError::Api { status, .. } if status.as_u16() == 401 || status.as_u16() == 403 =>
+            "node denied access; provide a password or check node sharing policy".into(),
+        ClientError::Api { status, .. } => format!("node returned HTTP {} (details omitted){}", status.as_u16(), if write { "; write result may be UNKNOWN; inspect state, do not blindly resend" } else { "" }),
+        ClientError::Unsupported { .. } => "operation unsupported by this node (details omitted)".into(),
+        _ if write => "write failed: result UNKNOWN; inspect state before retrying; command was not resent (details omitted)".into(),
+        _ => "node operation failed (details omitted)".into(),
+    }
+}
+
+async fn execute(client: &WorkClient, name: &str, args: &[String]) -> Result<(), String> {
+    match name {
+        "health" => output(&operation(client.health(), false).await?),
+        "capabilities" => output(&operation(client.capabilities(), false).await?),
+        "projects" => output(&operation(client.projects(), false).await?),
+        "folders" => output(
+            &operation(
+                client.project_folders(args.first().map_or("", String::as_str)),
+                false,
+            )
+            .await?,
+        ),
+        "sessions" => output(&operation(client.sessions(), false).await?),
+        "state" => output(&operation(client.runtime_state(&args[0]), false).await?),
+        "history" => output(&operation(client.history(&args[0], None, None, 100), false).await?),
+        "models" => output(&operation(client.models(&args[0]), false).await?),
+        "tools" => output(&operation(client.tools(&args[0]), false).await?),
+        "project-create" => output(
+            &operation(
+                client.create_project(&args[0], args.get(1).map(String::as_str), false),
+                true,
+            )
+            .await?,
+        ),
+        "session-create" => {
+            let id = operation(
+                client.create_session(args.first().map(String::as_str)),
+                true,
+            )
+            .await?;
+            output(&json!({"sessionId": id}))
+        }
+        "session-rename" => {
+            output(&operation(client.rename_session(&args[0], &args[1]), true).await?)
+        }
+        "prompt" => {
+            let ack = operation(client.prompt(&args[0], &args[1]), true).await?;
+            output(&ack)?;
+            if ack.success {
+                Ok(())
+            } else {
+                Err(
+                    "node rejected prompt (details omitted); ACK above is not a settled event"
+                        .into(),
+                )
+            }
+        }
+        "abort" => {
+            let ack = operation(client.abort(&args[0]), true).await?;
+            output(&ack)?;
+            if ack.success {
+                Ok(())
+            } else {
+                Err("node rejected abort (details omitted)".into())
+            }
+        }
+        "dialog-reply" => {
+            // Parsed before auth/client creation; never fall back to raw requests.
+            let value: Value = serde_json::from_str(&args[2])
+                .map_err(|_| "invalid dialog JSON (input omitted)".to_string())?;
+            output(&operation(client.dialog_response(&args[0], &args[1], value), true).await?)
+        }
+        _ => Err("unsupported command".into()),
+    }
+}
+
+async fn watch(client: &WorkClient, session: &str) -> Result<(), String> {
+    // A single pinned Ctrl+C future covers stream setup and every subsequent
+    // read. Dropping only detaches the HTTP stream: no abort RPC is ever sent.
+    let interrupt = tokio::signal::ctrl_c();
+    tokio::pin!(interrupt);
+    let mut connection = tokio::select! {
+        result = &mut interrupt => return result.map_err(|_| "could not listen for Ctrl+C".into()),
+        result = client.connect_session(session) => result.map_err(|e| safe_error(&e, false))?,
+    };
+    loop {
+        tokio::select! {
+            result = &mut interrupt => return result.map_err(|_| "could not listen for Ctrl+C".into()),
+            event = connection.next() => {
+                let Some(event) = event.map_err(|e| safe_error(&e, false))? else { return Ok(()); };
+                output(&json!({
+                    "seq": event.wire.seq, "id": event.wire.id,
+                    "event": event.wire.event_type, "data": event.wire.data,
+                    "applied": format!("{:?}", event.applied),
+                }))?;
+            }
+        }
+    }
+}
+
+fn output<T: Serialize>(value: &T) -> Result<(), String> {
+    let mut out = std::io::stdout().lock();
+    serde_json::to_writer(&mut out, value)
+        .map_err(|_| "could not write JSON output".to_string())?;
+    writeln!(out)
+        .and_then(|()| out.flush())
+        .map_err(|_| "could not write JSON output".into())
+}
+// Retained solely for legacy compatibility output.
+fn print_json<T: Serialize>(value: &T) {
+    if let Err(error) = output(value) {
+        work_host::report_error(&error);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{default_command, default_transport};
-
+    use super::*;
     #[test]
-    fn native_rpc_is_the_default_transport() {
-        assert_eq!(default_transport(), "rpc");
-        assert_eq!(default_command("rpc"), "agent-info");
-        assert_eq!(default_command("acp"), "agent-info");
-        assert_eq!(default_command("http"), "health");
+    fn auth_policy_requires_authenticated_not_just_optional_password() {
+        assert!(
+            require_authenticated(&AuthState {
+                required: false,
+                authenticated: true
+            })
+            .is_ok()
+        );
+        assert!(
+            require_authenticated(&AuthState {
+                required: false,
+                authenticated: false
+            })
+            .is_err()
+        );
+        let error = require_authenticated(&AuthState {
+            required: true,
+            authenticated: false,
+        })
+        .unwrap_err();
+        assert!(error.contains("password"));
+    }
+    #[test]
+    fn errors_omit_secrets_and_writes_warn_unknown() {
+        for error in [
+            ClientError::Sse("secret-password".into()),
+            ClientError::Process("secret-password".into()),
+        ] {
+            assert!(!safe_error(&error, false).contains("secret-password"));
+            assert!(safe_error(&error, true).contains("UNKNOWN"));
+        }
+        assert!(timeout_error(true).contains("not resent"));
     }
 }

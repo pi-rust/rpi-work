@@ -6,7 +6,7 @@ const {chromium}=require('../support/browser.cjs');
   const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[],results=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   const pass=t=>{results.push(t);console.log('PASS '+t);},trigger=page.locator('#quick-session-trigger'),row=id=>page.locator(`[data-quick-session="${id}"]`);
-  await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:4182/prototype/');
+  await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:14182/prototype/');
   assert.equal(await trigger.isVisible(),false);await page.setViewportSize({width:375,height:812});assert.equal(await trigger.isVisible(),true);
   const fit=async label=>{for(const selector of ['.topbar','#quick-session-trigger','#modal','#quick-session-results']){if(!await page.locator(selector).isVisible())continue;const d=await page.locator(selector).evaluate(e=>({width:e.clientWidth,content:e.scrollWidth}));assert.ok(d.content<=d.width+1,`${label}/${selector}: ${JSON.stringify(d)}`);}assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));};
   await page.locator('#prompt').fill('深色模式会话的草稿');await trigger.click();assert.equal(await trigger.getAttribute('aria-expanded'),'true');assert.equal(await page.locator('.sidebar.open').count(),0);assert.equal(await row('dark').getAttribute('aria-current'),'true');assert.match(await row('dark').innerText(),/有草稿/);

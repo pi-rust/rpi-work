@@ -8,8 +8,8 @@ const {startFixture}=require('../../tests/fixtures/ui-fixture.cjs');
   fixture.setQueue([{entryId:'geometry-follow-up',queue:'followUp',status:'queued',text:'完成后检查手机端设置抽屉的对比度。'},{entryId:'geometry-steer',queue:'steer',status:'queued',text:'先保留现有快捷键，不要调整键位。'}]);
   try{
     const actual=await browser.newPage({viewport:{width:1440,height:1000}}),reference=await browser.newPage({viewport:{width:1440,height:1000}});
-    await reference.goto('http://127.0.0.1:4182/prototype/');
-    await actual.goto('http://127.0.0.1:4180/');
+    await reference.goto('http://127.0.0.1:14182/prototype/');
+    await actual.goto('http://127.0.0.1:14180/');
     await actual.getByRole('button',{name:'打开设置',exact:true}).click();
     await actual.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
     await actual.getByLabel('节点地址',{exact:true}).fill(fixture.url);

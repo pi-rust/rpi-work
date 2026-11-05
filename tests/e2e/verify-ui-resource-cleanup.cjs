@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
 
-const url = process.env.WORK_UI_URL || 'http://127.0.0.1:4180/';
+const url = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
 const storageKey = 'rpi-work-resources-v1';
 const manifest = (id, name) => ({
   schemaVersion: 1, kind: 'rpi-work-design-package', id, name,

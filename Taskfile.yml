@@ -1,0 +1,79 @@
+version: '3'
+
+tasks:
+  # Optimized Web/headless workflow. It builds the release WASM bundle, prepares
+  # hashed immutable assets, then starts the same owner used by desktop/CLI.
+  dev:
+    desc: 一键启动优化版无头 Web（release WASM、压缩、缓存、13031）
+    dir: '{{.TASKFILE_DIR}}'
+    dotenv: ['{{.TASKFILE_DIR}}/.env.local']
+    deps:
+      - dev:build
+    env:
+      RPI_WORK_HTTP_BIND: '{{.RPI_WORK_HTTP_BIND | default "0.0.0.0"}}'
+      RPI_WORK_HTTP_PORT: '{{.RPI_WORK_HTTP_PORT | default "13031"}}'
+      # Keep the release bundle separate from debug/hot-reload output and any
+      # currently served legacy directory.
+      RPI_WORK_HTTP_ASSETS: '{{.RPI_WORK_HTTP_ASSETS | default "target/web-release/parity-web"}}'
+      # Direct asset hosting is the optimized path; do not advertise a proxy.
+      RPI_WORK_HTTP_WEB_PORT: ''
+    cmds:
+      - cargo run --release --locked -p work-cli -- serve
+
+  dev:build:
+    desc: 构建 release Web WASM 与无头宿主
+    internal: true
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/dev/build-ui-web.ps1 -OutputRoot target/web-release
+      - cargo build --release --locked -p work-cli
+
+  desktop:
+    desc: 启动桌面节点（本机 RPC 与内嵌认证 HTTP 13031 共用工作空间）
+    dir: '{{.TASKFILE_DIR}}'
+    dotenv: ['{{.TASKFILE_DIR}}/.env.local']
+    env:
+      RPI_WORK_NODE_URL: '{{.RPI_WORK_NODE_URL | default "rpi-work://local"}}'
+      RPI_WORK_HTTP_WEB_PORT: '{{.RPI_WORK_HTTP_WEB_PORT | default ""}}'
+    cmds:
+      - cargo run -p work-ui --locked
+
+  # Legacy desktop + hot-reload preview. Use task dev for the optimized
+  # release/headless path; use this task when editing UI with a desktop window.
+  dev:desktop:
+    desc: 启动桌面节点及 Web 热刷新（调试开发路径）
+    deps:
+      - task: desktop
+        vars:
+          RPI_WORK_HTTP_WEB_PORT: '{{.PORT | default "14180"}}'
+      - 'dev:web'
+
+  dev:web:
+    internal: true
+    dir: '{{.TASKFILE_DIR}}'
+    dotenv: ['{{.TASKFILE_DIR}}/.env.local']
+    env:
+      PORT: '{{.PORT | default "14180"}}'
+      RPI_API_PORT: '{{.RPI_WORK_HTTP_PORT | default "13031"}}'
+      RPI_UI_ENTRY_MODE: hosted
+      # Keep debug hot-reload output away from the release bundle used by task dev.
+      RPI_UI_BUILD_OUTPUT_ROOT: '{{.RPI_UI_BUILD_OUTPUT_ROOT | default "target/parity-web-debug"}}'
+    cmds:
+      - node tools/dev/dev-web.mjs --watch-build --debug-build
+
+  node:
+    desc: 启动独立 HTTP 节点（13030；不是桌面工作空间）
+    dir: '{{.TASKFILE_DIR}}'
+    dotenv: ['{{.TASKFILE_DIR}}/.env.local']
+    vars:
+      NODE_SOURCE: '{{.RPI_PACKAGE_DIR | default (printf "%s/../rpi-package" .TASKFILE_DIR)}}'
+      API_PORT: '{{.RPI_API_PORT | default "13030"}}'
+    preconditions:
+      - sh: 'test -f "{{.NODE_SOURCE}}/packages/rpi-http/Cargo.toml"'
+        msg: '找不到 rpi-http 源码。请设置 RPI_PACKAGE_DIR 指向 rpi-package 仓库。'
+      - sh: rpi --version
+        msg: '找不到 rpi。请先安装并加入 PATH。'
+      - sh: 'test -n "$RPI_HTTP_PASSWORD"'
+        msg: '请在 .env.local 中配置 RPI_HTTP_PASSWORD，或设置同名环境变量，供浏览器连接节点时登录；不要在命令参数中传入密码。'
+    cmds:
+      - 'if [ -n "${RPI_HTTP_CONFIG:-}" ]; then set -- --config "$RPI_HTTP_CONFIG"; else set --; fi; cargo run --locked --manifest-path "{{.NODE_SOURCE}}/Cargo.toml" -p rpi-http -- "$@" --project "{{.TASKFILE_DIR}}" --rpi-bin rpi --bind 127.0.0.1 --port {{.API_PORT}}'

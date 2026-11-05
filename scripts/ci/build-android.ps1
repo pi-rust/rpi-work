@@ -1,9 +1,12 @@
 param(
     [ValidateSet('aarch64-linux-android', 'x86_64-linux-android')]
     [string]$Target = 'aarch64-linux-android',
-    [string]$DxPath = ''
+    [string]$DxPath = '',
+    [string]$NdkPath = ''
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'android-toolchain.ps1')
+. (Join-Path $PSScriptRoot 'android-brand.ps1')
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 if (-not $DxPath) { $DxPath = (Get-Command dx -ErrorAction Stop).Source }
 $dxVersion = & $DxPath --version
@@ -14,6 +17,7 @@ $sdkRoot = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { $env:ANDROID_SDK_
 if (-not $sdkRoot -or -not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw 'Set ANDROID_HOME or ANDROID_SDK_ROOT to an installed Android SDK.'
 }
+Invoke-WithWorkAndroidToolchain -Target $Target -SdkRoot $sdkRoot -NdkPath $NdkPath -Action {
 $outDir = Join-Path $repoRoot "target/android-bundle/$Target/$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $metadataText = & cargo metadata --locked --format-version 1 --no-deps --manifest-path (Join-Path $repoRoot 'Cargo.toml')
@@ -24,6 +28,8 @@ $semver = [version]($version -split '-')[0]
 if ($semver.Minor -ge 1000 -or $semver.Build -ge 1000) { throw 'Android version components must be below 1000.' }
 $versionCode = $semver.Major * 1000000 + $semver.Minor * 1000 + $semver.Build
 if ($versionCode -le 0 -or $versionCode -gt 2100000000) { throw 'Android versionCode is out of range.' }
+$gradleRoot = Join-Path $metadata.target_directory 'dx/work-ui/release/android/app'
+Clear-WorkAndroidLegacyBrand -ResRoot (Join-Path $gradleRoot 'app/src/main/res')
 Push-Location (Join-Path $repoRoot 'apps/work-ui')
 try {
     & $DxPath build --android --release --target $Target --cargo-args=--locked
@@ -31,13 +37,13 @@ try {
 } finally { Pop-Location }
 # Dioxus 0.7.10 hardcodes versionCode=1. Rebuild the generated Gradle project
 # with a monotonic code, a release package and our persistent signing certificate.
-$gradleRoot = Join-Path $metadata.target_directory 'dx/work-ui/release/android/app'
 $gradleFile = Join-Path $gradleRoot 'app/build.gradle.kts'
 $gradle = [IO.File]::ReadAllText($gradleFile)
 if ([regex]::Matches($gradle, 'versionCode\s*=\s*\d+').Count -ne 1) { throw 'Unexpected Dioxus Gradle versionCode template.' }
 $gradle = [regex]::Replace($gradle, 'versionCode\s*=\s*\d+', "versionCode = $versionCode")
 [IO.File]::WriteAllText($gradleFile, $gradle, [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText((Join-Path $gradleRoot 'app/src/main/res/values/strings.xml'), '<resources><string name="app_name">RPI Work</string></resources>', [Text.UTF8Encoding]::new($false))
+Set-WorkAndroidBrand -ResRoot (Join-Path $gradleRoot 'app/src/main/res')
 Push-Location $gradleRoot
 try {
     $wrapper = if ($IsWindows) { './gradlew.bat' } else { './gradlew' }
@@ -75,6 +81,23 @@ $apkManifest = & (Join-Path $buildTools.FullName $aaptName) dump xmltree $signed
 if ($LASTEXITCODE -ne 0 -or ($apkManifest -join "`n") -notmatch 'com\.pirust\.rpiwork\.updates' -or ($apkManifest -join "`n") -notmatch 'android.permission.REQUEST_INSTALL_PACKAGES') {
     throw 'The APK must declare its update provider and installation permission.'
 }
+$apkManifestText = $apkManifest -join "`n"
+if ($apkManifestText -notmatch 'android.permission.CAMERA') {
+    throw 'The APK must declare its QR scanner camera permission.'
+}
+# Check each feature block separately; permissions must not imply mandatory
+# camera/autofocus hardware on tablets that can use album/manual connection.
+foreach ($feature in @('android.hardware.camera', 'android.hardware.camera.autofocus')) {
+    $featureBlocks = [regex]::Split($apkManifestText, '(?m)^\s*E: ')
+    $optionalFeature = @($featureBlocks | Where-Object {
+        $_ -match '^uses-feature\b' -and
+        $_ -match ('android:name[^\r\n]*="' + [regex]::Escape($feature) + '"') -and
+        $_ -match 'android:required[^\r\n]*=\(type 0x12\)0x0\b'
+    })
+    if ($optionalFeature.Count -ne 1) {
+        throw "The APK must declare $feature as optional."
+    }
+}
 if (($apkManifest -join "`n") -notmatch 'android:windowSoftInputMode\([^\r\n]*\)=\(type 0x11\)0x10\b') {
     throw 'The APK must resize its window for the keyboard (adjustResize).'
 }
@@ -86,3 +109,4 @@ Copy-Item -LiteralPath $signed -Destination $destination -Force
 $digest = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$destination.sha256", "$digest  $([IO.Path]::GetFileName($destination))`n", [Text.UTF8Encoding]::new($false))
 Write-Output "Installable release-optimized APK: $destination (versionCode $versionCode; persistent signing: $fixedSigning)"
+}

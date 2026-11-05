@@ -1,0 +1,31 @@
+.provider-management{display:flex;flex-direction:column;gap:var(--space-12);min-width:0;max-width:100%;color:var(--text);font-size:var(--font-body);line-height:1.6}
+.provider-management *{box-sizing:border-box;min-width:0}
+.provider-management :is(h1,h2,p,code,span,dt,dd,legend){margin:0;max-width:100%;overflow-wrap:anywhere}
+.provider-management h2{font-size:var(--font-body)}
+.provider-management .provider-toolbar,.provider-management .provider-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-8)}
+.provider-management .provider-toolbar{justify-content:space-between}
+.provider-management .provider-search{flex:1 1 16rem}
+.provider-management .provider-catalog{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));gap:var(--space-12)}
+.provider-management .provider-entry{display:flex;flex-direction:column;gap:var(--space-12);padding:var(--space-16);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel)}
+.provider-management .provider-entry header{display:flex;flex-direction:column;gap:var(--space-6)}
+.provider-management .provider-note{padding:var(--space-12);background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm)}
+.provider-management .provider-meta{color:var(--muted);font-size:var(--font-assist)}
+.provider-management .provider-sources{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:var(--space-8);margin:0}
+.provider-management .provider-sources dt{color:var(--muted)}
+.provider-management .provider-saved-model{display:flex;flex-direction:column;gap:var(--space-6);padding:var(--space-10);border-top:1px solid var(--line)}
+.provider-management .provider-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr));gap:var(--space-12)}
+.provider-management label{display:grid;gap:var(--space-6);font-size:var(--font-assist);color:var(--text)}
+.provider-management input:not([type=checkbox]),.provider-management select{width:100%;max-width:100%;min-height:44px;padding:var(--space-8);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--text);font-size:max(16px,var(--font-body))}
+.provider-management fieldset{display:flex;flex-direction:column;gap:var(--space-12);margin:0;padding:var(--space-12);border:1px solid var(--line);border-radius:var(--radius-sm)}
+.provider-management .provider-checkbox{display:flex;align-items:center;gap:var(--space-10);min-height:44px;cursor:pointer}
+.provider-management input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent);margin:0}
+.provider-management .button{min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:var(--font-nav);cursor:pointer}
+.provider-management .provider-actions>.button{flex:1 1 10rem}
+.provider-management .button:disabled{cursor:not-allowed}
+.provider-management summary{min-height:44px;align-content:center;cursor:pointer}
+.provider-management :is(button,input,select,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.provider-management .provider-error{color:var(--danger);white-space:pre-wrap}
+.provider-dialog{width:min(54rem,calc(100vw - var(--space-24)));max-width:100%}
+dialog.app-dialog.provider-dialog>.modal-header>.icon-button{width:44px;height:44px;min-width:44px;min-height:44px}
+dialog.app-dialog.provider-dialog .modal-footer .button{min-height:44px}
+@media(max-width:600px){.provider-management .provider-toolbar{align-items:stretch;flex-direction:column}.provider-management .provider-search{flex-basis:auto}.provider-management .provider-entry{padding:var(--space-10)}.provider-management .provider-sources{grid-template-columns:minmax(0,1fr)}.provider-management .provider-fields{grid-template-columns:minmax(0,1fr)}}

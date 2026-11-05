@@ -1,5 +1,7 @@
 # 会话追踪与耗时
 
+> 设计参考：本页混合原型探索与局部实现更新，不是当前功能清单。实际使用以[交互指南](../guides/codex-interactions.md)、[扩展边界](../architecture/extensions.md)和[主题规格](../guides/theme-design.md)为准；原型场景与历史验证不能替代正式实现或本次验收。
+
 > 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](../guides/testing-artifacts.md)。
 
 结构参考 [Langfuse 的会话、Trace 与 Observation 数据模型](https://langfuse.com/docs/observability/data-model)：一个会话包含多个回合，一次请求对应一个 Trace，模型调用、工具、上下文准备和运行时结算等步骤形成有父子关系的 Observation。

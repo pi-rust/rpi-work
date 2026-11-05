@@ -23,12 +23,12 @@
   border-color: var(--accent); box-shadow: 0 0 0 2px var(--focus-color);
 }
 [data-theme="codex"] .composer-main .send-button { border-radius: var(--radius-pill); }
-@media (min-width: 701px) {
+@media (min-width: 768px) {
   [data-theme="codex"] .composer-main .send-button {
     width: calc(var(--control-height) - 4px); height: calc(var(--control-height) - 4px);
   }
 }
-@media (max-width: 700px) {
+@media (max-width: 767px) {
   [data-theme="codex"] .app-header .quick-session { min-width: 64px; overflow: hidden; }
   [data-theme="codex"] .app-header .top-actions { min-width: 0; }
   [data-theme="codex"] .app-header .quick-session > span { flex: 1; overflow: hidden; }
@@ -48,17 +48,118 @@
   [data-theme="codex"] .section-tabs .session-config-summary .icon { display: inline-flex; }
   [data-theme="codex"] .section-tabs button:focus-visible { outline-offset: -3px; }
 }
-@media (max-width: 360px) {
-  /* Passive status stays available to assistive tech; active/error states and node status stay visible. */
-  [data-theme="codex"] .top-actions .status-badge:is(.ready, .completed) {
-    position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0;
-    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
-  }
-}
 @media (hover: hover) and (pointer: fine) {
   [data-theme="codex"] .app-header .theme-trigger:hover,
   [data-theme="codex"] .section-tabs .tab-resource:not(.active):hover,
   [data-theme="codex"] .section-tabs .session-capability-trigger:hover {
     color: var(--text); background: var(--selected-bg);
   }
+}
+
+/* Carry the reading hierarchy through the whole workflow, not just chat prose. */
+[data-theme="codex"] .sidebar :is(.search-trigger, .session-updated, .sidebar-empty, .project-session-more),
+[data-theme="codex"] .app-header :is(.breadcrumb-project, .theme-trigger),
+[data-theme="codex"] .section-tabs .tab-count { font-size: var(--font-assist); }
+[data-theme="codex"] .transcript:has(> .workspace-welcome) { display: flex; flex-direction: column; }
+[data-theme="codex"] .transcript > .workspace-welcome {
+  flex: 0 0 auto; width: min(100%, 720px); margin: auto; padding: var(--space-24) var(--space-16);
+  border: 0; background: transparent; font-size: var(--font-body);
+}
+[data-theme="codex"] .workspace-welcome > strong {
+  font-family: var(--font-heading); font-size: calc(var(--font-title) * 1.5);
+  font-weight: var(--heading-weight); line-height: 1.4; letter-spacing: -.025em;
+}
+[data-theme="codex"] .workspace-welcome > p { margin: var(--space-12) 0 var(--space-20); }
+[data-theme="codex"] .workspace-welcome > [role="status"] { font-size: var(--font-assist); }
+[data-theme="codex"] .workspace-welcome > [role="alert"] { color: var(--danger); }
+[data-theme="codex"] .transcript .conversation-markdown > p + p { margin-top: var(--space-12); }
+[data-theme="codex"] .conversation-widget .inline-call > summary { min-height: var(--control-height); padding: var(--space-10) var(--space-12); }
+[data-theme="codex"] .conversation-widget .call-icon { background: transparent; }
+[data-theme="codex"] .conversation-widget .call-name strong { font-size: var(--font-assist); font-weight: 400; }
+[data-theme="codex"] .conversation-widget .inline-plan li strong,
+[data-theme="codex"] .conversation-widget .ask-option strong { font-size: var(--font-nav); }
+[data-theme="codex"] .conversation-widget .call-name code,
+[data-theme="codex"] .conversation-widget .call-body pre { font-size: var(--font-code); line-height: 1.65; }
+[data-theme="codex"] .conversation-widget :is(.call-status, .call-section-title, .inline-call-warning, .conversation-copy, .button),
+[data-theme="codex"] .conversation-code .code-language,
+[data-theme="codex"] .conversation-widget .inline-plan summary,
+[data-theme="codex"] .conversation-widget .inline-plan summary > span:last-child,
+[data-theme="codex"] .conversation-widget .inline-plan li small,
+[data-theme="codex"] .conversation-widget :is(.ask-context, .ask-context .conversation-markdown, .ask-option small, .ask-field-label, .ask-error, .ask-card-heading, legend) {
+  font-size: var(--font-assist);
+}
+
+/* Keep auxiliary controls legible without turning the editor into a second toolbar. */
+[data-theme="codex"] .composer-main .composer-capabilities { flex-wrap: wrap; gap: 0 var(--space-12); margin: var(--space-6) 0; }
+[data-theme="codex"] .composer-main .composer-capabilities > .button,
+[data-theme="codex"] .composer-main .composer-capabilities > .capability-menu > summary,
+[data-theme="codex"] .composer-main .composer-capabilities .skill-picker-trigger {
+  min-height: 32px; height: auto; font-size: var(--font-assist); border-radius: var(--radius-sm);
+}
+/* Native configuration fields use form height; picker buttons own their
+   compact geometry in model_picker.css, not the provider form-control token. */
+[data-theme="codex"] .composer-main select.composer-select { height: var(--control-height); font-size: var(--font-nav); }
+[data-theme="codex"] .composer-main .composer-foot,
+[data-theme="codex"] .composer-foot .session-trace-trigger { font-size: var(--font-assist); }
+[data-theme="codex"] .composer-main .runtime-footer .footer-metrics { flex-wrap: wrap; justify-content: flex-start; gap: 0 var(--space-12); }
+[data-theme="codex"] .composer-main .runtime-footer button { height: auto; min-height: 32px; font-size: var(--font-assist); }
+
+/* Resource identity, desired state and node constraints retain distinct readable roles. */
+[data-theme="codex"] .resources-page .resource-heading h1 { text-wrap: balance; }
+[data-theme="codex"] .resources-page .resource-grid .resource-card > p,
+[data-theme="codex"] .settings-page .settings-card > p { font-size: var(--font-body); line-height: var(--body-line-height); }
+[data-theme="codex"] .resources-page .resource-card .resource-card-title code,
+[data-theme="codex"] .resources-page .resource-summary { font-size: var(--font-code); }
+[data-theme="codex"] .resources-page .resource-grid .resource-card > small,
+[data-theme="codex"] .resources-page :is(.resource-notice, .resource-heading p, .resource-badge, .resource-steps, .resource-count, .resource-context-strip > div, .resource-filter-note),
+[data-theme="codex"] .settings-page :is(.settings-card > small, .provider-card-meta, .provider-card-meta strong, .provider-card-meta small, .auth-state, .provider-model-capabilities),
+[data-theme="codex"] .settings-page .page-heading p { font-size: var(--font-assist); }
+[data-theme="codex"] .resources-page .resource-grid .resource-card .resource-actions :is(.button, .small-link),
+[data-theme="codex"] .resources-page .resource-heading-actions .button,
+[data-theme="codex"] .settings-page .settings-navigation > nav > button,
+[data-theme="codex"] .settings-page .provider-card-actions .button { font-size: var(--font-nav); }
+[data-theme="codex"] .resources-page .resource-grid .resource-card .resource-actions > .button { min-height: var(--control-height); white-space: normal; }
+[data-theme="codex"] .resources-page .resource-grid .resource-card { padding: var(--space-20); }
+[data-theme="codex"] .resources-page .resource-grid .resource-card .resource-badge { white-space: normal; }
+
+/* File content stays monospace; status/diff colours are never flattened to grayscale. */
+[data-theme="codex"] .change-workspace .review-overview h2 { display: flex; align-items: baseline; gap: var(--space-8); }
+[data-theme="codex"] .change-workspace .review-overview h2 > span { font-size: var(--font-assist); font-weight: 400; color: var(--muted); }
+[data-theme="codex"] .project-files-modal .project-file-row { font-size: var(--font-nav); }
+[data-theme="codex"] .project-files-modal :is(.project-file-caption, .project-file-count, .project-files-footer, .project-preview-tools button, .modal-subtitle),
+[data-theme="codex"] .change-workspace :is(.review-overview p, .review-scope > span, .review-scope button, .change-list-caption, .review-file-toolbar label) { font-size: var(--font-assist); }
+[data-theme="codex"] .project-files-modal :is(.project-preview-title strong, .project-preview-title small, .project-file-type, .project-file-size),
+[data-theme="codex"] :is(.change-file-name, .change-file-name small, .file-change-status, .diff-lines, .diff-hunk, .file-content) { font-size: var(--font-code); }
+[data-theme="codex"] .change-workspace .diff-lines { background: var(--card); color: var(--text); }
+[data-theme="codex"] .inspector :is(.data-line, .inspector-label, .inspector-card > strong, .inspector-card > small, .inspector-section-label > strong, .inspector-context-button > span:first-child, .environment-heading small, .inspector-file-row, .inspector-file-status, .inspector-run-status, .inspector-footer) { font-size: var(--font-assist); }
+[data-theme="codex"] .inspector .environment-heading strong,
+[data-theme="codex"] .inspector .plan-title { font-size: var(--font-nav); }
+[data-theme="codex"] .inspector .environment-card > code { font-size: var(--font-code); }
+[data-theme="codex"] .inspector .runtime-shortcuts button,
+[data-theme="codex"] .inspector .inspector-small-button { min-height: 32px; font-size: var(--font-assist); }
+[data-theme="codex"] .runtime-modal :is(.stats-caption, .stats-segmented button, .metric-grid small, .metric-grid span, .stats-details > div, .runtime-info, .runtime-help, .runtime-settings-row small, .runtime-proposal-details),
+[data-theme="codex"] .runtime-modal-actions button { font-size: var(--font-assist); }
+
+@media (max-width: 767px) {
+  [data-theme="codex"] .settings-page .settings-navigation > nav > button { font-size: var(--font-assist); }
+  [data-theme="codex"] .settings-page .settings-navigation > nav:has(> button:nth-child(3):last-child) {
+    grid-template-columns: minmax(0, .65fr) minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+  [data-theme="codex"] .composer-main .composer-capabilities { gap: 0 var(--space-8); }
+  [data-theme="codex"] .composer-main .composer-capabilities > .button,
+  [data-theme="codex"] .composer-main .composer-capabilities > .capability-menu > summary,
+  [data-theme="codex"] .composer-main .composer-capabilities .skill-picker-trigger,
+  [data-theme="codex"] .composer-main .composer-select,
+  [data-theme="codex"] .composer-foot .session-trace-trigger,
+  [data-theme="codex"] .composer-main .runtime-footer button,
+  [data-theme="codex"] .conversation-widget .inline-call > summary,
+  [data-theme="codex"] .conversation-widget .ask-primary-actions .button,
+  [data-theme="codex"] .resources-page .resource-grid .resource-card .resource-actions > .button,
+  [data-theme="codex"] .inspector .runtime-shortcuts button,
+  [data-theme="codex"] .inspector .inspector-small-button,
+  [data-theme="codex"] .project-files-modal .project-preview-tools button,
+  [data-theme="codex"] .runtime-modal .stats-segmented button,
+  [data-theme="codex"] .runtime-modal-actions button { min-width: var(--hit-size); min-height: var(--hit-size); }
+  [data-theme="codex"] .runtime-modal :is(.stats-segmented button, .runtime-settings-row strong) { font-size: var(--font-assist); }
+  [data-theme="codex"] .composer-main .runtime-footer .footer-metrics { justify-content: space-between; gap: 0 var(--space-8); }
 }

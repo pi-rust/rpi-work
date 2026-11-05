@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt::Write as _};
 
 #[path = "theme_design.rs"]
 mod design;
-pub use design::ThemeDesign;
+pub use design::{ThemeDesign, ToolRendering};
 
 const THEME_SCHEMA_VERSION: u64 = 1;
 pub const THEME_KIND: &str = "rpi-work-theme";
@@ -599,11 +599,19 @@ pub fn parse_theme_document(value: &Value) -> Result<(Theme, Option<&str>, Optio
     }
     if !exact_keys(
         object,
-        &["schemaVersion", "kind", "theme", "preferredMode", "density"],
+        &[
+            "schemaVersion",
+            "kind",
+            "theme",
+            "preferredMode",
+            "density",
+            "preferredToolRendering",
+        ],
         &["schemaVersion", "kind", "theme"],
     ) {
         return Err("主题 JSON 含有未知或缺失字段。".into());
     }
+    ToolRendering::parse_optional(object.get("preferredToolRendering"))?;
     let theme = parse_theme(object.get("theme").unwrap())?;
     if (schema == Some(2)) != theme.design.is_some() {
         return Err("版本 2 必须包含完整 design 视觉规格；旧版主题请保持版本 1。".into());

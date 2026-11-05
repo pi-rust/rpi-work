@@ -1,0 +1,29 @@
+.execution-backend-menu { position: relative; min-width: 0; max-width: 100%; }
+.execution-backend-inline .execution-backend-options { position: static; width: 100%; box-sizing: border-box; max-height: none; overflow: visible; box-shadow: none; }
+.session-resource-body .resource-segments { display: flex; flex-wrap: wrap; }
+.session-resource-body .resource-segments > button { min-height: 44px; min-width: 44px; }
+.execution-backend-menu summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; padding: 0 10px; overflow-wrap: anywhere; }
+.execution-backend-options { position: absolute; bottom: 100%; left: 0; z-index: 40; width: min(280px, calc(100vw - 40px)); max-height: 60dvh; overflow: auto; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel, Canvas); color: var(--text, CanvasText); box-shadow: 0 8px 28px #0003; }
+.execution-backend-options button { display: block; width: 100%; min-height: 44px; text-align: left; }
+.execution-backend-options button[aria-pressed="true"] { font-weight: 700; }
+.execution-backend-options p { white-space: normal; overflow-wrap: anywhere; margin: 6px 0; }
+.backend-reason { font-size: 12px; opacity: .75; }
+.backend-confirm { max-width: min(460px, calc(100vw - 24px)); }
+.backend-confirm p { overflow-wrap: anywhere; }
+.backend-confirm button { min-height: 44px; min-width: 44px; }
+.negotiated-config { display: flex; flex-wrap: wrap; min-width: 0; gap: 6px; }
+.negotiated-config label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.negotiated-config select { min-height: 44px; min-width: 0; max-width: 100%; }
+
+/* Agent selection exists once, in the design tab of unified session settings. */
+.session-details-modal .session-settings-tabs { display: flex; width: 100%; }
+.session-details-modal .session-settings-tabs > button { flex: 1; min-height: 44px; min-width: 44px; }
+.session-backend-settings .execution-backend-options { border-color: var(--line); }
+.session-backend-settings .execution-backend-options button { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-8, 8px); margin-block: var(--space-4, 4px); background: var(--panel); color: var(--text); cursor: pointer; }
+.session-backend-settings .execution-backend-options button:disabled { cursor: not-allowed; opacity: .6; }
+.session-backend-settings .execution-backend-options button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-bg); }
+.session-backend-settings .backend-reason { opacity: 1; color: var(--muted); font-size: calc(12px * var(--type-scale, 1)); }
+.app-header :is(.timeline-toggle, .session-settings-toggle) { width: 44px; height: 44px; min-width: 44px; min-height: 44px; flex-shrink: 0; cursor: pointer; }
+.app-header .timeline-toggle[aria-pressed="true"] { color: var(--accent); background: var(--accent-bg); }
+.app-header :is(.timeline-toggle, .session-settings-toggle):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+

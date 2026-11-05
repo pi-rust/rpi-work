@@ -4,7 +4,19 @@
 .workspace-menu button:hover,.workspace-menu button:focus-visible{background:var(--accent-bg);color:var(--accent)}
 .workspace-menu hr{width:100%;margin:4px 0;border:0;border-top:1px solid var(--line)}
 .session-entry{display:grid;grid-template-columns:minmax(0,1fr) 26px;align-items:center;min-width:0}
-.session-entry .session-item{width:100%}.session-row-menu{width:26px;height:32px;padding:0;color:var(--muted)}
+.session-entry .session-item{width:100%;overflow:hidden}.session-row-menu{width:26px;height:32px;padding:0;color:var(--muted)}
+.session-entry .session-title{flex:1 1 0;min-width:0}
+.session-entry .session-dot{margin:0 3px}
+.session-entry .session-dot.offline{background:var(--muted)}
+.session-activity-spinner{display:inline-block;box-sizing:border-box;width:12px;height:12px;flex:0 0 12px;border:2px solid var(--line);border-top-color:currentColor;border-right-color:currentColor;border-radius:50%;color:var(--accent);animation:session-activity-spin .8s linear infinite}
+.session-activity-label{flex:0 0 auto;white-space:nowrap;font-size:calc(10px * var(--type-scale, 1));line-height:1.2;color:var(--muted)}
+.session-activity-label.loading,.session-activity-label.sending,.session-activity-label.running{color:var(--accent)}
+.session-activity-label.waiting,.session-activity-label.cancelling,.session-activity-spinner.cancelling{color:var(--warning)}
+.session-activity-label.failed{color:var(--danger)}
+.session-activity-label.offline{color:var(--muted)}
+@keyframes session-activity-spin{to{transform:rotate(360deg)}}
+/* Essential progress stays visible; reduced motion slows only this small ring. */
+@media(prefers-reduced-motion:reduce){.session-activity-spinner{animation:session-activity-spin 1.6s linear infinite !important}}
 .session-pin{font-size:calc(8px * var(--type-scale, 1));color:var(--muted);margin-left:auto;flex-shrink:0}.archive-entry{font-size:calc(11px * var(--type-scale, 1))}
 .workspace-notice{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:12px;padding:12px 16px;max-width:calc(100vw - 24px);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--card);color:var(--text);box-shadow:0 8px 28px #0002;font-size:calc(12px * var(--type-scale, 1))}
 .workspace-notice button{flex-shrink:0;color:var(--accent);font-size:calc(12px * var(--type-scale, 1))}.archive-list{display:grid;gap:8px}.archive-row{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--line);border-radius:var(--radius-sm)}
@@ -12,3 +24,12 @@
 .rename-dialog input{width:100%;margin-top:10px}.rename-dialog [role=alert]{color:var(--danger);font-size:calc(12px * var(--type-scale, 1))}
 .message-actions{display:flex;gap:8px;justify-content:flex-end;margin:0 0 10px;opacity:.6}.message-actions button{font-size:calc(10px * var(--type-scale, 1));padding:4px 8px;color:var(--muted)}.message-actions button:hover{opacity:1;color:var(--accent)}
 @media(max-width:700px){.session-entry{grid-template-columns:minmax(0,1fr) 44px}.session-row-menu{width:44px;height:44px}.workspace-menu button{min-height:44px}.workspace-notice{bottom:12px;width:calc(100vw - 24px)}.message-actions button{min-height:36px}}
+
+/* The header exposes only frequent controls; secondary actions share its popover. */
+.app-header .header-more{width:36px;min-width:36px;height:36px;padding:0;color:var(--muted)}
+.header-menu-connection{display:flex;align-items:center;gap:8px;padding:8px 10px;color:var(--muted);font-size:var(--font-assist)}
+@media(max-width:767px){
+  .app-header .top-actions{flex:0 0 auto;gap:0}
+  .app-header .top-actions>:is(.timeline-toggle,.context-toggle,.header-more){width:44px;min-width:44px;height:44px;min-height:44px}
+  .workspace-menu button{min-height:44px}
+}

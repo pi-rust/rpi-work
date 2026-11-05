@@ -1,0 +1,171 @@
+/* A grid sibling, never a hover-only action; the parent owns its columns. */
+.project-node-button {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  width: 24px;
+  height: 36px;
+  min-width: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--muted);
+  opacity: 1;
+  visibility: visible;
+  cursor: pointer;
+}
+.project-node-button > .icon { width: 14px; height: 14px; }
+.project-node-button:hover { background: var(--panel); color: var(--text); }
+.project-node-button:focus-visible,
+.node-info-dialog button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.project-node-button .project-node-status {
+  position: absolute;
+  right: -1px;
+  bottom: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+.project-node-status[data-state="online"] {
+  width: 8px;
+  height: 8px;
+  right: 0;
+  bottom: 6px;
+  background: var(--success, #23854a);
+  color: var(--success, #23854a);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.project-node-status[data-state="checking"],
+.project-node-status[data-state="connecting"] {
+  border: 2px solid var(--muted);
+  border-top-color: transparent;
+  animation: node-info-spin 1s linear infinite;
+}
+.project-node-status[data-state="offline"] {
+  color: var(--danger, #be4141);
+  font-size: 12px;
+}
+.project-node-status[data-state="auth"],
+.project-node-status[data-state="unready"] {
+  color: var(--warning, #946300);
+  border-radius: 3px;
+}
+@keyframes node-info-spin { to { transform: rotate(360deg); } }
+
+.node-info-dialog {
+  box-sizing: border-box;
+  width: 560px;
+  min-width: 0;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+}
+.node-info-dialog[open] { display: flex; flex-direction: column; }
+.node-info-dialog::backdrop { background: var(--backdrop); }
+.node-info-dialog > .modal-header,
+.node-info-dialog > .node-info-actions { flex: 0 0 auto; min-width: 0; }
+.node-info-dialog .node-info-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  padding: 16px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.node-info-dialog .node-info-summary { margin: 0 0 10px; font-weight: 600; }
+.node-info-dialog .node-info-note {
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: var(--font-assist, 12px);
+  line-height: 1.7;
+}
+.node-info-dialog .node-info-warning {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--warning, #946300);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text);
+  line-height: 1.6;
+}
+.node-info-dialog .node-info-details { margin: 16px 0 0; min-width: 0; }
+.node-info-dialog .node-info-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  line-height: 1.6;
+}
+.node-info-dialog .node-info-row dt { color: var(--muted); }
+.node-info-dialog .node-info-row dd { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.node-info-dialog .node-info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+}
+.node-info-dialog .node-info-actions button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.node-info-dialog .node-info-actions button:disabled { opacity: .55; cursor: not-allowed; }
+
+@media (max-width: 700px) {
+  .project-node-button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .project-node-button .project-node-status { right: 7px; bottom: 8px; }
+  .node-info-dialog {
+    max-width: calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+  .node-info-dialog .node-info-body { padding: 12px 16px; }
+  .node-info-dialog .node-info-actions { padding: 12px 16px; }
+  .node-info-dialog .node-info-actions button,
+  .node-info-dialog .modal-header button { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 390px) {
+  .node-info-dialog .node-info-row { grid-template-columns: 72px minmax(0, 1fr); gap: 8px; }
+  .node-info-dialog .node-info-actions button:first-child { flex: 1 0 100%; }
+  .node-info-dialog .node-info-actions button:not(:first-child) { flex: 1 1 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-node-status[data-state="checking"],
+  .project-node-status[data-state="connecting"] { animation: none; }
+}
+
+/* Text and icon identify ownership; status dots separately identify liveness. */
+.workspace-location{display:flex;align-items:center;gap:9px;width:100%;min-width:0;min-height:44px;margin:0 0 10px;padding:8px 10px;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--text);text-align:left;cursor:pointer}
+.workspace-location>.icon{width:16px;height:16px;flex:0 0 auto;color:var(--muted)}
+.workspace-location>span{display:grid;gap:3px;min-width:0;flex:1}
+.workspace-location strong{font-size:calc(11px * var(--type-scale,1));font-weight:550}
+.workspace-location small{font:calc(9px * var(--type-scale,1))/1.5 var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workspace-location:hover{background:var(--card)}
+.workspace-location:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.inspector-environment .environment-origin{display:block;font:calc(9px * var(--type-scale,1))/1.6 var(--mono);color:var(--muted);overflow-wrap:anywhere;margin:6px 0}
+.inspector-environment .environment-heading>div{min-width:0}
+.inspector-environment .environment-heading strong{overflow-wrap:anywhere}

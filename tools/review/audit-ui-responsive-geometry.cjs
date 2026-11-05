@@ -9,8 +9,8 @@ const {startFixture}=require('../../tests/fixtures/ui-fixture.cjs');
   try{
     const actual=await browser.newPage({viewport:{width:1440,height:1000}}),reference=await browser.newPage({viewport:{width:1440,height:1000}});
     for(const page of [actual,reference])await page.addInitScript(()=>localStorage.setItem('rpi-work-appearance-v1',JSON.stringify({theme:'reddit',mode:'light',density:'standard'})));
-    await reference.goto('http://127.0.0.1:4182/prototype/');
-    await actual.goto('http://127.0.0.1:4180/');
+    await reference.goto('http://127.0.0.1:14182/prototype/');
+    await actual.goto('http://127.0.0.1:14180/');
     await actual.getByRole('button',{name:'打开设置',exact:true}).click();
     await actual.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
     await actual.getByRole('button',{name:'连接其他节点',exact:true}).click();

@@ -12,7 +12,7 @@ async function check(name,fn){try{await fn();results.push({name,passed:true});co
   try{
     page.on('pageerror',e=>errors.push(e.message));
     page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
-    await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');
+    await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
     await page.getByRole('button',{name:'打开设置',exact:true}).waitFor();
     await page.getByRole('button',{name:'打开设置',exact:true}).click();
     await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();

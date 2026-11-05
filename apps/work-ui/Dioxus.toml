@@ -4,6 +4,7 @@ android_main_activity = "android/MainActivity.kt"
 android_manifest = "android/AndroidManifest.xml"
 
 [bundle]
+icon = ["../../assets/branding/rpi-512.png", "../../assets/branding/rpi.ico", "../../assets/branding/rpi.icns"]
 identifier = "com.pirust.rpiwork"
 publisher = "pi-rust"
 short_description = "Connect to your computer's agent workspace"

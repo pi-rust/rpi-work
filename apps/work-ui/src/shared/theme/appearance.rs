@@ -4,7 +4,7 @@ use std::{cell::Cell, fmt::Write as _, rc::Rc};
 
 #[path = "theme_contract.rs"]
 mod theme_contract;
-use theme_contract::{MAX_CUSTOM_THEMES, MAX_THEME_JSON_BYTES, THEME_KIND, Theme};
+use theme_contract::{MAX_CUSTOM_THEMES, MAX_THEME_JSON_BYTES, THEME_KIND, Theme, ToolRendering};
 
 const APPEARANCE_KIND: &str = "rpi-work-appearance";
 pub const STYLESHEETS: &str = concat!(
@@ -14,7 +14,9 @@ pub const STYLESHEETS: &str = concat!(
     "\n",
     include_str!("codex-components.css"),
     "\n",
-    include_str!("theme-design.css")
+    include_str!("theme-design.css"),
+    "\n",
+    include_str!("tool-presentation.css")
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +80,7 @@ pub struct AppearanceSettings {
     pub theme: Appearance,
     pub mode: &'static str,
     pub density: &'static str,
+    pub tool_rendering: Option<ToolRendering>,
 }
 impl Default for AppearanceSettings {
     fn default() -> Self {
@@ -85,8 +88,22 @@ impl Default for AppearanceSettings {
             theme: Appearance::Codex,
             mode: "light",
             density: "standard",
+            tool_rendering: None,
         }
     }
+}
+
+fn effective_tool_rendering(settings: AppearanceSettings, theme: &Theme) -> ToolRendering {
+    settings
+        .tool_rendering
+        .unwrap_or_else(|| theme.effective_design().tool_rendering)
+}
+
+fn with_tool_rendering(mut value: Value, key: &str, mode: Option<ToolRendering>) -> Value {
+    if let Some(mode) = mode {
+        value[key] = json!(mode);
+    }
+    value
 }
 
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -177,6 +194,8 @@ fn restored(value: &Value) -> (AppearanceSettings, ThemeLibrary) {
             .unwrap_or(Appearance::Codex),
         mode: mode(value.get("mode").and_then(Value::as_str)).unwrap_or("light"),
         density: density(value.get("density").and_then(Value::as_str)).unwrap_or("standard"),
+        tool_rendering: ToolRendering::parse_optional(value.get("toolRendering"))
+            .unwrap_or_default(),
     };
     (settings, library)
 }
@@ -205,7 +224,11 @@ fn load() -> (AppearanceSettings, ThemeLibrary) {
     (AppearanceSettings::default(), ThemeLibrary::default())
 }
 fn preference_value(settings: AppearanceSettings, library: &ThemeLibrary) -> Value {
-    json!({"theme":library.resolve(settings.theme).id,"mode":settings.mode,"density":settings.density,"customThemes":library.0.iter().map(theme_contract::theme_value).collect::<Vec<_>>()})
+    with_tool_rendering(
+        json!({"theme":library.resolve(settings.theme).id,"mode":settings.mode,"density":settings.density,"customThemes":library.0.iter().map(theme_contract::theme_value).collect::<Vec<_>>()}),
+        "toolRendering",
+        settings.tool_rendering,
+    )
 }
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn persist_native(settings: AppearanceSettings, library: &ThemeLibrary) -> Result<(), String> {
@@ -233,7 +256,11 @@ fn parse_portable_appearance(
 ) -> Result<AppearanceSettings, String> {
     let object = value.as_object().ok_or("导入文件必须是 JSON 对象。")?;
     let fields = ["schemaVersion", "kind", "preset", "mode", "density"];
-    if object.len() != fields.len() || object.keys().any(|key| !fields.contains(&key.as_str())) {
+    if fields.iter().any(|key| !object.contains_key(*key))
+        || object
+            .keys()
+            .any(|key| !fields.contains(&key.as_str()) && key != "toolRendering")
+    {
         return Err("偏好 JSON 含有未知或缺失字段。".into());
     }
     if value["schemaVersion"].as_u64() != Some(1) || value["kind"].as_str() != Some(APPEARANCE_KIND)
@@ -246,6 +273,7 @@ fn parse_portable_appearance(
             .ok_or("偏好引用的主题尚未导入，请先导入完整主题 JSON。")?,
         mode: mode(value["mode"].as_str())?,
         density: density(value["density"].as_str())?,
+        tool_rendering: ToolRendering::parse_optional(object.get("toolRendering"))?,
     })
 }
 fn import_document(
@@ -276,6 +304,9 @@ fn import_document(
                     } else {
                         current.density
                     },
+                    tool_rendering: ToolRendering::parse_optional(
+                        value.get("preferredToolRendering"),
+                    )?,
                 },
                 next,
                 "已导入完整主题 JSON，正在预览；保存后保留。",
@@ -292,9 +323,17 @@ fn import_document(
 fn export_script(settings: AppearanceSettings, library: &ThemeLibrary, full: bool) -> String {
     let theme = library.resolve(settings.theme);
     let payload = if full {
-        theme_contract::theme_document(&theme, settings.mode, settings.density)
+        with_tool_rendering(
+            theme_contract::theme_document(&theme, settings.mode, settings.density),
+            "preferredToolRendering",
+            settings.tool_rendering,
+        )
     } else {
-        json!({"schemaVersion":1,"kind":APPEARANCE_KIND,"preset":theme.id,"mode":settings.mode,"density":settings.density})
+        with_tool_rendering(
+            json!({"schemaVersion":1,"kind":APPEARANCE_KIND,"preset":theme.id,"mode":settings.mode,"density":settings.density}),
+            "toolRendering",
+            settings.tool_rendering,
+        )
     };
     let filename = if full {
         format!("rpi-work-theme-{}.json", theme.id)
@@ -318,7 +357,7 @@ fn apply_script(settings: AppearanceSettings, library: &ThemeLibrary) -> String 
         .tokens(settings.density == "compact")
         .into_keys()
         .collect();
-    let payload = json!({"id":theme.id,"mode":settings.mode,"density":settings.density,"custom":matches!(settings.theme,Appearance::Custom(_)),"layoutKeys":layout_keys,"light":light,"dark":dark});
+    let payload = json!({"id":theme.id,"mode":settings.mode,"density":settings.density,"toolRendering":effective_tool_rendering(settings, &theme),"custom":matches!(settings.theme,Appearance::Custom(_)),"layoutKeys":layout_keys,"light":light,"dark":dark});
     let literal = serde_json::to_string(&payload.to_string()).unwrap();
     format!(
         r#"
@@ -332,6 +371,7 @@ fn apply_script(settings: AppearanceSettings, library: &ThemeLibrary) -> String 
             else for(const key of config.layoutKeys)root.style.setProperty('--'+key,tokens[key]);
             root.dataset.theme=config.id;root.dataset.mode=mode;root.dataset.colorMode=mode;
             root.dataset.appearance=config.mode;root.dataset.density=config.density;root.style.colorScheme=mode;
+            root.dataset.toolRendering=config.toolRendering;
             document.body?.classList.toggle('theme-dark',dark);
             document.querySelector('meta[name="theme-color"]')?.setAttribute('content',tokens.bg);
         }};
@@ -566,6 +606,24 @@ pub fn AppearancePicker(
                             option { value: "standard", "标准 · 舒展阅读" } option { value: "compact", "紧凑 · 展示更多内容" }
                         }
                     }
+                    div { class: "form-field tool-rendering-field",
+                        label { r#for: "tool-rendering", "工具展示" }
+                        select {
+                            id: "tool-rendering", value: settings.read().tool_rendering.map_or("theme", ToolRendering::as_str), disabled: *saving.read(),
+                            onchange: move |event| {
+                                settings.write().tool_rendering = match event.value().as_str() {
+                                    "simple" => Some(ToolRendering::Simple),
+                                    "detailed" => Some(ToolRendering::Detailed),
+                                    _ => None,
+                                };
+                                error.set(String::new());
+                            },
+                            option { value: "theme", if visual.tool_rendering.is_simple() { "跟随主题 · 简单" } else { "跟随主题 · 详情" } }
+                            option { value: "simple", "简单 · Codex 紧凑摘要" }
+                            option { value: "detailed", "详情 · 当前完整卡片" }
+                        }
+                        small { "仅改变展示；简单模式也可展开完整参数与结果，不影响执行、确认和状态。" }
+                    }
                 }
                 section { class: "theme-design-summary", aria_label: "主题视觉规格",
                     h3 { "视觉规格 · 不只是配色" }
@@ -606,6 +664,97 @@ pub fn AppearancePicker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_rendering_defaults_follow_the_theme_and_overrides_round_trip() {
+        let initial = AppearanceSettings::default();
+        let library = ThemeLibrary::default();
+        for preset in Appearance::all() {
+            let (settings, _) = restored(&json!({"theme":preset.id()}));
+            assert_eq!(settings.tool_rendering, None);
+            assert_eq!(
+                effective_tool_rendering(settings, &library.resolve(preset)),
+                ToolRendering::Simple
+            );
+        }
+        let mut theme = library.resolve(Appearance::Codex);
+        theme.id = "tool-details".into();
+        let mut design = theme.effective_design();
+        design.tool_rendering = ToolRendering::Detailed;
+        theme.design = Some(design);
+        let document = theme_contract::theme_document(&theme, "light", "standard");
+        let overridden = AppearanceSettings {
+            tool_rendering: Some(ToolRendering::Simple),
+            ..initial
+        };
+        let (settings, themes, _) =
+            import_document(&document.to_string(), overridden, &library).unwrap();
+        assert_eq!(settings.tool_rendering, None);
+        assert_eq!(
+            effective_tool_rendering(settings, &themes.resolve(settings.theme)),
+            ToolRendering::Detailed
+        );
+        let preferred = with_tool_rendering(
+            document.clone(),
+            "preferredToolRendering",
+            Some(ToolRendering::Simple),
+        );
+        let (settings, themes, _) =
+            import_document(&preferred.to_string(), settings, &themes).unwrap();
+        assert_eq!(
+            effective_tool_rendering(settings, &themes.resolve(settings.theme)),
+            ToolRendering::Simple
+        );
+        assert_eq!(
+            restored(&preference_value(settings, &themes)),
+            (settings, themes.clone())
+        );
+        let preference = with_tool_rendering(
+            json!({"schemaVersion":1,"kind":APPEARANCE_KIND,"preset":theme.id,"mode":"dark","density":"compact"}),
+            "toolRendering",
+            Some(ToolRendering::Detailed),
+        );
+        let (settings, _, _) = import_document(&preference.to_string(), settings, &themes).unwrap();
+        assert_eq!(settings.tool_rendering, Some(ToolRendering::Detailed));
+        assert_eq!(settings.mode, "dark");
+        let (settings, _, _) = import_document(&document.to_string(), settings, &themes).unwrap();
+        assert_eq!(settings.tool_rendering, None);
+        assert!(
+            theme_contract::theme_document(
+                &library.resolve(Appearance::Codex),
+                "light",
+                "standard"
+            )
+            .get("preferredToolRendering")
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn invalid_tool_rendering_imports_are_rejected_without_mutation() {
+        let initial = AppearanceSettings::default();
+        let library = ThemeLibrary::default();
+        let theme = library.resolve(Appearance::Codex);
+        for bad in [
+            json!(null),
+            json!(true),
+            json!(1),
+            json!("compact"),
+            json!("simple;display:none"),
+            json!({"mode":"simple"}),
+        ] {
+            let mut document = theme_contract::theme_document(&theme, "light", "standard");
+            document["preferredToolRendering"] = bad.clone();
+            assert!(import_document(&document.to_string(), initial, &library).is_err());
+            let preference = json!({"schemaVersion":1,"kind":APPEARANCE_KIND,"preset":"codex","mode":"light","density":"standard","toolRendering":bad});
+            assert!(import_document(&preference.to_string(), initial, &library).is_err());
+            assert_eq!(
+                restored(&json!({"toolRendering":bad})).0.tool_rendering,
+                None
+            );
+        }
+        assert_eq!(library, ThemeLibrary::default());
+    }
 
     #[test]
     fn codex_is_default_but_existing_theme_choices_are_preserved() {
@@ -663,7 +812,8 @@ mod tests {
             AppearanceSettings {
                 theme: Appearance::Ocean,
                 mode: "dark",
-                density: "compact"
+                density: "compact",
+                tool_rendering: None,
             }
         );
         assert_eq!(library.0.len(), 0);

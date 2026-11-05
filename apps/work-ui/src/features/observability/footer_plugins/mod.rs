@@ -1,0 +1,207 @@
+//! Built-in client UI plugins; intentionally independent of node extensions.
+//! Main integration: call `use_footer_preferences()` once in App, register `CSS`,
+//! then render `FooterHost { context }` and `FooterSettings {}` where appropriate.
+mod preferences;
+mod registry;
+
+use crate::shared::components::Icon;
+use dioxus::prelude::*;
+use preferences::PluginPreference;
+pub use preferences::{FooterPreferencesContext, use_footer_preferences};
+use registry::{BUILTINS, FooterItem, FooterVisual, Tone};
+
+pub const CSS: &str = include_str!("footer_plugins.css");
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FooterContext {
+    pub scope: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub thinking: Option<String>,
+    pub metrics: super::runtime_stats::Metrics,
+    pub context: super::runtime_stats::Context,
+    pub tool_calls: usize,
+    pub tool_failures: usize,
+    pub online: bool,
+}
+
+#[component]
+pub fn FooterHost(context: FooterContext) -> Element {
+    let preferences = use_context::<FooterPreferencesContext>();
+    let settings = preferences.store.read().settings.clone();
+    let collected = registry::collect(BUILTINS, &context);
+    let mut groups = Vec::new();
+    for preference in &settings.plugins {
+        if !preference.enabled {
+            continue;
+        }
+        let Some((plugin, items)) = collected.iter().find(|(p, _)| p.id == preference.id) else {
+            continue;
+        };
+        let items: Vec<_> = items
+            .iter()
+            .filter(|i| !preference.hidden_items.contains(&i.id))
+            .cloned()
+            .collect();
+        if !items.is_empty() {
+            groups.push((*plugin, items));
+        }
+    }
+    if groups.is_empty() {
+        return rsx! {};
+    }
+    let show_caption = groups
+        .iter()
+        .any(|(plugin, _)| plugin.id == "session-usage");
+    rsx! {
+        style { "{CSS}" }
+        footer { class: "runtime-footer plugin-footer footer-metrics", aria_label: "Agent 运行统计",
+            tabindex: "0",
+            "aria-description": "只读状态栏；内容较多时可横向滑动，或聚焦后使用左右方向键浏览。",
+            if !context.online {
+                span { class: "footer-warning", role: "status", "节点未连接，统计未确认" }
+            } else if !registry::confirmed(&context) {
+                span { class: "footer-warning", "当前会话未确认，统计 —" }
+            }
+            for (plugin, items) in groups {
+                div { class: "footer-plugin", "data-plugin-id": plugin.id,
+                    for item in items {
+                        span {
+                            class: "footer-item {registry::metric_class(&item.id)}",
+                            "data-item-id": "{item.id}",
+                            "data-tone": match item.tone { Tone::Neutral => "neutral", Tone::Good => "good", Tone::Warning => "warning" },
+                            role: "group",
+                            aria_label: "{item.label}：{item.value}。{item.description}",
+                            {metric_value(&item)}
+                        }
+                    }
+                }
+            }
+            if show_caption { span { class: "footer-detail", "会话累计" } }
+        }
+    }
+}
+
+/// The registry supplies bounded typed data, never markup or parsed display text.
+fn metric_value(item: &FooterItem) -> Element {
+    rsx! {
+        span { class: "footer-value", aria_hidden: "true",
+            match &item.visual {
+                FooterVisual::Text => rsx! { "{item.value}" },
+                FooterVisual::Tokens { input, output } => rsx! {
+                    Icon { name: "diff" }
+                    span { "↑ {input}" }
+                    span { "↓ {output}" }
+                },
+                FooterVisual::Cache { value, known } => rsx! {
+                    span { "缓存 " }
+                    b { class: "footer-cache-value", "data-known": "{known}", "{value}" }
+                },
+                FooterVisual::Context { value, used } => rsx! {
+                    span {
+                        class: "context-ring", "aria-hidden": "true",
+                        "data-known": "{used.is_some()}",
+                        style: used.map(|used| format!("--used:{used}%")),
+                    }
+                    span { "上下文 {value}" }
+                },
+                FooterVisual::Cost { value } => rsx! { "{value}" },
+                FooterVisual::Tools { calls, failures } => rsx! {
+                    span { {calls.map_or_else(|| "—".into(), |calls| calls.to_string())} " tools" }
+                    if *failures > 0 { span { " ·失败{failures}" } }
+                },
+            }
+        }
+    }
+}
+
+#[component]
+pub fn FooterSettings() -> Element {
+    let context = use_context::<FooterPreferencesContext>();
+    let state = context.store.read().clone();
+    let count = state.settings.plugins.len();
+    let cards = state
+        .settings
+        .plugins
+        .iter()
+        .enumerate()
+        .map(|(index, preference)| settings_card(context, preference, index, count, state.ready));
+    rsx! {
+        style { "{CSS}" }
+        section { class: "footer-plugin-settings", aria_label: "底部状态栏",
+            h2 { "底部状态栏" }
+            p { class: "footer-settings-help", "客户端内置 UI 插件，只读取当前会话；不在节点安装插件，不执行导入源码。" }
+            if !state.ready { p { role: "status", "正在读取本地状态栏配置…" } }
+            if let Some(error) = state.storage_error {
+                p { class: "footer-settings-error", role: "alert", "{error}" }
+            }
+            if state.corrupt_guard {
+                p { class: "footer-settings-help", "已暂停自动保存以保护原配置；可临时调整内存设置，恢复默认状态栏后才会覆盖本地配置。" }
+            }
+            div { class: "footer-plugin-cards", {cards} }
+            button { r#type: "button", class: "footer-settings-reset", disabled: !state.ready,
+                onclick: move |_| preferences::change(context, true, |_| {}), "恢复默认状态栏"
+            }
+        }
+    }
+}
+
+fn settings_card(
+    context: FooterPreferencesContext,
+    preference: &PluginPreference,
+    index: usize,
+    count: usize,
+    ready: bool,
+) -> Element {
+    let Some(plugin) = BUILTINS.iter().find(|p| p.id == preference.id) else {
+        return rsx! {};
+    };
+    let id = plugin.id;
+    rsx! {
+        fieldset { class: "footer-plugin-card", aria_label: "{plugin.title} 插件设置",
+            legend { "{plugin.title}" }
+            div { class: "footer-plugin-card-header",
+                label { class: "footer-settings-check",
+                    input { r#type: "checkbox", checked: preference.enabled, disabled: !ready,
+                        aria_label: "{plugin.title} 插件",
+                        onchange: move |event| preferences::change(context, false, |s| {
+                            if let Some(p) = s.plugins.iter_mut().find(|p| p.id == id) { p.enabled = event.checked(); }
+                        })
+                    }
+                    span { "启用 {plugin.title}" }
+                }
+                span { class: "footer-plugin-version", "内置 v{plugin.version}" }
+                div { class: "footer-plugin-order", aria_label: "{plugin.title} 排序",
+                    button { r#type: "button", disabled: !ready || index == 0, aria_label: "上移 {plugin.title}",
+                        onclick: move |_| preferences::change(context, false, |s| {
+                            if let Some(i) = s.plugins.iter().position(|p| p.id == id) { if i > 0 { s.plugins.swap(i, i - 1); } }
+                        }), "上移"
+                    }
+                    button { r#type: "button", disabled: !ready || index + 1 == count, aria_label: "下移 {plugin.title}",
+                        onclick: move |_| preferences::change(context, false, |s| {
+                            if let Some(i) = s.plugins.iter().position(|p| p.id == id) { if i + 1 < s.plugins.len() { s.plugins.swap(i, i + 1); } }
+                        }), "下移"
+                    }
+                }
+            }
+            div { class: "footer-plugin-item-options", role: "group", aria_label: "{plugin.title} 显示项目",
+                for item in plugin.items {
+                    label { class: "footer-settings-check",
+                        input { r#type: "checkbox", checked: !preference.hidden_items.iter().any(|i| i == item.id), disabled: !ready,
+                            aria_label: item.label,
+                            onchange: move |event| preferences::change(context, false, |s| {
+                                if let Some(p) = s.plugins.iter_mut().find(|p| p.id == id) {
+                                    p.hidden_items.retain(|i| i != item.id);
+                                    if !event.checked() { p.hidden_items.push(item.id.into()); }
+                                    // Hidden IDs have declaration order, independent of click order.
+                                    p.hidden_items.sort_by_key(|id| plugin.items.iter().position(|i| i.id == id));
+                                }
+                            })
+                        }
+                        span { "{item.label}" }
+                    }
+                }
+            }
+        }
+    }
+}

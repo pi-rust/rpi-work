@@ -1,0 +1,5 @@
+.history-pager{min-width:0;max-width:100%;text-align:center;color:var(--muted);font-size:var(--font-assist);overflow-wrap:anywhere}
+.history-pager:has(button),.history-pager:has(p){padding:var(--space-8) 0 var(--space-12)}
+.history-pager p{margin:var(--space-6) 0}
+.history-pager .button{min-height:36px}
+@media(max-width:767px){.history-pager .button{min-height:44px}}

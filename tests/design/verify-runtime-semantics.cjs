@@ -3,7 +3,7 @@ const {chromium}=require('../support/browser.cjs');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH}),page=await browser.newPage({viewport:{width:1440,height:1000}}),results=[],errors=[];
  page.on('pageerror',e=>errors.push(e.message));const pass=t=>{results.push(t);console.log('PASS '+t);};
- await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:4182/prototype/');
+ await page.goto(process.env.PROTOTYPE_URL||'http://127.0.0.1:14182/prototype/');
  const cases=[['completed','completed'],['aborted','interrupted'],['interrupted','interrupted'],['failed','failed'],['suspended','suspended'],['compacted','completed'],['declined','declined'],['skipped','declined'],['future_value','settled_unknown']];
  for(const [outcome,expected] of cases){
   const result=await page.evaluate(outcome=>{const run={id:'fixture-run',session:'fixture-session',phase:'awaiting_settlement',blocks:[],lastSeq:0,applied:[]};reduceStream(run,{runId:run.id,seq:1,event:{type:'agent_settled',outcome,pendingResume:outcome==='aborted'}});return {phase:run.phase,raw:run.outcome,pendingResume:run.pendingResume,terminal:streamTerminal(run)};},outcome);

@@ -1,22 +1,86 @@
-# RPI Work transport architecture
+# RPI Work 架构与传输边界
 
-`work-client::WorkspaceClient` is the desktop UI's local/remote workspace
-facade. `Local` uses the published pure-Rust `rpi-extcore =0.1.5` service
-in-process; `Remote(WorkClient)` uses authenticated HTTP/SSE. The separate
-`AgentTransport` / `AgentClient` adapters support native RPC and explicit CLI
-HTTP/ACP use; they are not a desktop split-lane selector.
+`work-node::workspace::LocalWorkspace` is the authoritative workspace owner.
+`work-client::LocalWorkspace` is a local access adapter holding that same owner;
+`WorkspaceClient` selects local access or authenticated remote HTTP/SSE. The
+HTTP server receives the existing node owner rather than creating a second one.
 
 ```text
-Desktop UI → WorkspaceClient::Local → LocalWorkspace → rpi-extcore (in-process)
-                                      ├── local Rust projects/catalog/files/Git
-                                      └── Agent execution/control → rpi --mode rpc (stdio)
-Web / Android / explicit remote desktop → WorkspaceClient::Remote
-                                         → WorkClient → authenticated HTTP/SSE node
-CLI → AgentClient → RPI RPC (default), or explicit HTTP/SSE / ACP
+Desktop UI → WorkspaceClient::Local → local access adapter ────────────┐
+Hosted Web / Android / remote UI → WorkClient → work-server HTTP/SSE ─┤
+                                                                    ▼
+                                   work-node::workspace::LocalWorkspace
+                                   ├── projects/catalog/files/Git
+                                   ├── RPI → rpi-extcore → rpi stdio RPC
+                                   └── ACP → node-owned Agent processes
+CLI → WorkClient → existing owner's authenticated HTTP/SSE
+GUI / CLI serve → work-host → one local owner + optional HTTP entrance
+Explicit CLI rpc/acp diagnostics → AgentClient → separate native Agent
 ```
 
+## Crate boundaries
+
+- `work-core`: shared `api` DTOs, `NodeApi`, `SessionAccess`,
+  `SessionConfiguration`, event normalization and run projection. No UI,
+  networking or execution-host implementation.
+- `work-node`: workspace state, native RPC/ACP runtimes, backend bindings,
+  persistence, process ownership and data-directory locking.
+- `work-client`: local/remote access adapters, HTTP/SSE, snapshot recovery,
+  pagination and client projection. Its native RPC/ACP facades delegate to
+  `work-node::runtime`; they are not separate execution implementations.
+- `work-server`: authenticated HTTP/SSE and optional Web assets for an existing
+  node owner. Production dependencies do not include `work-client`.
+- `work-host`: GUI-independent owner startup, HTTP policy/configuration and
+  ordered shutdown shared by GUI and foreground headless entry points.
+- `work-update`: signed release discovery and platform update operations.
+- `apps/work-ui`: shared Dioxus desktop/Web/Android UI and platform entry gates.
+  `apps/work-cli` defaults to typed existing-node operations, with foreground
+  hosting and explicitly selected native diagnostics.
+
+`NodeApi` is an in-process typed application port, not a network service,
+permission grant or replacement for the owner. Its futures need not be `Send`.
+Raw commands, host lifecycle and transport-specific QR operations are outside
+that port. HTTP handlers currently dispatch to the supplied node workspace.
+
 This describes current source, not a newly shipped binary or an installed-app
-upgrade.
+upgrade. See [project structure](../guides/project-structure.md),
+[desktop HTTP](../guides/desktop-http.md),
+[node connection](../guides/node-connection.md) and
+[extension boundaries](extensions.md) for the corresponding interfaces.
+
+## Client entry and authentication
+
+- Default owning Desktop prepares its local owner through `work-host` and
+  accesses it in-process without an HTTP login. `work-host::http` attaches
+  `work-server` to that same owner; `app/local_http.rs` is only a UI adapter.
+  Explicit `--connect`/remote environment startup does not create a local owner. With no
+  explicit configuration it listens on `0.0.0.0:13031`; a missing sharing preference
+  defaults to enabled. Saved disabled or invalid/unreadable preferences remain
+  disabled. Explicit bind/proxy configuration is authoritative; no firewall rules
+  are changed. A workspace-global, one-shot startup offer issues an Android App
+  authorization QR only after credential-free health/node-identity verification.
+- Hosted Web is identified by `/.well-known/rpi-work-entry` when assets are
+  configured. Authentication precedes workspace mounting and catalog reads;
+  an existing valid Cookie may restore access. The initial owner is the page's
+  origin, not another node selected in device history. Other nodes remain
+  available after entering the workspace.
+- Independent Web receives an explicit 404 at that metadata path and retains
+  node selection and authentication. Discovery failures do not bypass the gate.
+- Android native entry requires a dedicated single-use authorization QR and
+  explicit target confirmation. A phone browser still uses the Web password
+  gate; responsive layout does not select an authentication scheme.
+
+The authorization ticket expires after 120 seconds, is redeemable once and is
+bound to the issuing node's sharing generation. Ordinary address-sharing QR
+codes do not authorize access. Host/Origin checks, request markers and rate
+limits remain enforced. Closing sharing revokes external access without
+stopping owner tasks. Native App authorization needs only the authenticated API,
+not browser assets. Its LAN address is resolved separately from the ordinary Web
+share address and added as an exact allowed Host. Web assets remain opt-in via
+`RPI_WORK_HTTP_ASSETS`; a listening API port alone is not a complete browser entry.
+The startup authorization component survives Settings/layout remounts and never
+renews a ticket on expiry, failure, dismissal or reconnect; explicit regeneration
+is required. This source/build behavior does not replace an already-running app.
 
 ## Protocol boundaries
 
@@ -28,18 +92,21 @@ messages, queue, model/tool configuration, and provider-auth commands; these
 are separate from HTTP workspace resources and are advertised only when the
 ready frame lists the corresponding command.
 
-Callers use `AgentDescriptor::supports` or `AgentClient::require` before
-presenting those operations. A transport returns `ClientError::Unsupported`
-when a command is outside its negotiated surface; it must not fabricate a
-successful response.
+Compatibility facade and CLI callers use `AgentDescriptor::supports` or
+`AgentClient::require`. Workspace UI operations instead use the bound session's
+`SessionAccess` / `SessionConfiguration` through typed application methods;
+node-global capabilities and native handle presence are not fallbacks.
+A transport returns `ClientError::Unsupported` when a command is outside its
+negotiated surface; it must not fabricate a successful response.
 
-Desktop startup uses `work-node::local::LocalRuntime` to resolve `rpi` and
-hold the existing data-directory lock. It then creates
-`WorkspaceClient::local_rpc`; it does not spawn or require `rpi-http`, open a
-listener, generate a node password, or authenticate over loopback. The retained
-`desktop::DesktopNode` compatibility implementation is not the default UI
-startup path. Local workspace resources are Rust service operations, not
-invented project/file/Git commands on the RPI RPC wire.
+`WorkspaceClient::local_rpc` wraps the node workspace after
+`work-node::local::LocalRuntime` resolves `rpi` and holds the data lock.
+`work-host::http` passes `workspace.node_owner()` to `HttpServer::start`.
+This opens the embedded listener when configuration permits, but never spawns
+or requires standalone `rpi-http`, and local UI access does not authenticate
+over loopback. The retained `desktop::DesktopNode` compatibility manager is
+not the default UI startup path. Local workspace resources are Rust service
+operations, not invented project/file/Git commands on the RPI RPC wire.
 
 ## Native RPI RPC
 
@@ -56,15 +123,16 @@ participates in protocol parsing.
 
 ## ACP
 
-`AcpClient` starts an ACP stdio executable and performs ACP v1
+The native `work-node::runtime::AcpClient` starts an ACP stdio executable and performs ACP v1
 `initialize`/`session/new` negotiation. It supports text prompts, cancellation,
 streaming `session/update` notifications, permission requests, session config
 options, and explicit JSON-RPC responses to agent-initiated requests. The
 client intentionally negotiates no ACP filesystem or terminal client capability
-because those request handlers are not implemented in this crate;
+because those request handlers are not implemented in the runtime;
 agent-initiated permission requests remain explicitly handled through the
-permission-response facade. ACP is a client adapter here; the sibling `rpi-acp`
-package remains an ACP server and is not imported as an implementation
+permission-response facade. `work-client::AcpClient` delegates to this runtime;
+the node workspace owns managed ACP bindings and processes. The sibling
+`rpi-acp` package remains an ACP server and is not imported as an implementation
 dependency.
 
 ### Permission response safety
@@ -112,16 +180,19 @@ sends only a negotiated ID. The thinking/thought_level alias maps back to the
 actual advertised ID; an unknown session or withdrawn option is Unsupported.
 The explicit facade/CLI setter remains usable without claiming a model catalog.
 The adapter's catalog controls remain unsupported for generic ACP rather than
-inventing choices; a configOptions-driven ACP UI is not part of the current
-desktop workspace.
+inventing choices. Workspace UI reads the bound session's
+`SessionConfiguration` and renders its negotiated `configOptions`; it does not
+infer a model catalog from the node-global descriptor.
 
 `AgentClient::supports_command` adds operation-level gating to facade reads and
 controls. RPC checks the actual ready command list; a broad `history=true` does
 not enable an omitted `compact` or `resume_pending`. ACP allows only the
 implemented prompt/cancel command mappings; config uses its dedicated setter.
-The adapters include command checks for discovery and context controls. These
-checks describe the adapter surface, not a generic ACP desktop settings UI;
-the default desktop workspace uses `LocalWorkspace`, not an ACP session lane.
+The adapters include command checks for discovery and context controls. The
+workspace also exposes `SessionAccess` for the effective operations of the
+bound runtime and typed dialog replies; unknown access must not fall back to
+node-global capabilities or a direct raw-RPC lane. Neither capability contract
+is an authorization grant.
 
 `AgentSession::connect` provides an `AgentSessionConnection` that reduces
 normalized native events into the same `SessionEvent`/`RunProjection` shape as
@@ -147,28 +218,158 @@ entries or report an empty summary as a successful full-branch read. The live
 smoke distinguishes these contracts explicitly and, for the preview-only
 runtime, verifies a caller-specified `customTypes` query separately.
 
+## Bounded transcript windows
+
+`MESSAGE_PAGE_SIZE` is 48. Session connection and reconnect request that limit
+only when the bound session's `SessionAccess::snapshot_limit` is true; otherwise
+they read a full snapshot, including ACP sessions that reject limited snapshots.
+The connection retains that policy for run-boundary recovery without advancing
+the SSE replay cursor to a later snapshot's `lastSeq`. The existing unrestricted
+`snapshot()` API remains available; old servers may ignore the requested limit.
+The published extcore snapshot options accept `limit`, not `beforeId`.
+
+Older messages use the separate typed `WorkspaceClient::message_page()` command
+path: `get_messages { limit, beforeId }`. This is transcript history, **not** the
+`get_history` run-record API. The response must echo `beforeId`, contain unique
+real `entryId` values with matching `firstId`/`lastId`, and advance the boundary.
+Missing/inconsistent metadata or an ignored cursor returns
+`ClientError::Unsupported`, rather than looping over the latest page. A local
+ACP binding rejects this operation before sending any native request. The UI
+also requires an advertised `get_messages` command and usable snapshot cursor;
+`AgentConnection::Native` supplies no page metadata and remains disabled.
+
+The UI retains loaded prefixes across live updates, with tail values winning
+ID conflicts. Settlement snapshots are bounded suffixes: retained pre-boundary
+messages stay before the suffix; omitted recent live messages stay after it.
+Node/session scope, connection generation and window revision isolate late page
+responses, including a reconnect with the same cursor. A reconnect replaces the
+window with the new snapshot rather than persisting old pages across branches.
+This is not native history replay, durable resume, or list virtualization.
+
+## Native message identity and compact deltas
+
+RPI RPC lifecycle events carry the durable session entry identity in the **event
+envelope** `messageId`, not necessarily inside `message`. Default compact delta
+frames omit `message` entirely, carrying only `eventType`, `contentIndex`, `delta`
+and the nested assistant event. Treating starts/ends as anonymous while decoding
+their deltas under the envelope ID creates two visible replies from one message.
+Older nested-ID-only fixtures did not exercise this real wire contract.
+
+`MessageIdentity` now resolves nonblank envelope `messageId`/`entryId` before
+legacy nested identity and supplies an internal assistant identity shell for
+compact updates. It does not synthesize content or use an SSE event/command `id`
+as message identity. A first real ID may promote the current anonymous segment;
+changed authoritative IDs still delimit different messages. HTTP and direct
+native delivery share the same retained-body/projection owner-transfer routine,
+with stale sequences rejected before identity mutation.
+
+Snapshot coverage uses that normalized identity for the entire compact segment,
+while comparing the raw complete body for legacy metadata fallback. It never
+uses equal public text as a global deduplication key: two real IDs with identical
+text/timestamps remain separate. Reopening/reconnecting must not revive the
+anonymous history row or a detached compact delta projection.
+
+`duplicate_regression_tests.rs`, native synthetic-stream tests and
+`verify-compact-message-identity.cjs` cover the actual envelope format. The browser
+fixture reproduces two visible replies on the pre-fix bundle and verifies one
+owner during streaming, end, settlement, reopen and reconnect after the fix.
+This does not replace live-backend/native desktop/Android verification or prove
+that an already-running old client has been updated.
+
+Native `turn_end` also embeds the final assistant body, without publishing a
+new message entry. Only `message_start` / `message_update` / `message_end` may
+merge transcript bodies. Boundary summaries still apply their normal control
+semantics, but must not mint a `live-assistant-*` row or overwrite an existing
+message. Otherwise a full turn creates a second transient reply that survives
+settlement and disappears only on reopen. `native-short-reply.json` captures a
+complete installed-runtime turn from an isolated loopback canned provider,
+including `turn_end`; client and `verify-turn-summary-identity.cjs` regressions
+cover this boundary. This is not text-based deduplication or Android-device
+acceptance.
+
+## Message image content
+
+RPI image blocks have the canonical shape
+`{ type: "image", mimeType: "image/png", data: "<base64>" }`.
+The UI renders supported inline raster blocks in user, assistant and tool-result
+messages; it does not infer file URLs, fetch remote images, upload attachments,
+or change prompt capabilities. Direct native connections now use the same live
+message merge as HTTP connections, rather than appending duplicate partial rows.
+Content-less public text deltas patch an existing image-bearing row so history
+projection deduplication cannot hide a later caption. Stale native sequences are
+rejected before mutating message state.
+
+Assistant normalization emits only public text, not encoded images or private
+reasoning. Image-bearing tool results retain a structured internal string until
+the timeline separates raster blocks from display/copy text. Trace sanitization
+replaces image objects with a placeholder, also handling bounded JSON-string
+wrappers; oversized structured strings are omitted from trace display. These
+internal payloads are not workspace uploads or durable media storage.
+
+PNG/JPEG/GIF/WebP data is checked before creating a Blob image: strict base64,
+10 MiB decoded limit, matching signature, checked dimensions (16,384 per side,
+40 million pixels) and animation frame budgets. A supported browser bitmap
+decoder provides an additional decode check; Blob URLs and decoded bitmaps are
+released on update/disposal and stale callbacks cannot overwrite a newer entry.
+The viewer uses inert images inside a native dialog, never user SVG/HTML.
+
+ACP image chunks remain outside the current adapter contract. Native synthetic
+message tests and HTTP/SSE browser fixtures validate only their stated layers;
+installed-runtime handshakes do not prove native image rendering, desktop E2E,
+Android E2E or live HTTP backend acceptance.
+
+## Local attachment send guard
+
+The inspected RPI RPC `Command::Prompt` exposes a string `message` (with string
+aliases), not image input blocks. The current HTTP/extcore and local workspace
+prompt paths retain that text-only command shape. Adding unadvertised `images`
+fields is not an implementation: unknown fields can be silently ignored. Real
+image sending remains blocked pending an explicit backend contract and capability,
+acceptance semantics, storage/access control and history restoration.
+
+Local composer files therefore require one-attempt text-only confirmation before
+main prompt/queue dispatch. Its metadata-only token contains scope, session
+generation, draft revision, file IDs/names and queue delivery intent, never file
+contents. Button, Enter and pending-Enter replay share the same gate; reads still
+in flight block sending even before any file chip exists. Confirmation is consumed
+synchronously once and revalidated before dispatch. Draft/file/scope/generation,
+connection, page/tab or prompt/queue/delivery changes invalidate it without sending.
+There is no remembered opt-out; failed requests require fresh consent. Cancellation
+and failures retain the draft and local files; an accepted text request does not
+remove files. Ordinary text-only sends and independent BTW/queue editors keep their
+existing behavior. No new prompt fields, upload endpoint or ACP image capability
+is introduced. Explicit text quotation remains user-authored draft content.
+
+Rust metadata/consent tests and `verify-attachment-send-guard.cjs` cover this UI
+safety boundary using an isolated HTTP/SSE fixture; they do not demonstrate real
+attachment transfer or native desktop/Android/live-backend E2E.
+
 ## Desktop native workspace
 
-The default desktop workspace is fully native, not RPC sessions plus HTTP
-workspace resources. `LocalWorkspace` owns the app catalog and per-project
-`rpi-extcore::service::Service` instances. Projects, folders, files and Git are
-local Rust operations; all Agent execution/control uses `rpi --mode rpc`
-stdio children owned by the core service. Workspace session lists, snapshots
-and subscriptions are supplied by that service, not by inventing RPC wire
-methods or assuming the lower-level `RpiRpcClient` supports cross-process
-`session/load` or `session/resume`.
+`work-node::workspace::LocalWorkspace` owns the app catalog, per-project
+`rpi-extcore::service::Service` instances and ACP backend manager. Projects,
+folders, files and Git are local Rust operations. RPI execution/control uses
+`rpi --mode rpc` stdio children owned through extcore; selected ACP bindings use
+node-owned ACP runtimes. Workspace session lists, snapshots and subscriptions
+come from this owner, not invented RPC methods or a client-owned parallel host.
+The lower-level RPC adapter does not imply cross-process `session/load` or
+`session/resume` support.
 
 Native folder selection uses the OS picker and accepts arbitrary paths the
 current user can access. Creating a project uses the exact selected/entered
 absolute path. Remote folder browsing and creation retain the node's root and
 API restrictions; they do not gain access to the desktop filesystem.
 
-`rpi-work://local` is a stable UI identity, not a network endpoint. Web,
-Android, and explicit remote connections require a separately reachable,
-authenticated HTTP/SSE node. Sharing this computer by address/QR requires
-starting such a node separately; desktop startup opens no port. There is no
-implicit HTTP fallback or desktop `RPI_WORK_TRANSPORT=http` / `acp` selector.
-Those environment choices remain explicit CLI alternatives.
+`rpi-work://local` is a device-local UI key, not a network endpoint or a
+cross-device node ID. Web,
+Android and explicit remote connections use a reachable authenticated HTTP/SSE
+entry, which may be the desktop's embedded `work-server` sharing that same
+owner. A separately started standalone server is another owner; it does not
+synchronize by sharing a directory or copying session files. HTTP routes expose
+backend discovery, bound-session access/configuration and owner-side session
+creation; a remote client never launches an ACP process on its own device.
+There is no implicit HTTP fallback or desktop `RPI_WORK_TRANSPORT=http` / `acp`
+selector; those environment choices remain explicit CLI alternatives.
 
 ### Local data and migration
 
@@ -178,7 +379,7 @@ catalog is `<data>/rpc/projects.json`; each project registry is
 `<data>/rpc/projects/<id>/sessions.json`. The lazily created model/auth control
 context is separate from user projects under `<data>/rpc/control`.
 
-`local_workspace/migration.rs` imports accessible project aliases from
+`work-node/src/workspace/migration.rs` imports accessible project aliases from
 `<data>/projects.json` and `<data>/node/projects.json`, deduplicated by canonical
 project identity. It imports missing entries and preferences from
 `<data>/sessions.json` and `<data>/node/sessions.json` only when `projectId`
@@ -187,36 +388,73 @@ unavailable paths and all legacy source files are preserved. No transcript is
 rewritten, and this is not global native-history discovery or a scan of all
 user session roots.
 
-The UI retains the runtime guard through shutdown: core-owned children are
-stopped before releasing the data lock. A shutdown timeout retains the lock
-until cleanup or process exit rather than releasing it while children run.
+ACP bindings and checkpointed events are stored in
+`<data>/rpc/agent-sessions.json`; this is node-owned history, not a client cache.
+`<data>/node-id` stores node identity and `<data>/sharing.json` stores the
+owner's sharing preference. Client drafts, appearance and connection history
+remain device preferences rather than a second workspace truth source.
 
-### Validation scope
+The UI retains the runtime guard through shutdown: first drain the HTTP
+listener and accepted operations, then stop workspace-owned children, release
+the HTTP executor and finally the data lock. A shutdown timeout retains the
+lock until cleanup or process exit rather than releasing it while children run.
+Closing sharing or navigating away from a session does not stop owner tasks.
 
-Reported checks for this source change: `work-client`, `work-node`, and
-`work-ui` tests; desktop and WASM checks; and the explicitly run ignored
-`local_workspace_smoke` against rpi 0.11.0 without model calls. Native GUI
-folder-picker interaction and real model chat have not been manually tested.
-No binary release or installed-app upgrade has occurred.
+### Validation boundary
 
-## Native CLI lane
+Source contracts and isolated fixtures do not prove a released binary,
+installed-app upgrade, physical Android device or every Agent/provider works.
+Use [testing guidance](../guides/testing-artifacts.md) and
+[ACP validation scope](../guides/acp-backends.md#真实连接结果与验收范围) for the
+specific checks. Ordinary fixture tests do not require real model calls.
 
-`work-cli` uses native RPI RPC by default and exposes HTTP/SSE and ACP as
-explicit alternatives:
+## Shared host and CLI lanes
+
+`work-host` owns GUI-independent startup, HTTP configuration and ordered cleanup.
+`work-cli serve` and `work-ui --headless` call the same foreground host, lock and
+workspace factory. The CLI binary has no Dioxus/WebView dependency. Headless
+requires an explicit nonempty HTTP password; HTTP startup failure is fatal.
+Ctrl+C, Unix SIGTERM, or explicitly enabled stdin EOF supervise shutdown;
+there is no remote shutdown API. System-service installation is not implemented.
+
+`work-ui --connect ORIGIN` (or explicit remote `RPI_WORK_NODE_URL`) starts only a
+client. It never acquires the local data lock or silently creates an owner after
+connection failure. Default owning GUI mode still uses its in-process facade.
+
+`work-cli` now defaults to the existing node's authenticated HTTP/SSE entry at
+`http://127.0.0.1:13031/`. `--url`/`--node` override `RPI_WORK_URL`; the client's
+`RPI_WORK_PASSWORD` or bounded `--password-stdin` authenticates each invocation.
+No plaintext credential store or cross-command login persistence is introduced.
+All new operations use typed client methods; acceptance is not settlement and
+write timeouts have unknown outcomes, without automatic replay. Watch/client
+exit detaches rather than stopping owner tasks. See the [headless guide](../guides/headless-node.md).
 
 ```text
-work-cli agent-info
-work-cli state
-work-cli messages [LIMIT] [BEFORE_ID]
-work-cli history [LIMIT] [AFTER_SEQ] [BEFORE_SEQ]
-work-cli queue [--all]
-work-cli models
-work-cli thinking-levels
-work-cli tools
-work-cli commands
-work-cli auth-status
-RPI_WORK_TRANSPORT=http work-cli health
-RPI_WORK_TRANSPORT=http work-cli projects
+work-cli --help
+work-cli auth
+work-cli health
+work-cli projects
+work-cli sessions
+work-cli session-create PROJECT_ID
+work-cli prompt SESSION_ID "hello"
+work-cli watch SESSION_ID
+work-cli abort SESSION_ID
+```
+
+Direct RPI RPC/ACP diagnostics remain explicitly opt-in; these start their own
+Agent and are not the unified node-client lane:
+
+```text
+RPI_WORK_TRANSPORT=rpc work-cli agent-info
+RPI_WORK_TRANSPORT=rpc work-cli state
+RPI_WORK_TRANSPORT=rpc work-cli messages [LIMIT] [BEFORE_ID]
+RPI_WORK_TRANSPORT=rpc work-cli history [LIMIT] [AFTER_SEQ] [BEFORE_SEQ]
+RPI_WORK_TRANSPORT=rpc work-cli queue [--all]
+RPI_WORK_TRANSPORT=rpc work-cli models
+RPI_WORK_TRANSPORT=rpc work-cli thinking-levels
+RPI_WORK_TRANSPORT=rpc work-cli tools
+RPI_WORK_TRANSPORT=rpc work-cli commands
+RPI_WORK_TRANSPORT=rpc work-cli auth-status
 RPI_WORK_TRANSPORT=acp work-cli load-session SESSION_ID
 RPI_WORK_TRANSPORT=acp work-cli resume-session SESSION_ID
 RPI_WORK_TRANSPORT=rpc work-cli set-config thinking '"high"'
@@ -283,12 +521,14 @@ persistence.
 
 ## UI compatibility
 
-The UI stores the workspace descriptor, displays protocol/channel status, and
-gates operations by the exposed capabilities. `WorkspaceClient` routes the
-whole local workspace to `LocalWorkspace`, and remote workspaces to
-`WorkClient`. Native workspace capabilities include local Rust resources;
+The UI displays workspace protocol/channel status, while session execution and
+configuration are gated by exact `SessionAccess` / `SessionConfiguration`
+observations. `WorkspaceClient` routes local access to the same node owner via
+`LocalWorkspace`, and remote access to `WorkClient`, without a UI-native
+execution branch. Workspace capabilities include local Rust resources;
 they must not be read as claims that the child RPC protocol advertises
-project/file/Git commands. Unsupported operations return explicit errors.
+project/file/Git commands. Unknown access is fail-closed and unsupported
+operations return explicit errors.
 
 `WorkClient` remains the stable HTTP API. `AgentClient::from_transport`,
 `spawn_rpc`, and `spawn_acp` remain adapter entry points for native consumers

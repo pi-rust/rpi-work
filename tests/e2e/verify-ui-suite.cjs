@@ -28,7 +28,7 @@ const checks=[
 ];
 async function run([name,script,formal]){
  const start=Date.now(),dir=path.join(root,'target/parity-suite');fs.mkdirSync(dir,{recursive:true});const logFile=path.join(dir,`${name}.log`);
- const result=await new Promise((resolve,reject)=>{let output='';const child=spawn(process.execPath,[path.resolve(root,script)],{cwd:root,windowsHide:true,env:{...process.env,...(formal?{WORK_UI_URL:'http://127.0.0.1:4180/'}:{})},stdio:['ignore','pipe','pipe']});child.stdout.on('data',data=>output+=data);child.stderr.on('data',data=>output+=data);child.on('error',reject);child.on('exit',code=>{fs.writeFileSync(logFile,output);resolve({name,script,exitCode:code,passed:code===0,checks:(output.match(/^PASS /gm)||[]).length,elapsedMs:Date.now()-start,logFile})})});
+ const result=await new Promise((resolve,reject)=>{let output='';const child=spawn(process.execPath,[path.resolve(root,script)],{cwd:root,windowsHide:true,env:{...process.env,...(formal?{WORK_UI_URL:'http://127.0.0.1:14180/'}:{})},stdio:['ignore','pipe','pipe']});child.stdout.on('data',data=>output+=data);child.stderr.on('data',data=>output+=data);child.on('error',reject);child.on('exit',code=>{fs.writeFileSync(logFile,output);resolve({name,script,exitCode:code,passed:code===0,checks:(output.match(/^PASS /gm)||[]).length,elapsedMs:Date.now()-start,logFile})})});
  console.log(`${result.passed?'PASS':'FAIL'} ${name}: ${result.checks} checks`);if(!result.passed)console.error(fs.readFileSync(logFile,'utf8').slice(-2200));return result;
 }
 if(listing){for(const [,script]of checks){if(!fs.existsSync(script))throw new Error(`Missing suite entry: ${script}`)}console.log(checks.map(([name,script])=>`${name}: ${script}`).join('\n'));}else (async()=>{

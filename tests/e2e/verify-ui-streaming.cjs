@@ -12,7 +12,7 @@ async function until(fn,timeout=6000){const end=Date.now()+timeout;while(Date.no
   const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(5000);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   try{
-    await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');
+    await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
     await page.getByRole('button',{name:'打开设置',exact:true}).click();
     await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
     await page.getByRole('button',{name:'连接其他节点',exact:true}).click();

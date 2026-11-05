@@ -1,3 +1,4 @@
+pub(crate) mod footer_plugins;
 #[cfg(test)]
 mod metrics_tests;
 pub(crate) mod runtime_stats;

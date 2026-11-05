@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
-const url = process.env.WORK_UI_URL || 'http://127.0.0.1:4182/app/';
+const url = process.env.WORK_UI_URL || 'http://127.0.0.1:14182/app/';
 const sample = JSON.parse(fs.readFileSync('examples/themes/codex-reading.json', 'utf8'));
 const custom = structuredClone(sample);
 custom.theme.id = 'visual-proof'; custom.theme.name = '完整视觉验证';

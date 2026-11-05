@@ -7,7 +7,7 @@ async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;awa
  const page=await browser.newPage({viewport:{width:1200,height:950}});page.setDefaultTimeout(6500);
  const results=[],errors=[];page.on('pageerror',e=>errors.push(e.message));const pass=name=>{results.push(name);console.log('PASS',name)};
  try{
-  await page.goto('http://127.0.0.1:4182/modules/extras/');await page.getByRole('button',{name:'extras',exact:true}).click();
+  await page.goto('http://127.0.0.1:14182/modules/extras/');await page.getByRole('button',{name:'extras',exact:true}).click();
   await page.getByLabel('Fixture node URL').fill(fixture.url);await page.getByRole('button',{name:'Connect fixture',exact:true}).click();
   const input=page.getByLabel('选择本地附件，可多选');
   await input.setInputFiles([{name:'review.md',mimeType:'text/markdown',buffer:Buffer.from('# 本地附件\n只由用户显式引用。')},{name:'image.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1cAAAAASUVORK5CYII=','base64')},{name:'untrusted.html',mimeType:'text/html',buffer:Buffer.from('<script>window.__attachmentExecuted=true</script>')}]);

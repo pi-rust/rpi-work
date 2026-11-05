@@ -6,7 +6,7 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
 const results=[];
 async function check(name,fn){try{await fn();results.push({name,passed:true});console.log('PASS',name)}catch(e){results.push({name,passed:false,error:e.message});console.log('FAIL',name,e.message.split('\n')[0])}}
 async function connect(page,fixture,login=false){
-  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:4180/');
+  await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
   await page.getByRole('button',{name:'打开设置',exact:true}).click();
   await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
   await page.getByLabel('节点地址',{exact:true}).fill(fixture.url);

@@ -53,7 +53,8 @@ This archive does not contain an Android APK or an iOS IPA.
         if ($Target -like '*apple-darwin') {
             $contents = Join-Path $packageRoot 'RPI Work.app/Contents'
             $macOs = Join-Path $contents 'MacOS'
-            New-Item -ItemType Directory -Force -Path $macOs | Out-Null
+            New-Item -ItemType Directory -Force -Path $macOs, (Join-Path $contents 'Resources') | Out-Null
+            Copy-Item -LiteralPath (Join-Path $repoRoot 'assets/branding/rpi.icns') -Destination (Join-Path $contents 'Resources/rpi.icns')
             Copy-Item -LiteralPath $ui -Destination (Join-Path $macOs 'work-ui')
             $bundleVersion = ($version -split '-')[0]
             $plist = @"
@@ -64,6 +65,7 @@ This archive does not contain an Android APK or an iOS IPA.
 <key>CFBundleDisplayName</key><string>RPI Work</string>
 <key>CFBundleIdentifier</key><string>com.pi-rust.rpi-work</string>
 <key>CFBundleExecutable</key><string>work-ui</string>
+<key>CFBundleIconFile</key><string>rpi.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$bundleVersion</string>
 <key>CFBundleVersion</key><string>$bundleVersion</string>

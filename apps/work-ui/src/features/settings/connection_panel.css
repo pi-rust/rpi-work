@@ -1,0 +1,41 @@
+/* Shared by native startup and Web Settings; no dependency on devices.css. */
+.connection-panel-shell{width:100%;min-width:0;max-width:660px;margin-inline:auto;color:var(--text);overflow-wrap:anywhere}
+.connection-panel-shell,.connection-panel-shell *{box-sizing:border-box}
+.connection-panel-shell>.overline{color:var(--muted);font-size:11px;letter-spacing:.1em;line-height:1.6;margin-bottom:12px}
+.connection-panel-shell .connection-panel-heading{margin-bottom:24px}
+.connection-panel-shell .connection-panel-heading h1{font-size:26px;line-height:1.3;margin:0 0 10px}
+.connection-panel-heading p{color:var(--muted);font-size:14px;line-height:1.8;margin:0}
+.connection-panel-shell .connection-panel{width:100%;max-width:100%;min-width:0;margin:0;padding:22px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card)}
+.connection-panel .mobile-connect-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.connection-panel .mobile-connect-tabs>button{flex:1 1 160px;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--text)}
+.connection-panel .mobile-connect-tabs>button[aria-pressed=true]{border-color:var(--accent-line);background:var(--accent-bg);color:var(--accent)}
+.connection-panel button,.connection-panel .button{min-height:44px;max-width:100%;white-space:normal;font-size:14px;cursor:pointer}
+.connection-panel .button{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--text);text-decoration:none}
+.connection-panel .button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.connection-panel button:disabled,.connection-panel input:disabled{cursor:not-allowed;opacity:.6}
+.connection-panel :is(button,input):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.connection-panel .icon{width:18px;height:18px;flex:none}
+.connection-panel .mobile-manual-form{display:grid;gap:16px;min-width:0;margin:0;padding:0;border:0;background:transparent}
+.connection-panel .form-field{display:grid;gap:8px;min-width:0;margin:0}
+.connection-panel label{font-size:14px;color:var(--text)}
+.connection-panel input:not([type=file]){width:100%;min-width:0;max-width:100%;min-height:44px;padding:10px 12px;font-size:16px;line-height:1.5;color:var(--text);background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--radius-sm)}
+.connection-panel .mobile-manual-form>.button{width:100%}
+.connection-panel :is(.connection-help,.meta,#scanner-status){font-size:13px;line-height:1.8;color:var(--muted);margin:0;overflow-wrap:anywhere}
+.connection-panel .connection-form-error{color:var(--danger);font-size:14px;line-height:1.8;margin:0;overflow-wrap:anywhere}
+.connection-panel .pair-scanner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:220px;padding:16px;border:1px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--panel);overflow:hidden}
+.connection-panel #scanner-placeholder{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.connection-panel #scanner-placeholder .icon{width:34px;height:34px;color:var(--accent)}
+.connection-panel #scanner-placeholder strong{font-size:16px}
+.connection-panel #scanner-placeholder span{font-size:13px;line-height:1.8;color:var(--muted)}
+.connection-panel video{width:100%;max-width:100%;max-height:300px;object-fit:contain}
+.connection-panel video[hidden]{display:none}
+.connection-panel .connection-server-actions,.connection-panel .phone-current-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.connection-panel .connection-server-actions>.button{flex:1 1 140px;min-height:44px}
+/* Keep the real file input keyboard-accessible rather than display:none. */
+.connection-panel .connection-album-input{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.connection-panel .connection-server-actions:has(.connection-album-input:focus-visible) .album-scan{outline:2px solid var(--accent);outline-offset:3px}
+.connection-panel .scanned-computer,.connection-panel .phone-current-node{display:grid;gap:12px;min-width:0;margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel)}
+.connection-panel .scanned-computer{border-color:var(--accent-line);background:var(--accent-bg)}
+.connection-panel code{display:block;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;font:14px/1.7 var(--mono);color:var(--muted)}
+.connection-panel .scanned-computer strong{font-size:16px}
+@media(max-width:400px){.connection-panel-shell .connection-panel{padding:16px}.connection-panel-shell .connection-panel-heading h1{font-size:24px}}

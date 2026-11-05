@@ -145,30 +145,37 @@ pub async fn draft_persist_delay() {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn sync_drafts_for_unload(drafts: &Drafts) {
-    let Ok(payload) = serde_json::to_string(drafts) else {
+pub fn initialize_draft_flush(drafts: &Drafts) {
+    let Ok(initial) = serde_json::to_string(drafts) else {
         return;
     };
-    let Ok(literal) = serde_json::to_string(&payload) else {
-        return;
-    };
-    let _ = document::eval(&format!(
-        "try{{window.__rpiLatestDrafts={literal};const save=()=>{{try{{if(window.__rpiLatestDrafts!==undefined) localStorage.setItem('{DRAFT_STORAGE_KEY}',window.__rpiLatestDrafts)}}catch(_){{}}}};if(!window.__rpiDraftFlushInstalled){{window.addEventListener('pagehide',save);window.addEventListener('beforeunload',save);window.__rpiDraftFlushInstalled=true}};save()}}catch(_){{}}"
-    ));
+    let script = include_str!("draft_flush.js");
+    let _ = document::eval(&format!("const initial={initial};{script}"));
 }
 
-/// Update the in-memory draft and synchronously stage the latest web snapshot
-/// for pagehide/beforeunload. The debounced durable write remains responsible
-/// for normal operation, while the unload path closes the short-loss window.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn initialize_draft_flush(_: &Drafts) {}
+
+#[cfg(target_arch = "wasm32")]
+fn stage_draft_for_unload(scope: &str, draft: &Draft) {
+    let Ok(scope) = serde_json::to_string(scope) else {
+        return;
+    };
+    let Ok(draft) = serde_json::to_string(draft) else {
+        return;
+    };
+    let _ = document::eval(&format!("window.__rpiDraftFlush?.update({scope},{draft});"));
+}
+
+/// Revisioned memory is updated immediately. Web stages only the edited scope
+/// for pagehide/visibility flushing; normal durable writes remain debounced.
 pub fn update_draft(mut drafts: Signal<Drafts>, scope: &str, text: String) {
     let mut store = drafts.write();
     let draft = store.entry(scope.to_owned()).or_default();
     draft.text = text;
     draft.revision += 1;
     #[cfg(target_arch = "wasm32")]
-    let snapshot = store.clone();
-    #[cfg(target_arch = "wasm32")]
-    sync_drafts_for_unload(&snapshot);
+    stage_draft_for_unload(scope, draft);
 }
 
 pub fn draft_for(drafts: &Drafts, scope: &str) -> Draft {

@@ -9,3 +9,40 @@
 .connection-page-heading{margin-top:0}.connection-page-heading h1{font-size:calc(24px * var(--type-scale, 1))}.connection-clients-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:28px;padding-bottom:12px;border-bottom:1px solid var(--line)}.connection-clients-heading h2{font-size:calc(14px * var(--type-scale, 1));font-weight:550}.connection-clients-heading small{margin-left:6px;color:var(--muted);font:calc(10px * var(--type-scale, 1)) var(--mono)}.connection-clients-heading>span{font-size:calc(10px * var(--type-scale, 1));color:var(--muted)}.connection-empty{padding:25px 15px;border:1px dashed var(--line-strong);border-radius:var(--radius-md);color:var(--muted);font-size:calc(11px * var(--type-scale, 1));text-align:center}.remote-node-form{display:flex;align-items:end;gap:10px;padding-top:12px;border-top:1px solid var(--line)}.remote-node-form .form-field{flex:1;min-width:0}.remote-node-form .button{min-height:36px}@media(max-width:700px){.connection-page-heading{align-items:flex-start}.connection-page-heading h1{font-size:calc(20px * var(--type-scale, 1))}.connection-page-heading>.button{width:100%}.connection-clients-heading{align-items:flex-start;flex-direction:column}.remote-node-form{align-items:stretch;flex-direction:column}.remote-node-form .button{width:100%}}
 .node-history{margin-top:24px}.node-history-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);min-width:0}.node-history-item code,.phone-current-node code{overflow-wrap:anywhere;min-width:0;font:calc(11px * var(--type-scale, 1)) var(--mono);color:var(--muted)}.node-history-item>.button{flex:none}.phone-current-node{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:16px;margin-top:20px}.phone-current-node strong{font-size:calc(12px * var(--type-scale, 1))}.phone-current-node .button{justify-self:start}.devices-page .server-details strong{overflow-wrap:anywhere}.node-history .connection-clients-heading{margin-top:0}@media(max-width:700px){.node-history .connection-clients-heading{align-items:flex-start}.phone-current-node .button{min-height:44px}.node-history-item{flex-wrap:wrap}}
 .devices-page .mobile-manual-toggle{display:flex;align-items:center;justify-content:flex-start;gap:6px;width:100%;min-height:44px;padding:8px 0;color:var(--muted);font-size:calc(11px * var(--type-scale, 1));text-align:left}.mobile-manual-toggle>.icon{width:14px;height:14px}.mobile-manual-toggle[aria-expanded=true]{color:var(--accent)}.devices-page .mobile-manual-form{display:grid;gap:12px;min-width:0;padding:16px;margin:4px 0 16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel)}.mobile-manual-form .form-field{margin:0;min-width:0}.mobile-manual-form input{width:100%;min-height:44px}.mobile-manual-form>.button{min-height:44px;width:100%}.mobile-manual-form .connection-help{margin:0;overflow-wrap:anywhere}
+
+/* Consent is separate from which node this client is viewing. */
+.desktop-sharing-control{margin-top:18px;padding-top:18px;border-top:1px solid var(--line);min-width:0}
+.desktop-sharing-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.desktop-sharing-heading>div{min-width:0;flex:1 1 180px}
+.desktop-sharing-heading strong{font-size:calc(12px * var(--type-scale,1));font-weight:550}
+.desktop-sharing-heading p{font-size:calc(10px * var(--type-scale,1));line-height:1.7;color:var(--muted);margin-top:5px}
+.sharing-switch{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--text);cursor:pointer;font-size:calc(11px * var(--type-scale,1));white-space:nowrap}
+.sharing-switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sharing-switch:disabled{opacity:.55;cursor:not-allowed}
+.sharing-switch-track{display:inline-flex;align-items:center;width:30px;height:18px;padding:2px;box-sizing:border-box;border-radius:999px;background:var(--line-strong)}
+.sharing-switch-track>span{width:14px;height:14px;border-radius:50%;background:var(--card)}
+.sharing-switch[data-enabled="true"] .sharing-switch-track{background:var(--accent)}
+.sharing-switch[data-enabled="true"] .sharing-switch-track>span{transform:translateX(12px)}
+.desktop-sharing-control .connection-help{margin-top:8px}
+.desktop-sharing-control details{margin-top:12px;min-width:0}
+.desktop-sharing-control summary{cursor:pointer;min-height:32px;font-size:calc(11px * var(--type-scale,1))}
+.desktop-sharing-control details input{width:100%;min-width:0;box-sizing:border-box;margin:8px 0}
+
+.phone-current-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.phone-current-actions>.button{min-height:44px;max-width:100%}
+.connection-share-source{display:grid;gap:6px;min-width:0;margin:12px 0 16px}
+.connection-share-source small{color:var(--muted);font-size:calc(10px * var(--type-scale,1))}
+.connection-share-source code{font:calc(11px * var(--type-scale,1))/1.8 var(--mono);overflow-wrap:anywhere}
+.device-address-dialog .modal-actions{flex-wrap:wrap}
+.device-address-dialog .connection-form-error:empty{display:none}
+@media(max-width:700px){dialog.app-dialog.device-address-dialog .modal-actions .button,dialog.app-dialog.device-address-dialog .modal-footer .button{min-height:max(44px,var(--hit-size,44px))}}
+@media(max-width:400px){.phone-current-actions>.button,.device-address-dialog .modal-actions>.button{flex:1 1 100%}}
+
+.device-auth-entry{margin:0 0 18px;min-width:0}
+.device-auth-entry>.button{min-height:44px}
+.device-auth-entry>.connection-help{margin-top:7px}
+.device-auth-warning{padding:14px;border:1px solid var(--accent-line);border-radius:var(--radius-md);background:var(--accent-bg);font-size:calc(12px * var(--type-scale,1));line-height:1.8;overflow-wrap:anywhere}
+.device-auth-countdown{text-align:center;font:calc(12px * var(--type-scale,1))/1.8 var(--mono)}
+.device-auth-dialog .modal-footer{gap:8px;flex-wrap:wrap}
+.device-auth-dialog .pairing-qr:empty{visibility:hidden}
+@media(max-width:700px){.device-auth-entry>.button{width:100%}.device-auth-dialog .modal-footer>.button{flex:1;min-height:44px}}

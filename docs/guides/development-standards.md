@@ -1,15 +1,47 @@
 # 开发规范
 
-本文约束后续新增与修改代码。当前已实现范围以源码及 [transport 架构](../architecture/transport.md)、[Agent / UI 扩展架构](../architecture/extensions.md) 为准；设计目标、类型预留、原型与测试 fixture 不构成能力已实现的证据。
+本文约束后续新增与修改代码。当前已实现范围以源码、[会话中心与节点所有权](../design/node-session-ownership.md)及 [transport 架构](../architecture/transport.md)、[Agent / UI 扩展架构](../architecture/extensions.md) 为准；设计目标、类型预留、原型与测试 fixture 不构成能力已实现的证据。分批迁移过程已移入[历史记录](../archive/node-session-migration.md)，不得把其中的阶段限制当作当前架构或剩余任务。
 
 ## 1. 代码职责与依赖
 
-- `work-core`：传输与 UI 无关的契约、状态与投影，不依赖 Dioxus 或具体网络客户端。
-- `work-client`：协议适配与能力边界。工作空间通过 `WorkspaceClient` 区分本机与远程；Agent 操作沿用对应 Agent client，不能因 UI 需要而发明 wire 方法。
-- `work-node`：原生本机运行时生命周期、数据目录与锁、宿主解析及退出清理，不把桌面本机悄悄替换成回环 HTTP 服务。
+- `work-core`：纯共享契约、状态、事件/权限转换与投影规则，以及 typed `NodeApi` 应用端口；不依赖 Dioxus、具体网络客户端、执行进程或节点 owner。
+- `work-client`：客户端连接、认证、传输适配和消息投影。`WorkspaceClient` 统一本地门面与远程访问；本地可以进程内调用，不强制绕行 HTTP。保留的 `AgentClient` / `prepare_agent_session` 是兼容入口，不得作为新 UI 业务入口。
+- `work-node`：节点应用服务及唯一 workspace owner，管理会话、绑定、数据目录/锁、runtime 生命周期和退出清理；协议与宿主适配位于 `runtime/`。不能再建第二份 owner，也不能把桌面本机悄悄替换成回环 HTTP 服务。
+- `work-server`：将认证、Origin/Host、共享/admission、HTTP/SSE 转接到同一 owner 的 typed 应用服务，不另持会话执行状态或创建 runtime。
+- `work-host`：无 GUI 依赖的单 owner 宿主，复用 node/client/server 的初始化、HTTP 配置、数据锁及协作退出；GUI 与 `work-cli serve` / `work-ui --headless` 共用，不另建会话库或执行系统。显式远程桌面是纯客户端，不能在连接失败后抢锁创建 owner。CLI 新业务走 typed 节点方法，直接 Agent 模式仅保留为显式兼容诊断。
 - `work-ui/features/*`：领域交互与宿主控制的渲染；跨功能协调放在 `app/`，可测试的状态判断优先抽为纯函数。
 - 正式应用不得依赖 `design/prototype/`、测试 fixture、邻接仓库或仅本机存在的开发资源。测试 harness 不进入正式安装包。
 - 不为尚无真实协议的功能创建通用 Plugin Trait、独立服务或动态加载器；先确认上游契约，再增加最小适配。
+
+## 1.1 会话中心分层：新增功能的硬约束
+
+依赖方向固定为 **客户端 → node 应用服务 → runtime / capability adapters**，共享契约放在纯 `work-core`。先从用户工作流定义 typed 应用方法，再复用已有协议；不得为了抽象对称扩展未实现的能力。
+
+- **客户端是平等的节点消费者**：Web 与 Desktop 平级，都可连接其他节点，但默认使用当前节点；Desktop 默认本机owner，Web 默认提供入口的节点，不能将默认入口永久锁定为唯一可用节点。移动客户端不托管本机节点，只连接其他设备的节点；手机浏览器仍按 Web 规则处理。三端使用相同会话语义，Desktop 额外托管 Node 不产生另一套执行协议。会话不要求先创建独立 Agent 定义。
+- **所有权唯一**：本地门面与 Server 必须共享现有 owner（同一个 Arc），不可分别持有 Manager、进程、权限表、journal 或会话锁；投影与客户端连接恢复仍归 client，不搬入 owner。
+- **UI 只走 typed 应用入口**：会话打开、状态/队列、配置、发送/恢复/停止、权限回答及统计均通过 `WorkspaceClient` / typed `NodeApi` 端口。禁止 UI 保存原生 Agent 句柄、按 Native/HTTP 分流业务、直接启动子进程，或以通用 JSON/raw command dispatcher 绕过应用服务。内部兼容 raw 通路不是新业务 API。
+- **能力来自绑定会话观察**：执行面用 `SessionAccess` 的精确命令、`snapshot_limit`、`dialog_reply`；配置面用 `SessionConfiguration` 的精确命令/协商选项。节点全局 capability、本地句柄存在、协议大类和 `for_agent(None)` 等乐观默认均不能代替观察。失败、未知、旧服务 404/401 时禁用相应动作并明确提供恢复路径，不能回退本机或推定“全部支持”。观察不是授权，也不是 installed/loaded/active/executable 的资源证明。
+- **端口和 executor 边界不扩大**：应用 future / 事件端口保持 object-safe 且不强制 `Send`；遵守现有 current-thread / LocalSet。底层 runtime 流自己的 `Send` 约束不意味着所有业务 future 必须多线程化。新增端口默认 `Unsupported` 不等于每个实现都已具备能力。
+- **协议与依赖不另起炉灶**：优先复用 extcore/RPC/ACP；`rpi-extcore` 保持 `=0.1.5`，升级须单独说明并验证。没有已确认工作流与上游契约，不增加 crate、第二套调度器或通用插件执行框架。
+
+## 1.2 会话一致性、权限与生命周期
+
+- 所有异步观察和写入回调必须核对 node/session scope、session generation、connection epoch；目录/读取还需加载 ticket 或 revision，防止同地址重连、切换会话及迟到成功/错误污染新状态。同地址不代表同一次连接，必须重新观察并建立会话连接。
+- **ACK 不是 settlement**：发送、恢复、压缩与 abort 的受理不能伪造运行完成；保留 ACK 前结算、pending echo、请求去重、草稿 revision 和迟到响应保护。仅明确 accepted 的操作才按原规则清除该提交版本草稿；未确认结果不得宣称“已入队”或自动重发。
+- 配置沿用 15 秒 deadline、权威回读、`requiresRestart`、provider/model 原始身份和协商 id/value 校验。超时只停止本地等待，不代表节点取消；结果未知时保持待核对锁，不用 setter 回包冒充实际状态。刷新能力只作废旧观察，不能吞掉同 scope 在途写入的失败清理。
+- ACP permission 回复由节点验证当前 binding、generation、terminal 状态及 outstanding request，再使用原权限转换映射选项。不得接受客户端 raw JSON-RPC responseId/result 来绕过绑定，不扩大 ACP raw 白名单；历史 journal 请求不能重新变成可回复权限。
+- 保留订阅/快照顺序：本地 subscribe-before-snapshot 并过滤已覆盖序号，远端按 snapshot cursor 订阅；是否限量必须依据会话观察。保持 ACP journal/replay、消息身份/投影及 resync/gap 语义，不按消息正文全局去重。
+- 桌面窗口/导航的生命周期不等于节点执行生命周期。不得因 UI 离页停止 owner，或更改既有关闭顺序、锁、子进程回收与后台托管策略。任务取消/deadline 不得被描述为服务端执行已取消。
+- 附件当前 typed prompt 入口为纯文本；有附件时保留明确的“仅发送文本”确认、草稿/附件及作用域保护，不能静默丢弃后宣称上传成功。隐藏 composer 产品开关不因架构整理而启用。
+
+## 1.3 跨平台单一 UI：新增与修改的硬约束
+
+- **Desktop、Web、Android 共用同一套页面、组件、展示状态与交互契约**。响应式布局只调整排列、尺寸和可用空间；不得因为 `target_os`、`target_arch`、UA 或屏幕宽度，复制一份业务页面、另写连接表单/消息界面，或引入不同的默认落地页与业务导航。
+- **平台分支止于能力适配层**：Cookie/Keystore、相机权限、系统文件选择、键盘/安全区、剪贴板、安装更新及本机 Node 托管等，可以有不同实现；向共享 UI 提供明确状态、能力和回调，不让页面按平台拼装另一套操作流程。控制器可以适配认证协议和生命周期，但不能各自维护一份完整页面组合。
+- **安全策略不是平台皮肤**：托管 Web 的初始宿主认证目标固定；这不禁止认证后的 Web 像桌面一样主动连接其他节点。节点切换须单独取得目标授权，不转发原宿主密码、Cookie或QR票据，不以关闭同源、精确 Host/Origin、共享 fail closed、二维码一次性/身份核对或原生凭据加密来实现。差异用明确的部署策略/能力表达，并提供说明、禁用或恢复路径；不能为追求相同按钮而扩大授权、泄露凭据，或把平台名称当作能力证明。
+- 连接入口和移动连接设置统一使用 `connection_panel::ConnectionScreen`；认证后的重连/退出通过 `entry::ConnectionSessionControl` 接入。不得在 Android/Web 控制器中重新组合 tabs/form/scanner 或按平台选择设置页行为。静态 standalone 与固定初始宿主认证是部署策略，不另建视觉实现，也不能据此隐藏 hosted Web 的主动节点切换入口。
+- 新增平台差异必须在变更中说明必要性、所属适配器/策略及回归证据。同一 presentation 须使用相同输入和操作脚本覆盖 native/Web 能力配置，另测 fixed-host 等安全策略，并验证 320/390px、明暗主题、44px 点击区、键盘操作和无横向溢出。
+- **共享源码不等于视觉已验收**：单测、浏览器适配配置、Android 编译/APK 核验、模拟器与真机分别记录。声明两端视觉一致前，须以相同版本、CSS 视口、主题、密度、内容和状态做成对核验；不能以源码 grep、共用 CSS 或 Web 截图代替 Android 设备结果。
 
 ## 2. Agent 与 UI 扩展必须独立
 
@@ -72,6 +104,14 @@ Agent 会话配置仅在以下条件**同时成立**时可修改：
 - 未来新增动作协议必须明确节点权限、会话归属、关联 ID、版本兼容及失败反馈，不能让 UI 可见性成为授权检查。
 
 ## 7. 测试与 review 最低要求
+
+节点/会话应用入口的变更至少覆盖：
+
+- 同一 owner 的本地、HTTP 与 typed trait port 语义一致，跨会话/跨节点隔离；未知能力和旧服务失败时无 native/global fallback；
+- ACP 权限原始选项映射、过期/跨会话请求拒绝、快照恢复 pending dialogs、cursor/replay/generation 与关闭后行为；
+- 正式 UI 的同地址重连、旧 scope 迟到结果、ACK/settlement 乱序、配置回读与超时待核对、入队 accepted 未确认及草稿保留；
+- 仅隔离 fixtures，不读取用户真实会话/凭据或启动已安装 Agent。编译、模拟器/浏览器 fixture、APK 构建签名、安装升级和真机行为分别记录，不能互相代替；
+- Android 使用 [共用 NDK 工具链脚本](ci-builds.md#本机复现)后实际检查 client **和 mobile UI**；core/node 通过不能冒充 client 已通过。缺 compiler、磁盘不足或依赖缺失必须报告为阻塞，不通过删除 TLS/依赖、跳过失败或切成桌面 target 掩盖。
 
 扩展相关变更至少覆盖：
 

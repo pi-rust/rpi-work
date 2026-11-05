@@ -9,6 +9,7 @@ use work_core::AgentDescriptor;
 #[derive(Clone, Default, PartialEq)]
 pub struct NodeHistory {
     pub recent: Vec<String>,
+    pub selected: Option<String>,
 }
 
 impl NodeHistory {
@@ -16,7 +17,15 @@ impl NodeHistory {
         if value["version"].as_u64() != Some(1) {
             return Self::default();
         }
-        let mut history = Self::default();
+        let mut history = Self {
+            selected: value["selected"].as_str().and_then(|raw| {
+                selection_address(
+                    raw,
+                    cfg!(not(any(target_arch = "wasm32", target_os = "android"))),
+                )
+            }),
+            ..Self::default()
+        };
         for raw in value["recent"].as_array().into_iter().flatten() {
             if let Some(address) = raw
                 .as_str()
@@ -33,16 +42,157 @@ impl NodeHistory {
         history
     }
 
-    pub fn remember(&mut self, address: &str) {
-        if let Ok(address) = normalize_address(address, false) {
-            self.recent.retain(|item| item != &address);
-            self.recent.insert(0, address);
-            self.recent.truncate(8);
+    /// Record a successfully connected node, never a draft or failed address.
+    /// The local workspace is a selection, not a remote recent entry.
+    pub fn select(&mut self, address: &str) {
+        if let Some(address) = selection_address(address, true) {
+            if address != "rpi-work://local" {
+                self.recent.retain(|item| item != &address);
+                self.recent.insert(0, address.clone());
+                self.recent.truncate(8);
+            }
+            self.selected = Some(address);
         }
     }
 
+    pub fn remember(&mut self, address: &str) {
+        self.select(address);
+    }
+
     fn value(&self) -> Value {
-        json!({"version":1,"recent":self.recent})
+        json!({"version":1,"recent":self.recent,"selected":self.selected})
+    }
+}
+
+fn selection_address(raw: &str, allow_local: bool) -> Option<String> {
+    if raw.trim() == "rpi-work://local" {
+        return allow_local.then(|| "rpi-work://local".to_owned());
+    }
+    normalize_address(raw, false).ok()
+}
+
+/// Choose a startup address without I/O. Explicit configuration is returned
+/// verbatim, even when invalid, so the connection UI can report its error.
+/// Pass `allow_local = false` on Web/Android and a platform-appropriate fallback
+/// (for example the Web origin or `about:blank`).
+pub(crate) fn startup_address(
+    explicit: Option<&str>,
+    history: &NodeHistory,
+    fallback: &str,
+    allow_local: bool,
+) -> String {
+    if let Some(address) = explicit {
+        return address.to_owned();
+    }
+    history
+        .selected
+        .as_deref()
+        .and_then(|raw| selection_address(raw, allow_local))
+        .or_else(|| {
+            history
+                .recent
+                .iter()
+                .find_map(|raw| normalize_address(raw, false).ok())
+        })
+        .unwrap_or_else(|| {
+            if !allow_local && fallback.trim() == "rpi-work://local" {
+                "about:blank".to_owned()
+            } else {
+                fallback.to_owned()
+            }
+        })
+}
+
+/// Pick an existing, visible session from this node only. Catalog order breaks
+/// timestamp ties; pinned/archived entries must not override recency.
+pub(crate) fn default_session_id(
+    sessions: &[SessionSummary],
+    projects: &[Project],
+    hidden_project: impl Fn(&str) -> bool,
+) -> Option<String> {
+    sessions
+        .iter()
+        .filter(|session| {
+            !session.archived
+                && !session.session_id.trim().is_empty()
+                && session.project_id.as_deref().is_none_or(|id| {
+                    projects.iter().any(|project| project.id == id) && !hidden_project(id)
+                })
+        })
+        .min_by_key(|session| std::cmp::Reverse(session.updated_at))
+        .map(|session| session.session_id.clone())
+}
+
+/// An in-memory password draft, bound to the node it was entered for.
+/// Never serialize this value or reuse it for another node.
+#[derive(Clone, Default, PartialEq)]
+pub struct NodePassword {
+    pub value: String,
+    address: Option<String>,
+}
+
+impl NodePassword {
+    pub fn new(value: String, address: &str) -> Self {
+        Self {
+            value,
+            address: normalize_address(address, false).ok(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.value.is_empty()
+    }
+
+    /// Submission consumes the draft even if its scope does not match.
+    pub fn take_for(&mut self, address: &str) -> Option<String> {
+        let draft = std::mem::take(self);
+        if !draft.value.is_empty()
+            && draft.address.is_some()
+            && draft.address == normalize_address(address, false).ok()
+        {
+            Some(draft.value)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod password_tests {
+    use super::NodePassword;
+
+    #[test]
+    fn password_is_consumed_once_for_its_normalized_node_only() {
+        let mut password = NodePassword::new("secret".into(), "http://example.com:3031/");
+        assert_eq!(
+            password.take_for("http://example.com:3031"),
+            Some("secret".into())
+        );
+        assert!(password.is_empty());
+        assert_eq!(password.take_for("http://example.com:3031"), None);
+    }
+
+    #[test]
+    fn another_host_port_or_scheme_cannot_receive_the_password() {
+        for target in [
+            "http://other.example:3031",
+            "http://example.com:3032",
+            "https://example.com:3031",
+        ] {
+            let mut password = NodePassword::new("secret".into(), "http://example.com:3031");
+            assert_eq!(password.take_for(target), None);
+            assert!(password.is_empty());
+        }
+    }
+
+    #[test]
+    fn invalid_or_empty_drafts_never_produce_a_password() {
+        for address in ["about:blank", "rpi-work://local", "not a node"] {
+            let mut password = NodePassword::new("secret".into(), address);
+            assert_eq!(password.take_for(address), None);
+        }
+        let mut password = NodePassword::new(String::new(), "https://example.com");
+        assert_eq!(password.take_for("https://example.com"), None);
     }
 }
 
@@ -283,7 +433,7 @@ pub async fn open(
     .await?
 }
 
-async fn with_timeout<T>(future: impl Future<Output = T>) -> Result<T, String> {
+pub(super) async fn with_timeout<T>(future: impl Future<Output = T>) -> Result<T, String> {
     let mut future = pin!(future);
     let mut timer = pin!(async {
         #[cfg(target_arch = "wasm32")]
@@ -303,13 +453,33 @@ async fn with_timeout<T>(future: impl Future<Output = T>) -> Result<T, String> {
     .await
 }
 
+/// Only an already authenticated entry may exempt its own browser origin from
+/// the phone's remote-loopback restriction. Other nodes and QR addresses still
+/// use the strict policy, regardless of responsive viewport size.
+pub fn normalize_connection_address(
+    raw: &str,
+    phone: bool,
+    authenticated_entry: Option<&str>,
+) -> Result<String, String> {
+    let normalized = normalize_address(raw, false)?;
+    if authenticated_entry
+        .and_then(|entry| normalize_address(entry, false).ok())
+        .as_deref()
+        == Some(normalized.as_str())
+    {
+        Ok(normalized)
+    } else {
+        normalize_address(raw, phone)
+    }
+}
+
 pub fn normalize_address(raw: &str, phone: bool) -> Result<String, String> {
     let value = raw.trim();
     if value.len() > 2048 || value.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err("服务地址过长或包含无效字符。".into());
     }
     let Some((scheme, rest)) = value.split_once("://") else {
-        return Err("请输入完整的 HTTP(S) 服务地址，例如 https://电脑地址:3030。".into());
+        return Err("请输入完整的 HTTP(S) 服务地址，例如 https://电脑地址:13030。".into());
     };
     let scheme = scheme.to_ascii_lowercase();
     if !matches!(scheme.as_str(), "http" | "https") {
@@ -390,13 +560,69 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_session_selects_latest_visible_without_creating_or_preferring_pins() {
+        let session = |id: &str, updated: u64, project: Option<&str>, archived: bool| {
+            serde_json::from_value::<SessionSummary>(json!({
+                "sessionId": id, "projectId": project, "status": "idle", "title": id,
+                "createdAt": 0, "updatedAt": updated, "lastSeq": 0, "archived": archived
+            })).unwrap()
+        };
+        let projects = vec![Project { id: "project".into(), name: "Project".into(), path: "/project".into() }];
+        let mut sessions = vec![
+            session("older", 10, Some("project"), false),
+            session("latest", 20, Some("project"), false),
+            session("same-time", 20, None, false),
+            session("archived", 100, Some("project"), true),
+            session("missing-project", 200, Some("missing"), false),
+        ];
+        sessions[0].pinned = true;
+        assert_eq!(default_session_id(&sessions, &projects, |_| false).as_deref(), Some("latest"));
+        assert_eq!(default_session_id(&sessions, &projects, |_| true).as_deref(), Some("same-time"));
+        sessions.retain(|session| session.project_id.is_some());
+        assert_eq!(default_session_id(&sessions, &projects, |_| true), None);
+        assert_eq!(default_session_id(&[], &projects, |_| false), None);
+    }
+
+    #[test]
+    fn authenticated_entry_only_exempts_its_exact_origin() {
+        assert_eq!(
+            normalize_connection_address(
+                "http://localhost:3031/",
+                true,
+                Some("http://localhost:3031")
+            )
+            .unwrap(),
+            "http://localhost:3031"
+        );
+        for (raw, entry) in [
+            ("http://localhost:3031", None),
+            ("http://localhost:3030", Some("http://localhost:3031")),
+            ("http://127.0.0.1:3031", Some("http://localhost:3031")),
+        ] {
+            assert!(normalize_connection_address(raw, true, entry).is_err());
+        }
+        assert!(
+            normalize_connection_address(
+                "http://localhost:3031/?ticket=secret",
+                true,
+                Some("http://localhost:3031")
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_address("http://localhost:3031", true).is_err(),
+            "QR policy is unchanged"
+        );
+    }
+
+    #[test]
     fn history_restores_only_valid_unique_addresses_and_never_secrets() {
         let value = json!({"version":1,"recent":["https://PC.test:3030/","javascript:alert(1)","https://pc.test:3030", "https://user:secret@pc.test"],"password":"test-only"});
         let history = NodeHistory::restore(&value);
         assert_eq!(history.recent, ["https://pc.test:3030"]);
         assert_eq!(
             history.value(),
-            json!({"version":1,"recent":["https://pc.test:3030"]})
+            json!({"version":1,"recent":["https://pc.test:3030"],"selected":null})
         );
         assert_eq!(
             NodeHistory::restore(&json!({"version":2,"recent":["https://pc.test"]})).recent,
@@ -453,6 +679,134 @@ mod tests {
         drop(client);
         drop(runtime);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_history_survives_selection_and_round_trip() {
+        let mut history = NodeHistory::restore(&json!({
+            "version": 1,
+            "recent": ["https://OLD.test/", "https://other.test"]
+        }));
+        assert!(history.selected.is_none());
+        assert_eq!(
+            startup_address(None, &history, "rpi-work://local", true),
+            "https://old.test"
+        );
+        history.select("https://OTHER.test/");
+        assert_eq!(history.selected.as_deref(), Some("https://other.test"));
+        assert_eq!(history.recent, ["https://other.test", "https://old.test"]);
+        let restored = NodeHistory::restore(&history.value());
+        assert_eq!(restored.selected, history.selected);
+        assert_eq!(restored.recent, history.recent);
+    }
+
+    #[test]
+    fn local_selection_preserves_remote_recent_and_remote_selection_updates_both() {
+        let mut history = NodeHistory::default();
+        history.remember("https://remote.test/");
+        history.select("rpi-work://local");
+        assert_eq!(history.selected.as_deref(), Some("rpi-work://local"));
+        assert_eq!(history.recent, ["https://remote.test"]);
+        assert_eq!(
+            startup_address(None, &history, "about:blank", true),
+            "rpi-work://local"
+        );
+        history.remember("rpi-work://local");
+        assert_eq!(history.recent, ["https://remote.test"]);
+        history.select("https://NEXT.test/");
+        assert_eq!(history.selected.as_deref(), Some("https://next.test"));
+        assert_eq!(history.recent, ["https://next.test", "https://remote.test"]);
+    }
+
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[test]
+    fn local_selection_round_trips_without_entering_recent() {
+        let history = NodeHistory::restore(&json!({
+            "version": 1,
+            "selected": "rpi-work://local",
+            "recent": ["rpi-work://local", "https://remote.test"]
+        }));
+        assert_eq!(history.selected.as_deref(), Some("rpi-work://local"));
+        let restored = NodeHistory::restore(&history.value());
+        assert_eq!(restored.selected, history.selected);
+        assert_eq!(restored.recent, ["https://remote.test"]);
+    }
+
+    #[test]
+    fn invalid_selections_are_ignored_without_losing_history() {
+        let mut history = NodeHistory::default();
+        history.select("https://safe.test");
+        let before = history.value();
+        for address in [
+            "",
+            "javascript:alert(1)",
+            "https://user:secret@host.test",
+            "http://host.test:0",
+            "rpi-work://other",
+        ] {
+            history.select(address);
+            history.remember(address);
+            assert_eq!(history.value(), before);
+            let restored = NodeHistory::restore(&json!({
+                "version": 1,
+                "selected": address,
+                "recent": [address, "https://safe.test"]
+            }));
+            assert!(restored.selected.is_none());
+            assert_eq!(restored.recent, ["https://safe.test"]);
+        }
+    }
+
+    #[test]
+    fn startup_prioritizes_explicit_raw_configuration_without_invalid_fallback() {
+        let mut history = NodeHistory::default();
+        history.select("https://saved.test");
+        for explicit in [
+            "https://EXPLICIT.test/",
+            "not a URL",
+            "",
+            "https://user:secret@host.test",
+        ] {
+            assert_eq!(
+                startup_address(Some(explicit), &history, "rpi-work://local", true),
+                explicit
+            );
+        }
+        history.selected = Some("https://selected.test".into());
+        assert_eq!(
+            startup_address(None, &history, "rpi-work://local", true),
+            "https://selected.test"
+        );
+        assert_eq!(
+            startup_address(None, &NodeHistory::default(), "rpi-work://local", true),
+            "rpi-work://local"
+        );
+    }
+
+    #[test]
+    fn remote_only_startup_never_restores_local_and_ignores_invalid_history() {
+        let mut history = NodeHistory {
+            selected: Some("rpi-work://local".into()),
+            recent: vec!["rpi-work://local".into(), "https://remote.test/".into()],
+        };
+        assert_eq!(
+            startup_address(None, &history, "https://origin.test/", false),
+            "https://remote.test"
+        );
+        history.selected = Some("javascript:bad".into());
+        assert_eq!(
+            startup_address(None, &history, "https://origin.test/", false),
+            "https://remote.test"
+        );
+        history.recent.clear();
+        assert_eq!(
+            startup_address(None, &history, "https://origin.test/", false),
+            "https://origin.test/"
+        );
+        assert_eq!(
+            startup_address(None, &history, "rpi-work://local", false),
+            "about:blank"
+        );
     }
 
     #[test]

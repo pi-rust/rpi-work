@@ -1,0 +1,96 @@
+/* Review-only layout. Keep data operations and project-file dialogs independent. */
+#changes-panel {
+  min-width: 0;
+  --review-font: calc(13px * var(--type-scale, 1));
+  --review-small: calc(12px * var(--type-scale, 1));
+  color: var(--text);
+  background: var(--bg);
+}
+#changes-panel .review-overview {
+  flex: 0 0 auto;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+#changes-panel .review-heading { min-width: 0; }
+#changes-panel .review-heading h2 { display: flex; align-items: center; gap: 8px; font-size: calc(16px * var(--type-scale, 1)); line-height: 1.5; font-weight: 600; }
+#changes-panel .review-total { padding: 0 6px; border-radius: var(--radius-sm); background: var(--panel); color: var(--muted); font: var(--review-small)/1.7 var(--mono); }
+#changes-panel .review-branch { max-width: 40vw; margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: var(--review-small)/1.5 var(--mono); }
+#changes-panel .review-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 16px; }
+#changes-panel .review-progress { color: var(--muted); font: var(--review-small)/1.5 var(--sans); white-space: nowrap; }
+#changes-panel .change-no-results button,
+#changes-panel .change-preview-empty button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--line); background: var(--card); border-radius: var(--radius-sm); font-size: var(--review-small); white-space: nowrap; }
+#changes-panel .change-layout { display: grid; grid-template-columns: clamp(260px, 29%, 320px) minmax(0, 1fr); }
+#changes-panel .change-browser { width: auto; background: var(--bg); }
+#changes-panel .change-filters { display: grid; gap: 10px; padding: 16px 14px 10px; }
+#changes-panel .change-search { min-width: 0; gap: 8px; padding: 0 10px; border: 1px solid var(--line); background: var(--card); }
+#changes-panel .change-search:focus-within { border-color: var(--focus-color); }
+#changes-panel .change-search input { min-width: 0; height: 36px; padding: 0; font-size: var(--review-font); }
+#changes-panel .change-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+#changes-panel .change-filter-row > :is(input, select) { width: 100%; height: 36px; padding: 6px 8px; border: 1px solid var(--line); font-size: var(--review-small); background: var(--card); }
+#changes-panel .change-filter-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#changes-panel :is(.change-filter-footer label, .review-mark-control) { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; color: var(--muted); font: var(--review-small)/1.5 var(--sans); white-space: nowrap; cursor: pointer; }
+#changes-panel input[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; padding: 0; accent-color: var(--accent); }
+#changes-panel .change-clear-filters { min-height: 32px; padding: 4px 6px; color: var(--muted); font-size: var(--review-small); }
+#changes-panel .change-list-caption { display: flex; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--review-small); }
+#changes-panel .change-file-list { padding: 4px 6px 12px; scrollbar-width: thin; }
+#changes-panel .change-file { width: 100%; min-height: 62px; align-items: center; gap: 10px; margin: 0 0 3px; padding: 10px 8px; border: 1px solid transparent; border-radius: var(--radius-sm); }
+#changes-panel .change-file > .icon { color: var(--muted); }
+#changes-panel .change-file:hover { background: var(--panel); }
+#changes-panel .change-file.selected { border-color: var(--accent-line); background: var(--accent-bg); }
+#changes-panel .change-file-name { gap: 3px; white-space: normal; line-height: 1.5; }
+#changes-panel .change-file-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--review-font)/1.5 var(--mono); }
+#changes-panel .change-file-name small { min-width: 0; font: var(--review-small)/1.5 var(--sans); }
+#changes-panel .change-file-context { display: flex; gap: 5px; align-items: center; }
+#changes-panel .change-file-directory { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#changes-panel .change-file-stage { flex-shrink: 0; }
+#changes-panel .change-file-origin { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#changes-panel .file-change-status { display: grid; place-items: center; flex: 0 0 22px; height: 22px; border-radius: var(--radius-xs); background: var(--panel); color: var(--muted); font: 500 var(--review-small)/1 var(--mono); }
+#changes-panel .status-A { color: var(--diff-add); background: var(--diff-add-bg); }
+#changes-panel .status-D { color: var(--diff-del); background: var(--diff-del-bg); }
+#changes-panel .status-M { color: var(--warning); }
+#changes-panel .status-U { color: var(--danger); }
+#changes-panel .status-R, #changes-panel .status-C { color: var(--info); }
+#changes-panel .file-review-mark { width: 12px; font-size: var(--review-small); }
+#changes-panel .file-review-mark:not(.reviewed) { visibility: hidden; }
+#changes-panel .change-preview { background: var(--card); }
+#changes-panel .selected-file-heading { flex: 0 0 auto; flex-wrap: nowrap; gap: 12px; padding: 14px 20px; }
+#changes-panel .review-file-title { display: grid; gap: 3px; min-width: 0; }
+#changes-panel .review-file-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--review-font)/1.5 var(--mono); }
+#changes-panel .review-file-title small { color: var(--muted); font: var(--review-small)/1.5 var(--sans); }
+#changes-panel .review-file-toolbar { flex: 0 0 auto; justify-content: space-between; gap: 8px 12px; padding: 10px 20px; background: var(--bg); }
+#changes-panel .review-diff-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); }
+#changes-panel .review-diff-switch button { min-height: 30px; padding: 3px 12px; border: 1px solid transparent; color: var(--muted); font: var(--review-small)/1.5 var(--sans); background: transparent; white-space: nowrap; }
+#changes-panel .review-diff-switch button[aria-pressed="true"] { background: var(--card); border-color: var(--line); color: var(--text); }
+#changes-panel .diff-lines { background: var(--card); color: var(--text); font-size: calc(12px * var(--type-scale, 1)); }
+#changes-panel .diff-line { grid-template-columns: 36px 36px 16px minmax(0, 1fr); column-gap: 6px; padding: 0 16px; }
+#changes-panel .diff-hunk { padding: 6px 16px; font-size: var(--review-small); }
+#changes-panel .change-preview > .change-preview-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; }
+#changes-panel :is(.change-preview-empty, .change-no-results, .change-preview-metadata) { font-size: var(--review-font); }
+#changes-panel .change-no-results { overflow-y: auto; overflow-wrap: anywhere; }
+#changes-panel button:focus-visible, #changes-panel input:focus-visible, #changes-panel select:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+@media (max-width: 767px) {
+  #changes-panel .review-overview { align-items: center; gap: 12px; padding: 12px 14px; }
+  #changes-panel .review-actions { align-items: center; gap: 4px; }
+  #changes-panel .review-branch { max-width: 48vw; }
+  #changes-panel .change-layout { display: flex; }
+  #changes-panel .change-browser { width: 100%; }
+  #changes-panel .change-filters { padding: 12px 14px 8px; gap: 8px; }
+  #changes-panel .change-search input { height: 44px; font-size: 16px; }
+  #changes-panel .change-filter-row > :is(input, select) { height: 44px; font-size: 16px; }
+  #changes-panel :is(.change-filter-footer label, .change-clear-filters, .review-mark-control) { min-height: 44px; }
+  #changes-panel .change-list-caption { padding: 8px 16px; }
+  #changes-panel .change-file { min-height: 64px; }
+  #changes-panel .selected-file-heading { gap: 10px; padding: 8px 14px; }
+  #changes-panel .back-to-files { flex: 0 0 auto; min-height: 44px; gap: 4px; padding: 0 6px 0 0; font-size: var(--review-small); }
+  #changes-panel .review-file-toolbar { padding: 8px 14px; gap: 8px; }
+  #changes-panel .review-diff-switch { padding: 2px; }
+  #changes-panel .review-diff-switch button { min-height: 44px; padding: 4px 10px; }
+  #changes-panel .diff-line { grid-template-columns: 26px 26px 14px minmax(0, 1fr); column-gap: 5px; padding: 0 10px; }
+  #changes-panel .diff-hunk { padding: 6px 10px; }
+}
+@media (max-width: 359px) {
+  #changes-panel .review-file-toolbar { gap: 4px; }
+  #changes-panel .review-diff-switch button { padding: 4px 8px; }
+  #changes-panel .review-mark-control { gap: 4px; }
+}

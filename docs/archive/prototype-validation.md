@@ -91,13 +91,13 @@
 
 `node tests/design/verify-packages.cjs` 验证顶部资源条、会话级 Skills/Tools 开关、提示词保存和套用、真实 JSON 文件下载与导入、模拟安装和启用分离、更新版本固定、每轮快照、运行配置锁定、跨会话隔离与 375–1440px 布局。原有五组浏览器检查继续通过。
 
-下载文件包含示例资源正文，可以重新导入；没有下载远程插件、连接模型或真正安装节点扩展。结果与截图见 [会话 Package 设计](../design/session-packages.md)。
+下载文件包含示例资源正文，可以重新导入；没有下载远程插件、连接模型或真正安装节点扩展。结果与截图见 [会话 Package 设计](prototype/session-packages.md)。
 
 ## 复现
 
 功能语义审阅回归：`node tests/design/verify-runtime-semantics.cjs`。验证原生 aborted/suspended/compacted/declined 等结算结果、pendingResume、模型/thinking/模式按会话隔离、follow-up 文案和权限 gate/规则存储区别。源码基线和未接通项见 [功能审阅](upstream-functional-review.md)。主题回归已扩展到 Reddit 橙，共四套风格、八种浅深色组合。
 
-连接验证：`node tests/design/verify-connections.cjs`。覆盖独立解码实际 QR 截图、二维码图片识别、相机拒绝回退和模拟媒体轨道释放、手工地址/配对码、PC 确认与权限范围、邀请刷新失效、撤销、重连、Agent 任务隔离和 375–1440px 布局。没有接入真实配对 API 或跨设备通信；相机真机扫描尚未验证。记录见 [手机连接 PC](../design/mobile-connection.md)。
+连接验证：`node tests/design/verify-connections.cjs`。覆盖独立解码实际 QR 截图、二维码图片识别、相机拒绝回退和模拟媒体轨道释放、手工地址/配对码、PC 确认与权限范围、邀请刷新失效、撤销、重连、Agent 任务隔离和 375–1440px 布局。没有接入真实配对 API 或跨设备通信；相机真机扫描尚未验证。记录见 [手机连接 PC](prototype/mobile-connection.md)。
 
 主题系统验证：`node tests/design/verify-themes.cjs`。覆盖三套主题的浅深色布局、主要文本对比度、预览恢复、系统模式、偏好迁移、JSON 导入导出与状态保留；原有六组交互脚本继续通过。记录及截图见 [主题系统](../design/themes.md)。
 
@@ -119,7 +119,7 @@
 
 追踪补充：`node tests/design/verify-traces.cjs` 验证回合与步骤的分层瀑布图、耗时、失败详情、流式与结算状态、重放去重、会话隔离及手机布局，见 [会话追踪与耗时](../design/session-tracing.md)。
 
-资源生命周期补充：`node tests/design/verify-resource-lifecycle.cjs` 验证扩展、独立 Skills、Package 的下载/安装/启用前置与获取目标区分，见 [资源下载前置](../design/resource-acquisition.md)。
+资源生命周期补充：`node tests/design/verify-resource-lifecycle.cjs` 验证扩展、独立 Skills、Package 的下载/安装/启用前置与获取目标区分，见 [资源下载前置](prototype/resource-acquisition.md)。
 
 元Agent 补充：类型选择位于「添加项目」表单，创建后与普通项目并列。`node tests/design/verify-meta-agent.cjs` 覆盖两类项目创建、源码、校验、测试快照、个人发布与资源获取，以及 320–1440px 和手机预览。详见 [元Agent](../design/meta-agent.md)。
 

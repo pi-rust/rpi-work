@@ -6,7 +6,7 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
  const page=await browser.newPage({viewport:{width:1200,height:950}});page.setDefaultTimeout(6000);
  const results=[],errors=[];page.on('pageerror',e=>errors.push(e.message));const pass=name=>{results.push(name);console.log('PASS',name)};
  try{
-  await page.goto('http://127.0.0.1:4182/modules/project/');await page.getByRole('button',{name:'projects',exact:true}).click();
+  await page.goto('http://127.0.0.1:14182/modules/project/');await page.getByRole('button',{name:'projects',exact:true}).click();
   await page.getByLabel('Fixture node URL').fill(fixture.url);await page.getByRole('button',{name:'Connect fixture',exact:true}).click();
   await page.getByRole('button',{name:'Open project picker',exact:true}).click();
   const picker=page.getByRole('dialog',{name:'添加项目',exact:true});

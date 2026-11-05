@@ -1,0 +1,93 @@
+#session-switcher {
+  width: 610px;
+  height: min(680px, calc(100dvh - 48px));
+  max-width: calc(100vw - 30px);
+  max-height: calc(100dvh - 24px);
+}
+#session-switcher > .modal-header { flex: 0 0 auto; padding: 8px 12px; }
+#session-switcher > .modal-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  padding: 12px;
+}
+#session-switcher .session-switcher-search {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  padding: 0 12px;
+}
+#session-switcher .session-switcher-search:focus-within { outline: 2px solid var(--focus-color); outline-offset: 1px; }
+#session-switcher .session-switcher-search > .icon { color: var(--muted); }
+#session-switcher .session-switcher-search input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+}
+#session-switcher input::-webkit-search-cancel-button { display: none; }
+#session-switcher .switcher-clear { width: 44px; height: 44px; flex: 0 0 auto; padding: 0; color: var(--muted); }
+#session-switcher .session-switcher-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 8px 0 4px;
+  font-size: var(--font-assist);
+  color: var(--muted);
+}
+#session-switcher .session-switcher-results { flex: 1; min-height: 0; max-height: none; overflow-y: auto; margin: 0 -4px; padding: 4px; scrollbar-width: thin; }
+#session-switcher .session-switcher-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 52px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+#session-switcher .session-switcher-row:hover { background: var(--panel); }
+#session-switcher .session-switcher-row.current { background: var(--accent-bg); }
+#session-switcher .switcher-session-content { display: grid; min-width: 0; gap: 2px; }
+#session-switcher .session-switcher-row strong { display: block; font-size: calc(14px * var(--type-scale, 1)); font-weight: 500; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#session-switcher .switcher-session-meta { display: flex; align-items: center; gap: 8px; min-width: 0; font: var(--font-assist)/1.4 var(--sans); color: var(--muted); }
+#session-switcher .switcher-session-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#session-switcher .switcher-session-meta em { flex: 0 0 auto; font: inherit; color: var(--accent); }
+#session-switcher .switcher-session-state { display: inline-flex; flex: none; align-items: center; gap: 6px; font: var(--font-assist)/1.5 var(--sans); color: var(--muted); white-space: nowrap; }
+#session-switcher .switcher-session-state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+#session-switcher .switcher-session-state.running, #session-switcher .switcher-session-state.loading { color: var(--info); }
+#session-switcher .switcher-session-state.waiting { color: var(--warning); }
+#session-switcher .switcher-session-state.failed { color: var(--danger); }
+#session-switcher .switcher-session-state.completed { color: var(--success); }
+#session-switcher .switcher-session-state.running i, #session-switcher .switcher-session-state.loading i {
+  width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: currentColor; background: transparent; animation: switcher-spin 1s linear infinite;
+}
+@keyframes switcher-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #session-switcher .switcher-session-state i { animation: none; } }
+@media (max-width: 700px) {
+  #session-switcher { height: min(660px, calc(100dvh - 32px)); }
+  #session-switcher > .modal-body { padding: 10px; }
+}

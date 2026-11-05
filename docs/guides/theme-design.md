@@ -9,7 +9,7 @@
 1. 在「外观与主题」点击「导入主题」，选择该 JSON。
 2. 立即查看实际工作台和「主题视觉规格」摘要，而非只看配色缩略图。
 3. 保存后在本设备持久化；取消、Esc 或关闭弹窗会恢复原主题及未保存的主题库。
-4. 「导出主题 JSON」保留完整视觉规格；「导出偏好 JSON」只保存主题 ID、模式和密度。
+4. 「导出主题 JSON」保留完整视觉规格及可选工具展示偏好；「导出偏好 JSON」保存主题 ID、模式、密度及可选工具展示覆盖。
 
 修改示例的 `theme.id` 后可创建独立主题。相同 ID、不同内容会被拒绝，内置主题不能被覆盖。当前不提供逐字段可视化编辑器；编辑 JSON 后通过同一导入/预览/保存流程使用。字体不会下载，所选系统字体栈缺少某字体时由系统回退。
 
@@ -19,9 +19,29 @@
 - `schemaVersion: 2`：必须包含完整 `theme.design`；`font` / `headingFont` / `shape` 仍是必填的旧兼容描述，但实际视觉值由 `design` 优先决定。
 - v1 不能夹带 `design`，v2 不能缺少它，未知版本或未知字段均拒绝。
 - 外观偏好 JSON 仍为 `rpi-work-appearance / 1`；浏览器持久化 key 仍为 `rpi-work-appearance-v1`。其中的自定义主题保留可选设计规格，旧偏好仍可恢复。
-- 当前默认仍为 Codex 黑白 + 浅色 + 标准密度，已有有效主题选择不强制覆盖。
+- 当前默认仍为 Codex 黑白 + 浅色 + 标准密度，已有有效主题选择不强制覆盖；工具展示默认跟随主题，所有未指定的主题默认简单。
 
 完整字段结构见示例，下面给出 `theme.design` 的规格。
+
+### toolRendering：简单 / 详情
+
+在「外观与主题 → 工具展示」可选择：
+
+- **跟随主题**（默认）：使用 `theme.design.toolRendering`；该字段缺省为 `simple`。
+- **简单 · Codex 紧凑摘要**：透明、无边框的单行工具名 / 参数摘要 / 状态；长摘要省略，完整内容仍可展开，输出仍可复制。
+- **详情 · 当前完整卡片**：保留原来的分层卡片、参数和结果区域。
+
+`theme.design.toolRendering` 仅接受 `simple`、`detailed`，适用于完整 v2 主题；旧 v1 和未包含该字段的 v2 默认简单。简单值在导出时省略，因此旧 v2 示例继续原样往返。修改完整示例并换一个新的 `theme.id`，再设置 `theme.design.toolRendering = "detailed"`，即可让主题默认使用详情，无需引入任意 CSS。
+
+优先级是 **本机明确选择 > 主题默认 > simple**。明确选择随设备外观偏好保存，切换配色仍保留；选择「跟随主题」会移除覆盖。完整主题导出可包含顶层 `preferredToolRendering`，偏好导出使用可选 `toolRendering`，两者均只接受上述两个值，不接受 `null`、对象或任意字符串。完整主题导入没有 `preferredToolRendering` 时回到跟随该主题；旧偏好没有 `toolRendering` 时同样跟随主题。未设置覆盖时不新增导出字段；这些新字段需要本轮更新后的客户端，不能假定已发布的旧二进制可以识别。
+
+下面是可直接导入的**偏好**示例，不是完整主题：
+
+```json
+{"schemaVersion":1,"kind":"rpi-work-appearance","preset":"codex","mode":"light","density":"standard","toolRendering":"detailed"}
+```
+
+两种模式复用同一个原生 `details` 节点。切换不重新创建工具或丢失展开状态、草稿；取消 / Esc 恢复原设置。工具结果、失败 / 等待状态、计划及 Ask 确认不会被替代或自动确认，也不会触发 Agent 操作。
 
 ### typography
 
@@ -64,20 +84,28 @@
 
 ## 渲染和可访问性边界
 
-1. 所有 design 字段经强类型反序列化和数值范围校验，再转换为 CSS 变量；不接受 CSS 文本、选择器、脚本、URL、事件或远程资源。
-2. 手机输入字号至少 16px，主要触控目标至少 44px；主题缩放和紧凑模式不能降低安全下限。
+1. 所有 design 字段经强类型反序列化和范围 / 枚举校验，数值规格转换为 CSS 变量，工具展示转换为受控 `data-tool-rendering` 根属性；不接受 CSS 文本、选择器、脚本、URL、事件或远程资源。
+2. 手机文本输入字号至少 16px，发送/停止、附件等主要触控目标至少 44px；主题缩放和紧凑模式不能降低安全下限。输入框下方的模型/思考等级选择与能力入口属于辅助工具栏，使用 `--font-assist` 和 32px 高度，状态追踪与统计入口为 28px，避免多层 44px 行挤占对话。统计在标准主题下保持单行，速度明细留在统计弹窗；显式大字号主题继续按语义 token 放大，桌面布局不受影响。
 3. 外观弹窗使用正常 flex 底栏，滚动正文和保存/取消操作独立布局，不用固定高度猜测大字号、大触控目标的占用空间。
 4. palette 继续检查主要文本与表面对比度至少 4.5:1；未改变成功/失败/diff 的独立语义色。
 5. 从自定义主题切回内置主题时清除完整旧 token 集，再应用新规格，不能残留字体、间距、边框或阴影。
 6. 保留旧 `message-line-height` token 的标准/紧凑取值；实际消息使用 `reading-line-height`。v2 的两个 token 均来自 `messageLineHeight`。无显式 design 时，原四套主题的实际消息行高仍为 1.55，Codex 使用其专属默认值 1.7；旧 v1 Codex 文档未描述的视觉参数跟随当前内置默认值，显式 design 不受这组默认值覆盖。
 7. 组件仍负责响应式布局、图标、业务状态及内容格式。主题不允许导入任意 CSS 来改变组件结构，也不承诺所有业务控件都能脱离布局限制无限放大。
+8. 全面屏安全区不属于主题。Web 使用 `viewport-fit=cover`，由 `--app-safe-{top,right,bottom,left}` 读取系统 `env(safe-area-inset-*)`；壳层在 `100dvh` 内统一留出安全区，输入区不重复扣底部，抽屉、上下文面板和弹窗不再预留不存在的 30/34px 标题栏。Android 由原生 content 根按实际系统栏、刘海和 IME Insets 设置一次 padding 并消费 Insets，再让 WebView 填满剩余区域；不能在 CSS 中再写固定状态栏高度。短视口允许输入区内部滚动，避免横屏/键盘遮住底部操作。
+
+9. 工具卡片的状态、参数/结果标记、复制和命令展开操作使用低干扰的 12px 线性图标，简洁/详情模式一致；Codex 工具名降为辅助字号、不加粗。图标保留 `title`、可访问名称及复制反馈，手机操作目标仍至少 44px；真实命令、参数、结果和失败警告不隐藏，也不降低正文阅读字号。
+10. 手机会话上方的资源快捷栏合并为单一“能力”入口，点击复用会话资源配置弹窗查看 Packages、扩展、Skills、Tools、提示词和执行后端；展开后的分类按钮可换行，不挤压标签。桌面仍保留原直接入口。运行 `node tests/e2e/verify-mobile-resources.cjs` 验证手机收起/展开、键盘操作、草稿保留和桌面布局。
+11. 手机顶部任务状态和节点连接状态仅显示 14px 图标，使用不同图形与语义色区分生成文本、执行工具、等待确认、完成／失败、中断及在线／重连／离线；不只依赖颜色。完整状态保留在 `aria-label`、`title` 和隐藏文字中，320px 也不隐藏整个状态。桌面保持原文字与状态点。运行 `node tests/e2e/verify-mobile-header.cjs` 验证明暗主题、1280／390／320px、状态变化及断线重连。
+
+全面屏回归：重建后运行 `node tests/e2e/verify-mobile-safe-area.cjs`，覆盖无安全区、刘海/手势区、320px 手机、横屏和缩短视口；它模拟的是浏览器安全区，不代替 Android 原生 Insets 验证。本次另在 Android 14 x86_64 模拟器检查了竖屏、横屏和键盘弹出时的原生 WebView 边界，未替代 Android 15 或实体手机验收。
 
 ## 开发入口
 
 - [`theme_design.rs`](../../apps/work-ui/src/shared/theme/theme_design.rs)：强类型规格、范围、兼容默认值与规格 token；
 - [`theme_contract.rs`](../../apps/work-ui/src/shared/theme/theme_contract.rs)：配色、v1/v2 主题文档和整体 token 解析；
 - [`appearance.rs`](../../apps/work-ui/src/shared/theme/appearance.rs)：持久化、预览、取消、主题库和全量 token 应用；
-- [`theme-design.css`](../../apps/work-ui/src/shared/theme/theme-design.css)：核心视觉角色与移动/动效安全规则。
+- [`theme-design.css`](../../apps/work-ui/src/shared/theme/theme-design.css)：核心视觉角色与移动/动效安全规则；
+- [`tool-presentation.css`](../../apps/work-ui/src/shared/theme/tool-presentation.css)：独立于配色 ID 的受控工具展示，详情模式沿用现有组件样式。
 
 修改规格默认值后重新生成 Codex CSS：
 

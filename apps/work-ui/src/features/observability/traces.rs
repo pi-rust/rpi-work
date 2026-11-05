@@ -56,8 +56,25 @@ pub struct TraceRun {
     message: Option<String>,
     message_counter: u64,
     agent_started: bool,
+    start_observed: bool,
     provider: Option<String>,
     model: Option<String>,
+}
+
+/// Node-provided execution time, separate from client receive observations.
+/// Ordinary message timestamps and strings are never interpreted as durations.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ToolTiming {
+    pub elapsed_ms: f64,
+    pub running: bool,
+}
+
+pub(crate) fn tool_timing(value: &Value) -> Option<ToolTiming> {
+    let timing = value.get("webTiming")?;
+    Some(ToolTiming {
+        elapsed_ms: finite(timing.get("elapsedMs")?.as_f64())?,
+        running: timing.get("running")?.as_bool()?,
+    })
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -71,9 +88,55 @@ pub struct TraceSpan {
     pub output: String,
     pub error: Option<String>,
     pub usage: Option<Value>,
+    /// A tool's own end event, not merely closure at round settlement.
+    tool_end_observed: bool,
+    node_timing: Option<ToolTiming>,
+    node_sample: Stamp,
     started: Stamp,
     finished: Stamp,
     first_text: Stamp,
+}
+
+impl TraceSpan {
+    /// A reserved end is terminal even when the browser clock bridge failed.
+    pub(crate) fn is_open(&self) -> bool {
+        self.finished.ticket.is_none() && self.status == "running"
+    }
+
+    pub(crate) fn node_can_tick(&self) -> bool {
+        self.is_open()
+            && self.node_timing.is_some_and(|timing| timing.running)
+            && self.node_sample.ms.is_some()
+    }
+
+    pub(crate) fn node_elapsed_at(&self, now: Option<f64>) -> Option<f64> {
+        let timing = self.node_timing?;
+        if !timing.running {
+            return Some(timing.elapsed_ms);
+        }
+        // A start/update is not evidence of completion. Never convert a
+        // running node sample into a final duration at agent settlement.
+        if !self.is_open() {
+            return None;
+        }
+        finite(Some(
+            timing.elapsed_ms + difference(self.node_sample.ms, now).unwrap_or(0.0),
+        ))
+    }
+
+    pub(crate) fn elapsed_at(&self, now: Option<f64>) -> Option<f64> {
+        if self.kind == "tool" && !self.is_open() && !self.tool_end_observed {
+            return None;
+        }
+        difference(
+            self.started.ms,
+            if self.is_open() {
+                finite(now)
+            } else {
+                self.finished.ms
+            },
+        )
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -103,7 +166,7 @@ fn difference(start: Option<f64>, end: Option<f64>) -> Option<f64> {
         _ => None,
     }
 }
-fn duration(ms: Option<f64>) -> String {
+pub(crate) fn duration(ms: Option<f64>) -> String {
     match finite(ms) {
         None => "—".into(),
         Some(v) if v < 1.0 => "<1ms".into(),
@@ -112,7 +175,7 @@ fn duration(ms: Option<f64>) -> String {
         Some(v) => format!("{:.1}m", v / 60_000.0),
     }
 }
-fn status_label(status: &str) -> &str {
+pub(crate) fn status_label(status: &str) -> &str {
     match status {
         "running" => "进行中",
         "completed" => "已完成",
@@ -128,7 +191,7 @@ fn status_label(status: &str) -> &str {
         _ => "待核对",
     }
 }
-fn kind_label(kind: &str) -> &str {
+pub(crate) fn kind_label(kind: &str) -> &str {
     match kind {
         "agent" => "Agent",
         "generation" => "模型",
@@ -257,6 +320,9 @@ fn safe_value(value: &Value, depth: usize) -> Value {
         return Value::String("[层级已截断]".into());
     }
     match value {
+        Value::Object(map) if map.get("type").and_then(Value::as_str) == Some("image") => {
+            Value::String("[图片内容请在会话中查看]".into())
+        }
         Value::Object(map) => Value::Object(
             map.iter()
                 .take(64)
@@ -287,7 +353,16 @@ fn safe_value(value: &Value, depth: usize) -> Value {
                 .map(|v| safe_value(v, depth + 1))
                 .collect(),
         ),
-        Value::String(text) => Value::String(redact_text(text)),
+        Value::String(text) => {
+            let structured = text.trim_start().starts_with(['{', '[']);
+            if structured && text.len() > TEXT_LIMIT * 4 {
+                Value::String("[结构化输出过大；请在会话中查看]".into())
+            } else if structured && let Ok(value) = serde_json::from_str::<Value>(text) {
+                safe_value(&value, depth + 1)
+            } else {
+                Value::String(redact_text(text))
+            }
+        }
         other => other.clone(),
     }
 }
@@ -341,6 +416,9 @@ fn new_span(id: String, parent: Option<String>, kind: &str, name: &str) -> Trace
         output: String::new(),
         error: None,
         usage: None,
+        tool_end_observed: false,
+        node_timing: None,
+        node_sample: Stamp::default(),
         started: Stamp::default(),
         finished: Stamp::default(),
         first_text: Stamp::default(),
@@ -368,6 +446,7 @@ impl TraceRun {
             message: None,
             message_counter: 0,
             agent_started: false,
+            start_observed: false,
             provider: None,
             model: None,
         }
@@ -391,8 +470,30 @@ impl TraceRun {
             }
         }
     }
+    pub(crate) fn is_open(&self) -> bool {
+        self.source != "history" && self.finished.ticket.is_none()
+    }
+    pub(crate) fn elapsed_at(&self, now: Option<f64>) -> Option<f64> {
+        if !self.start_observed {
+            return None;
+        }
+        difference(
+            self.started.ms,
+            if self.is_open() {
+                finite(now)
+            } else {
+                self.finished.ms
+            },
+        )
+    }
+    pub(crate) fn offset(&self, span: &TraceSpan) -> Option<f64> {
+        if !self.start_observed {
+            return None;
+        }
+        difference(self.started.ms, span.started.ms)
+    }
     fn elapsed(&self) -> Option<f64> {
-        difference(self.started.ms, self.finished.ms)
+        self.elapsed_at(None)
     }
     fn first(&self) -> Option<f64> {
         difference(self.started.ms, self.first_text.ms)
@@ -421,6 +522,19 @@ struct ClockRequest {
     lifetime: Rc<()>,
 }
 impl TraceStore {
+    /// Stable tool IDs are matched inside one node/session only. Never match by
+    /// name/order, or let a restored history snapshot replace a live observation.
+    pub(crate) fn tool_span(&self, scope: &str, id: &str) -> Option<(&TraceRun, &TraceSpan)> {
+        let session = self.scopes.get(scope)?;
+        let id = format!("tool:{}", limited(id, 256));
+        session.runs.iter().rev().find_map(|run| {
+            run.spans
+                .iter()
+                .find(|span| span.id == id && span.kind == "tool")
+                .map(|span| (run, span))
+        })
+    }
+
     fn serial(&mut self) -> u64 {
         self.serial += 1;
         self.serial
@@ -453,6 +567,7 @@ impl TraceStore {
         run.first_text.patch(request.ticket, ms);
         for span in &mut run.spans {
             span.started.patch(request.ticket, ms);
+            span.node_sample.patch(request.ticket, ms);
             span.finished.patch(request.ticket, ms);
             span.first_text.patch(request.ticket, ms);
         }
@@ -552,7 +667,7 @@ impl TraceStore {
                 session
                     .runs
                     .iter()
-                    .rposition(|r| r.spans.iter().any(|s| &s.id == id))
+                    .rposition(|r| r.source != "history" && r.spans.iter().any(|s| &s.id == id))
             })
         } else {
             None
@@ -642,6 +757,7 @@ impl TraceStore {
             };
         match kind {
             "agent_start" | "operation_accepted" => {
+                run.start_observed |= run.started.ticket == Some(ticket);
                 if kind == "agent_start" {
                     run.agent_started = true;
                 }
@@ -741,6 +857,18 @@ impl TraceStore {
                     .filter(|id| run.spans.iter().any(|s| &s.id == id))
                     .unwrap_or_else(|| "root".into());
                 if let Some(i) = begin_span(run, &span_id, &parent, "tool", name) {
+                    if !run.spans[i].tool_end_observed
+                        && (run.spans[i].is_open() || kind == "tool_execution_end")
+                        && let Some(timing) = tool_timing(data)
+                        && (kind != "tool_execution_end" || !timing.running)
+                    {
+                        run.spans[i].node_timing = Some(timing);
+                        run.spans[i].node_sample = Stamp::default();
+                        if timing.running {
+                            run.spans[i].node_sample.reserve(ticket);
+                            sample = true;
+                        }
+                    }
                     if kind == "tool_execution_start" {
                         run.end_kind("context", ticket);
                         if run.spans[i].started.ticket.is_none() {
@@ -774,6 +902,7 @@ impl TraceStore {
                         run.spans[i].error =
                             error.or_else(|| failed.then(|| "工具执行失败；请查看输出。".into()));
                         run.spans[i].status = if failed { "failed" } else { "completed" }.into();
+                        run.spans[i].tool_end_observed = true;
                         if run.spans[i].finished.ticket.is_none() {
                             run.spans[i].finished.reserve(ticket);
                             sample = true;
@@ -1363,6 +1492,26 @@ fn TraceDetails(scope: String, run: TraceRun, span: TraceSpan, tab: String) -> E
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn image_payloads_are_not_kept_in_trace_display_or_history() {
+        let image = json!({"type":"image","mimeType":"image/png","data":"SECRET_BASE64_IMAGE"});
+        for output in [
+            display_value(&image),
+            display_value(&json!({"content":[image]})),
+            display_value(&json!(json!({"content":[image]}).to_string())),
+            clean_text(&json!({"content":[image]}).to_string()),
+        ] {
+            assert!(!output.contains("SECRET_BASE64_IMAGE"));
+            assert!(output.contains("图片内容请在会话中查看"));
+        }
+        let oversized = format!(
+            "{{\"content\":\"{}\"}}",
+            "SECRET_BASE64_IMAGE".repeat(TEXT_LIMIT)
+        );
+        let output = display_value(&json!(oversized));
+        assert!(!output.contains("SECRET_BASE64_IMAGE"));
+        assert!(output.contains("结构化输出过大"));
+    }
     fn event(seq: u64, kind: &str, data: Value) -> WireEvent {
         WireEvent {
             id: Some(seq.to_string()),
@@ -1386,6 +1535,165 @@ mod tests {
             false
         }
     }
+    #[test]
+    fn node_tool_timing_requires_explicit_finite_nonnegative_metadata() {
+        for value in [
+            json!({"timestamp":1234}),
+            json!({"elapsedMs":1234,"running":false}),
+            json!({"webTiming":{"elapsedMs":-1,"running":false}}),
+            json!({"webTiming":{"elapsedMs":"1234","running":false}}),
+            json!({"webTiming":{"elapsedMs":null,"running":false}}),
+            json!({"webTiming":{"elapsedMs":1234}}),
+            json!({"webTiming":{"elapsedMs":1234,"running":"false"}}),
+        ] {
+            assert!(tool_timing(&value).is_none(), "{value}");
+        }
+        for elapsed in [0.0, 1234.5, 60_000.0] {
+            let timing =
+                tool_timing(&json!({"webTiming":{"elapsedMs":elapsed,"running":false}})).unwrap();
+            assert_eq!(timing.elapsed_ms, elapsed);
+            assert!(!timing.running);
+        }
+    }
+
+    #[test]
+    fn node_tool_samples_continue_from_their_base_and_freeze_on_real_end() {
+        let mut store = TraceStore::default();
+        apply(
+            &mut store,
+            "node/session",
+            1,
+            "agent_start",
+            json!({"runId":"r"}),
+            100.0,
+        );
+        apply(
+            &mut store,
+            "node/session",
+            2,
+            "tool_execution_start",
+            json!({
+                "runId":"r","toolCallId":"a","toolName":"bash", "webTiming":{"elapsedMs":1000,"running":true}
+            }),
+            200.0,
+        );
+        let (_, span) = store.tool_span("node/session", "a").unwrap();
+        assert!(span.node_can_tick());
+        assert_eq!(span.node_elapsed_at(Some(700.0)), Some(1500.0));
+        // A newer update replaces the base/sample atomically rather than
+        // double counting time since the original start.
+        apply(
+            &mut store,
+            "node/session",
+            3,
+            "tool_execution_update",
+            json!({
+                "runId":"r","toolCallId":"a","webTiming":{"elapsedMs":1700,"running":true}
+            }),
+            800.0,
+        );
+        let (_, span) = store.tool_span("node/session", "a").unwrap();
+        assert_eq!(span.node_elapsed_at(Some(900.0)), Some(1800.0));
+        apply(
+            &mut store,
+            "node/session",
+            4,
+            "tool_execution_end",
+            json!({
+                "runId":"r","toolCallId":"a","webTiming":{"elapsedMs":2600,"running":false}
+            }),
+            1000.0,
+        );
+        let (_, span) = store.tool_span("node/session", "a").unwrap();
+        assert_eq!(span.node_elapsed_at(Some(9999.0)), Some(2600.0));
+        assert_eq!(
+            span.elapsed_at(None),
+            Some(800.0),
+            "client observation is a different measurement"
+        );
+        assert!(!span.node_can_tick());
+        apply(
+            &mut store,
+            "node/session",
+            5,
+            "tool_execution_update",
+            json!({
+                "runId":"r","toolCallId":"a","webTiming":{"elapsedMs":9999,"running":true}
+            }),
+            2000.0,
+        );
+        apply(
+            &mut store,
+            "node/session",
+            6,
+            "agent_settled",
+            json!({"runId":"r","outcome":"completed"}),
+            2100.0,
+        );
+        assert_eq!(
+            store
+                .tool_span("node/session", "a")
+                .unwrap()
+                .1
+                .node_elapsed_at(None),
+            Some(2600.0)
+        );
+        assert!(store.tool_span("other-node/session", "a").is_none());
+        assert!(store.tool_span("node/other-session", "a").is_none());
+    }
+
+    #[test]
+    fn node_end_recovers_missing_start_and_survives_clock_failure_but_not_missing_end() {
+        let mut store = TraceStore::default();
+        let request = store
+            .ingest(
+                "s",
+                &event(
+                    1,
+                    "tool_execution_end",
+                    json!({
+                        "toolCallId":"end-only","webTiming":{"elapsedMs":1234,"running":false}
+                    }),
+                ),
+            )
+            .unwrap();
+        store.patch_clock(&request, None);
+        let (run, span) = store.tool_span("s", "end-only").unwrap();
+        assert!(run.clock_failed);
+        assert_eq!(span.elapsed_at(None), None);
+        assert_eq!(span.node_elapsed_at(None), Some(1234.0));
+        apply(
+            &mut store,
+            "running",
+            1,
+            "agent_start",
+            json!({"runId":"r"}),
+            100.0,
+        );
+        apply(
+            &mut store,
+            "running",
+            2,
+            "tool_execution_start",
+            json!({
+                "runId":"r","toolCallId":"a","webTiming":{"elapsedMs":1000,"running":true}
+            }),
+            200.0,
+        );
+        apply(
+            &mut store,
+            "running",
+            3,
+            "agent_settled",
+            json!({"runId":"r","outcome":"interrupted"}),
+            300.0,
+        );
+        let (_, span) = store.tool_span("running", "a").unwrap();
+        assert_eq!(span.node_elapsed_at(Some(9999.0)), None);
+        assert!(!span.node_can_tick());
+        assert_eq!(span.elapsed_at(None), None);
+    }
+
     #[test]
     fn settlement_dedup_snapshot_and_scope() {
         let mut store = TraceStore::default();
@@ -1590,6 +1898,192 @@ mod tests {
         assert_eq!(difference(None, Some(0.0)), None);
         assert_eq!(difference(Some(4.0), Some(3.0)), None);
     }
+    #[test]
+    fn live_elapsed_freezes_only_at_real_boundaries() {
+        let mut store = TraceStore::default();
+        apply(
+            &mut store,
+            "s",
+            1,
+            "agent_start",
+            json!({"runId":"timed"}),
+            100.0,
+        );
+        apply(
+            &mut store,
+            "s",
+            2,
+            "tool_execution_start",
+            json!({"toolCallId":"a"}),
+            120.0,
+        );
+        apply(
+            &mut store,
+            "s",
+            3,
+            "tool_execution_start",
+            json!({"toolCallId":"b"}),
+            140.0,
+        );
+        assert_eq!(
+            store.scopes["s"].runs[0].elapsed_at(Some(200.0)),
+            Some(100.0)
+        );
+        let (run, span) = store.tool_span("s", "a").unwrap();
+        assert_eq!(span.elapsed_at(Some(200.0)), Some(80.0));
+        assert_eq!(run.offset(span), Some(20.0));
+        apply(
+            &mut store,
+            "s",
+            4,
+            "tool_execution_end",
+            json!({"toolCallId":"b"}),
+            220.0,
+        );
+        apply(
+            &mut store,
+            "s",
+            5,
+            "tool_execution_end",
+            json!({"toolCallId":"a"}),
+            240.0,
+        );
+        assert_eq!(
+            store.tool_span("s", "a").unwrap().1.elapsed_at(Some(999.0)),
+            Some(120.0)
+        );
+        assert_eq!(
+            store.tool_span("s", "b").unwrap().1.elapsed_at(Some(999.0)),
+            Some(80.0)
+        );
+        apply(&mut store, "s", 6, "agent_end", json!({}), 260.0);
+        assert!(store.scopes["s"].runs[0].is_open());
+        assert_eq!(
+            store.scopes["s"].runs[0].elapsed_at(Some(300.0)),
+            Some(200.0)
+        );
+        apply(
+            &mut store,
+            "s",
+            7,
+            "agent_settled",
+            json!({"outcome":"completed"}),
+            400.0,
+        );
+        let run = &store.scopes["s"].runs[0];
+        assert!(!run.is_open());
+        assert_eq!(run.elapsed_at(Some(9000.0)), Some(300.0));
+    }
+
+    #[test]
+    fn unknown_and_partial_timings_never_invent_start_or_tool_end() {
+        let mut store = TraceStore::default();
+        apply(
+            &mut store,
+            "partial",
+            1,
+            "tool_execution_start",
+            json!({"toolCallId":"a"}),
+            10.0,
+        );
+        let (run, span) = store.tool_span("partial", "a").unwrap();
+        assert_eq!(run.elapsed_at(Some(20.0)), None);
+        assert_eq!(run.offset(span), None);
+        assert_eq!(span.elapsed_at(Some(20.0)), Some(10.0));
+        apply(
+            &mut store,
+            "partial",
+            2,
+            "agent_settled",
+            json!({"outcome":"interrupted"}),
+            30.0,
+        );
+        assert_eq!(
+            store
+                .tool_span("partial", "a")
+                .unwrap()
+                .1
+                .elapsed_at(Some(999.0)),
+            None
+        );
+        apply(
+            &mut store,
+            "end-only",
+            1,
+            "tool_execution_end",
+            json!({"toolCallId":"a"}),
+            10.0,
+        );
+        assert_eq!(
+            store
+                .tool_span("end-only", "a")
+                .unwrap()
+                .1
+                .elapsed_at(Some(999.0)),
+            None
+        );
+        assert!(store.tool_span("other-session", "a").is_none());
+        let request = store
+            .ingest("bad-clock", &event(1, "agent_start", json!({})))
+            .unwrap();
+        store.patch_clock(&request, Some(0.0));
+        let request = store
+            .ingest(
+                "bad-clock",
+                &event(2, "agent_settled", json!({"outcome":"completed"})),
+            )
+            .unwrap();
+        store.patch_clock(&request, None);
+        assert!(!store.scopes["bad-clock"].runs[0].is_open());
+        assert_eq!(
+            store.scopes["bad-clock"].runs[0].elapsed_at(Some(999.0)),
+            None
+        );
+    }
+
+    #[test]
+    fn restored_history_has_no_time_and_does_not_replace_live_tool_time() {
+        let mut store = TraceStore::default();
+        let block = MessageBlock::ToolCall {
+            id: "a".into(),
+            name: "read".into(),
+            arguments: "{}".into(),
+            output: "ok".into(),
+            status: ToolStatus::Completed,
+        };
+        store.restore("s", vec![block.clone()]);
+        let (run, span) = store.tool_span("s", "a").unwrap();
+        assert!(!run.is_open());
+        assert!(!span.is_open());
+        assert_eq!(run.elapsed_at(Some(999.0)), None);
+        assert_eq!(span.elapsed_at(Some(999.0)), None);
+        apply(&mut store, "s", 1, "agent_start", json!({}), 10.0);
+        apply(
+            &mut store,
+            "s",
+            2,
+            "tool_execution_start",
+            json!({"toolCallId":"a"}),
+            15.0,
+        );
+        apply(
+            &mut store,
+            "s",
+            3,
+            "tool_execution_end",
+            json!({"toolCallId":"a"}),
+            45.0,
+        );
+        store.restore("s", vec![block]);
+        assert_eq!(
+            store.tool_span("s", "a").unwrap().1.elapsed_at(None),
+            Some(30.0)
+        );
+        for value in [None, Some(-1.0), Some(f64::NAN), Some(f64::INFINITY)] {
+            assert_eq!(duration(value), "—");
+        }
+    }
+
     #[test]
     fn redaction_and_bounds() {
         let clean = display_value(

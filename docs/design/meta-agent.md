@@ -1,5 +1,9 @@
 # 元Agent · 个人能力开发项目
 
+> **正式实现入口：**项目内节点源码草稿、普通开发会话、真实测试与本地发布见[原生资源与源码开发指南](../guides/native-resource-authoring.md)。本页其余原型格式、内存测试与模拟响应描述仅适用于明确标记的旧惰性设计预览，不是新原生工作流的执行权限或验收依据。
+
+> 设计参考：本页混合原型探索与局部实现更新，不是当前功能清单。实际使用以[交互指南](../guides/codex-interactions.md)、[扩展边界](../architecture/extensions.md)和[主题规格](../guides/theme-design.md)为准；原型场景与历史验证不能替代正式实现或本次验收。
+
 > 当前 Extension 模板使用独立 `agent` / `ui` 声明，共享校验并发布惰性设计。支持纯 Agent、纯 UI 或组合清单，旧设计兼容但不自动变成可执行插件。发布/导入不是节点安装或运行，当前边界见 [Agent / UI 扩展](../architecture/extensions.md)。
 
 > 截图与运行报告为本地产物，不随Git分发；文中路径用于定位本地文件。保留规则与复验入口见 [测试产物说明](../guides/testing-artifacts.md)。

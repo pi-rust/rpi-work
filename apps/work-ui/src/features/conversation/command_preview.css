@@ -1,0 +1,8 @@
+.command-preview{min-width:0;max-width:100%;margin-bottom:var(--space-12)}
+.command-preview-surface{padding:var(--space-10);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--code)}
+.conversation-widget .call-body .command-text{padding:0;margin:0;border:0;border-radius:0;background:transparent;max-height:none;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+.conversation-widget .call-body .command-text.collapsed{max-height:4lh;overflow:hidden}
+.command-preview .command-toggle{margin-top:var(--space-6)}
+.command-raw-arguments{margin-bottom:var(--space-12)}
+.command-raw-arguments>summary{padding:var(--space-6) 0;font-size:var(--font-assist);color:var(--muted)}
+@media(max-width:767px){.conversation-widget .command-preview .button,.command-raw-arguments>summary{min-height:44px}}
