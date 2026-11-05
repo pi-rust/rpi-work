@@ -77,6 +77,7 @@ dialog.app-dialog.native-resource-detail{width:680px;padding:0;overflow:hidden}
 .native-resource-detail input:not([type=checkbox]){width:100%;min-height:44px;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--text);background:var(--card)}
 .native-resource-detail .native-trust{align-items:center;min-height:44px;cursor:pointer}
 .native-resource-detail pre{width:100%;max-height:24rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.native-resource-detail .native-detail-notice{margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--muted);line-height:1.6}
 .native-resource-detail .resource-error{color:var(--danger);white-space:pre-wrap}
 .native-remove-confirm{padding:12px;border:1px solid var(--danger-line);border-radius:var(--radius-sm);background:var(--danger-bg)}
 .native-remove-confirm p{margin-bottom:12px}

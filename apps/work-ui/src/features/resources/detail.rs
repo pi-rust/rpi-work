@@ -109,7 +109,7 @@ pub(super) fn ResourceDetail(
                 }
             }
             if busy { p { role: "status", "节点操作中。关闭详情不会取消已经提交的操作，返回后请回读核对。" } }
-            if !notice.is_empty() { pre { role: "status", "{notice}" } }
+            if !notice.is_empty() { pre { class: "native-detail-notice", role: "status", "{notice}" } }
             if !error.is_empty() { p { role: "alert", class: "resource-error", "{error}" } }
             details { summary { "技术信息与安装诊断（不代表实际加载）" }
                 pre { {serde_json::to_string_pretty(&facts).unwrap_or_default()} }
