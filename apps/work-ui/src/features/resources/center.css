@@ -13,8 +13,8 @@
 .resource-context-status::before{content:"";width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 3px color-mix(in srgb,var(--muted) 12%,transparent)}
 .resource-context-status.online::before{background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 14%,transparent)}
 .resource-center-views{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:4px;gap:4px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel)}
-.resource-center-views button{padding:8px;border-radius:var(--radius-sm);color:var(--muted);background:transparent;border:1px solid transparent}
-.resource-center-views button.active{color:var(--text);background:var(--card);border-color:var(--line);font-weight:600}
+.resource-center-views button{padding:8px;border-radius:var(--radius-sm);color:var(--muted);background:transparent;border:1px solid transparent;transition:background-color 160ms ease,color 160ms ease,box-shadow 160ms ease}
+.resource-center-views button.active{color:var(--text);background:var(--card);border-color:var(--line);font-weight:600;box-shadow:0 1px 2px color-mix(in srgb,var(--text) 10%,transparent)}
 .resource-center .native-resources{padding:0;gap:16px;font-size:14px}
 .resource-center .native-resources h2{font-size:16px}
 .native-resource-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,180px);gap:12px;align-items:end}
@@ -45,19 +45,24 @@
 .resource-center :is(button,input,select,summary):focus-visible,.native-resource-detail :is(button,input,summary):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .resource-center :is(button,summary):hover{border-color:var(--line-strong);color:var(--text)}
 dialog.app-dialog.native-resource-detail{width:680px;padding:0;overflow:hidden}
-.native-resource-detail .modal-header{padding:16px 20px;gap:12px;align-items:flex-start}
+.native-resource-detail .modal-header{padding:16px 20px;gap:12px;align-items:flex-start;border-bottom:1px solid var(--line);background:var(--panel)}
 .native-resource-detail .modal-header .icon-button{min-width:44px;min-height:44px;flex:none}
 .native-resource-detail .modal-subtitle{overflow-wrap:anywhere;font-size:14px}
 .native-detail-body{display:flex;flex-direction:column;gap:16px;min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px;font-size:14px;line-height:1.7}
 .native-detail-body>*{flex-shrink:0}
 .native-detail-body p{font-size:14px;line-height:1.7}
-.native-detail-summary{display:flex;flex-direction:column;gap:8px}
+.native-detail-summary{display:flex;flex-direction:column;gap:8px;padding-bottom:4px}
+.native-detail-summary p:first-of-type{color:var(--muted);font-size:13px}
+.native-detail-summary p:last-of-type{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);font-size:13px;color:var(--muted)}
 .native-detail-summary strong{font-size:18px;overflow-wrap:anywhere}
 .native-detail-summary p{color:var(--muted)}
-.native-detail-facts{display:grid;grid-template-columns:6rem minmax(0,1fr);gap:8px 12px;margin:0}
+.native-detail-facts{display:grid;grid-template-columns:6rem minmax(0,1fr);gap:8px 12px;margin:0;padding:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel)}
 .native-detail-facts dt{color:var(--muted)}
 .native-detail-facts dd{margin:0;overflow-wrap:anywhere}
 .native-resource-detail .native-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+.native-resource-detail .native-detail-management{width:100%;border-top:1px solid var(--line);padding-top:8px}
+.native-resource-detail .native-detail-management>summary{color:var(--muted)}
+.native-resource-detail .native-detail-management[open]>summary{color:var(--text)}
 .native-resource-detail .button{min-height:44px;font-size:14px;padding:8px 12px}
 .native-resource-detail details{min-width:0;width:100%}
 .native-resource-detail summary{min-height:44px;align-content:center;cursor:pointer;font-size:14px}
@@ -90,5 +95,5 @@ dialog.app-dialog.native-resource-detail{width:680px;padding:0;overflow:hidden}
  .native-resource-detail .native-actions>.button{flex:1 1 110px}
 }
 @media (prefers-reduced-motion: reduce){
- .resource-center .native-resource-card{transition:none}
+ .resource-center .native-resource-card,.resource-center-views button{transition:none}
 }
