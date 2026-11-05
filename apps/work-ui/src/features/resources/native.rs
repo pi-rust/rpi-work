@@ -497,8 +497,10 @@ pub fn NativeResources(
                 if !catalog_error().is_empty() { p { role: "alert", class: "resource-error", "目录读取失败：{catalog_error}" } }
             if !session_error().is_empty() { p { role: "alert", class: "resource-error", "会话资源读取失败：{session_error}" } }
             if let Some(state) = current {
-                h3 { "会话资源：{readiness_label(state.readiness)}" }
-                p { match state.executable { Some(true) => "节点已验证可执行", Some(false) => "节点未允许执行", None => "可执行状态未核实" } }
+                div { class: "native-readiness-status", role: "status",
+                    h3 { "会话资源：{readiness_label(state.readiness)}" }
+                    p { match state.executable { Some(true) => "节点已验证可执行", Some(false) => "节点未允许执行", None => "可执行状态未核实" } }
+                }
                 details { summary { "会话状态诊断" } p { "host generation: {state.generation:?} · {state.diagnostic:?}" } }
                 if let Some(config) = &state.configuration { p { class: "meta", "会话资源版本 r{config.revision}" } details { summary { "已保存 desired / unresolved / 历史 observation（不授权执行）" } pre { "{serde_json::to_string_pretty(config).unwrap_or_default()}" } } }
                 if let Some(actual) = &state.actual { details { summary { "实际加载、有效工具与指令来源" } pre { "{actual}" } } }

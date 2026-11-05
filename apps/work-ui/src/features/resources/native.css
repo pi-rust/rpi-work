@@ -2,6 +2,9 @@
 .native-authoring{overflow:visible;flex:none}
 .native-resources *,.native-authoring *{min-width:0;box-sizing:border-box}
 .native-resources h2,.native-authoring h1{font-size:var(--font-title);font-weight:550;line-height:1.5;overflow-wrap:anywhere;margin:0}
+.native-readiness-status{display:flex;flex-direction:column;gap:var(--space-5);padding:var(--space-12);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel)}
+.native-readiness-status h3{margin:0;color:var(--text)}
+.native-readiness-status p{color:var(--muted)}
 .native-resources h3,.native-authoring h2,.native-authoring h3{font-size:var(--font-body);font-weight:550;line-height:1.6;overflow-wrap:anywhere;margin:0}
 .native-resources .page-heading p,.native-authoring .page-heading p{margin-top:var(--space-5);color:var(--muted);font-size:var(--font-assist)}
 .native-resources pre,.native-authoring pre{max-height:24rem;max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--font-assist);padding:var(--space-10);background:var(--panel);border-radius:var(--radius-sm)}
