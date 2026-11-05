@@ -431,7 +431,7 @@ pub fn NativeResources(
     let recovery = current.as_ref().map(recovery_admission).unwrap_or_default();
     let correction = online && recovery.1;
     rsx! {
-        section { class: "native-resources", aria_label: "原生执行资源",
+        section { class: "native-resources", aria_label: "原生执行资源", aria_busy: loading() || busy(),
             style { {include_str!("native.css")} }
             if configuration_only { h2 { "会话执行资源" } }
             if !configuration_only {
