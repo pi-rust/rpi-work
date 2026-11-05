@@ -319,11 +319,11 @@ fn PackageDiscoveryState(
                 } } }
                 button { class: "button", disabled: busy() || !context.online, onclick: move |_| { trusted.set(false); refresh += 1; }, "刷新精选目录" }
             }
-            if !context.online { p { role: "status", "执行节点离线；重连后重新读取目录并确认信任。" } }
+            if !context.online { p { class: "package-state-block", role: "status", "执行节点离线；重连后重新读取目录并确认信任。" } }
             if let Some(c) = catalog.read().as_ref() {
                 p { class: "package-meta", "目录来源：{c.source}" }
                 for diagnostic in &c.diagnostics { p { "{diagnostic}" } }
-                if offers.is_empty() { p { "没有匹配的精选资源。" } }
+                if offers.is_empty() { p { class: "package-state-block", role: "status", "没有匹配的精选资源。" } }
             }
             div { class: "package-list",
                 for item in offers {
@@ -380,9 +380,9 @@ fn PackageDiscoveryState(
                     }
                 }
             }
-            if busy() { p { role: "status", "正在读取或提交节点操作，请等待。离页或断线不代表节点取消写入，返回后请回读核对。" } }
+            if busy() { p { class: "package-state-block package-loading", role: "status", "正在读取或提交节点操作，请等待。离页或断线不代表节点取消写入，返回后请回读核对。" } }
             if !notice().is_empty() { pre { role: "status", "{notice}" } }
-            if !error().is_empty() { p { role: "alert", "{error}" } }
+            if !error().is_empty() { p { class: "package-state-block package-error", role: "alert", "{error}" } }
         }
     }
 }
