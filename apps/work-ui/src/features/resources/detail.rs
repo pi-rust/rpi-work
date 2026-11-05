@@ -57,7 +57,7 @@ pub(super) fn ResourceDetail(
                 dt { "记录版本" } dd { {facts["version"].as_str().unwrap_or("未记录")} }
                 dt { "节点来源" } dd { {facts["source"].as_str().unwrap_or("未记录")} }
             }
-            div { class: "native-actions",
+            div { class: "native-actions native-detail-primary-actions",
                 button { class: "button primary", disabled: blocked, onclick: { let reference=target.clone(); move |_| onmanage.call(NativeManagement::Inspect { reference: reference.clone() }) }, "从节点检查" }
                 details { class: "native-detail-management",
                     summary { "管理此资源" }
