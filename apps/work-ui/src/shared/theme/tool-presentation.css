@@ -8,7 +8,8 @@
   color: var(--muted); font-variant-numeric: tabular-nums;
 }
 .conversation-widget .tool-result-hint {
-  flex: 0 0 auto; white-space: nowrap; font-size: calc(10px * var(--type-scale, 1));
+  flex: 0 1 auto; max-width: 7em; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: calc(10px * var(--type-scale, 1));
   color: var(--muted); opacity: .82;
 }
 .conversation-widget .failed .tool-result-hint { color: var(--danger); opacity: .9; }
