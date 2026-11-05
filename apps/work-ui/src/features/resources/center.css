@@ -25,6 +25,7 @@
 .resource-center .native-resource-card{display:flex;align-items:stretch;padding:16px;gap:8px;background:var(--card);border:0;border-bottom:1px solid var(--line);border-radius:0;transition:background-color 160ms ease}
 .resource-center .native-resource-card:last-child{border-bottom:0}
 @media (hover:hover){.resource-center .native-resource-card:hover{background:var(--panel)}}
+.resource-center .native-resource-card:focus-within{background:var(--panel)}
 .native-resource-heading{align-items:flex-start}
 .resource-center .native-resource-card h3{font-size:16px;line-height:1.5;font-weight:600;overflow-wrap:anywhere;letter-spacing:-.01em}
 .native-install-state{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;max-width:45%;padding:3px 8px;border-radius:var(--radius-sm);background:var(--panel);border:1px solid var(--line);font-size:13px;line-height:1.5;color:var(--text);overflow-wrap:anywhere}
@@ -46,6 +47,7 @@
 .resource-center .resources-page input,.resource-center .resources-page select{font-size:16px;min-height:44px}
 .resource-center .small-link{min-height:44px;min-width:44px}
 .resource-center :is(button,input,select,summary):focus-visible,.native-resource-detail :is(button,input,summary):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.resource-center button:active,.native-resource-detail button:active{filter:brightness(.96)}
 .resource-center :is(button,summary):hover{border-color:var(--line-strong);color:var(--text)}
 dialog.app-dialog.native-resource-detail{width:680px;padding:0;overflow:hidden}
 .native-resource-detail .modal-header{padding:16px 20px;gap:12px;align-items:flex-start;border-bottom:1px solid var(--line);background:var(--panel)}
