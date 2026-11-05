@@ -91,6 +91,7 @@ fn ResourceCenterState(
                 for (key, label) in [("node", "当前节点"), ("discovery", "发现资源"), ("design", "本地设计")] {
                     button {
                         r#type: "button", aria_pressed: view() == key,
+                        aria_current: if view() == key { "page" } else { "false" },
                         class: if view() == key { "active" } else { "" },
                         onclick: move |_| {
                             view.set(key.to_owned());
