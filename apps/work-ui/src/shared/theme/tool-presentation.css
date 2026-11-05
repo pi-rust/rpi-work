@@ -12,6 +12,8 @@
   color: var(--muted); opacity: .82;
 }
 .conversation-widget .failed .tool-result-hint { color: var(--danger); opacity: .9; }
+.conversation-widget .tool-running .tool-result-hint { color: var(--info); opacity: .9; }
+.conversation-widget .tool-cancelled .tool-result-hint { color: var(--warning); opacity: .9; }
 :root[data-tool-rendering="detailed"] .conversation-widget .tool-result-hint { display: none; }
 .conversation-widget .edit-count { display: inline-flex; align-items: baseline; gap: 6px; }
 .conversation-widget .edit-count .add { color: var(--success); }
