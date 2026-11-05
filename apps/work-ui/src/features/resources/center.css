@@ -100,7 +100,7 @@ dialog.app-dialog.native-resource-detail{width:680px;padding:0;overflow:hidden}
  .native-detail-facts{grid-template-columns:minmax(0,1fr);gap:4px}
  .native-detail-facts dd{margin-bottom:10px}
  .native-resource-detail .native-actions>.button{flex:1 1 110px}
- .native-resource-detail .native-detail-primary-actions{position:sticky;bottom:0;z-index:2;margin:4px -16px -16px;padding:10px 16px calc(10px + var(--app-safe-bottom));border-top:1px solid var(--line);background:color-mix(in srgb,var(--card) 94%,transparent);backdrop-filter:blur(12px)}
+ .native-resource-detail .native-detail-primary-actions{position:sticky;bottom:0;z-index:2;margin:4px -16px -16px;padding:10px 16px calc(10px + var(--app-safe-bottom));border-top:1px solid var(--line);background:var(--card);background:color-mix(in srgb,var(--card) 94%,transparent);backdrop-filter:blur(12px)}
  .native-resource-detail .native-detail-primary-actions>.button{flex-basis:100%}
 }
 @media (prefers-reduced-motion: reduce){
