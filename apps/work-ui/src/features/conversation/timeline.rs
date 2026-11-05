@@ -431,6 +431,10 @@ fn tool_summary(name: &str, args: &str) -> String {
     super::tool_display::target(name, args)
 }
 
+fn tool_result_hint(label: &str, failed: bool, has_output: bool) -> &'static str {
+    if failed { "查看错误" } else if label == "已取消" { "已取消" } else if label == "运行中" || label == "等待工具结果" { "等待输出" } else if has_output { "有结果" } else { "无输出" }
+}
+
 /// Empty protocol payloads do not deserve an empty details section. Keep
 /// false/zero, nonempty collections and partial streamed JSON inspectable.
 fn has_tool_arguments(args: &str) -> bool {
@@ -519,6 +523,8 @@ fn ToolCallView(
         ));
     }));
     let (output, images) = tool_output_parts(&output);
+    let has_output = !output.trim().is_empty() || !images.is_empty();
+    let result_hint = tool_result_hint(&label, failed, has_output);
     let has_arguments = has_tool_arguments(&args);
     let args =
         serde_json::from_str::<Value>(&args).map_or_else(|_| args.clone(), |v| pretty_value(&v));
@@ -605,6 +611,7 @@ fn ToolCallView(
                         }
                     }
                     super::turn_timing::ToolElapsed { id: id.clone(), timing }
+                    span { class: "tool-result-hint", aria_label: "结果状态：{result_hint}", "{result_hint}" }
                     if !failed && label == "已完成" {
                         span { class: "tool-success-mark", aria_hidden: "true", {glyph("check")} }
                     }

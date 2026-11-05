@@ -7,6 +7,11 @@
   flex-shrink: 0; white-space: nowrap; font-size: calc(10px * var(--type-scale, 1));
   color: var(--muted); font-variant-numeric: tabular-nums;
 }
+.conversation-widget .tool-result-hint {
+  flex: 0 0 auto; white-space: nowrap; font-size: calc(10px * var(--type-scale, 1));
+  color: var(--muted); opacity: .82;
+}
+.conversation-widget .failed .tool-result-hint { color: var(--danger); opacity: .9; }
 .conversation-widget .edit-count { display: inline-flex; align-items: baseline; gap: 6px; }
 .conversation-widget .edit-count .add { color: var(--success); }
 .conversation-widget .edit-count .remove { color: var(--danger); }
