@@ -509,7 +509,7 @@ pub fn NativeResources(
                 if !catalog_error().is_empty() { p { role: "alert", class: "resource-error", "目录读取失败：{catalog_error}" } }
             if !session_error().is_empty() { p { role: "alert", class: "resource-error", "会话资源读取失败：{session_error}" } }
             if let Some(state) = current {
-                div { class: "native-readiness-status", "data-readiness": readiness_key(state.readiness), role: "status",
+                div { class: "native-readiness-status", "data-readiness": readiness_key(state.readiness), role: "status", aria_atomic: "true",
                     h3 { "会话资源：{readiness_label(state.readiness)}" }
                     p { match state.executable { Some(true) => "节点已验证可执行", Some(false) => "节点未允许执行", None => "可执行状态未核实" } }
                 }
