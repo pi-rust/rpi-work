@@ -135,12 +135,40 @@ fn history_parts(content: &Value) -> Vec<HistoryPart> {
 // a tool-only projection becoming history must not acquire a new article parent
 // and reset the native disclosure state.
 fn render_regions(regions: Vec<(String, Element)>) -> Element {
+    let tool_regions = regions
+        .iter()
+        .map(|(key, _)| key.starts_with("tool-"))
+        .collect::<Vec<_>>();
+    let mut prepared = Vec::with_capacity(regions.len());
+    for (index, (key, content)) in regions.into_iter().enumerate() {
+        let is_tool = tool_regions[index];
+        let group_start = is_tool && (index == 0 || !tool_regions[index - 1]);
+        let group_size = if group_start {
+            tool_regions[index..]
+                .iter()
+                .take_while(|is_tool| **is_tool)
+                .count()
+        } else {
+            0
+        };
+        let class = if is_tool {
+            "timeline-content-region timeline-tool-region timeline-message"
+        } else {
+            "timeline-content-region"
+        };
+        prepared.push((key, content, class, group_start, group_size));
+    }
     rsx! {
-        for (key, content) in regions {
-            div {
-                key: "{key}",
-                class: if key.starts_with("tool-") { "timeline-content-region timeline-tool-region timeline-message" } else { "timeline-content-region" },
-                {content}
+        for (key, content, class, group_start, group_size) in prepared {
+            if group_start {
+                div {
+                    key: "{key}", class,
+                    role: "group",
+                    aria_label: "工具执行组，共 {group_size} 项",
+                    {content}
+                }
+            } else {
+                div { key: "{key}", class, {content} }
             }
         }
     }
