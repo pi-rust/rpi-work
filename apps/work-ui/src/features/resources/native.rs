@@ -445,10 +445,10 @@ pub fn NativeResources(
                         option { value: "all", "全部范围" } option { value: "project", "当前项目" } option { value: "global", "节点全局" }
                     } }
                 }
-                if !online { p { class: "resource-empty", role: "status", "执行节点离线。重连后重新读取资源，不从本地设计推断安装状态。" } }
-                else if loading() { p { role: "status", "正在读取节点目录…" } }
-                if !catalog_error().is_empty() { p { role: "alert", class: "resource-error", "目录读取失败：{catalog_error}。请重试刷新目录。" } }
-                if !session_error().is_empty() { p { class: "native-list-count", "会话选择未核实：{session_error}。可在会话资源设置中重试。" } }
+                if !online { p { class: "resource-empty resource-state-block", role: "status", "执行节点离线。重连后重新读取资源，不从本地设计推断安装状态。" } }
+                else if loading() { p { class: "resource-loading resource-state-block", role: "status", "正在读取节点目录…" } }
+                if !catalog_error().is_empty() { p { role: "alert", class: "resource-error resource-state-block", "目录读取失败：{catalog_error}。请重试刷新目录。" } }
+                if !session_error().is_empty() { p { class: "native-list-count resource-state-block", role: "status", "会话选择未核实：{session_error}。可在会话资源设置中重试。" } }
                 if let Some(catalog) = catalog.read().as_ref() {
                     { let resources = catalog.resources.iter().filter(|r| resource_matches(r, &kind, &query(), &scope_filter())).cloned().collect::<Vec<_>>(); rsx! {
                         p { class: "native-list-count", "{resources.len()} 项资源 · 安装、会话选择与实际加载分别核实" }

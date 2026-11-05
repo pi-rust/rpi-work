@@ -30,4 +30,7 @@
 .native-resources summary,.native-authoring summary{cursor:pointer;min-height:44px;align-content:center;color:var(--text)}
 .native-resources details[open]>summary,.native-authoring details[open]>summary{margin-bottom:var(--space-8)}
 .native-resources [role=status],.native-authoring [role=status]{font-size:var(--font-assist);color:var(--muted)}
+.native-resources .resource-state-block{padding:var(--space-10) var(--space-12);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);line-height:1.6}
+.native-resources .resource-loading{color:var(--info)}
+.native-resources .resource-error{border-color:var(--danger-line);background:var(--danger-bg)}
 @media(max-width:600px){.native-resources,.native-authoring{padding:var(--space-12);gap:var(--space-12)}.native-resources input:not([type=checkbox]),.native-resources textarea,.native-resources select,.native-authoring input:not([type=checkbox]),.native-authoring textarea,.native-authoring select{font-size:16px;min-height:44px}.native-resources .button,.native-authoring .button{min-height:44px}.native-actions>.button{flex:1 1 150px}.native-authoring>.button{width:100%}.native-resource-card{padding:var(--space-12)}.native-source-editor{min-height:18rem!important}}
