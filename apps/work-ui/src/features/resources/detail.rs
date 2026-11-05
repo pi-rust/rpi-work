@@ -56,6 +56,7 @@ pub(super) fn ResourceDetail(
                 dt { "资源标识" } dd { "{reference}" }
                 dt { "记录版本" } dd { {facts["version"].as_str().unwrap_or("未记录")} }
                 dt { "节点来源" } dd { {facts["source"].as_str().unwrap_or("未记录")} }
+                dt { "实际加载" } dd { "未核实（需会话资源状态证据）" }
             }
             div { class: "native-actions native-detail-primary-actions",
                 button { class: "button primary", disabled: blocked, onclick: { let reference=target.clone(); move |_| onmanage.call(NativeManagement::Inspect { reference: reference.clone() }) }, "从节点检查" }
