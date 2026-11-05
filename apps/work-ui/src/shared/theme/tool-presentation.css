@@ -31,7 +31,10 @@
   animation: tool-status-spin .8s linear infinite;
 }
 @keyframes tool-status-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .tool-running-spinner { animation: tool-status-spin 1.6s linear infinite !important; } }
+@media (prefers-reduced-motion: reduce) {
+  .tool-running-spinner { animation: tool-status-spin 1.6s linear infinite !important; }
+  :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary { transition: none; }
+}
 .conversation-widget .tool-label { gap: 6px; }
 .conversation-widget .tool-label-text { font-size: var(--font-assist); }
 .conversation-widget .call-body > pre.call-arguments { max-height: 140px; color: var(--muted); }
@@ -54,8 +57,16 @@
   border: 0; border-radius: 0;
   background: transparent; overflow: clip;
 }
+:root:not([data-tool-rendering="detailed"]) .timeline-tool-region + .timeline-tool-region {
+  position: relative;
+}
+:root:not([data-tool-rendering="detailed"]) .timeline-tool-region + .timeline-tool-region::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+}
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary {
   min-height: 34px; padding: 5px 4px; gap: 8px; border-radius: 5px; color: var(--muted);
+  transition: background-color 160ms ease, color 160ms ease;
 }
 @media (hover: hover) {
   :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary:hover { background: var(--panel); }

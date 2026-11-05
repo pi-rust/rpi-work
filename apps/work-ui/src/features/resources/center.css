@@ -16,8 +16,10 @@
 .resource-center .native-resource-filters label{font-size:14px}
 .resource-center .native-resource-filters :is(input,select){max-width:none;min-height:44px;padding:8px 12px;font-size:16px;border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--text);background:var(--card)}
 .resource-center .native-list-count{font-size:13px;color:var(--muted)}
-.native-resource-list{display:flex;flex-direction:column;gap:12px}
-.resource-center .native-resource-card{display:flex;align-items:stretch;padding:16px;gap:8px;background:var(--card)}
+.native-resource-list{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--card);overflow:hidden}
+.resource-center .native-resource-card{display:flex;align-items:stretch;padding:16px;gap:8px;background:var(--card);border:0;border-bottom:1px solid var(--line);border-radius:0;transition:background-color 160ms ease}
+.resource-center .native-resource-card:last-child{border-bottom:0}
+@media (hover:hover){.resource-center .native-resource-card:hover{background:var(--panel)}}
 .native-resource-heading{align-items:flex-start}
 .resource-center .native-resource-card h3{font-size:16px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
 .native-install-state{flex-shrink:0;max-width:45%;padding:3px 8px;border-radius:var(--radius-sm);background:var(--panel);border:1px solid var(--line);font-size:13px;line-height:1.5;color:var(--text);overflow-wrap:anywhere}
@@ -70,6 +72,7 @@ dialog.app-dialog.native-resource-detail{width:680px;padding:0;overflow:hidden}
  .resource-center-context>.button{flex-basis:100%}
  .native-resource-filters{grid-template-columns:minmax(0,1fr) 112px;gap:10px}
  .resource-center .native-resource-card{padding:12px}
+ .resource-center .native-resource-list{border-radius:var(--radius-sm)}
  .native-resource-heading{flex-wrap:wrap;gap:6px}
  .native-resource-heading h3{flex:1 1 9rem}
  .native-install-state{max-width:100%}
@@ -80,4 +83,7 @@ dialog.app-dialog.native-resource-detail{width:680px;padding:0;overflow:hidden}
  .native-detail-facts{grid-template-columns:minmax(0,1fr);gap:4px}
  .native-detail-facts dd{margin-bottom:10px}
  .native-resource-detail .native-actions>.button{flex:1 1 110px}
+}
+@media (prefers-reduced-motion: reduce){
+ .resource-center .native-resource-card{transition:none}
 }
