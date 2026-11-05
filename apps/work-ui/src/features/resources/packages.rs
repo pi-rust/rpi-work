@@ -305,7 +305,7 @@ fn PackageDiscoveryState(
         })
         .unwrap_or_default();
     rsx! {
-        section { class: "package-discovery", aria_label: "精选 Package 发现",
+        section { class: "package-discovery", aria_label: "精选 Package 发现", aria_busy: busy(),
             style { {include_str!("packages.css")} }
             h3 { "随应用发布的精选目录" }
             p { "非在线市场 · 仅分发 UTF-8 文本资源，不含二进制，不编译或执行。基础 / 开发 Package 与独立 Skill 以节点返回目录为准。" }
