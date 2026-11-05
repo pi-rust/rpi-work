@@ -473,7 +473,7 @@ pub fn NativeResources(
                                         }
                                         div { class: "native-resource-footer",
                                             span { class: "native-selection-state {selection_class}", match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" } }
-                                            span { class: "native-load-state", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
+                                            span { class: "native-load-state", aria_label: "实际加载状态：未核实", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
                                             button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, "查看详情" }
                                         }
                                     }
