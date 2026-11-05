@@ -37,6 +37,8 @@
 .native-resource-meta{overflow-wrap:anywhere}
 .native-resource-footer{flex-wrap:wrap;justify-content:flex-start}
 .native-selection-state{display:inline-flex;align-items:center;gap:6px;flex:1 1 9rem;color:var(--muted);font-size:13px;line-height:1.5}
+.native-load-state{display:inline-flex;align-items:center;gap:6px;flex:1 1 9rem;color:var(--muted);font-size:13px;line-height:1.5}
+.native-load-state::before{content:"";width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:var(--muted)}
 .resource-center .resource-empty{padding:24px 16px;border:1px dashed var(--line);border-radius:var(--radius-md);font-size:14px;line-height:1.7;color:var(--muted)}
 .resource-center .resource-error{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--danger);font-size:14px;line-height:1.7}
 .resource-center .native-resources summary{min-height:44px;align-content:center;font-size:14px;cursor:pointer}
