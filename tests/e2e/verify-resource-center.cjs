@@ -161,11 +161,15 @@ const sessionResources = {
       const button = viewNav.getByRole('button', { name, exact: true });
       await button.waitFor();
       assert.equal(await button.getAttribute('aria-pressed'), name === '当前节点' ? 'true' : 'false');
+      assert.equal(await button.getAttribute('aria-current'), name === '当前节点' ? 'page' : 'false');
     }
     assert(await center.getByLabel('搜索节点资源', { exact: true }).count());
     const range = center.getByLabel('资源范围', { exact: true });
     assert.deepEqual(await range.locator('option').evaluateAll(options => options.map(option => option.value)), ['all', 'project', 'global']);
     await cardFor(nativeResources[1].name).waitFor();
+    assert.notEqual(await center.getAttribute('aria-busy'), 'true');
+    assert.equal(await center.locator('.native-resource-card [role="status"]').count(), 3);
+    assert.equal(await center.locator('.native-load-state[role="status"]').first().getAttribute('aria-label'), '实际加载状态：未核实');
     assert.equal(await center.locator('.native-resource-card h3').allTextContents().then(names => names.some(name => name.includes(' · '))), false);
     const extensionCard = cardFor(nativeResources[1].name);
     assert.doesNotMatch(await extensionCard.locator('.native-install-state').innerText(), /已加载|运行中|inUse/);
@@ -233,6 +237,8 @@ const sessionResources = {
     await detail.waitFor();
     assert.equal(await page.locator('dialog:modal').count(), 1, 'native details use an HTML modal dialog');
     assert(await detail.locator('.native-detail-body').count());
+    assert.equal(await detail.getByText('实际加载', { exact: true }).count(), 1);
+    assert.match(await detail.innerText(), /实际加载：?\s*未核实/);
     await detail.evaluate(async element => { await Promise.all(element.getAnimations().map(animation => animation.finished)); });
     const detailBounds = await detail.boundingBox();
     assert(detailBounds.width <= 700 && detailBounds.width <= 1440 && detailBounds.height <= 768);

@@ -167,6 +167,9 @@ const messages = [
       for (let index = 0; index < batches.length; index++) {
         const row = page.locator(`[data-history-id="web-display-history-${index}"]`);
         assert.equal(await row.locator(':scope > .timeline-tool-region').count(), batches[index].length, 'each tool is an independent region rather than a spaced protocol batch');
+        const group = row.locator(':scope > .timeline-tool-region[role="group"]');
+        assert.equal(await group.count(), 1, 'the first tool region carries the accessible group summary');
+        assert.equal(await group.getAttribute('aria-label'), `工具执行组，共 ${batches[index].length} 项`);
         assert.equal(await row.locator('article, .assistant-avatar, .assistant-message-heading').count(), 0, 'tool batches have no prose container or heading');
       }
       assert.equal(await page.locator('.message-fork').count(), 0, 'message-level fork shortcut stays removed');
@@ -186,6 +189,10 @@ const messages = [
         assert.equal(await target.getAttribute('title'), item.target, 'full title must retain the tail past 96 characters');
         assert(!item.target.startsWith('path='));
         await assertStatus(item.id, item.failed ? '失败' : '已完成', item.icon);
+        const resultHint = summary(item.id).locator('.tool-result-hint[role="status"]');
+        assert.equal(await resultHint.count(), 1);
+        assert.equal(await resultHint.getAttribute('aria-live'), 'polite');
+        assert.equal(await resultHint.getAttribute('aria-label'), item.failed ? '结果状态：查看错误' : '结果状态：有结果');
         if (!item.failed) assert.equal(await isOpen(item.id), false, 'completed history starts collapsed');
       }
       for (const id of ['web-display-read', 'web-display-shell', 'web-display-search', 'web-display-functions-read']) {
