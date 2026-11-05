@@ -569,7 +569,7 @@ fn ToolCallView(
         .filter(|item| item.status == "completed")
         .count();
     rsx! {
-        div { class: "conversation-widget conversation-tool",
+        div { class: "conversation-widget conversation-tool", aria_busy: running,
             if !plan.is_empty() {
                 details { class: "inline-plan",
                     summary {
