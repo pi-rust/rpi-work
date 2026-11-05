@@ -381,7 +381,7 @@ fn PackageDiscoveryState(
                 }
             }
             if busy() { p { class: "package-state-block package-loading", role: "status", "正在读取或提交节点操作，请等待。离页或断线不代表节点取消写入，返回后请回读核对。" } }
-            if !notice().is_empty() { pre { role: "status", "{notice}" } }
+            if !notice().is_empty() { pre { class: "package-state-block package-notice", role: "status", "{notice}" } }
             if !error().is_empty() { p { class: "package-state-block package-error", role: "alert", "{error}" } }
         }
     }
