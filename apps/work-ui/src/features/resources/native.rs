@@ -78,6 +78,17 @@ fn resource_matches(resource: &NativeResource, kind: &str, query: &str, scope: &
         .contains(&query.trim().to_lowercase())
 }
 
+fn readiness_key(readiness: NativeReadiness) -> &'static str {
+    match readiness {
+        NativeReadiness::Legacy => "legacy",
+        NativeReadiness::Verified => "verified",
+        NativeReadiness::Closed => "closed",
+        NativeReadiness::Applying => "applying",
+        NativeReadiness::Blocked => "blocked",
+        NativeReadiness::Unknown => "unknown",
+    }
+}
+
 fn readiness_label(readiness: NativeReadiness) -> &'static str {
     match readiness {
         NativeReadiness::Legacy => "旧会话（未选择精确资源）",
@@ -497,7 +508,7 @@ pub fn NativeResources(
                 if !catalog_error().is_empty() { p { role: "alert", class: "resource-error", "目录读取失败：{catalog_error}" } }
             if !session_error().is_empty() { p { role: "alert", class: "resource-error", "会话资源读取失败：{session_error}" } }
             if let Some(state) = current {
-                div { class: "native-readiness-status", role: "status",
+                div { class: "native-readiness-status", "data-readiness": readiness_key(state.readiness), role: "status",
                     h3 { "会话资源：{readiness_label(state.readiness)}" }
                     p { match state.executable { Some(true) => "节点已验证可执行", Some(false) => "节点未允许执行", None => "可执行状态未核实" } }
                 }
