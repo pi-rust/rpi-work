@@ -28,6 +28,7 @@
 .tool-running-spinner {
   display: block; box-sizing: border-box; width: 14px; height: 14px;
   border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  color: var(--accent);
   animation: tool-status-spin .8s linear infinite;
 }
 @keyframes tool-status-spin { to { transform: rotate(360deg); } }
@@ -70,6 +71,12 @@
 }
 @media (hover: hover) {
   :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary:hover { background: var(--panel); }
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call[open] > summary {
+  color: var(--text); background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+:root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call.failed[open] > summary {
+  background: color-mix(in srgb, var(--danger-bg) 42%, transparent);
 }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name {
   display: flex; align-items: baseline; gap: 7px; min-width: 0; overflow: hidden;
