@@ -118,7 +118,7 @@ fn ResourceCenterState(
                     if let Some(project) = project.clone() {
                         super::packages::PackageDiscovery {
                             project, resource_kind: category.to_owned(), shared_client, connection_epoch,
-                            session_generation, online, onchanged: move |_| { revision += 1; },
+                            session_generation, online, onchanged: move |()| { revision += 1; },
                         }
                     } else { p { class: "resource-empty", "请选择项目后读取发现目录。" } }
                 }

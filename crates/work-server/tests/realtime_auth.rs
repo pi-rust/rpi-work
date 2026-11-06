@@ -90,13 +90,12 @@ async fn status_query_requires_the_same_cookie_principal_and_is_read_only() {
     let other = Client::builder().cookie_store(true).build().unwrap();
     login(&other, &url).await;
     assert_eq!(other.get(&query).send().await.unwrap().status(), 403);
-    let permit = match owner
+    let OperationClaim::Execute(permit) = owner
         .remote_operations()
         .claim(&principal, &reference, json!({"type":"prompt"}))
         .unwrap()
-    {
-        OperationClaim::Execute(permit) => permit,
-        _ => panic!("expected first permit"),
+    else {
+        panic!("expected first permit")
     };
     let expected = permit
         .finish(OperationOutcome::Succeeded {

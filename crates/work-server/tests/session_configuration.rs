@@ -9,7 +9,7 @@ use work_server::{HttpServer, ServerConfig};
 #[tokio::test]
 #[allow(clippy::too_many_lines)]
 async fn configuration_routes_share_runtime_and_enforce_access() {
-    tokio::task::LocalSet::new().run_until(async {
+    Box::pin(tokio::task::LocalSet::new().run_until(async {
         let root = tempfile::tempdir().unwrap();
         let local = Arc::new(LocalWorkspace::with_session_dir(
             PathBuf::from(env!("CARGO_BIN_EXE_work-server-rpc-fixture")), root.path().join("data"), Some(root.path().join("transcripts")),
@@ -70,5 +70,5 @@ async fn configuration_routes_share_runtime_and_enforce_access() {
         assert!(native.session_configuration(&session).await.is_ok());
         server.drain().await.unwrap();
         local.shutdown().await;
-    }).await;
+    })).await;
 }

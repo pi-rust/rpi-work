@@ -168,7 +168,7 @@ struct Packet {
     reply: oneshot::Sender<Result<Reply, ClientError>>,
     install: Option<Subscription>,
     deadline: Instant,
-    _bytes: OwnedSemaphorePermit,
+    bytes: OwnedSemaphorePermit,
 }
 struct Pending {
     expected: Expected,
@@ -267,7 +267,7 @@ impl Handle {
                 reply: tx,
                 install,
                 deadline: Instant::now() + REQUEST_TIMEOUT,
-                _bytes: bytes,
+                bytes,
             })
             .map_err(|_| limited())?;
         let reply = tokio::time::timeout(REQUEST_TIMEOUT, rx)
@@ -756,7 +756,7 @@ async fn run(
                     let Expected::Subscribed { subscription, .. } = &packet.expected else { break; };
                     subscriptions.insert(subscription.clone(), source);
                 }
-                pending.insert(packet.request_id, Pending { expected: packet.expected, reply: packet.reply, deadline: packet.deadline, _bytes: packet._bytes });
+                pending.insert(packet.request_id, Pending { expected: packet.expected, reply: packet.reply, deadline: packet.deadline, _bytes: packet.bytes });
                 sent += 1;
                 if write(&mut socket, Message::Text(packet.text.into()), &mut fence).await.is_err() { break; }
             }

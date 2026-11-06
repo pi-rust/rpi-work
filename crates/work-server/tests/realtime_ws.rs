@@ -916,9 +916,8 @@ async fn websocket_only_never_silently_downgrades_an_unauthenticated_client() {
     let f = Fixture::new().await;
     let client = WorkClient::new(&format!("http://{}", f.server.address())).unwrap();
     client.set_remote_transport(RemoteTransport::WebSocketOnly);
-    let error = match client.subscribe(&f.session, 0).await {
-        Ok(_) => panic!("unauthenticated WebSocketOnly must not downgrade"),
-        Err(error) => error,
+    let Err(error) = client.subscribe(&f.session, 0).await else {
+        panic!("unauthenticated WebSocketOnly must not downgrade")
     };
     assert!(matches!(
         error,

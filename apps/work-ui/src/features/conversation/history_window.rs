@@ -150,7 +150,7 @@ mod tests {
             ..HistoryWindow::default()
         };
         let live = json!({"entryId":"anonymous-1-1","role":"user","content":"newer", "__rpiClientAnonymousId":true,"__rpiClientCanonicalId":"formal"});
-        let merged = w.merge_tail(&[live.clone()]);
+        let merged = w.merge_tail(std::slice::from_ref(&live));
         assert_eq!(
             merged,
             vec![live],

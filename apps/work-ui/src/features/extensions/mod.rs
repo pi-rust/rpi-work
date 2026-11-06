@@ -314,10 +314,7 @@ mod tests {
                 .unwrap();
             assert_eq!(manifest.agent.is_some(), agent);
             assert_eq!(manifest.ui.is_some(), ui);
-            assert_eq!(
-                design_catalog(&manifest).unwrap().len(),
-                if ui { 1 } else { 0 }
-            );
+            assert_eq!(design_catalog(&manifest).unwrap().len(), usize::from(ui));
         }
     }
 

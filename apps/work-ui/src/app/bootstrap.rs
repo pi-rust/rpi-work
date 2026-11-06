@@ -13,16 +13,13 @@ pub fn launch() {
     }
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
-        let args = match std::env::args_os()
+        let Ok(args) = std::env::args_os()
             .skip(1)
             .map(std::ffi::OsString::into_string)
             .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(args) => args,
-            Err(_) => {
-                work_host::report_error("启动参数必须是 UTF-8；未启动本机节点。");
-                std::process::exit(2);
-            }
+        else {
+            work_host::report_error("启动参数必须是 UTF-8；未启动本机节点。");
+            std::process::exit(2);
         };
         // Explicit modes/targets do not use the environment target. Never
         // reinterpret an invalid default target as permission to start an owner.

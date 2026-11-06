@@ -153,7 +153,7 @@ async fn serve(mut socket: WebSocket, peer: Arc<Peer>) {
         node_id: "expected-node".into(),
         owner_epoch: "expected-owner".into(),
         connection_id: "peer-connection".into(),
-        capabilities: Default::default(),
+        capabilities: work_core::api::realtime::Capabilities::default(),
     };
     if matches!(peer.mode, Mode::WrongNode) {
         hello.node_id = "changed-node".into();

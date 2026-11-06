@@ -94,12 +94,12 @@ pub fn SessionSwitcher(
                             Key::ArrowDown => "down", Key::ArrowUp => "up", Key::Home => "first", Key::End => "last", _ => return,
                         };
                         event.prevent_default();
-                        let _ = document::eval(&format!(r#"
+                        let _ = document::eval(&format!(r"
                             const rows=[...document.querySelectorAll('#session-switcher-results button')];
                             const i=rows.indexOf(document.activeElement),n=rows.length;
                             const next={{down:(i+1)%n,up:(i+n-1)%n,first:0,last:n-1}}['{direction}'];
                             rows[next]?.focus();
-                        "#));
+                        "));
                     },
                     if display_mode == "grouped" && !node_label.is_empty() {
                         div { class: "session-switcher-node-heading", role: "heading", aria_level: "3",

@@ -1,6 +1,6 @@
 // Browser qualification of the actual packaged UI and shared bridge. The owner
 // status is an isolated fixture; real owner/HTTP semantics are tested in Rust.
-const {chromium}=require('../../tools/node_modules/playwright');
+const {chromium}=require('node:module').createRequire(require.resolve('../../tools/package.json'))('playwright');
 const http=require('node:http');
 const fs=require('node:fs');
 const path=require('node:path');

@@ -34,7 +34,7 @@ async fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match run(cli).await {
+    match Box::pin(run(cli)).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             work_host::report_error(&error);
@@ -86,7 +86,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             if name == "watch" {
                 return watch(&client, &args[0]).await;
             }
-            execute(&client, &name, &args).await
+            Box::pin(execute(&client, &name, &args)).await
         }
     }
 }
@@ -167,10 +167,12 @@ async fn execute(client: &WorkClient, name: &str, args: &[String]) -> Result<(),
             .await?,
         ),
         "sessions" => output(&operation(client.sessions(), false).await?),
-        "state" => output(&operation(client.runtime_state(&args[0]), false).await?),
-        "history" => output(&operation(client.history(&args[0], None, None, 100), false).await?),
-        "models" => output(&operation(client.models(&args[0]), false).await?),
-        "tools" => output(&operation(client.tools(&args[0]), false).await?),
+        "state" => output(&Box::pin(operation(client.runtime_state(&args[0]), false)).await?),
+        "history" => {
+            output(&Box::pin(operation(client.history(&args[0], None, None, 100), false)).await?)
+        }
+        "models" => output(&Box::pin(operation(client.models(&args[0]), false)).await?),
+        "tools" => output(&Box::pin(operation(client.tools(&args[0]), false)).await?),
         "project-create" => output(
             &operation(
                 client.create_project(&args[0], args.get(1).map(String::as_str), false),
@@ -190,7 +192,7 @@ async fn execute(client: &WorkClient, name: &str, args: &[String]) -> Result<(),
             output(&operation(client.rename_session(&args[0], &args[1]), true).await?)
         }
         "prompt" => {
-            let ack = operation(client.prompt(&args[0], &args[1]), true).await?;
+            let ack = Box::pin(operation(client.prompt(&args[0], &args[1]), true)).await?;
             output(&ack)?;
             if ack.success {
                 Ok(())
@@ -202,7 +204,7 @@ async fn execute(client: &WorkClient, name: &str, args: &[String]) -> Result<(),
             }
         }
         "abort" => {
-            let ack = operation(client.abort(&args[0]), true).await?;
+            let ack = Box::pin(operation(client.abort(&args[0]), true)).await?;
             output(&ack)?;
             if ack.success {
                 Ok(())
@@ -214,7 +216,13 @@ async fn execute(client: &WorkClient, name: &str, args: &[String]) -> Result<(),
             // Parsed before auth/client creation; never fall back to raw requests.
             let value: Value = serde_json::from_str(&args[2])
                 .map_err(|_| "invalid dialog JSON (input omitted)".to_string())?;
-            output(&operation(client.dialog_response(&args[0], &args[1], value), true).await?)
+            output(
+                &Box::pin(operation(
+                    client.dialog_response(&args[0], &args[1], value),
+                    true,
+                ))
+                .await?,
+            )
         }
         _ => Err("unsupported command".into()),
     }

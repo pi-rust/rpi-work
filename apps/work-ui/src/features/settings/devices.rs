@@ -316,7 +316,7 @@ pub fn DevicesPage(
             pairing.address_draft.set(draft);
         }
     });
-    let mut open_share = move |_: ()| {
+    let mut open_share = move |(): ()| {
         pairing
             .request
             .with_mut(authorization_offer::Request::close);
@@ -1125,7 +1125,7 @@ mod tests {
         assert_eq!(value["address"], "https://example.test");
         assert_eq!(value["expiresAt"], 1120);
         assert_eq!(value["nodeId"], "node-a");
-        assert!(value["ticket"].as_str() == Some("test-only-ticket"));
+        assert_eq!(value["ticket"].as_str(), Some("test-only-ticket"));
         assert!(!raw.contains("password"));
         // Ordinary browser scanning must not treat an authorization as an address.
         assert!(connection_address(&raw).is_err());

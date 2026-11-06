@@ -5,6 +5,8 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.78"
 license = "MIT"
+repository = "https://github.com/pi-rust/rpi-package"
+
 description = "Versioned component packages and isolated custom UI contracts"
 
 [dependencies]

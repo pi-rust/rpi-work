@@ -273,7 +273,7 @@ mod tests {
                     let mut bytes = Vec::new();
                     loop {
                         let mut buffer = [0_u8; 1024];
-                        let read = socket.read(&mut buffer).ok().expect("fixture read failed");
+                        let read = socket.read(&mut buffer).expect("fixture read failed");
                         assert!(read > 0 && bytes.len() < 16384, "invalid fixture request");
                         bytes.extend_from_slice(&buffer[..read]);
                         if bytes.windows(4).any(|part| part == b"\r\n\r\n") {
@@ -337,7 +337,6 @@ mod tests {
                 .take()
                 .unwrap()
                 .join()
-                .ok()
                 .expect("HTTP fixture failed");
             assert!(count == self.expected, "missing HTTP fixture request");
         }
@@ -359,7 +358,6 @@ mod tests {
     // boundary, keeping the real opaque credential validation and HTTP client.
     fn attempt(address: &str, node_id: Option<&str>) -> ResumeAttempt {
         let session = serde_json::from_value(envelope(address, 100)["session"].clone())
-            .ok()
             .expect("valid synthetic session");
         ResumeAttempt {
             address: address.into(),
@@ -385,7 +383,7 @@ mod tests {
             (json!({"sharingEnabled":true,"nodeId":""}), None),
         ] {
             let server = Server::new(vec![probe(200, body)]);
-            assert!(run(identity(&server.address)).as_deref() == expected);
+            assert_eq!(run(identity(&server.address)).as_deref(), expected);
             server.finish();
         }
         for status in [401, 403, 500] {
@@ -404,12 +402,8 @@ mod tests {
         let node = run(attempt(&server.address, Some(PIN)).resume(101))
             .ok()
             .expect("resume succeeds");
-        assert!(node.address == server.address);
-        assert!(
-            run(node.client.auth())
-                .ok()
-                .is_some_and(|state| state.authenticated)
-        );
+        assert_eq!(node.address, server.address);
+        assert!(run(node.client.auth()).is_ok_and(|state| state.authenticated));
         server.finish();
     }
 
@@ -511,10 +505,10 @@ mod tests {
             auth(200, true),
             unauthenticated_after,
         ]);
-        let fresh = WorkClient::new(&server.address).ok().expect("fresh client");
-        assert!(!run(fresh.auth()).ok().expect("fresh auth").authenticated);
+        let fresh = WorkClient::new(&server.address).expect("fresh client");
+        assert!(!run(fresh.auth()).expect("fresh auth").authenticated);
         let saved = attempt(&server.address, Some(PIN)).session;
-        assert!(saved.expires_at() == 43300);
+        assert_eq!(saved.expires_at(), 43300);
         for now in [101, 43299] {
             let restored = ResumeAttempt {
                 address: server.address.clone(),
@@ -523,18 +517,13 @@ mod tests {
             };
             assert!(run(restored.resume(now)).is_ok());
             // Resume does not resave/extend the opaque persisted TTL.
-            assert!(saved.expires_at() == 43300);
-            let payload = serde_json::to_value(&saved)
-                .ok()
-                .expect("synthetic session serializes");
+            assert_eq!(saved.expires_at(), 43300);
+            let payload = serde_json::to_value(&saved).expect("synthetic session serializes");
             assert!(payload["savedAt"] == 100 && payload["expiresAt"] == 43300);
         }
-        let fresh = WorkClient::new(&server.address)
-            .ok()
-            .expect("another fresh client");
+        let fresh = WorkClient::new(&server.address).expect("another fresh client");
         assert!(
             !run(fresh.auth())
-                .ok()
                 .expect("fresh auth after restores")
                 .authenticated
         );
@@ -556,7 +545,6 @@ mod tests {
         let address = "https://pc.example:13031";
         // Synthetic opaque cookie provider: no login password or QR ticket needed.
         let client = WorkClient::restore_session(address, attempt(address, None).session, 100)
-            .ok()
             .expect("synthetic cookie provider");
         let node = EntryNode {
             address: format!("{address}/"),
@@ -564,10 +552,10 @@ mod tests {
         };
         let (payload, has_session) = encode(&node, Some(PIN.into()), 100).expect("encoded session");
         assert!(has_session);
-        let value: Value = serde_json::from_str(&payload).ok().expect("valid envelope");
-        assert!(
-            value
-                == json!({"version":1,"address":address,"nodeId":PIN,
+        let value: Value = serde_json::from_str(&payload).expect("valid envelope");
+        assert_eq!(
+            value,
+            json!({"version":1,"address":address,"nodeId":PIN,
             "session":{"endpoint":format!("{address}/"),"cookieHeader":COOKIE,"savedAt":100,"expiresAt":43300}})
         );
         assert!(
@@ -582,16 +570,16 @@ mod tests {
         let node = EntryNode {
             address: address.into(),
             client: WorkClient::new(address)
-                .ok()
                 .expect("address-only client")
                 .into(),
         };
         let (payload, has_session) = encode(&node, None, 100).expect("encoded address");
         assert!(!has_session);
-        let value: Value = serde_json::from_str(&payload)
-            .ok()
-            .expect("valid address envelope");
-        assert!(value == json!({"version":1,"address":address,"nodeId":null,"session":null}));
+        let value: Value = serde_json::from_str(&payload).expect("valid address envelope");
+        assert_eq!(
+            value,
+            json!({"version":1,"address":address,"nodeId":null,"session":null})
+        );
         let stored = decode(json!({"address":address,"session":value,"unavailable":false}));
         assert!(stored.address == address && stored.attempt.is_none() && !stored.unavailable);
     }
@@ -606,7 +594,7 @@ mod tests {
             let stored = decode(
                 json!({"address":"https://pc.example:13031/","session":session,"unavailable":false}),
             );
-            assert!(stored.address == "https://pc.example:13031");
+            assert_eq!(stored.address, "https://pc.example:13031");
             assert!(stored.attempt.is_none());
         }
         for raw in [
@@ -618,7 +606,7 @@ mod tests {
             "not-an-address",
         ] {
             let stored = decode(json!({"address":raw,"session":null,"unavailable":false}));
-            assert!(stored.address.is_empty());
+            assert_eq!(stored.address, "");
             assert!(stored.attempt.is_none());
         }
     }

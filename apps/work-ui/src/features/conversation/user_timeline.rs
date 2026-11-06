@@ -432,7 +432,7 @@ pub fn UserTimeline(
         "还有更早消息尚未加载。"
     };
     rsx! {
-        HistoricalReader { state: reading, onload: move |query| load_window.call(query), onclose: move |_| close_reader.call(()) }
+        HistoricalReader { state: reading, onload: move |query| load_window.call(query), onclose: move |()| close_reader.call(()) }
         div {
             id: "{id}", class: "conversation-timeline", "data-session-scope": scope,
             "data-native-timeline": native,

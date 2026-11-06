@@ -31,7 +31,7 @@ fn owner(root: &tempfile::TempDir) -> Arc<LocalWorkspace> {
 #[allow(clippy::too_many_lines)] // Keep the shared owner/PID and drain proof together.
 async fn rpc_and_http_share_owner_and_event_replay() {
     // LocalSet is intentional: native AgentTransport futures are !Send.
-    tokio::task::LocalSet::new()
+    Box::pin(tokio::task::LocalSet::new()
         .run_until(async {
             let root = tempfile::tempdir().unwrap();
             let local = owner(&root);
@@ -139,7 +139,7 @@ async fn rpc_and_http_share_owner_and_event_replay() {
             );
             local.shutdown().await;
             drop(server);
-        })
+        }))
         .await;
 }
 
@@ -376,7 +376,7 @@ async fn static_assets_are_same_origin_and_bounded() {
 
 #[tokio::test]
 async fn host_consent_revokes_streams_and_logins_without_stopping_workspace() {
-    tokio::task::LocalSet::new().run_until(async {
+    Box::pin(tokio::task::LocalSet::new().run_until(async {
         let root = tempfile::tempdir().unwrap();
         let local = owner(&root);
         let mut settings = config(); settings.allow_sharing = false;
@@ -422,5 +422,5 @@ async fn host_consent_revokes_streams_and_logins_without_stopping_workspace() {
         let restored_pid = http.command_data::<Value>(&session,"get_state",Value::Null).await.unwrap()["fixturePid"].clone();
         assert_eq!(native_pid,restored_pid);
         server.drain().await.unwrap(); local.shutdown().await; drop(server);
-    }).await;
+    })).await;
 }

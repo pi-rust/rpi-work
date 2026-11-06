@@ -29,6 +29,8 @@ for package in packages:
         if relative.parts[0] not in ("src", "ui", "ui-host", "assets", "tests", "Cargo.toml", "README.md"):
             continue
         data = path.read_bytes()
+        if path.suffix in (".rs", ".toml", ".md", ".js", ".html"):
+            data = data.replace(b"\r\n", b"\n")
         if relative.as_posix() == "Cargo.toml":
             text = data.decode("utf-8")
             text = re.sub(r"edition\.workspace\s*=\s*true", 'edition = "2021"', text)

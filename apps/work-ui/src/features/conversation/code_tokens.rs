@@ -529,7 +529,7 @@ mod tests {
         assert!(tokens.len() <= MAX_TOKENS);
         let mut offset = 0;
         for token in &tokens {
-            assert!(!token.text.is_empty());
+            assert_ne!(token.text, "");
             assert_eq!(token.text.as_ptr(), source[offset..].as_ptr());
             assert!(matches!(
                 token.class,
@@ -687,7 +687,7 @@ mod tests {
     #[test]
     fn empty_source_has_no_tokens() {
         for language in ["rust", "js", "py", "json", "sh", ""] {
-            assert!(checked("", language).is_empty());
+            assert_eq!(checked("", language), [] as [Token<'_>; 0]);
         }
     }
 
@@ -743,7 +743,7 @@ mod tests {
             ];
             let mut source = String::new();
             for _ in 0..2000 {
-                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                 source.push(alphabet[state as usize % alphabet.len()]);
             }
             checked(&source, language);

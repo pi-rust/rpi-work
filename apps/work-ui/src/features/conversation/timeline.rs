@@ -306,8 +306,7 @@ pub fn render_history_in_context(
     }
     let parts = message
         .get("content")
-        .map(history_parts)
-        .unwrap_or_else(|| history_parts(&Value::String(text)));
+        .map_or_else(|| history_parts(&Value::String(text)), history_parts);
     let regions = parts
         .into_iter()
         .enumerate()
@@ -1632,11 +1631,11 @@ mod tests {
         assert!(
             matches!(&parts[6], HistoryPart::Public(PublicPart::Image(Err(error))) if !error.contains("secret"))
         );
-        assert!(
+        assert_eq!(
             history_parts(
                 &json!([{"type":"thinking","text":"private"},{"type":"text","text":"\n"}])
-            )
-            .is_empty()
+            ),
+            [] as [HistoryPart; 0]
         );
         assert_eq!(
             history_parts(&json!("real\n\ntext")),

@@ -129,7 +129,10 @@ async fn components_share_the_owner_and_do_not_start_an_agent() {
                     .is_err()
             );
             remote.component_remove("custom-panel").await.unwrap();
-            assert!(local.component_catalog().await.unwrap().is_empty());
+            assert_eq!(
+                local.component_catalog().await.unwrap(),
+                [] as [work_core::components::Installed; 0]
+            );
 
             rpi_http_component::register(
                 owner.component_host(),

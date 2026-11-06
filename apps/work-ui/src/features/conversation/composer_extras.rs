@@ -253,13 +253,13 @@ mod attachment_snapshot_tests {
         assert_eq!(sent.text, format!("请检查\n[附件：script.rs]\n{text}"));
         assert!(sent.content_blocks.is_none());
         assert_eq!(store.snapshot("scope").files.len(), 1);
-        assert!(
+        assert_eq!(
             store
                 .prepare("other", "原文字", true)
                 .unwrap()
                 .snapshot
-                .files
-                .is_empty()
+                .files,
+            [] as [(u64, std::string::String); 0]
         );
     }
 
@@ -590,7 +590,7 @@ fn attachment_label(file: &LocalAttachment, images_supported: bool) -> &'static 
 async fn prepare_image(file: &mut LocalAttachment) -> Result<(), String> {
     let source = serde_json::to_string(file.image.as_deref().unwrap_or_default()).unwrap();
     let script = format!(
-        r#"
+        r"
 (async () => {{
   let image;
   try {{
@@ -647,7 +647,7 @@ async fn prepare_image(file: &mut LocalAttachment) -> Result<(), String> {
     throw new Error('budget');
   }} catch (_) {{ dioxus.send({{ok:false}}); }}
   finally {{ if (image) image.src = ''; }}
-}})();"#
+}})();"
     );
     let result = document::eval(&script)
         .recv::<Value>()
@@ -831,7 +831,8 @@ fn AttachmentFiles(
                                     } else { ExtraIcon { kind: "file" } }
                                     span { title: "{file.name}", span { "{file.name}" } small { "{size_label(file.size)} · {attachment_label(&file, images_supported)}" } }
                                 }
-                                button { r#type: "button", class: "attachment-remove", disabled, aria_label: "移除 {file.name}", onclick: move |_| { if disabled { return; } if let Some(state) = store.write().scopes.get_mut(&remove_scope) { state.files.retain(|file| file.id != id); }
+                                button { r#type: "button", class: "attachment-remove", disabled, aria_label: "移除 {file.name}", onclick: move |_| { if disabled { return; }
+                                    if let Some(state) = store.write().scopes.get_mut(&remove_scope) { state.files.retain(|file| file.id != id); }
                                     if *preview.peek() == Some(id) { preview.set(None); } }, ExtraIcon { kind: "close" } }
                             }
                         } }

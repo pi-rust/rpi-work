@@ -80,8 +80,9 @@ pub fn FooterHost(
     let _ = host_snapshot.validate();
     let preferences = use_context::<FooterPreferencesContext>();
     let settings_document = try_use_context::<Signal<AppSettingsState>>()
-        .map(|store| store.read().value.clone())
-        .unwrap_or_else(app_settings::default_value);
+        .map_or_else(app_settings::default_value, |store| {
+            store.read().value.clone()
+        });
     let contributions = select_runtime_footer_contributions(&settings_document, contributions);
     let settings = preferences.store.read().settings.clone();
     let collected = registry::collect(BUILTINS, &context);

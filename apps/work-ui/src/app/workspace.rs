@@ -606,7 +606,9 @@ pub(super) fn App() -> Element {
                 let client = client.clone();
                 let context = context.clone();
                 state::scoped_spawn(requests, async move {
-                    let result = config_requests::bounded("读取模型列表", client.models(&id)).await;
+                    let result =
+                        Box::pin(config_requests::bounded("读取模型列表", client.models(&id)))
+                            .await;
                     if model_context() != context || *model_catalog_ticket.peek() != ticket {
                         return;
                     }
@@ -622,10 +624,10 @@ pub(super) fn App() -> Element {
             // Catalog readiness must not wait for an unrelated thinking-level request.
             if access.thinking_read {
                 state::scoped_spawn(requests, async move {
-                    let result = config_requests::bounded(
+                    let result = Box::pin(config_requests::bounded(
                         "读取思考等级",
                         client.thinking_levels(&session_id),
-                    )
+                    ))
                     .await;
                     if model_context() != context || *model_catalog_ticket.peek() != ticket {
                         return;
@@ -2969,7 +2971,7 @@ pub(super) fn App() -> Element {
         let submission = if from_queue {
             composer_extras::AttachmentSubmission {
                 text: draft.text.clone(),
-                snapshot: Default::default(),
+                snapshot: composer_extras::AttachmentSnapshot::default(),
                 content_blocks: None,
             }
         } else {
@@ -2979,7 +2981,7 @@ pub(super) fn App() -> Element {
                 session_access
                     .read()
                     .as_ref()
-                    .is_some_and(|access| access.supports_prompt_content()),
+                    .is_some_and(work_client::SessionAccess::supports_prompt_content),
             ) {
                 Ok(submission) => submission,
                 Err(error) => {
@@ -3873,7 +3875,11 @@ pub(super) fn App() -> Element {
             return;
         };
         state::scoped_spawn(requests, async move {
-            let result = config_requests::bounded("核对当前配置", client.runtime_state(&id)).await;
+            let result = Box::pin(config_requests::bounded(
+                "核对当前配置",
+                client.runtime_state(&id),
+            ))
+            .await;
             if model_context() != context
                 || *model_catalog_revision.read() != revision
                 || *model_commit_revision.read() != commit
@@ -4031,8 +4037,7 @@ pub(super) fn App() -> Element {
     let repository_snapshot = git_status.read().clone();
     let change_count = repository_snapshot
         .as_ref()
-        .map(|repo| repo.files.len().to_string())
-        .unwrap_or_else(|| "—".into());
+        .map_or_else(|| "—".into(), |repo| repo.files.len().to_string());
     let reviewed_snapshot = reviewed_changes.read().clone();
     let visible_changes = repository_snapshot
         .as_ref()
@@ -5145,7 +5150,7 @@ pub(super) fn App() -> Element {
                             }
                             div { class: if running { "composer is-running" } else { "composer" },
                             if let Some(session_id) = selected_session.read().clone() {
-                                { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope: scope.clone(), store: attachment_store, presentation: "files".to_owned(), images_supported: session_access.read().as_ref().is_some_and(|access| access.supports_prompt_content()), disabled: submitting, onquote: move |text| {
+                                { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope: scope.clone(), store: attachment_store, presentation: "files".to_owned(), images_supported: session_access.read().as_ref().is_some_and(work_client::SessionAccess::supports_prompt_content), disabled: submitting, onquote: move |text| {
                                     if let Some(id) = selected_session.read().as_deref() { let draft_scope = session_scope_key(&node_url.read(), id); let existing = drafts.read().get(&draft_scope).map(|d| d.text.clone()).unwrap_or_default(); update_draft(drafts, &draft_scope, if existing.is_empty() { text } else { format!("{existing}\n{text}") }); }
                                 } } } }
                             }
@@ -5197,7 +5202,7 @@ pub(super) fn App() -> Element {
                             div { class: "composer-bottom",
                                 div { class: "composer-options",
                                     if let Some(session_id) = selected_session.read().clone() {
-                                        { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope, store: attachment_store, presentation: "button".to_owned(), images_supported: session_access.read().as_ref().is_some_and(|access| access.supports_prompt_content()), disabled: submitting, onquote: move |text| {
+                                        { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope, store: attachment_store, presentation: "button".to_owned(), images_supported: session_access.read().as_ref().is_some_and(work_client::SessionAccess::supports_prompt_content), disabled: submitting, onquote: move |text| {
                                             if let Some(id) = selected_session.read().as_deref() { let scope = session_scope_key(&node_url.read(), id); let existing = drafts.read().get(&scope).map(|d| d.text.clone()).unwrap_or_default(); update_draft(drafts, &scope, if existing.is_empty() { text } else { format!("{existing}\n{text}") }); }
                                         } } } }
                                     }
@@ -5221,12 +5226,12 @@ pub(super) fn App() -> Element {
                                             let (Some(session_id), Some(client)) = (selected_session.read().clone(), shared_client.read().clone()) else { return; };
                                             model_pending.set(Some(context.clone())); model_catalog_error.set(None);
                                             state::scoped_spawn(requests, async move {
-                                                let result = config_requests::bounded("切换模型", client.set_session_config_option(&session_id, "model", serde_json::json!(model.id))).await;
+                                                let result = Box::pin(config_requests::bounded("切换模型", client.set_session_config_option(&session_id, "model", serde_json::json!(model.id)))).await;
                                                 if model_context() != context { return; }
                                                 match result {
                                                     Ok(response) if response.get("requiresRestart").and_then(Value::as_bool) != Some(true) => {
                                                         config_unconfirmed.set(Some((context.clone(), ConfigField::Model)));
-                                                        let state = config_requests::bounded("回读模型", client.runtime_state(&session_id)).await;
+                                                        let state = Box::pin(config_requests::bounded("回读模型", client.runtime_state(&session_id))).await;
                                                         if model_context() != context { return; }
                                                         match state {
                                                             Ok(state) => {
@@ -5276,13 +5281,13 @@ pub(super) fn App() -> Element {
                                             thinking_error.set(None);
                                             thinking_pending.set(Some(context.clone()));
                                             state::scoped_spawn(requests, async move {
-                                                let result = config_requests::bounded("切换思考等级", client.set_session_config_option(&session_id, "thinking", serde_json::json!(value))).await;
+                                                let result = Box::pin(config_requests::bounded("切换思考等级", client.set_session_config_option(&session_id, "thinking", serde_json::json!(value)))).await;
                                                 if model_context() != context { return; }
                                                 if matches!(&result, Err(work_client::ClientError::RequestTimeout(_))) { config_unconfirmed.set(Some((context.clone(), ConfigField::Thinking))); }
                                                 let failure = match result {
                                                     Ok(response) if response.get("requiresRestart").and_then(Value::as_bool) != Some(true) => {
                                                         config_unconfirmed.set(Some((context.clone(), ConfigField::Thinking)));
-                                                        let result = config_requests::bounded("回读思考等级", client.runtime_state(&session_id)).await;
+                                                        let result = Box::pin(config_requests::bounded("回读思考等级", client.runtime_state(&session_id))).await;
                                                         if model_context() != context { return; }
                                                         if matches!(&result, Err(work_client::ClientError::RequestTimeout(_))) { config_unconfirmed.set(Some((context.clone(), ConfigField::Thinking))); }
                                                         match result {

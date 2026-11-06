@@ -505,9 +505,7 @@ fn ProviderSettingsState(
         // implicit overwrite. Existing edits retain exact ID and observed CAS.
         if let ProviderAction::Upsert { definition } = &action {
             if let Some(entry) = observed.providers.iter().find(|p| p.id == definition.id) {
-                if (entry.configured && entry.definition.is_none())
-                    || (!draft.peek().existing && entry.configured)
-                {
+                if (!draft.peek().existing || entry.definition.is_none()) && entry.configured {
                     error.set(
                         "该 ID 已有配置；请从目录编辑。高级定义只读，不会通过表单重建。".into(),
                     );
@@ -835,7 +833,7 @@ fn api_label(api: ProviderApi) -> &'static str {
     }
 }
 fn token_label(n: Option<u64>) -> String {
-    n.map(|n| n.to_string()).unwrap_or_else(|| "未指定".into())
+    n.map_or_else(|| "未指定".into(), |n| n.to_string())
 }
 fn credential_label(c: StoredCredential) -> &'static str {
     match c {

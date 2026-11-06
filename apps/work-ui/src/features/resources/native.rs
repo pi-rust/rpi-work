@@ -559,8 +559,8 @@ pub fn NativeResources(
                 super::detail::ResourceDetail {
                     key: "{resource.reference}", reference: resource.reference, name: resource.name,
                     scope: resource.scope, facts: resource.facts, busy: busy(), loading: loading(), online,
-                    error: if owns_receipt { error() } else { String::new() }, notice: if owns_receipt { notice() } else { String::new() }, onmanage: move |request| manage(request),
-                    onclose: move |_| detail.set(None),
+                    error: if owns_receipt { error() } else { String::new() }, notice: if owns_receipt { notice() } else { String::new() }, onmanage: manage,
+                    onclose: move |()| detail.set(None),
                 }
                 } }
             }

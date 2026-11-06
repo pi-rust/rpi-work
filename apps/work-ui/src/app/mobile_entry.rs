@@ -155,9 +155,9 @@ mod native {
         let mut remember = move |node: &EntryNode, node_id: Option<String>| {
             remembered_address.set(node.address.clone());
             let saved = connection_memory::encode(node, node_id, now());
-            let (saved_ok, has_session) = saved
-                .map(|(payload, has_session)| (secure_store::save(&payload), has_session))
-                .unwrap_or((false, false));
+            let (saved_ok, has_session) = saved.map_or((false, false), |(payload, has_session)| {
+                (secure_store::save(&payload), has_session)
+            });
             memory_warning.set(
                 if !saved_ok {
                     "本次已连接，但无法安全保存登录；下次可能需要重新登录。"
@@ -268,7 +268,7 @@ mod native {
             let mut back_cancel = back_cancel.clone();
             async move {
                 let mut listener = document::eval(
-                    r#"
+                    r"
             const back=e=>{if(e.type!=='keydown'||['Escape','BrowserBack','GoBack'].includes(e.key)){
                 if(e.type==='keydown')e.preventDefault();dioxus.send(e.type);
             }};
@@ -279,7 +279,7 @@ mod native {
                 window.removeEventListener('keydown',back);window.removeEventListener('pagehide',back);
                 document.removeEventListener('visibilitychange',hidden);delete window.__rpiMobileEntryCleanup;
             };
-        "#,
+        ",
                 );
                 while let Ok(reason) = listener.recv::<String>().await {
                     // The native photo picker backgrounds the webview. It owns no
@@ -602,7 +602,7 @@ mod tests {
         for raw in ["https://node.example", "null", "[]", &" ".repeat(4097)] {
             assert!(parse_code(raw, 1000).is_err());
         }
-        let duplicate = payload().to_string().replacen("{", "{\"v\":1,", 1);
+        let duplicate = payload().to_string().replacen('{', "{\"v\":1,", 1);
         assert!(parse_code(&duplicate, 1000).is_err());
     }
 }

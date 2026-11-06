@@ -135,9 +135,9 @@ pub(crate) fn switcher_session_state(
     let Some(observed) = observed else {
         return switcher_session_status(session, activity);
     };
-    if !observed
+    if observed
         .cursor
-        .is_some_and(|cursor| cursor >= session.last_seq)
+        .is_none_or(|cursor| cursor < session.last_seq)
     {
         // A newer server summary outranks an older stream/snapshot observation.
         return switcher_session_status(session, None);

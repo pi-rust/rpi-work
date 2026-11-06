@@ -22,7 +22,7 @@ fn decode(value: &str) -> Option<String> {
         bytes.push(if byte == b'%' {
             let hi = (input.next()? as char).to_digit(16)?;
             let lo = (input.next()? as char).to_digit(16)?;
-            (hi * 16 + lo) as u8
+            u8::try_from(hi * 16 + lo).ok()?
         } else {
             byte
         });
@@ -129,7 +129,7 @@ pub(crate) fn looks_like_file(target: &str) -> bool {
             ext.len() <= 12
                 && !ext.is_empty()
                 && ext != path
-                && ext.chars().all(|c| c.is_alphanumeric())
+                && ext.chars().all(char::is_alphanumeric)
         })
         || matches!(path, "README" | "LICENSE" | "Makefile" | "Dockerfile")
 }

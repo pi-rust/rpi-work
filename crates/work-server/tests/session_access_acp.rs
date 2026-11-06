@@ -11,14 +11,17 @@ use work_server::{HttpServer, ServerConfig};
 fn production_acp_access_dialogs_and_unified_sse() {
     if std::env::var_os("WORK_ACCESS_HTTP_WORKER").is_none() {
         let executable = std::env::current_exe().unwrap();
-        let fixture = std::env::var_os("WORK_SESSION_ACCESS_ACP_FIXTURE").map_or_else(|| {
+        let fixture = std::env::var_os("WORK_SESSION_ACCESS_ACP_FIXTURE").map_or_else(
+            || {
                 executable
                     .parent()
                     .unwrap()
                     .parent()
                     .unwrap()
                     .join(format!("acp-fixture{}", std::env::consts::EXE_SUFFIX))
-            }, PathBuf::from);
+            },
+            PathBuf::from,
+        );
         assert!(
             fixture.is_file(),
             "build existing acp-fixture first: {}",
@@ -50,7 +53,7 @@ fn production_acp_access_dialogs_and_unified_sse() {
         .block_on(async {
             tokio::task::LocalSet::new()
                 .run_until(async {
-                    tokio::time::timeout(Duration::from_secs(50), scenario())
+                    Box::pin(tokio::time::timeout(Duration::from_secs(50), scenario()))
                         .await
                         .unwrap();
                 })

@@ -1,6 +1,6 @@
 // Formal WASM UI -> actual isolated headless owner -> packaged component UI.
 // No production ports, user registry or model calls are used.
-const {chromium}=require('../../tools/node_modules/playwright');
+const {chromium}=require('node:module').createRequire(require.resolve('../../tools/package.json'))('playwright');
 const {spawn}=require('node:child_process');
 const readline=require('node:readline');
 const path=require('node:path');
