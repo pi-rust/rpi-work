@@ -20,6 +20,7 @@ use std::sync::{
 };
 use std::time::Duration;
 use thiserror::Error;
+use work_core::api::events::WireEventProjection as _;
 use work_core::api::events::{
     content_text, has_image_content, has_tool_call_content, settlement, usage,
 };
@@ -27,8 +28,10 @@ use work_core::{ApplyResult, Event, EventKind, RunProjection};
 #[cfg(test)]
 use work_core::{ConnectionState, OutputMode, SettlementOutcome};
 
+mod components;
 mod desktop_workspace;
 mod extensions;
+pub use components::download_component;
 mod message_page;
 mod message_queries;
 mod node_api;
@@ -386,6 +389,8 @@ pub struct WorkClient {
     base_url: Url,
     bearer_token: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
+    control_capability: Option<reqwest::header::HeaderValue>,
+    #[cfg(not(target_arch = "wasm32"))]
     cookie_jar: std::sync::Arc<reqwest::cookie::Jar>,
     realtime_mode: Arc<AtomicU8>,
     realtime_epoch: Arc<AtomicU64>,
@@ -441,6 +446,8 @@ impl WorkClient {
             base_url,
             bearer_token,
             #[cfg(not(target_arch = "wasm32"))]
+            control_capability: None,
+            #[cfg(not(target_arch = "wasm32"))]
             cookie_jar,
             // HTTP remains the authentication/resource plane; Auto uses the
             // authenticated realtime channel for session requests and events.
@@ -460,6 +467,60 @@ impl WorkClient {
 
     pub async fn health(&self) -> Result<Health, ClientError> {
         self.get("api/v1/health").await
+    }
+    pub async fn node_identity(&self) -> Result<String, ClientError> {
+        let health: Value = self.get("api/v1/health").await?;
+        health
+            .get("nodeId")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty() && id.len() <= 256)
+            .map(str::to_owned)
+            .ok_or_else(|| ClientError::ProtocolMismatch("Node identity missing".into()))
+    }
+    /// Construct only for a child process supervised by this application. The
+    /// capability is never accepted by public node listeners or sent to proxies.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn local_control(address: &str, capability: &str) -> Result<Self, ClientError> {
+        let mut client = Self::new(address)?;
+        let u = &client.base_url;
+        if u.scheme() != "http"
+            || u.host_str()
+                .and_then(|h| h.parse::<std::net::IpAddr>().ok())
+                .is_none_or(|ip| !ip.is_loopback())
+            || !u.username().is_empty()
+            || u.password().is_some()
+            || u.query().is_some()
+            || u.fragment().is_some()
+            || u.path() != "/"
+            || capability.len() < 32
+        {
+            return Err(ClientError::ProtocolMismatch(
+                "Invalid private node entrance".into(),
+            ));
+        }
+        let mut value = reqwest::header::HeaderValue::from_str(capability)
+            .map_err(|_| ClientError::ProtocolMismatch("Invalid private capability".into()))?;
+        value.set_sensitive(true);
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-rpi-node-control", value.clone());
+        client.http = reqwest::Client::builder()
+            .cookie_provider(client.cookie_jar.clone())
+            .default_headers(headers)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        client.control_capability = Some(value);
+        Ok(client)
+    }
+    pub fn is_local_control(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.control_capability.is_some()
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            false
+        }
     }
 
     pub async fn auth(&self) -> Result<AuthState, ClientError> {
@@ -589,7 +650,7 @@ impl WorkClient {
     pub async fn image(&self, project_id: &str, path: &str) -> Result<ProjectImage, ClientError> {
         let mut url = self.url("api/v1/projects/")?;
         url.path_segments_mut()
-            .expect("HTTP API URL")
+            .map_err(|()| ClientError::ProtocolMismatch("Invalid HTTP API URL".into()))?
             .pop_if_empty()
             .push(project_id)
             .push("image");
@@ -1054,7 +1115,7 @@ impl WorkClient {
         })?;
         let mut url = self.url("api/v1/realtime/operations/")?;
         url.path_segments_mut()
-            .map_err(|_| ClientError::Api {
+            .map_err(|()| ClientError::Api {
                 status: StatusCode::BAD_REQUEST,
                 message: "invalid operation endpoint".into(),
             })?

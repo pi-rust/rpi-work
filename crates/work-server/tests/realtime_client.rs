@@ -1,4 +1,4 @@
-//! Integration coverage for the native WorkClient WebSocket hub.
+//! Integration coverage for the native `WorkClient` WebSocket hub.
 //!
 //! These tests deliberately use the isolated RPC fixture.  They never start an
 //! real Agent, model, or existing node. Session processes are dedicated stubs.
@@ -143,9 +143,64 @@ async fn client(fixture: &Fixture) -> WorkClient {
     client
 }
 
+#[tokio::test]
+async fn supervised_local_client_uses_the_same_owner_over_private_http_and_ws() {
+    let f = Fixture::new().await;
+    let capability = "private-client-integration-0123456789";
+    let mut private = HttpServer::start_control(
+        f.owner.clone(),
+        ServerConfig {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            password: capability.into(),
+            allowed_hosts: vec![],
+            node_id: "isolated-client-hub-node".into(),
+            assets: None,
+            web_proxy: false,
+            allow_sharing: true,
+        },
+        capability.into(),
+    )
+    .unwrap();
+    let local =
+        WorkClient::local_control(&format!("http://{}/", private.address()), capability).unwrap();
+    assert!(local.is_local_control());
+    assert!(local.auth().await.unwrap().authenticated);
+    assert!(local.remembered_session(0).is_none());
+    assert!(
+        local
+            .projects()
+            .await
+            .unwrap()
+            .iter()
+            .any(|p| p.name == "client hub fixture")
+    );
+    local.set_remote_transport(RemoteTransport::WebSocketOnly);
+    let response = local
+        .command::<Value>(&f.sessions[0], json!({"type":"get_state"}))
+        .await
+        .unwrap();
+    assert!(response.success);
+    f.server.sharing_control().set_enabled(false);
+    assert!(local.auth().await.unwrap().authenticated);
+    assert!(
+        local
+            .command::<Value>(&f.sessions[0], json!({"type":"get_state"}))
+            .await
+            .unwrap()
+            .success
+    );
+    let facade = work_client::WorkspaceClient::Remote(local.clone());
+    assert!(facade.is_local());
+    assert!(WorkClient::local_control("http://example.com/", capability).is_err());
+    assert!(WorkClient::local_control("http://127.0.0.1/escape", capability).is_err());
+    private.drain().await.unwrap();
+    drop((local, facade));
+    f.finish().await;
+}
+
 /// Fifteen independently authenticated sockets leave exactly the 16th node
 /// slot.  Both subscriptions and both kinds of command must then share the
-/// WorkClient hub; dropping one stream must not tear down the other.
+/// `WorkClient` hub; dropping one stream must not tear down the other.
 #[tokio::test]
 async fn cloned_clients_share_the_sixteenth_socket_and_subscription_lifetime() {
     let f = Fixture::new().await;
@@ -276,7 +331,7 @@ async fn concurrent_get_state_queries_do_not_consume_mutation_reservations() {
             )
             .await
     });
-    let (_, mutation) = tokio::join!(reads, mutation);
+    let ((), mutation) = tokio::join!(reads, mutation);
     let mutation = mutation.unwrap().unwrap();
     assert!(mutation.success);
     assert_eq!(mutation.data.unwrap()["request"]["level"], "high");

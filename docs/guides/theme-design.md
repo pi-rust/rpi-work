@@ -18,7 +18,7 @@
 - `kind: "rpi-work-theme"`，`schemaVersion: 1`：旧格式，仅有 `font` / `headingFont` / `shape` 和 palette；继续按原样导入、导出，不静默升级。
 - `schemaVersion: 2`：必须包含完整 `theme.design`；`font` / `headingFont` / `shape` 仍是必填的旧兼容描述，但实际视觉值由 `design` 优先决定。
 - v1 不能夹带 `design`，v2 不能缺少它，未知版本或未知字段均拒绝。
-- 外观偏好 JSON 仍为 `rpi-work-appearance / 1`；浏览器持久化 key 仍为 `rpi-work-appearance-v1`。其中的自定义主题保留可选设计规格，旧偏好仍可恢复。
+- 外观偏好 JSON 仍为 `rpi-work-appearance / 1`，仅作为显式导入/导出的可移植格式；客户端持久化统一写入全局 `settings.json` 的 `appearance` 命名空间，不再读取旧的独立外观存储。
 - 当前默认仍为 Codex 黑白 + 浅色 + 标准密度，已有有效主题选择不强制覆盖；工具展示默认跟随主题，所有未指定的主题默认简单。
 
 完整字段结构见示例，下面给出 `theme.design` 的规格。

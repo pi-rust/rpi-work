@@ -768,7 +768,7 @@ async fn structured_snapshot_http_restore_and_stale_frames_keep_one_live_slot() 
             public_slots(&connection.projection),
             vec![("m-text-1", "Hello tail")]
         );
-        assert!(connection.messages.is_empty());
+        assert_eq!(connection.messages, [] as [serde_json::Value; 0]);
     }
     server.join().unwrap();
 }
@@ -860,7 +860,7 @@ fn boundary_summaries_cannot_insert_or_overwrite_transcript_messages() {
                 vec![original],
                 "summary {kind} with ID {id:?} changed history"
             );
-            assert!(projection.blocks.is_empty());
+            assert_eq!(projection.blocks, [] as [work_core::MessageBlock; 0]);
         }
     }
 }
@@ -913,7 +913,7 @@ fn summary_filter_keeps_tool_and_settlement_control_events() {
             index as u64 + 1,
         );
     }
-    assert!(messages.is_empty());
+    assert_eq!(messages, [] as [serde_json::Value; 0]);
     assert_eq!(
         projection.phase,
         work_core::RunPhase::Settled(work_core::SettlementOutcome::Completed)

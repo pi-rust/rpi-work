@@ -263,6 +263,7 @@ pub fn RuntimeFooter(
     projection: Signal<Option<RunProjection>>,
     transcript: Signal<Vec<Value>>,
     online: bool,
+    #[props(default)] contributions: Vec<crate::features::extensions::UiContributionEntry>,
 ) -> Element {
     let runtime = runtime_state.read().clone();
     let metrics = Metrics::session(runtime.as_ref().and_then(|r| r.stats.as_ref()));
@@ -286,7 +287,7 @@ pub fn RuntimeFooter(
                 .as_ref()
                 .is_some_and(|run| run.connection == ConnectionState::Online),
     };
-    rsx! { super::footer_plugins::FooterHost { context: snapshot } }
+    rsx! { super::footer_plugins::FooterHost { context: snapshot, contributions } }
 }
 
 #[allow(clippy::single_match_else)]

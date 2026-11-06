@@ -1,151 +1,172 @@
-//! GUI-independent ownership of the local RPC workspace and its HTTP entrance.
-//!
-//! Native desktop/service hosts only. Call `start` once per process and retain
-//! the guard for the entire application lifetime. Web/Android are remote clients.
-#![allow(clippy::missing_errors_doc)]
-
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicBool, Ordering},
+//! Desktop composition: supervise a native rpi extension and connect a client.
+//! The workspace, listeners and Agent children are owned by the extension process.
+pub use rpi_node_host::{report_error, run_headless};
+use std::{
+    path::PathBuf,
+    sync::{
+        OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
-use work_client::WorkspaceClient;
-use work_node::local::LocalRuntime;
-
-mod headless;
 pub mod http;
-mod ready_output;
-mod shutdown;
-pub use headless::run_headless;
-pub use ready_output::report_error;
-
+pub mod runtime;
 static STARTED: AtomicBool = AtomicBool::new(false);
-static CONNECTION: OnceLock<WorkspaceClient> = OnceLock::new();
-static STARTUP_ERROR: OnceLock<String> = OnceLock::new();
+static CLIENT: OnceLock<work_client::WorkClient> = OnceLock::new();
+static ERROR: OnceLock<String> = OnceLock::new();
 
-/// Owns the data lock and HTTP executor for exactly one local workspace.
-#[must_use = "retain this guard until application shutdown"]
+#[must_use = "Retain until application shutdown"]
 pub struct LocalGuard {
-    lock: Option<LocalRuntime>,
-    http: Option<work_server::HttpServer>,
-    client: WorkspaceClient,
+    process: rpi_node_launcher::Process,
 }
-
-fn claim_start(started: &AtomicBool) -> Result<(), String> {
-    started
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .map(|_| ())
-        .map_err(|_| "The local host can only be started once per process".into())
-}
-
-/// Start the shared owner. HTTP startup failure is exposed by `http::sharing()`;
-/// the GUI may still use local RPC. Headless mode treats HTTP failure as fatal.
-/// A second call is rejected before resolving paths or creating an owner; even a
-/// failed first attempt consumes the process's single startup opportunity.
-pub fn start() -> Option<LocalGuard> {
-    let result = claim_start(&STARTED).and_then(|()| {
-        let runtime = LocalRuntime::prepare()?;
-        let client = WorkspaceClient::local_rpc(runtime.rpi.clone(), runtime.data.clone())
-            .map_err(|error| error.to_string())?;
-        let data = runtime.data.clone();
-        let mut guard = LocalGuard {
-            lock: Some(runtime),
-            http: None,
-            client,
-        };
-        // Construct the guard first so an unwinding startup still retains the
-        // data lock through cleanup, even before CONNECTION is published.
-        guard.http = http::start(&guard.client, &data);
-        let _ = CONNECTION.set(guard.client.clone());
-        Ok(guard)
-    });
-    match result {
-        Ok(guard) => Some(guard),
-        Err(error) => {
-            let _ = STARTUP_ERROR.set(error);
-            None
-        }
-    }
-}
-
-/// The exact local facade passed to the HTTP server, never a second owner.
-pub fn client() -> Option<WorkspaceClient> {
-    CONNECTION.get().cloned()
-}
-
-pub fn startup_error() -> Option<&'static str> {
-    STARTUP_ERROR.get().map(String::as_str)
-}
-
 impl LocalGuard {
-    /// Compatibility entry point for GUI lifecycle hooks. Failures are reported
-    /// to stderr; service callers must use `checked_shutdown` and propagate Err.
     pub fn shutdown(self) {
         if let Err(error) = self.checked_shutdown() {
             eprintln!("{error}");
         }
     }
-
-    /// Wait at most ten seconds, without driving an executor on itself.
-    /// Success means HTTP drained, workspace children stopped, HTTP executor
-    /// dropped, then the `LocalRuntime` lock released, in exactly that order.
-    /// On timeout the cleanup worker keeps ownership until cleanup completes;
-    /// on executor/drain failure or panic ownership is retained until exit.
-    pub fn checked_shutdown(self) -> Result<(), String> {
-        shutdown::run_retaining(self, std::time::Duration::from_secs(10), |guard| {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|_| "Unable to create shutdown executor; data lock retained until exit")?;
-            runtime.block_on(async {
-                if let Some(server) = guard.http.as_mut() {
-                    server.drain().await?;
-                }
-                guard.client.shutdown().await;
-                Ok::<(), String>(())
-            })?;
-            // Do not drop the HTTP runtime while workspace children can still
-            // depend on tasks running there. On drain failure retain both.
-            drop(guard.http.take());
-            drop(runtime);
-            drop(guard.lock.take());
-            http::mark_stopped();
-            Ok(())
-        })
+    /// Close the owned extension's stdin and await resource cleanup.
+    /// # Errors
+    /// Returns an error for a failing exit or unconfirmed graceful shutdown.
+    pub fn checked_shutdown(mut self) -> Result<(), String> {
+        self.process.stop()
     }
 }
 
-impl Drop for LocalGuard {
-    fn drop(&mut self) {
-        if let Some(lock) = self.lock.take() {
-            Self {
-                lock: Some(lock),
-                http: self.http.take(),
-                client: self.client.clone(),
-            }
-            .shutdown();
+pub fn start() -> Option<LocalGuard> {
+    if STARTED.swap(true, Ordering::AcqRel) {
+        return None;
+    }
+    match launch() {
+        Ok((guard, client)) => {
+            let _ = CLIENT.set(client);
+            Some(guard)
+        }
+        Err(error) => {
+            let _ = ERROR.set(error);
+            None
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_one_start_claim_can_succeed_even_after_failure_or_stop() {
-        let started = AtomicBool::new(false);
-        assert!(claim_start(&started).is_ok());
-        assert!(claim_start(&started).is_err());
-        assert!(claim_start(&started).is_err());
+fn launch() -> Result<(LocalGuard, work_client::WorkClient), String> {
+    let application = std::env::current_exe()
+        .map_err(|_| "无法定位应用目录")?
+        .parent()
+        .ok_or("无法定位应用目录")?
+        .to_owned();
+    let rpi = work_node::desktop::find_runtime(
+        "rpi",
+        std::env::var_os("RPI_WORK_NODE_RPI_BIN")
+            .or_else(|| std::env::var_os("RPI_WORK_RPI_BIN"))
+            .map(PathBuf::from),
+        &application,
+    )
+    .ok_or("未找到 rpi。请安装支持无需模型启动服务扩展的 rpi。")?;
+    let selected = if std::env::var_os("RPI_WORK_NODE_EXTENSION").is_some() {
+        None
+    } else {
+        runtime::store()?.selected()?
+    };
+    let activated = selected.as_ref().map(|p| p.selection.clone());
+    let source = activated.as_ref().map_or_else(
+        || {
+            if std::env::var_os("RPI_WORK_NODE_EXTENSION").is_some() {
+                "启动配置指定的扩展".into()
+            } else {
+                "内置或已安装的节点扩展".into()
+            }
+        },
+        |s| format!("{} · {}", s.id, s.version),
+    );
+    let (library, entry) = match selected {
+        Some(provider) => (provider.library, provider.selection.entry_flag),
+        None => (
+            extension_path(&application).ok_or(
+                "未找到节点扩展。请在节点组件中下载安装运行时，或使用附带节点扩展的 Work 安装包。",
+            )?,
+            "http".into(),
+        ),
+    };
+    let options = rpi_node_launcher::Launch {
+        executable: rpi.clone(),
+        library,
+        arguments: vec![format!("--{entry}").into()],
+        environment: std::collections::BTreeMap::from([(
+            "RPI_WORK_RPI_BIN".into(),
+            std::env::var_os("RPI_WORK_RPI_BIN").unwrap_or_else(|| rpi.into_os_string()),
+        )]),
+        directory: None,
+    };
+    let (process, control) = rpi_node_launcher::Process::start(options)?;
+    let client = work_client::WorkClient::local_control(
+        &control.ready.control_address,
+        control.capability(),
+    )
+    .map_err(|_| "本机节点发布了无效的私有入口")?;
+    let verify = client.clone();
+    let node_id = control.ready.node_id;
+    // Can be called before or inside a GUI runtime. Never block an executor on itself.
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| "无法验证本机节点")?;
+        runtime.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                let identity = verify
+                    .node_identity()
+                    .await
+                    .map_err(|_| "无法访问本机节点")?;
+                if identity != node_id
+                    || !verify
+                        .auth()
+                        .await
+                        .map_err(|_| "无法验证本机节点")?
+                        .authenticated
+                {
+                    return Err("本机节点身份或私有认证不匹配");
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|_| "本机节点验证超时")?
+        })
+    })
+    .join()
+    .map_err(|_| "本机节点验证失败")??;
+    runtime::mark_started(activated, source);
+    Ok((LocalGuard { process }, client))
+}
+fn extension_path(application: &std::path::Path) -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("RPI_WORK_NODE_EXTENSION") {
+        return PathBuf::from(explicit)
+            .canonicalize()
+            .ok()
+            .filter(|p| p.is_file());
     }
-
-    #[test]
-    fn simultaneous_start_claims_cannot_create_two_owners() {
-        let started = AtomicBool::new(false);
-        std::thread::scope(|scope| {
-            let first = scope.spawn(|| claim_start(&started).is_ok());
-            let second = scope.spawn(|| claim_start(&started).is_ok());
-            assert_ne!(first.join().unwrap(), second.join().unwrap());
-        });
+    let filename = format!(
+        "{}rpi_http_extension{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_SUFFIX
+    );
+    let bundled = application.join(&filename);
+    if bundled.is_file() {
+        return Some(bundled);
     }
+    let agent = std::env::var_os("RPI_CODING_AGENT_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .map(|p| PathBuf::from(p).join(".rpi/agent"))
+        })?;
+    let installed = agent.join("extensions").join(filename);
+    installed.is_file().then_some(installed)
+}
+pub fn client() -> Option<work_client::WorkspaceClient> {
+    CLIENT
+        .get()
+        .cloned()
+        .map(work_client::WorkspaceClient::Remote)
+}
+pub fn startup_error() -> Option<&'static str> {
+    ERROR.get().map(String::as_str)
 }

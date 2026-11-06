@@ -1,30 +1,25 @@
 //! Pure wire decoding. No connections, host ownership or history reconciliation.
 use serde_json::Value;
 
-use super::{EventDecodeError, PendingDialog, WireEvent};
+use super::{EventDecodeError, WireEvent};
 use crate::{ConnectionState, Event, EventKind, OutputMode, SettlementOutcome, Usage};
 
-/// Construct a wire event without assigning or rewriting its native identity.
-pub fn wire_event(
-    id: Option<String>,
-    seq: Option<u64>,
-    event_type: impl Into<String>,
-    data: Value,
-) -> WireEvent {
-    WireEvent {
-        id,
-        seq,
-        event_type: event_type.into(),
-        data,
-    }
+pub use rpi_node_api::api::events::{dialog_from_wire, wire_event};
+
+pub trait WireEventProjection {
+    /// Decode the wire payload into a UI event.
+    ///
+    /// # Errors
+    /// Returns an error when a required event field is invalid.
+    fn into_core_event(self) -> Result<Event, EventDecodeError>;
 }
 
-impl WireEvent {
+impl WireEventProjection for WireEvent {
     /// Preserve the wire identity while normalizing the event payload.
     ///
     /// # Errors
     /// Returns an error for an invalid required event field.
-    pub fn into_core_event(self) -> Result<Event, EventDecodeError> {
+    fn into_core_event(self) -> Result<Event, EventDecodeError> {
         let id = self
             .id
             .clone()
@@ -349,29 +344,4 @@ fn display_text(value: &Value) -> String {
         }
         Value::Null => String::new(),
     }
-}
-
-/// Decode a pending dialog while retaining its original opaque response ID.
-///
-/// # Errors
-/// Returns a JSON decoding error when the dialog UI is not an object.
-pub fn dialog_from_wire(wire: &WireEvent) -> Result<Option<PendingDialog>, serde_json::Error> {
-    let Some(request_id) = wire.data.get("requestId").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    let ui = wire
-        .data
-        .get("ui")
-        .cloned()
-        .unwrap_or_else(|| wire.data.clone());
-    Ok(Some(PendingDialog {
-        request_id: request_id.to_owned(),
-        tool_call_id: wire
-            .data
-            .get("toolCallId")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        response_id: wire.data.get("jsonRpcRequestId").cloned(),
-        ui: serde_json::from_value(ui)?,
-    }))
 }

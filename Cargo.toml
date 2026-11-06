@@ -1,3 +1,4 @@
 [workspace]
 resolver = "2"
-members = ["crates/work-core", "crates/work-client", "crates/work-node", "crates/work-server", "crates/work-host", "crates/work-update", "apps/work-cli", "apps/work-ui"]
+exclude = ["vendor/rpi-components", "vendor/rpi-http-runtime", "vendor/rpi-node-api", "vendor/rpi-node-core", "vendor/rpi-http-node", "vendor/rpi-node-host", "vendor/rpi-node-launcher"]
+members = ["crates/work-core", "crates/work-client", "crates/work-node", "crates/work-server", "crates/work-host", "crates/work-update", "apps/work-cli", "apps/work-ui", "vendor/rpi-http-extension", "vendor/rpi-http-component"]

@@ -135,6 +135,9 @@ impl WorkClient {
     /// is persisted. A snapshot does not establish that the service accepts it.
     #[must_use]
     pub fn remembered_session(&self, now: u64) -> Option<RememberedSession> {
+        if self.is_local_control() {
+            return None;
+        }
         let endpoint = root_endpoint(self.base_url.as_str())?;
         let auth_url = endpoint.join("api/v1/auth").ok()?;
         let header = self.cookie_jar.cookies(&auth_url)?;
@@ -165,6 +168,7 @@ impl WorkClient {
     /// scheme and port), malformed payloads, future save times and expired snapshots
     /// before any network I/O. Redirects remain disabled. Call `auth()` afterwards;
     /// local expiry does not supersede server expiry, revocation or logout.
+    #[allow(clippy::needless_pass_by_value)] // Consume the caller's credential snapshot.
     pub fn restore_session(
         base_url: &str,
         saved: RememberedSession,
@@ -198,6 +202,7 @@ impl WorkClient {
             http: build_http_client(cookie_jar.clone()).map_err(|_| invalid())?,
             base_url: endpoint,
             bearer_token: None,
+            control_capability: None,
             cookie_jar,
             realtime_mode: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
                 crate::RemoteTransport::Auto.code(),

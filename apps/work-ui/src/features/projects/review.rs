@@ -141,9 +141,7 @@ fn parse_unified_diff(patch: &str) -> Vec<ParsedDiffLine> {
         // `--- content` and `+++ content` are ordinary deletion/addition
         // lines whose source text starts with `--`/`++`.
         if !in_hunk
-            && (line.starts_with("index ")
-                || line.starts_with("--- ")
-                || line.starts_with("+++ "))
+            && (line.starts_with("index ") || line.starts_with("--- ") || line.starts_with("+++ "))
         {
             continue;
         }
@@ -197,8 +195,7 @@ fn parse_unified_diff(patch: &str) -> Vec<ParsedDiffLine> {
 }
 
 fn is_binary_metadata_line(line: &str) -> bool {
-    line == "GIT binary patch"
-        || (line.starts_with("Binary files ") && line.ends_with(" differ"))
+    line == "GIT binary patch" || (line.starts_with("Binary files ") && line.ends_with(" differ"))
 }
 
 fn is_binary_patch(patch: &str) -> bool {
@@ -279,7 +276,11 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    fn changed_file(path: &str, status: &str, original_path: Option<&str>) -> work_client::ChangedFile {
+    fn changed_file(
+        path: &str,
+        status: &str,
+        original_path: Option<&str>,
+    ) -> work_client::ChangedFile {
         work_client::ChangedFile {
             path: path.to_owned(),
             original_path: original_path.map(str::to_owned),
@@ -322,7 +323,10 @@ mod tests {
         let filtered = filter_changed_files(&files, "", "all", "src", false, &reviewed);
 
         assert_eq!(
-            filtered.iter().map(|file| file.path.as_str()).collect::<Vec<_>>(),
+            filtered
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
             vec!["src/main.rs", "src\\lib.rs", "src"]
         );
         assert_eq!(
@@ -356,14 +360,32 @@ mod tests {
 
         assert_eq!(lines.len(), 6);
         assert_eq!(lines[0].kind, "hunk");
-        assert_eq!((lines[1].kind, lines[1].old, lines[1].new, lines[1].text.as_str()),
-            ("del", Some(1), None, "-- source content"));
-        assert_eq!((lines[2].kind, lines[2].old, lines[2].new, lines[2].text.as_str()),
-            ("add", None, Some(1), "++ source content"));
-        assert_eq!((lines[4].old, lines[4].new, lines[4].text.as_str()),
-            (Some(10), None, "old"));
-        assert_eq!((lines[5].old, lines[5].new, lines[5].text.as_str()),
-            (None, Some(20), "new"));
+        assert_eq!(
+            (
+                lines[1].kind,
+                lines[1].old,
+                lines[1].new,
+                lines[1].text.as_str()
+            ),
+            ("del", Some(1), None, "-- source content")
+        );
+        assert_eq!(
+            (
+                lines[2].kind,
+                lines[2].old,
+                lines[2].new,
+                lines[2].text.as_str()
+            ),
+            ("add", None, Some(1), "++ source content")
+        );
+        assert_eq!(
+            (lines[4].old, lines[4].new, lines[4].text.as_str()),
+            (Some(10), None, "old")
+        );
+        assert_eq!(
+            (lines[5].old, lines[5].new, lines[5].text.as_str()),
+            (None, Some(20), "new")
+        );
     }
 
     #[test]
@@ -379,7 +401,9 @@ mod tests {
         );
 
         assert!(!is_binary_patch(source_text));
-        assert!(is_binary_patch("Binary files a/image.png and b/image.png differ\n"));
+        assert!(is_binary_patch(
+            "Binary files a/image.png and b/image.png differ\n"
+        ));
         assert!(is_binary_patch("GIT binary patch\n"));
     }
 

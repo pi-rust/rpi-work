@@ -194,7 +194,7 @@ impl Expected {
             (Self::Status(expected), ServerFrame::Status { operation, .. }) => {
                 expected == operation
             }
-            (Self::Result, ServerFrame::Result { .. }) => true,
+            (Self::Result, ServerFrame::Result { .. }) | (_, ServerFrame::Error { .. }) => true,
             (
                 Self::Subscribed {
                     session,
@@ -206,7 +206,6 @@ impl Expected {
                     ..
                 },
             ) => session == session_id && subscription == subscription_id,
-            (_, ServerFrame::Error { .. }) => true,
             _ => false,
         }
     }
@@ -257,7 +256,7 @@ impl Handle {
         let bytes = self
             .outgoing
             .clone()
-            .try_acquire_many_owned(text.len() as u32)
+            .try_acquire_many_owned(u32::try_from(text.len()).map_err(|_| limited())?)
             .map_err(|_| limited())?;
         let (tx, rx) = oneshot::channel();
         self.tx
@@ -537,6 +536,7 @@ async fn bounded_get<T: DeserializeOwned>(
     }
     serde_json::from_slice(&bytes).map_err(|_| unavailable())
 }
+#[allow(clippy::too_many_lines)] // One bounded handshake with a single failure fence.
 async fn connect(client: &WorkClient) -> Result<(Socket, Hello), ClientError> {
     if client.bearer_token.is_some() {
         return Err(denied());
@@ -584,7 +584,7 @@ async fn connect(client: &WorkClient) -> Result<(Socket, Hello), ClientError> {
             "https" => "wss",
             _ => return Err(unavailable()),
         })
-        .map_err(|_| unavailable())?;
+        .map_err(|()| unavailable())?;
     let mut request = ws_url
         .as_str()
         .into_client_request()
@@ -593,10 +593,16 @@ async fn connect(client: &WorkClient) -> Result<(Socket, Hello), ClientError> {
         "sec-websocket-protocol",
         HeaderValue::from_static(SUBPROTOCOL),
     );
-    let cookie = client.cookie_jar.cookies(&http_url).ok_or_else(denied)?;
-    let cookie =
-        HeaderValue::from_str(cookie.to_str().map_err(|_| denied())?).map_err(|_| denied())?;
-    request.headers_mut().insert("cookie", cookie);
+    if let Some(capability) = &client.control_capability {
+        request
+            .headers_mut()
+            .insert("x-rpi-node-control", capability.clone());
+    } else {
+        let cookie = client.cookie_jar.cookies(&http_url).ok_or_else(denied)?;
+        let cookie =
+            HeaderValue::from_str(cookie.to_str().map_err(|_| denied())?).map_err(|_| denied())?;
+        request.headers_mut().insert("cookie", cookie);
+    }
     let config = WebSocketConfig::default()
         .max_message_size(Some(realtime::MAX_MESSAGE_BYTES))
         .max_frame_size(Some(realtime::MAX_MESSAGE_BYTES))
@@ -663,6 +669,7 @@ async fn write(
         result = tokio::time::timeout(WRITE_TIMEOUT, socket.send(message)) => result.map_err(|_| ())?.map_err(|_| ()),
     }
 }
+#[allow(clippy::too_many_lines)] // Keep the actor's cancellation and admission loop together.
 async fn run(
     mut socket: Socket,
     mut rx: mpsc::Receiver<Packet>,
@@ -692,7 +699,8 @@ async fn run(
                 match message {
                     Message::Text(text) => {
                         let Ok(frame) = ServerFrame::decode_text(&text) else { break; };
-                        let Ok(bytes) = incoming.clone().try_acquire_many_owned(text.len() as u32) else { break; };
+                        let Ok(size) = u32::try_from(text.len()) else { break; };
+                        let Ok(bytes) = incoming.clone().try_acquire_many_owned(size) else { break; };
                         let bytes = Arc::new(bytes);
                         if let ServerFrame::Events { session_id, subscription_id, events, .. } = frame {
                             let Some(source) = subscriptions.get(&subscription_id) else { continue; };
@@ -700,7 +708,8 @@ async fn run(
                             let mut overflow = false;
                             for event in events {
                                 let Ok(size) = serde_json::to_vec(&event).map(|v| v.len()) else { overflow = true; break; };
-                                let Ok(local) = source.bytes.clone().try_acquire_many_owned(size as u32) else { overflow = true; break; };
+                                let Ok(size) = u32::try_from(size) else { overflow = true; break; };
+                                let Ok(local) = source.bytes.clone().try_acquire_many_owned(size) else { overflow = true; break; };
                                 if source.tx.try_send(QueuedEvent { event, _local_bytes: local, _hub_bytes: bytes.clone() }).is_err() { overflow = true; break; }
                             }
                             if overflow {

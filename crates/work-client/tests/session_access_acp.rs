@@ -1,5 +1,5 @@
 #![cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
-//! No credentials, real agents, global env mutation or AgentClient UI path.
+//! No credentials, real agents, global env mutation or `AgentClient` UI path.
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use work_client::{LocalWorkspace, WorkspaceClient};
 
@@ -54,7 +54,7 @@ async fn scenario() {
     client.prompt(&id, "fresh").await.unwrap();
     let mut connection = client.connect_session(id.clone()).await.unwrap();
     let before = connection.messages().to_vec();
-    assert!(!before.is_empty());
+    assert_ne!(before, [] as [serde_json::Value; 0]);
     assert!(
         !serde_json::to_string(&before)
             .unwrap()

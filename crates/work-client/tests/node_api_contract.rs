@@ -52,7 +52,7 @@ async fn node_port_delegates_to_the_same_workspace_without_a_second_owner() {
                 api.capabilities().await.unwrap(),
                 workspace.capabilities().await.unwrap()
             );
-            assert!(api.projects().await.unwrap().is_empty());
+            assert_eq!(api.projects().await.unwrap(), [] as [work_client::Project; 0]);
             let project = workspace
                 .create_project("fixture project", None, false)
                 .await

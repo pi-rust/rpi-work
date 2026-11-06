@@ -80,7 +80,10 @@ async fn access_and_dialogs_use_typed_http_without_fallback() {
                 stream.flush().unwrap();
             }
         });
-        let client = WorkspaceClient::new(&format!("http://{address}/")).unwrap();
+        // The fixture implements typed HTTP endpoints, not realtime discovery.
+        let http = work_client::WorkClient::new(&format!("http://{address}/")).unwrap();
+        http.set_remote_transport(work_client::RemoteTransport::HttpSseOnly);
+        let client = WorkspaceClient::from(http);
         assert!(matches!(
             client.session_access("s").await,
             Err(ClientError::Api { .. })

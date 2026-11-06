@@ -177,3 +177,5 @@ git push origin v0.1.9
 - **完整索引与历史**：[文档导航](docs/README.md) · [旧方案、迁移及验收归档](docs/archive/README.md)
 
 查看冻结的 HTML 原型：在仓库根目录运行 `python -m http.server 14173 --bind 127.0.0.1`，打开 <http://127.0.0.1:14173/design/prototype/>。原型使用示例数据，不是正式应用或已实现能力的证明。
+
+节点组件的自定义界面、下载安装与组合边界见[组件组合架构](docs/architecture/component-composition.md)。共享包源码在 rpi-package 维护，Work 使用随仓库分发的 vendor 快照，普通构建无需相邻 checkout。

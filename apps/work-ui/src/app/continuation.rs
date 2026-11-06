@@ -31,8 +31,16 @@ pub(super) fn action(
     }
     let pending_resume = session.is_some_and(|session| session.pending_resume);
     let failed = run.phase == RunPhase::Settled(SettlementOutcome::Failed)
-        || (run.phase == RunPhase::Ready
-            && session.is_some_and(|session| session.status == "failed"));
+        || session.is_some_and(|session| {
+            session.error.is_some()
+                || session.status == "failed"
+                || session
+                    .latest_settlement
+                    .as_ref()
+                    .and_then(|settlement| settlement.get("outcome"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("failed")
+        });
     if pending_resume && resume_supported {
         Some(ContinueAction::Resume)
     } else if failed || pending_resume {
@@ -73,6 +81,14 @@ mod tests {
         run.phase = RunPhase::Settled(SettlementOutcome::Failed);
         assert_eq!(
             action(Some(&run), Some(&session(false)), true, false, true),
+            Some(ContinueAction::Prompt)
+        );
+        let mut errored = session(false);
+        errored.status = "idle".into();
+        errored.error = Some("provider failed".into());
+        run.phase = RunPhase::Ready;
+        assert_eq!(
+            action(Some(&run), Some(&errored), true, false, true),
             Some(ContinueAction::Prompt)
         );
         assert_eq!(

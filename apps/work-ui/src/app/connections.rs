@@ -565,9 +565,14 @@ mod tests {
             serde_json::from_value::<SessionSummary>(json!({
                 "sessionId": id, "projectId": project, "status": "idle", "title": id,
                 "createdAt": 0, "updatedAt": updated, "lastSeq": 0, "archived": archived
-            })).unwrap()
+            }))
+            .unwrap()
         };
-        let projects = vec![Project { id: "project".into(), name: "Project".into(), path: "/project".into() }];
+        let projects = vec![Project {
+            id: "project".into(),
+            name: "Project".into(),
+            path: "/project".into(),
+        }];
         let mut sessions = vec![
             session("older", 10, Some("project"), false),
             session("latest", 20, Some("project"), false),
@@ -576,8 +581,14 @@ mod tests {
             session("missing-project", 200, Some("missing"), false),
         ];
         sessions[0].pinned = true;
-        assert_eq!(default_session_id(&sessions, &projects, |_| false).as_deref(), Some("latest"));
-        assert_eq!(default_session_id(&sessions, &projects, |_| true).as_deref(), Some("same-time"));
+        assert_eq!(
+            default_session_id(&sessions, &projects, |_| false).as_deref(),
+            Some("latest")
+        );
+        assert_eq!(
+            default_session_id(&sessions, &projects, |_| true).as_deref(),
+            Some("same-time")
+        );
         sessions.retain(|session| session.project_id.is_some());
         assert_eq!(default_session_id(&sessions, &projects, |_| true), None);
         assert_eq!(default_session_id(&[], &projects, |_| false), None);

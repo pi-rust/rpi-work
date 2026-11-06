@@ -180,7 +180,7 @@ async fn closed(ws: &mut Ws) {
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             match ws.next().await {
-                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                None | Some(Err(_) | Ok(Message::Close(_))) => break,
                 Some(Ok(Message::Ping(_))) => {
                     let _ = ws.flush().await;
                 }
@@ -906,7 +906,7 @@ async fn websocket_execute_disconnect_returns_receipt_reference_without_retry() 
         work_client::ClientError::OperationOutcomeUnknown { operation } => operation,
         other => panic!("expected a queryable unknown receipt, got {other:?}"),
     };
-    assert!(!operation.operation_id.is_empty());
+    assert_ne!(operation.operation_id, "");
     f.server.drain().await.unwrap();
     f.owner.shutdown().await;
 }

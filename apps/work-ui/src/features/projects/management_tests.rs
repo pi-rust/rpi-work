@@ -188,7 +188,8 @@ fn switcher_states_require_completion_evidence_and_prefer_live_activity() {
     let mut session: work_client::SessionSummary = serde_json::from_value(serde_json::json!({
         "sessionId":"test", "projectId":"project", "title":"Test", "status":"idle",
         "createdAt":0, "updatedAt":0, "lastSeq":0
-    })).unwrap();
+    }))
+    .unwrap();
     assert_eq!(switcher_session_status(&session, None), ("idle", "空闲"));
     for (status, expected) in [
         ("running", ("running", "运行中")),
@@ -203,12 +204,24 @@ fn switcher_states_require_completion_evidence_and_prefer_live_activity() {
     }
     session.status = "idle".into();
     session.latest_settlement = Some(serde_json::json!({"outcome":"completed"}));
-    assert_eq!(switcher_session_status(&session, None), ("completed", "完成"));
-    assert_eq!(switcher_session_status(&session, Some(SidebarActivity::Running)), ("running", "运行中"));
-    assert_eq!(switcher_session_status(&session, Some(SidebarActivity::WaitingReply)), ("waiting", "等待回答"));
+    assert_eq!(
+        switcher_session_status(&session, None),
+        ("completed", "完成")
+    );
+    assert_eq!(
+        switcher_session_status(&session, Some(SidebarActivity::Running)),
+        ("running", "运行中")
+    );
+    assert_eq!(
+        switcher_session_status(&session, Some(SidebarActivity::WaitingReply)),
+        ("waiting", "等待回答")
+    );
     session.error = Some("failed".into());
     assert_eq!(switcher_session_status(&session, None), ("failed", "异常"));
     session.error = None;
     session.pending_resume = true;
-    assert_eq!(switcher_session_status(&session, None), ("waiting", "待恢复"));
+    assert_eq!(
+        switcher_session_status(&session, None),
+        ("waiting", "待恢复")
+    );
 }

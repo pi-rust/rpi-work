@@ -33,6 +33,8 @@ pub fn SessionSwitcher(
     projects: Vec<Project>,
     sessions: Vec<SessionSummary>,
     current_session: Option<String>,
+    #[props(default = "grouped".to_owned())] display_mode: String,
+    #[props(default)] node_label: String,
     #[props(default)] states: HashMap<String, (String, String)>,
     onsession: EventHandler<String>,
     onclose: EventHandler<()>,
@@ -82,7 +84,11 @@ pub fn SessionSwitcher(
                     span { "所有项目 · {matching.len()} / {sessions.len()} 个会话" }
                     span { "状态以最近上报为准" }
                 }
-                div { id: "session-switcher-results", class: "session-switcher-results",
+                div { class: "session-switcher-display-mode", role: "status",
+                    if display_mode == "grouped" { "按节点分组" } else { "平铺会话" }
+                    if display_mode == "grouped" && !node_label.is_empty() { span { " · {node_label}" } }
+                }
+                div { id: "session-switcher-results", class: "session-switcher-results", "data-session-display-mode": display_mode.clone(),
                     onkeydown: move |event| {
                         let direction = match event.key() {
                             Key::ArrowDown => "down", Key::ArrowUp => "up", Key::Home => "first", Key::End => "last", _ => return,
@@ -95,6 +101,11 @@ pub fn SessionSwitcher(
                             rows[next]?.focus();
                         "#));
                     },
+                    if display_mode == "grouped" && !node_label.is_empty() {
+                        div { class: "session-switcher-node-heading", role: "heading", aria_level: "3",
+                            Icon { name: "server" } strong { "{node_label}" } span { "{matching.len()} 个会话" }
+                        }
+                    }
                     for (session, (tone, label)) in matching.iter() {
                         {
                             let id = session.session_id.clone();

@@ -106,6 +106,46 @@ fn invalid_new_ui_is_rejected_atomically_and_legacy_remains_inert() {
 }
 
 #[test]
+fn design_ui_catalog_is_runtime_footer_only_and_design_only() {
+    let mut document = package("review.test", "1.0.0", false, true);
+    let mut manifest: Value = serde_json::from_str(
+        document["design"]["sources"]["extension.design.json"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    manifest["ui"]["contributions"][0] = json!({
+        "id":"status",
+        "slot":"runtime-footer",
+        "title":"Review status",
+        "host":{"capability":"runtime-footer","fields":["session-model"]},
+        "widgets":[{"type":"host-value","label":"Model","field":"session-model","visual":"text"}]
+    });
+    manifest["ui"]["contributions"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id":"settings",
+            "slot":"settings-section",
+            "title":"Settings design",
+            "widgets":[{"type":"text","text":"Design only"}]
+        }));
+    document["design"]["sources"]["extension.design.json"] = json!(manifest.to_string());
+    let mut library = ResourceLibrary::default();
+    import_design_package(&mut library, &document).unwrap();
+    let catalog = design_ui_catalog(&library);
+    assert_eq!(catalog.len(), 1);
+    assert!(catalog[0].design_only);
+    assert_eq!(catalog[0].contribution.slot, UiSlot::RuntimeFooter);
+    assert_eq!(
+        catalog[0].extension,
+        library.extensions[0].manifest.as_ref().unwrap().pin()
+    );
+    assert!(library.extensions[0].acquired);
+    assert!(!library.extensions[0].design_sample);
+}
+
+#[test]
 fn old_sessions_default_to_no_agent_pins_or_ui_preferences() {
     let old =
         json!({"sessions":[{"session_id":"node/session","revision":5,"instructions":"keep"}]});

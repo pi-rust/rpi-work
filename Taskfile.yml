@@ -29,7 +29,8 @@ tasks:
       - cargo build --release --locked -p work-cli
 
   desktop:
-    desc: 启动桌面节点（本机 RPC 与内嵌认证 HTTP 13031 共用工作空间）
+    desc: 启动桌面客户端及 rpi 节点扩展（本机与远程共用工作空间）
+    deps: ['desktop:runtime']
     dir: '{{.TASKFILE_DIR}}'
     dotenv: ['{{.TASKFILE_DIR}}/.env.local']
     env:
@@ -37,6 +38,12 @@ tasks:
       RPI_WORK_HTTP_WEB_PORT: '{{.RPI_WORK_HTTP_WEB_PORT | default ""}}'
     cmds:
       - cargo run -p work-ui --locked
+
+  desktop:runtime:
+    desc: 构建内置节点扩展（运行于 rpi 进程）
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - cargo build --locked -p rpi-http-extension
 
   # Legacy desktop + hot-reload preview. Use task dev for the optimized
   # release/headless path; use this task when editing UI with a desktop window.

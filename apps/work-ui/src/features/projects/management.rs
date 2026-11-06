@@ -189,22 +189,34 @@ pub fn switcher_session_status(
     match activity {
         Some(SidebarActivity::Loading) => return ("loading", "加载中"),
         Some(SidebarActivity::Sending) => return ("running", "发送中"),
-        Some(SidebarActivity::WaitingReply | SidebarActivity::AwaitingInput) => return ("waiting", "等待回答"),
+        Some(SidebarActivity::WaitingReply | SidebarActivity::AwaitingInput) => {
+            return ("waiting", "等待回答");
+        }
         Some(SidebarActivity::Running) => return ("running", "运行中"),
         Some(SidebarActivity::Cancelling) => return ("running", "停止中"),
         Some(SidebarActivity::Disconnected) => return ("failed", "连接异常"),
         _ => {}
     }
-    if session.error.is_some() { return ("failed", "异常"); }
-    if session.pending_resume { return ("waiting", "待恢复"); }
+    if session.error.is_some() {
+        return ("failed", "异常");
+    }
+    if session.pending_resume {
+        return ("waiting", "待恢复");
+    }
     match session.status.as_str() {
         "running" | "streaming" | "busy" | "sending" | "cancelling" => ("running", "运行中"),
-        "waiting" | "waiting_for_input" | "awaiting_approval" | "awaiting_input" | "waiting_for_answer" | "waiting_reply" => ("waiting", "等待回答"),
+        "waiting" | "waiting_for_input" | "awaiting_approval" | "awaiting_input"
+        | "waiting_for_answer" | "waiting_reply" => ("waiting", "等待回答"),
         "error" | "failed" | "offline" | "disconnected" => ("failed", "异常"),
         "completed" | "done" | "succeeded" => ("completed", "完成"),
         "loading" => ("loading", "加载中"),
         "aborted" | "interrupted" | "cancelled" => ("idle", "已停止"),
-        "idle" | "ready" => match session.latest_settlement.as_ref().and_then(|value| value.get("outcome")).and_then(serde_json::Value::as_str) {
+        "idle" | "ready" => match session
+            .latest_settlement
+            .as_ref()
+            .and_then(|value| value.get("outcome"))
+            .and_then(serde_json::Value::as_str)
+        {
             Some("completed") => ("completed", "完成"),
             Some("failed") => ("failed", "异常"),
             Some("interrupted" | "declined") => ("idle", "已停止"),
@@ -323,8 +335,16 @@ pub fn SessionMenu(
 ) -> Element {
     let menu_id = format!("{prefix}-menu-{id}");
     let header = prefix == "header";
-    let menu_label = if header { "更多操作" } else { "会话操作" };
-    let trigger_label = if header { "更多操作".to_owned() } else { format!("{title} 的会话操作") };
+    let menu_label = if header {
+        "更多操作"
+    } else {
+        "会话操作"
+    };
+    let trigger_label = if header {
+        "更多操作".to_owned()
+    } else {
+        format!("{title} 的会话操作")
+    };
     rsx! {
         button { class: if header { "session-row-menu header-more" } else { "session-row-menu" }, title: "{menu_label}", aria_label: "{trigger_label}", aria_haspopup: "menu", "popovertarget": "{menu_id}", Icon { name: "more" } }
         div { id: "{menu_id}", class: "workspace-menu", popover: "auto", role: "menu", aria_label: "{menu_label}",

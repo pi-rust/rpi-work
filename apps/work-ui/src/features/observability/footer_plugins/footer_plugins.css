@@ -44,6 +44,20 @@
 :root .app-shell .runtime-footer.plugin-footer .footer-plugin {
   display: contents;
 }
+:root .app-shell .runtime-footer.plugin-footer .extension-host-footer {
+  align-items: center;
+  gap: var(--space-5, 5px);
+}
+:root .app-shell .runtime-footer.plugin-footer .extension-host-footer > strong {
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+}
+:root .app-shell .runtime-footer.plugin-footer .extension-host-footer > .meta {
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+  white-space: nowrap;
+}
 /* Specificity defeats legacy mobile cost/speed/tool display:none, in every theme. */
 :root .app-shell .composer-main .runtime-footer.plugin-footer .footer-item,
 :root .app-shell .runtime-footer.plugin-footer .footer-item {

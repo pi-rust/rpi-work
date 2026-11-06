@@ -291,14 +291,18 @@ impl NodeApi for WorkspaceClient {
     }
 
     fn image<'a>(
-        &'a self, project_id: &'a str, path: &'a str,
+        &'a self,
+        project_id: &'a str,
+        path: &'a str,
     ) -> NodeFuture<'a, work_core::api::ProjectImage> {
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
         if let Self::Local(client) = self {
             return NodeApi::image(client.as_ref(), project_id, path);
         }
         Box::pin(async move {
-            WorkspaceClient::image(self, project_id, path).await.map_err(node_error)
+            WorkspaceClient::image(self, project_id, path)
+                .await
+                .map_err(node_error)
         })
     }
 
@@ -856,7 +860,9 @@ impl NodeApi for WorkspaceClient {
             return NodeApi::prompt_content(client.as_ref(), session_id, content_blocks);
         }
         Box::pin(async move {
-            WorkspaceClient::prompt_content(self, session_id, content_blocks).await.map_err(node_error)
+            WorkspaceClient::prompt_content(self, session_id, content_blocks)
+                .await
+                .map_err(node_error)
         })
     }
 
@@ -1112,9 +1118,15 @@ impl NodeApi for WorkClient {
     }
 
     fn image<'a>(
-        &'a self, project_id: &'a str, path: &'a str,
+        &'a self,
+        project_id: &'a str,
+        path: &'a str,
     ) -> NodeFuture<'a, work_core::api::ProjectImage> {
-        Box::pin(async move { WorkClient::image(self, project_id, path).await.map_err(node_error) })
+        Box::pin(async move {
+            WorkClient::image(self, project_id, path)
+                .await
+                .map_err(node_error)
+        })
     }
 
     fn git_status<'a>(&'a self, project_id: &'a str) -> NodeFuture<'a, GitStatus> {
@@ -1507,7 +1519,9 @@ impl NodeApi for WorkClient {
         content_blocks: &'a Value,
     ) -> NodeFuture<'a, HostResponse<Value>> {
         Box::pin(async move {
-            WorkClient::prompt_content(self, session_id, content_blocks).await.map_err(node_error)
+            WorkClient::prompt_content(self, session_id, content_blocks)
+                .await
+                .map_err(node_error)
         })
     }
 

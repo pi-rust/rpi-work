@@ -55,6 +55,159 @@ pub struct UiContribution {
     pub slot: UiSlot,
     pub title: String,
     pub widgets: Vec<UiWidget>,
+    /// Optional read-only host data dependency. This is a declaration, not proof
+    /// that the host capability is installed or currently available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<UiHostBinding>,
+}
+
+/// A UI contribution may request only a named, host-owned read-only data source.
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UiHostBinding {
+    pub capability: UiHostCapability,
+    pub fields: Vec<UiDataField>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum UiHostCapability {
+    RuntimeFooter,
+}
+
+/// Stable fields exposed by the Work host. Extensions cannot request arbitrary
+/// paths, session objects, tools, credentials, markup, or executable values.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(rename_all = "kebab-case")]
+pub enum UiDataField {
+    SessionProvider,
+    SessionModel,
+    UsageInputTokens,
+    UsageOutputTokens,
+    UsageCacheHitRate,
+    UsageCost,
+    UsageSpeed,
+    UsageRequests,
+    UsageRetries,
+    ContextUsedPercent,
+    ToolsCalls,
+    ToolsFailures,
+}
+
+impl UiDataField {
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::SessionProvider => "session-provider",
+            Self::SessionModel => "session-model",
+            Self::UsageInputTokens => "usage-input-tokens",
+            Self::UsageOutputTokens => "usage-output-tokens",
+            Self::UsageCacheHitRate => "usage-cache-hit-rate",
+            Self::UsageCost => "usage-cost",
+            Self::UsageSpeed => "usage-speed",
+            Self::UsageRequests => "usage-requests",
+            Self::UsageRetries => "usage-retries",
+            Self::ContextUsedPercent => "context-used-percent",
+            Self::ToolsCalls => "tools-calls",
+            Self::ToolsFailures => "tools-failures",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum UiValueVisual {
+    Text,
+    Badge,
+    Count,
+    ContextRing,
+}
+
+impl UiValueVisual {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Badge => "badge",
+            Self::Count => "count",
+            Self::ContextRing => "context-ring",
+        }
+    }
+}
+
+/// Read-only data supplied by the Work host to a `runtime-footer` contribution.
+/// This is a host snapshot contract, not an extension execution result.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeFooterSnapshot {
+    pub online: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_hit_rate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retries: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_used_percent: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_failures: Option<u64>,
+}
+
+impl RuntimeFooterSnapshot {
+    /// Validate host data before exposing it to a contribution renderer.
+    ///
+    /// # Errors
+    /// Returns an error for invalid or out-of-range metrics.
+    pub fn validate(&self) -> Result<(), String> {
+        for value in [
+            self.input_tokens,
+            self.output_tokens,
+            self.cache_hit_rate,
+            self.cost,
+            self.speed,
+            self.requests,
+            self.retries,
+            self.context_used_percent,
+        ] {
+            if value.is_some_and(|value| !value.is_finite() || value < 0.0) {
+                return Err("runtime-footer 数值必须是有限的非负数".into());
+            }
+        }
+        if self.context_used_percent.is_some_and(|value| value > 100.0)
+            || self.cache_hit_rate.is_some_and(|value| value > 100.0)
+        {
+            return Err("runtime-footer 百分比必须在 0–100 之间".into());
+        }
+        for text in [
+            self.provider.as_deref(),
+            self.model.as_deref(),
+            self.thinking.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if text.len() > 160 || text.chars().any(char::is_control) {
+                return Err("runtime-footer 文本超过 160 字节或包含控制字符".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Known host slots. Declaring a slot does not automatically mount a live view.
@@ -65,6 +218,7 @@ pub enum UiSlot {
     ComposerAction,
     ConversationCard,
     SettingsSection,
+    RuntimeFooter,
 }
 
 impl UiSlot {
@@ -75,6 +229,7 @@ impl UiSlot {
             Self::ComposerAction => "composer-action",
             Self::ConversationCard => "conversation-card",
             Self::SettingsSection => "settings-section",
+            Self::RuntimeFooter => "runtime-footer",
         }
     }
 }
@@ -83,9 +238,22 @@ impl UiSlot {
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum UiWidget {
-    Text { text: String },
-    Fields { fields: Vec<UiField> },
-    Progress { label: String, value: u32, max: u32 },
+    Text {
+        text: String,
+    },
+    Fields {
+        fields: Vec<UiField>,
+    },
+    Progress {
+        label: String,
+        value: u32,
+        max: u32,
+    },
+    HostValue {
+        label: String,
+        field: UiDataField,
+        visual: UiValueVisual,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -223,6 +391,25 @@ impl ExtensionManifest {
                 if contribution.widgets.is_empty() || contribution.widgets.len() > 16 {
                     return Err("每个 UI contribution 需要 1–16 个 widget".into());
                 }
+                if contribution.slot == UiSlot::RuntimeFooter && contribution.host.is_none() {
+                    return Err("runtime-footer contribution 必须声明 host 数据依赖".into());
+                }
+                if let Some(host) = &contribution.host {
+                    if host.fields.is_empty() || host.fields.len() > 16 {
+                        return Err("UI host fields 需要 1–16 项".into());
+                    }
+                    let mut fields = BTreeSet::new();
+                    for field in &host.fields {
+                        if !fields.insert(field) {
+                            return Err("UI host field 重复".into());
+                        }
+                    }
+                    if host.capability == UiHostCapability::RuntimeFooter
+                        && contribution.slot != UiSlot::RuntimeFooter
+                    {
+                        return Err("runtime-footer host 只能用于 runtime-footer slot".into());
+                    }
+                }
                 for widget in &contribution.widgets {
                     match widget {
                         UiWidget::Text { text } => validate_text(text, 4096)?,
@@ -239,6 +426,15 @@ impl ExtensionManifest {
                             validate_text(label, 160)?;
                             if *max == 0 || value > max {
                                 return Err("UI progress 需要 0 ≤ value ≤ max 且 max > 0".into());
+                            }
+                        }
+                        UiWidget::HostValue { label, field, .. } => {
+                            validate_text(label, 160)?;
+                            let Some(host) = &contribution.host else {
+                                return Err("host-value widget 必须声明 host 数据依赖".into());
+                            };
+                            if !host.fields.contains(field) {
+                                return Err("host-value field 未在 host 依赖中声明".into());
                             }
                         }
                     }
@@ -322,6 +518,73 @@ mod tests {
             assert_eq!(roundtrip, item);
         }
         assert!(manifest(false, false).validate().is_err());
+    }
+
+    #[test]
+    fn runtime_footer_declares_only_bounded_host_fields() {
+        let mut value = serde_json::to_value(manifest(false, true)).unwrap();
+        value["ui"]["contributions"][0] = json!({
+            "id": "metrics",
+            "slot": "runtime-footer",
+            "title": "Session metrics",
+            "host": {
+                "capability": "runtime-footer",
+                "fields": ["session-model", "context-used-percent"]
+            },
+            "widgets": [
+                {"type":"host-value","label":"模型","field":"session-model","visual":"text"},
+                {"type":"host-value","label":"上下文","field":"context-used-percent","visual":"context-ring"}
+            ]
+        });
+        let item: ExtensionManifest = serde_json::from_value(value.clone()).unwrap();
+        item.validate().unwrap();
+        assert_eq!(
+            serde_json::from_value::<ExtensionManifest>(serde_json::to_value(&item).unwrap())
+                .unwrap(),
+            item
+        );
+
+        value["ui"]["contributions"][0]["widgets"][0]["field"] = json!("tools-calls");
+        assert!(
+            serde_json::from_value::<ExtensionManifest>(value)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn runtime_footer_snapshot_is_bounded_and_serializable() {
+        let snapshot = RuntimeFooterSnapshot {
+            online: true,
+            provider: Some("openai".into()),
+            model: Some("gpt-test".into()),
+            context_used_percent: Some(42.0),
+            tool_calls: Some(3),
+            ..Default::default()
+        };
+        snapshot.validate().unwrap();
+        let roundtrip: RuntimeFooterSnapshot =
+            serde_json::from_value(serde_json::to_value(&snapshot).unwrap()).unwrap();
+        assert_eq!(roundtrip, snapshot);
+
+        let invalid = RuntimeFooterSnapshot {
+            context_used_percent: Some(101.0),
+            ..Default::default()
+        };
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn runtime_footer_requires_matching_host_capability() {
+        let mut value = serde_json::to_value(manifest(false, true)).unwrap();
+        value["ui"]["contributions"][0]["slot"] = json!("runtime-footer");
+        assert!(
+            serde_json::from_value::<ExtensionManifest>(value)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]

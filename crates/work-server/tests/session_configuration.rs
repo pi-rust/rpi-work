@@ -20,6 +20,9 @@ async fn configuration_routes_share_runtime_and_enforce_access() {
         }).unwrap();
         let url = format!("http://{}/", server.address());
         let http = WorkClient::new(&url).unwrap();
+        // This suite asserts HTTP status/Origin behavior. Realtime policy is
+        // covered by the authenticated WS integration and safety suites.
+        http.set_remote_transport(work_client::RemoteTransport::HttpSseOnly);
         let project = local.create_project("legacy fixture",None,false).await.unwrap();
         let session = legacy_fixture::seed_legacy(&root.path().join("data"),&project.id,"legacy-config-fixture");
         assert!(matches!(http.session_configuration(&session).await, Err(ClientError::Api { status, .. }) if status == 401));

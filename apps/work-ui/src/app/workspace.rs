@@ -42,7 +42,10 @@ use crate::{
         resources::{library as resources, session_config},
         settings::{self as settings, updates},
     },
-    shared::{brand::BrandMark, components, state, theme::appearance},
+    shared::{
+        app_settings, app_settings::AppSettingsState, brand::BrandMark, components, state,
+        theme::appearance,
+    },
 };
 use appearance::{AppearancePicker, use_appearance};
 use components::{Icon, Modal};
@@ -86,6 +89,26 @@ async fn reconcile_operation_value(
     }
 }
 
+fn session_failure_message(session: &SessionSummary) -> Option<String> {
+    let message = session
+        .error
+        .as_deref()
+        .or_else(|| {
+            session
+                .latest_settlement
+                .as_ref()
+                .and_then(|settlement| {
+                    settlement
+                        .get("error")
+                        .or_else(|| settlement.get("message"))
+                })
+                .and_then(Value::as_str)
+        })
+        .map(str::trim)
+        .filter(|message| !message.is_empty())?;
+    Some(message.chars().take(2000).collect())
+}
+
 async fn reconcile_prompt_response(
     client: &WorkspaceClient,
     response: Result<HostResponse<Value>, ClientError>,
@@ -127,6 +150,16 @@ pub(super) fn App() -> Element {
             let _ = document::eval("window.__rpiAppRenderProbe.appRenders++;");
         }
     }
+    let mut app_settings_store = use_signal(AppSettingsState::default);
+    use_context_provider(|| app_settings_store);
+    use_effect(move || {
+        if app_settings_store.peek().ready {
+            return;
+        }
+        spawn(async move {
+            app_settings_store.set(app_settings::load_state().await);
+        });
+    });
     let appearance = use_appearance();
     crate::features::observability::footer_plugins::use_footer_preferences();
     let device_mode = device_mode::use_device_mode();
@@ -2617,15 +2650,29 @@ pub(super) fn App() -> Element {
                     }
                     Err(error) if *preview_generation.read() == generation => {
                         file_loading.set(false);
-                        file_error.set(Some(error.to_string()));
-                        status.set(format!("读取文件失败：{error}"));
+                        let message = match &error {
+                            ClientError::Api { status, .. } if status.as_u16() == 404 => {
+                                "文件不存在，或当前节点尚未提供文件内容接口；请刷新文件树后重试。"
+                                    .to_owned()
+                            }
+                            _ => error.to_string(),
+                        };
+                        file_error.set(Some(message.clone()));
+                        status.set(format!("读取文件失败：{message}"));
                     }
                     _ => {}
                 },
                 Err(error) if *preview_generation.read() == generation => {
                     file_loading.set(false);
-                    file_error.set(Some(error.to_string()));
-                    status.set(format!("地址无效：{error}"));
+                    let message = match &error {
+                        ClientError::Api { status, .. } if status.as_u16() == 404 => {
+                            "文件不存在，或当前节点尚未提供文件内容接口；请刷新文件树后重试。"
+                                .to_owned()
+                        }
+                        _ => error.to_string(),
+                    };
+                    file_error.set(Some(message.clone()));
+                    status.set(format!("地址无效：{message}"));
                 }
                 _ => {}
             }
@@ -3910,6 +3957,26 @@ pub(super) fn App() -> Element {
         }
         None
     };
+    let current_session_snapshot = selected_session.read().as_ref().and_then(|id| {
+        sessions
+            .read()
+            .iter()
+            .find(|session| session.session_id == *id)
+            .cloned()
+    });
+    let current_session_failed = current_session_snapshot.as_ref().is_some_and(|session| {
+        session.error.is_some()
+            || matches!(session.status.as_str(), "error" | "failed")
+            || session
+                .latest_settlement
+                .as_ref()
+                .and_then(|settlement| settlement.get("outcome"))
+                .and_then(Value::as_str)
+                == Some("failed")
+    });
+    let current_session_error = current_session_snapshot
+        .as_ref()
+        .and_then(session_failure_message);
     let catalog_complete = {
         let state = catalog_refresh.read();
         !state.busy && state.message == "已拉取最新会话。"
@@ -4056,6 +4123,25 @@ pub(super) fn App() -> Element {
         }
     };
     let workspace_page = active_page.read().as_str() == "workspace";
+    let app_settings_document = app_settings_store.read().value.clone();
+    let mut resource_nav_items = [
+        (app_settings::ids::menus::EXTENSIONS, "blocks", "扩展", 10),
+        (app_settings::ids::menus::PACKAGES, "blocks", "Packages", 20),
+        (app_settings::ids::menus::SKILLS, "skills", "技能库", 30),
+    ]
+    .into_iter()
+    .filter(|(page, _, _, _)| app_settings::menu_visible(&app_settings_document, page, true))
+    .collect::<Vec<_>>();
+    resource_nav_items.sort_by_key(|(page, _, _, default_order)| {
+        app_settings::menu_order(&app_settings_document, page, *default_order)
+    });
+    let session_display_mode = app_settings::session_display_mode(&app_settings_document);
+    let session_display_key = session_display_mode.key().to_owned();
+    let node_display_label = if super::local_node::is_local(&node_url.read()) {
+        "本机节点".to_owned()
+    } else {
+        node_info::safe_address(&node_url.read())
+    };
     let local_workspace = cfg!(not(any(target_arch = "wasm32", target_os = "android")))
         && (super::local_node::is_local(&node_url.read())
             || node_url.read().as_str() == "about:blank");
@@ -4374,15 +4460,23 @@ pub(super) fn App() -> Element {
                     }
                     nav { class: "primary-nav", aria_label: "主导航",
                         button { class: if active_page.read().as_str() == "workspace" { "nav-item active" } else { "nav-item" }, onclick: move |_| { active_page.set("workspace".to_owned()); sidebar_open.set(false); }, Icon { name: "layout" } "工作空间" }
-                        div { class: "nav-group", aria_label: "能力库",
-                            div { class: "nav-group-label", "能力库" }
-                            for (page, icon, title) in [("extensions", "blocks", "扩展"), ("packages", "blocks", "Packages"), ("skills", "skills", "技能库")] {
-                                button { class: if active_page.read().as_str() == page { "nav-item active" } else { "nav-item" }, onclick: move |_| { active_page.set(page.to_owned()); sidebar_open.set(false); }, Icon { name: icon.to_owned() } "{title}" }
+                        if !resource_nav_items.is_empty() {
+                            div { class: "nav-group", aria_label: "能力库",
+                                div { class: "nav-group-label", "能力库" }
+                                for (page, icon, title, _) in resource_nav_items.iter() {
+                                    button { class: if active_page.read().as_str() == *page { "nav-item active" } else { "nav-item" }, onclick: { let page = (*page).to_owned(); move |_| { active_page.set(page.clone()); sidebar_open.set(false); } }, Icon { name: (*icon).to_owned() } "{title}" }
+                                }
                             }
                         }
                     }
-                    div { class: "sidebar-projects", role: "navigation", aria_label: "项目与会话",
+                    div { class: "sidebar-projects", role: "navigation", aria_label: "项目与会话", "data-session-display-mode": session_display_mode.key(),
                     div { class: "section-label", "项目"
+                        if session_display_mode == app_settings::SessionDisplayMode::GroupedByNode {
+                            span { class: "sidebar-node-group-label", title: "当前节点", Icon { name: "server" } "{node_display_label}" }
+                        }
+                        if session_display_mode == app_settings::SessionDisplayMode::Flat {
+                            span { class: "sidebar-node-group-label flat", "平铺会话" }
+                        }
                         div { class: "sidebar-catalog-actions",
                             button { aria_label: "刷新会话", title: "从当前节点拉取最新会话", aria_busy: catalog_refresh.read().busy,
                                 disabled: !matches!(*node_connection.phase.read(), connections::Phase::Online) || catalog_refresh.read().busy,
@@ -4408,7 +4502,12 @@ pub(super) fn App() -> Element {
                         }
                     }
                     if let Some(project_id) = selected_project.read().as_ref() {
-                        if project_purposes
+                        if app_settings::menu_visible(
+                            &app_settings_document,
+                            app_settings::ids::menus::META_AGENT,
+                            true,
+                        )
+                            && project_purposes
                             .read()
                             .get(&project_scope_key(&node_origin(node_url.read().as_str()), project_id))
                             .is_some_and(|purpose| purpose == "元Agent") {
@@ -4949,6 +5048,18 @@ pub(super) fn App() -> Element {
                                         timeline_visible: timeline_visible(),
                                     }
                                 }
+                                if current_session_failed {
+                                    article { class: "conversation-session-error", role: "alert", aria_label: "当前会话执行失败",
+                                        div { class: "conversation-session-error-heading",
+                                            strong { "当前会话执行失败" }
+                                            if current_session_snapshot.as_ref().is_some_and(|session| session.pending_resume) { span { "待恢复" } }
+                                        }
+                                        p { if let Some(error) = current_session_error.as_deref() { "{error}" } else { "节点未提供具体错误信息。" } }
+                                        button { class: "button", aria_label: "重试当前会话", onclick: move |_| {
+                                            let _ = document::eval("document.querySelector('.composer .send-button:not(:disabled)')?.click();");
+                                        }, "重试" }
+                                    }
+                                }
                                 if pending_reply.is_none() && pending_dialogs.read().is_empty() && transcript.read().is_empty() && projection.read().is_none() {
                                     div { class: "empty-state workspace-welcome",
                                         if let Some(error) = new_session_error.read().as_ref() { p { role: "alert", "{error}" } }
@@ -5234,6 +5345,7 @@ pub(super) fn App() -> Element {
                             runtime_stats::RuntimeFooter {
                                 scope: selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),
                                 runtime_state, projection, transcript, online: transport_ready,
+                                contributions: resources::design_ui_catalog(&resource_library.read()),
                             }
                         }
                         }
@@ -5545,7 +5657,7 @@ pub(super) fn App() -> Element {
                 if *session_switcher_open.read() {
                     project_picker::SessionSwitcher {
                         projects: visible_projects.clone(), sessions: visible_sessions.clone(),
-                        current_session: selected_session.read().clone(), states: switcher_states,
+                        current_session: selected_session.read().clone(), display_mode: session_display_key.clone(), node_label: node_display_label.clone(), states: switcher_states,
                         onsession: move |id| { session_switcher_open.set(false); open_session(id); },
                         onclose: move |()| session_switcher_open.set(false),
                     }

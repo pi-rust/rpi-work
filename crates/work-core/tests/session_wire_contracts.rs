@@ -1,5 +1,6 @@
 //! These tests need no client, executor, filesystem, Agent or model.
 use serde_json::{Value, json};
+use work_core::api::events::WireEventProjection as _;
 use work_core::api::{
     PendingDialog, Snapshot, WireEvent,
     events::{dialog_from_wire, normalize_event},

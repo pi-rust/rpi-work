@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use work_client::{
-    AgentConnection, ClientError, MESSAGE_PAGE_SIZE, MessagePage, MessagePageInfo, Snapshot,
-    WorkClient, WorkspaceClient,
+    AgentConnection, ClientError, MESSAGE_PAGE_SIZE, MessagePage, MessagePageInfo, RemoteTransport,
+    Snapshot, WorkClient, WorkspaceClient,
 };
 
 fn snapshot() -> Snapshot {
@@ -190,6 +190,15 @@ fn json_response(value: &Value) -> (String, String) {
     ("application/json".into(), value.to_string())
 }
 
+// This fixture deliberately implements only the legacy HTTP/SSE protocol.
+// Transport discovery/fallback and authenticated WS behavior have their own
+// real-server tests; pagination must not consume scripted replies as discovery.
+fn http_client(url: &str) -> WorkClient {
+    let client = WorkClient::new(url).unwrap();
+    client.set_remote_transport(RemoteTransport::HttpSseOnly);
+    client
+}
+
 #[tokio::test]
 async fn remote_limit_query_and_cursor_command_body_are_explicit() {
     let (url, server) = server(vec![
@@ -198,7 +207,7 @@ async fn remote_limit_query_and_cursor_command_body_are_explicit() {
             &json!({"type":"response","command":"get_messages","success":true,"data":page()}),
         ),
     ]);
-    let client = WorkClient::new(&url).unwrap();
+    let client = http_client(&url);
     client.snapshot_with_limit("s", 48).await.unwrap();
     let workspace = WorkspaceClient::from(client);
     workspace.message_page("s", 48, "e3").await.unwrap();
@@ -219,7 +228,7 @@ async fn legacy_hosts_cannot_silently_ignore_before_id() {
     let (url, server) = server(vec![json_response(&json!({
         "type":"response","command":"get_messages","success":true,"data":ignored
     }))]);
-    let workspace = WorkspaceClient::new(&url).unwrap();
+    let workspace = WorkspaceClient::from(http_client(&url));
     assert!(matches!(workspace.message_page("s", 48, "e3").await,
         Err(ClientError::Unsupported { operation, .. }) if operation == "message_pagination"));
     server.join().unwrap();
@@ -247,7 +256,7 @@ async fn connection_and_run_refresh_snapshots_are_bounded_without_moving_replay_
             json_response(&serde_json::to_value(&restored).unwrap()),
             ("text/event-stream".into(), String::new()),
         ]);
-        let client = WorkClient::new(&url).unwrap();
+        let client = http_client(&url);
         let connection = if use_workspace {
             WorkspaceClient::from(client)
                 .connect_session("s")
@@ -323,7 +332,7 @@ async fn silent_child_agent_stays_active_on_open_and_reconnect_until_live_settle
             ),
             json_response(&settled),
         ]);
-        let client = WorkClient::new(&url).unwrap();
+        let client = http_client(&url);
         let mut connection = if use_workspace {
             WorkspaceClient::from(client)
                 .connect_session("s")
@@ -393,7 +402,7 @@ async fn initial_connection_reuses_fresh_access_but_reconnect_renegotiates() {
         json_response(&serde_json::to_value(snapshot()).unwrap()),
         ("text/event-stream".into(), String::new()),
     ]);
-    let client = WorkspaceClient::new(&url).unwrap();
+    let client = WorkspaceClient::from(http_client(&url));
     let access = client.session_access("s").await.unwrap();
     let mut connection = client
         .connect_session_with_access("s", &access)

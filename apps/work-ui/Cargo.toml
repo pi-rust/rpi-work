@@ -21,7 +21,6 @@ web = ["dioxus/web"]
 [target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
 dioxus = { version = "0.7", features = ["desktop"] }
 work-host = { path = "../../crates/work-host" }
-work-server = { path = "../../crates/work-server" }
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 
 [target.'cfg(target_os = "android")'.dependencies]

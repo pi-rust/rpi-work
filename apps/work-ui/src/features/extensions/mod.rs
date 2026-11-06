@@ -1,7 +1,11 @@
 //! Host-owned rendering of inert extension UI designs. No plugin code runs here.
+pub(crate) mod components;
 use dioxus::prelude::*;
 use serde_json::Value;
-use work_core::extensions::{ExtensionManifest, UiExtensionPreference, UiWidget};
+use work_core::extensions::{
+    ExtensionManifest, RuntimeFooterSnapshot, UiExtensionPreference, UiSlot, UiValueVisual,
+    UiWidget,
+};
 
 pub const CSS: &str = include_str!("extensions.css");
 
@@ -57,6 +61,39 @@ pub fn kind_label(manifest: Option<&ExtensionManifest>) -> &'static str {
     }
 }
 
+/// A host-supplied UI contribution candidate. Presence here means only that a
+/// validated manifest was supplied to the host; it is not an installed/loaded fact.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiContributionEntry {
+    pub extension: work_core::extensions::ExtensionPin,
+    pub contribution: work_core::extensions::UiContribution,
+    /// True for local design catalog entries. This is never an installed/loaded fact.
+    pub design_only: bool,
+}
+
+impl UiContributionEntry {
+    #[must_use]
+    pub fn key(&self) -> String {
+        format!("{}/{}", self.extension.key(), self.contribution.id)
+    }
+}
+
+/// Build a design catalog without implying node installation or runtime loading.
+pub fn design_catalog(manifest: &ExtensionManifest) -> Result<Vec<UiContributionEntry>, String> {
+    manifest.validate()?;
+    Ok(manifest.ui.as_ref().map_or_else(Vec::new, |ui| {
+        ui.contributions
+            .iter()
+            .cloned()
+            .map(|contribution| UiContributionEntry {
+                extension: manifest.pin(),
+                contribution,
+                design_only: true,
+            })
+            .collect()
+    }))
+}
+
 #[component]
 pub fn ExtensionPreview(
     manifest: ExtensionManifest,
@@ -109,6 +146,129 @@ pub fn ExtensionPreview(
     }
 }
 
+/// Render one validated runtime-footer contribution against a bounded Host snapshot.
+/// This component never executes extension code and rejects non-footer declarations.
+#[component]
+pub fn RuntimeFooterContribution(
+    contribution: work_core::extensions::UiContribution,
+    snapshot: RuntimeFooterSnapshot,
+    #[props(default = true)] design_only: bool,
+) -> Element {
+    let Some(host) = contribution.host.as_ref() else {
+        return rsx! { p { role: "alert", class: "resource-error", "Footer contribution 缺少 Host 数据依赖。" } };
+    };
+    if contribution.slot != UiSlot::RuntimeFooter
+        || host.capability != work_core::extensions::UiHostCapability::RuntimeFooter
+    {
+        return rsx! { p { role: "alert", class: "resource-error", "Footer contribution 的 Host capability 不匹配。" } };
+    }
+    if let Err(error) = snapshot.validate() {
+        return rsx! { p { role: "alert", class: "resource-error", "Footer 数据不可用：{error}" } };
+    }
+    rsx! {
+        article { class: "footer-plugin extension-host-footer", aria_label: "{contribution.title}",
+            "data-source": if design_only { "design" } else { "host" },
+            strong { "{contribution.title}" }
+            if design_only {
+                span { class: "meta", title: "本地设计预览，不代表节点已安装或加载", "设计预览" }
+            }
+            div { class: "extension-widgets",
+                for widget in &contribution.widgets {
+                    match widget {
+                        UiWidget::HostValue { label, field, visual } => {
+                            if !host.fields.contains(field) {
+                                rsx! { p { class: "resource-error", "未声明的 Host 字段：{field.key()}" } }
+                            } else {
+                                host_value_widget(&snapshot, label, *field, *visual)
+                            }
+                        }
+                        UiWidget::Text { text } => rsx! { p { "{text}" } },
+                        UiWidget::Fields { fields } => rsx! { dl { for field in fields { div { dt { "{field.label}" } dd { "{field.value}" } } } } },
+                        UiWidget::Progress { label, value, max } => rsx! { label { class: "extension-progress", span { "{label} · {value}/{max}" } progress { value: *value, max: *max, aria_label: "{label}" } } },
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn host_value(
+    snapshot: &RuntimeFooterSnapshot,
+    field: work_core::extensions::UiDataField,
+) -> (Option<String>, Option<f64>) {
+    let number = |value: Option<f64>| value.map(|value| format!("{value:.0}"));
+    match field {
+        work_core::extensions::UiDataField::SessionProvider => (snapshot.provider.clone(), None),
+        work_core::extensions::UiDataField::SessionModel => (snapshot.model.clone(), None),
+        work_core::extensions::UiDataField::UsageInputTokens => {
+            (number(snapshot.input_tokens), snapshot.input_tokens)
+        }
+        work_core::extensions::UiDataField::UsageOutputTokens => {
+            (number(snapshot.output_tokens), snapshot.output_tokens)
+        }
+        work_core::extensions::UiDataField::UsageCacheHitRate => (
+            snapshot.cache_hit_rate.map(|value| format!("{value:.0}%")),
+            snapshot.cache_hit_rate,
+        ),
+        work_core::extensions::UiDataField::UsageCost => (
+            snapshot.cost.map(|value| format!("${value:.4}")),
+            snapshot.cost,
+        ),
+        work_core::extensions::UiDataField::UsageSpeed => (
+            snapshot.speed.map(|value| format!("{value:.1}/s")),
+            snapshot.speed,
+        ),
+        work_core::extensions::UiDataField::UsageRequests => {
+            (number(snapshot.requests), snapshot.requests)
+        }
+        work_core::extensions::UiDataField::UsageRetries => {
+            (number(snapshot.retries), snapshot.retries)
+        }
+        work_core::extensions::UiDataField::ContextUsedPercent => (
+            snapshot
+                .context_used_percent
+                .map(|value| format!("{value:.0}%")),
+            snapshot.context_used_percent,
+        ),
+        work_core::extensions::UiDataField::ToolsCalls => (
+            snapshot.tool_calls.map(|value| value.to_string()),
+            snapshot.tool_calls.map(|value| value as f64),
+        ),
+        work_core::extensions::UiDataField::ToolsFailures => (
+            snapshot.tool_failures.map(|value| value.to_string()),
+            snapshot.tool_failures.map(|value| value as f64),
+        ),
+    }
+}
+
+fn host_value_widget(
+    snapshot: &RuntimeFooterSnapshot,
+    label: &str,
+    field: work_core::extensions::UiDataField,
+    visual: UiValueVisual,
+) -> Element {
+    let (value, numeric) = host_value(snapshot, field);
+    let value = value.unwrap_or_else(|| "—".into());
+    match visual {
+        UiValueVisual::ContextRing => {
+            let ring = numeric
+                .filter(|value| value.is_finite())
+                .map(|value| value.clamp(0.0, 100.0));
+            rsx! {
+                span { class: "footer-item", role: "group", aria_label: "{label}：{value}",
+                    span { class: "context-ring", aria_hidden: "true", "data-known": "{ring.is_some()}", style: ring.map(|value| format!("--used:{value}%")) }
+                    span { class: "footer-value", "{label} {value}" }
+                }
+            }
+        }
+        UiValueVisual::Badge => {
+            rsx! { span { class: "footer-item", role: "status", "{label}: " span { class: "footer-badge", "{value}" } } }
+        }
+        UiValueVisual::Count => rsx! { span { class: "footer-item", "{label} {value}" } },
+        UiValueVisual::Text => rsx! { span { class: "footer-item", "{label} {value}" } },
+    }
+}
+
 /// Host-owned data rendering shared by design previews and the isolated live demo.
 /// Callers must validate their manifest before passing its widgets here.
 #[component]
@@ -120,6 +280,9 @@ pub fn UiWidgets(widgets: Vec<UiWidget>) -> Element {
                     UiWidget::Text { text } => rsx! { p { "{text}" } },
                     UiWidget::Fields { fields } => rsx! { dl { for field in fields { div { dt { "{field.label}" } dd { "{field.value}" } } } } },
                     UiWidget::Progress { label, value, max } => rsx! { label { class: "extension-progress", span { "{label} · {value}/{max}" } progress { value: *value, max: *max, aria_label: "{label}" } } },
+                    UiWidget::HostValue { label, field, visual } => rsx! {
+                        p { class: "meta", "{label} · {field.key()} · {visual.label()}（需要 Work Host 运行时数据，当前仅作设计预览）" }
+                    },
                 }
             }
         }
@@ -151,6 +314,10 @@ mod tests {
                 .unwrap();
             assert_eq!(manifest.agent.is_some(), agent);
             assert_eq!(manifest.ui.is_some(), ui);
+            assert_eq!(
+                design_catalog(&manifest).unwrap().len(),
+                if ui { 1 } else { 0 }
+            );
         }
     }
 
@@ -160,6 +327,41 @@ mod tests {
         assert_eq!(design_manifest(&old, "team.review", "1.0.0").unwrap(), None);
         assert_eq!(
             design_manifest(&json!({"src/lib.rs":"legacy"}), "team.review", "1.0.0").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn host_values_are_formatted_from_bounded_snapshot() {
+        let snapshot = RuntimeFooterSnapshot {
+            model: Some("gpt-test".into()),
+            context_used_percent: Some(42.0),
+            tool_calls: Some(3),
+            ..Default::default()
+        };
+        assert_eq!(
+            host_value(&snapshot, work_core::extensions::UiDataField::SessionModel)
+                .0
+                .as_deref(),
+            Some("gpt-test")
+        );
+        assert_eq!(
+            host_value(
+                &snapshot,
+                work_core::extensions::UiDataField::ContextUsedPercent
+            )
+            .0
+            .as_deref(),
+            Some("42%")
+        );
+        assert_eq!(
+            host_value(&snapshot, work_core::extensions::UiDataField::ToolsCalls)
+                .0
+                .as_deref(),
+            Some("3")
+        );
+        assert_eq!(
+            host_value(&snapshot, work_core::extensions::UiDataField::UsageCost).0,
             None
         );
     }

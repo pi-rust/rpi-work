@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use work_core::api::events::WireEventProjection as _;
 use work_core::api::{WireEvent, events::normalize_event};
 use work_core::{ApplyResult, Event, EventKind, MessageBlock, RunProjection};
 
@@ -13,6 +14,7 @@ fn wire(seq: u64, kind: &str, data: Value) -> Event {
     .unwrap()
 }
 
+#[allow(clippy::needless_pass_by_value)] // Owned JSON keeps fixture call sites readable.
 fn full(seq: u64, kind: &str, id: &str, content: Value) -> Event {
     wire(
         seq,
@@ -203,7 +205,7 @@ fn empty_start_update_or_missing_body_does_not_erase_nonzero_partial() {
     assert_eq!(text_slots(&run), vec![("m-text-1", "partial")]);
     // An explicit complete empty array, unlike an absent body, is authoritative.
     run.apply(full(5, "message_end", "m", json!([])));
-    assert!(text_slots(&run).is_empty());
+    assert_eq!(text_slots(&run), [] as [(&str, &str); 0]);
     assert_eq!(run.blocks[0].id(), "m-text-1");
 }
 
@@ -217,7 +219,7 @@ fn private_only_authoritative_snapshot_retires_public_text_without_exposing_priv
         "m",
         json!([{"type":"thinking","text":"secret"}]),
     ));
-    assert!(text_slots(&run).is_empty());
+    assert_eq!(text_slots(&run), [] as [(&str, &str); 0]);
     assert_eq!(run.blocks.len(), 1);
 }
 

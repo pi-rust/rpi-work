@@ -405,7 +405,16 @@ async fn host_consent_revokes_streams_and_logins_without_stopping_workspace() {
         // Reopen before the stream is polled: generation, not merely bool,
         // must still end the old subscription and reject its old cookie.
         consent.set_enabled(true);
-        assert!(tokio::time::timeout(Duration::from_secs(2),stream.next()).await.unwrap().is_none());
+        // Frames already delivered before revocation may remain in the HTTP
+        // client's buffer. They cannot be retracted; require the stream to end.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(event) = stream.next().await {
+                match event {
+                    Ok(_) | Err(work_client::ClientError::WebSocket { status: None }) => {},
+                    Err(error) => panic!("unexpected stream close: {error}"),
+                }
+            }
+        }).await.unwrap();
         assert!(!http.auth().await.unwrap().authenticated);
         assert!(matches!(http.sessions().await,Err(work_client::ClientError::Api{status,..}) if status==401));
         http.login("111111").await.unwrap();

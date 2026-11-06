@@ -54,6 +54,7 @@ fn original_client_exports_are_the_core_contract_types() {
 fn neutral_core_errors_preserve_the_client_boundary_categories() {
     use serde_json::json;
     use work_client::{ClientError, PendingDialog, WireEvent};
+    use work_core::api::events::WireEventProjection as _;
 
     fn decode(wire: WireEvent) -> Result<work_core::Event, ClientError> {
         // The existing '?' style still converts the new neutral error.

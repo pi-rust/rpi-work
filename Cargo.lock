@@ -4604,6 +4604,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpi-components"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "url",
+]
+
+[[package]]
 name = "rpi-durable-core"
 version = "0.2.0"
 source = "git+https://github.com/pi-rust/rpi-package?rev=17ba89c0098f018db76e22051fe8c73e2792dc1c#17ba89c0098f018db76e22051fe8c73e2792dc1c"
@@ -4629,6 +4640,60 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpi-http-component"
+version = "0.1.0"
+dependencies = [
+ "rpi-components",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rpi-http-extension"
+version = "0.1.0"
+dependencies = [
+ "rpi-node-host",
+ "rpi-plugin-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "rpi-http-node"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "axum",
+ "futures-util",
+ "getrandom 0.3.4",
+ "rpi-http-runtime",
+ "rpi-node-api",
+ "rpi-node-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tokio",
+ "tower-http",
+ "url",
+]
+
+[[package]]
+name = "rpi-http-runtime"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "getrandom 0.3.4",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "rpi-mcp-core"
 version = "0.1.0"
 source = "git+https://github.com/pi-rust/rpi-package?rev=17ba89c0098f018db76e22051fe8c73e2792dc1c#17ba89c0098f018db76e22051fe8c73e2792dc1c"
@@ -4640,6 +4705,78 @@ dependencies = [
  "tokio",
  "url",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rpi-node-api"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rpi-node-core"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "fs2",
+ "futures-core",
+ "futures-util",
+ "getrandom 0.3.4",
+ "rpi-components",
+ "rpi-extcore",
+ "rpi-node-api",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "rpi-node-host"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rpi-components",
+ "rpi-http-component",
+ "rpi-http-node",
+ "rpi-node-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rpi-node-launcher"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "getrandom 0.3.4",
+ "libc",
+ "reqwest",
+ "rpi-components",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rpi-plugin-sdk"
+version = "0.3.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88064b24428c5c5a5d3ee93616a754d171951fb8b31edbc55530433359047d85"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -6688,6 +6825,7 @@ dependencies = [
  "gloo-timers",
  "js-sys",
  "reqwest",
+ "rpi-components",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -6706,6 +6844,8 @@ name = "work-core"
 version = "0.1.0"
 dependencies = [
  "futures-core",
+ "rpi-components",
+ "rpi-node-api",
  "serde",
  "serde_json",
 ]
@@ -6714,15 +6854,15 @@ dependencies = [
 name = "work-host"
 version = "0.1.0"
 dependencies = [
- "libc",
+ "rpi-components",
+ "rpi-http-runtime",
+ "rpi-node-host",
+ "rpi-node-launcher",
  "serde",
  "serde_json",
- "tempfile",
  "tokio",
- "windows-sys 0.61.2",
  "work-client",
  "work-node",
- "work-server",
 ]
 
 [[package]]
@@ -6736,7 +6876,9 @@ dependencies = [
  "futures-util",
  "getrandom 0.3.4",
  "reqwest",
+ "rpi-components",
  "rpi-extcore",
+ "rpi-node-core",
  "serde",
  "serde_json",
  "sha2",
@@ -6756,6 +6898,9 @@ dependencies = [
  "futures-util",
  "getrandom 0.3.4",
  "reqwest",
+ "rpi-http-component",
+ "rpi-http-node",
+ "rpi-http-runtime",
  "serde",
  "serde_json",
  "sha2",
@@ -6789,7 +6934,6 @@ dependencies = [
  "work-client",
  "work-core",
  "work-host",
- "work-server",
  "work-update",
 ]
 

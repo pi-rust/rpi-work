@@ -102,7 +102,7 @@ async fn metadata_is_explicit_no_store_and_not_a_sharing_bypass() {
                 json!({"version":1,"mode":"hosted","nodeId":"entry-node"})
             );
         } else {
-            assert!(r.text().await.unwrap().is_empty());
+            assert_eq!(r.text().await.unwrap(), "");
         }
         for (header, value) in [
             ("host", "evil.invalid"),
@@ -358,7 +358,7 @@ async fn concurrent_redemption_node_isolation_and_generation_revocation() {
         redeem(&client, &f, &qr.ticket)
     );
     let mut statuses = [a.status().as_u16(), b.status().as_u16()];
-    statuses.sort();
+    statuses.sort_unstable();
     assert_eq!(statuses, [200, 401]);
     let qr = f.server.issue_qr_authorization().unwrap();
     let cookie_client = browser();

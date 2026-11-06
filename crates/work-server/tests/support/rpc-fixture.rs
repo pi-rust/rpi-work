@@ -112,10 +112,18 @@ fn main() {
                     json!({"type":"agent_settled","eventId":"headless-run-settled","outcome":"cancelled"}),
                 );
             }
-            "prompt" if request["message"].as_str().is_some_and(|s| s.starts_with("realtime-auth-gate:")) => {
+            "prompt"
+                if request["message"]
+                    .as_str()
+                    .is_some_and(|s| s.starts_with("realtime-auth-gate:")) =>
+            {
                 // Deterministic test-only gate: parent revokes the HTTP login
                 // after observing the write, then releases this temporary file.
-                let path = request["message"].as_str().unwrap().strip_prefix("realtime-auth-gate:").unwrap();
+                let path = request["message"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("realtime-auth-gate:")
+                    .unwrap();
                 emit(&mut stdout, json!({"type":"fixture_started"}));
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
                 while !std::path::Path::new(path).exists() && std::time::Instant::now() < deadline {
@@ -124,12 +132,21 @@ fn main() {
                 emit_prompt(&mut stdout, &id);
             }
             "prompt" if request["message"] == "realtime-ws-burst-fixture" => {
-                emit(&mut stdout, json!({"type":"response","id":id,"command":"prompt","success":true,"data":{"accepted":true}}));
+                emit(
+                    &mut stdout,
+                    json!({"type":"response","id":id,"command":"prompt","success":true,"data":{"accepted":true}}),
+                );
                 let delta = "x".repeat(64 * 1024);
                 for i in 0..128 {
-                    emit(&mut stdout, json!({"type":"message_update","eventId":format!("ws-burst-{i}"),"eventType":"text_delta","delta":delta,"message":{"role":"assistant","entryId":"ws-burst-message"}}));
+                    emit(
+                        &mut stdout,
+                        json!({"type":"message_update","eventId":format!("ws-burst-{i}"),"eventType":"text_delta","delta":delta,"message":{"role":"assistant","entryId":"ws-burst-message"}}),
+                    );
                 }
-                emit(&mut stdout, json!({"type":"agent_settled","eventId":"ws-burst-settled","outcome":"completed"}));
+                emit(
+                    &mut stdout,
+                    json!({"type":"agent_settled","eventId":"ws-burst-settled","outcome":"completed"}),
+                );
             }
             "prompt" => emit_prompt(&mut stdout, &id),
             "stop" => {

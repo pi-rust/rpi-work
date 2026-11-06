@@ -1,5 +1,7 @@
-//! App-local preferences. Loading never writes. Only explicit settings events persist.
+//! Device-local footer preferences. Legacy loading never repairs its store;
+//! successful migration and explicit settings events persist the unified app settings.
 use super::registry::BUILTINS;
+use crate::shared::app_settings::{self, AppSettingsState};
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -83,10 +85,12 @@ pub struct FooterPreferenceStore {
     pub corrupt_guard: bool,
     revision: u64,
     writing: bool,
+    unified_synced: bool,
 }
 #[derive(Clone, Copy)]
 pub struct FooterPreferencesContext {
     pub store: Signal<FooterPreferenceStore>,
+    pub app_settings: Option<Signal<AppSettingsState>>,
 }
 
 /// A missing `WebView` reply must not leave loading or the single writer stuck.
@@ -111,10 +115,15 @@ async fn bridge_reply<T>(future: impl Future<Output = T>) -> Result<T, ()> {
     .await
 }
 
-/// Call once in the App component. This hook does not subscribe App to settings.
+/// Call once in the App component. Legacy storage remains a compatibility fallback;
+/// the unified app settings store is preferred after startup.
 pub fn use_footer_preferences() {
-    let store = use_signal(FooterPreferenceStore::default);
-    use_context_provider(|| FooterPreferencesContext { store });
+    let mut store = use_signal(FooterPreferenceStore::default);
+    let app_settings = try_use_context::<Signal<AppSettingsState>>();
+    use_context_provider(|| FooterPreferencesContext {
+        store,
+        app_settings,
+    });
     use_future(move || async move {
         let mut store = store;
         // Fixed bridge only: never evaluate provider output or imported source.
@@ -139,6 +148,36 @@ pub fn use_footer_preferences() {
             }
         }
         state.ready = true;
+    });
+    use_effect(move || {
+        let Some(app_settings) = app_settings else {
+            return;
+        };
+        if !store.peek().ready || store.peek().unified_synced || !app_settings.peek().ready {
+            return;
+        }
+        let unified = app_settings
+            .peek()
+            .value
+            .get("footer")
+            .and_then(|value| serde_json::from_value::<FooterPreferences>(value.clone()).ok());
+        let snapshot = if let Some(settings) = unified {
+            let mut state = store.write();
+            state.settings = settings;
+            state.corrupt_guard = false;
+            state.storage_error = None;
+            None
+        } else if !store.peek().corrupt_guard {
+            serde_json::to_value(&store.peek().settings)
+                .ok()
+                .and_then(|value| app_settings::update_namespace(app_settings, "footer", value))
+        } else {
+            None
+        };
+        store.write().unified_synced = true;
+        if snapshot.is_some() {
+            app_settings::request_write(app_settings);
+        }
     });
 }
 #[derive(Deserialize)]
@@ -196,6 +235,15 @@ pub(super) fn change(
             } else {
                 false
             };
+            if success {
+                if let Some(app_settings) = context.app_settings {
+                    if let Ok(value) = serde_json::to_value(&settings) {
+                        if app_settings::update_namespace(app_settings, "footer", value).is_some() {
+                            app_settings::request_write(app_settings);
+                        }
+                    }
+                }
+            }
             let mut state = context.store.write();
             state.storage_error = if success {
                 None

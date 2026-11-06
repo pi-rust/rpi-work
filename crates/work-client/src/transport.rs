@@ -693,6 +693,7 @@ impl AgentSession {
     }
 }
 
+#[allow(clippy::large_enum_variant)] // Preserve the public connection API without allocation changes.
 pub enum AgentConnection {
     Http(SessionConnection),
     Native(AgentSessionConnection),
@@ -834,7 +835,10 @@ impl WorkClient {
 #[async_trait(?Send)]
 impl AgentTransport for WorkClient {
     fn descriptor(&self) -> AgentDescriptor {
-        self.descriptor()
+        // Disambiguate the inherent method from this trait method. Calling
+        // `self.descriptor()` here resolves back to AgentTransport::descriptor
+        // and overflows the stack during desktop startup.
+        WorkClient::descriptor(self)
     }
 
     async fn open_session(&self, _cwd: &str) -> Result<String, ClientError> {

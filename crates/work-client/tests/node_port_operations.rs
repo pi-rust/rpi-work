@@ -121,7 +121,7 @@ async fn run() {
         assert!(!access.supports_command("get_queue"));
         let config = ports[0].session_configuration(&id).await.unwrap();
         assert_eq!(config.protocol, "acp");
-        assert!(config.supported_commands.is_empty());
+        assert_eq!(config.supported_commands, [] as [std::string::String; 0]);
         assert_eq!(config.config_options[0]["currentValue"], "balanced");
         let handle = local.prepare_agent_session(&id).await.unwrap().unwrap();
         let mut pid = None;

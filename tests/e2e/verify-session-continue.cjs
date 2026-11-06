@@ -80,7 +80,13 @@ async function test(name, configure, verify) {
         const runId = `continue-failure-${++run}`;
         fixture.emit({ type: 'agent_start', runId }, sessionId);
         fixture.emit({ type: 'agent_settled', runId, outcome: 'failed', pendingResume, error: 'Fixture-only failure' }, sessionId);
-        if (sessionId === 'dark') await h.continued();
+        if (sessionId === 'dark') {
+          await h.continued();
+          const failure = h.page.getByRole('alert', { name: '当前会话执行失败', exact: true });
+          await failure.waitFor();
+          assert.match(await failure.innerText(), /Fixture-only failure/);
+          assert(await failure.getByRole('button', { name: '重试当前会话', exact: true }).isEnabled());
+        }
         return runId;
       },
       async settle(outcome = 'completed', pendingResume = false) {

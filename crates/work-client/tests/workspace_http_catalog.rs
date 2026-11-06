@@ -3,7 +3,7 @@
 //! Native HTTP facade contract, not a browser/native combined E2E test. The wire
 //! shapes match tests/fixtures/ui-fixture.cjs: GET catalog envelopes, POST rename
 //! {title}/{name}, and POST metadata {archived,pinned} (null means unchanged).
-//! Each listener owns its catalog in memory; no LocalWorkspace, agent, prompt,
+//! Each listener owns its catalog in memory; no `LocalWorkspace`, agent, prompt,
 //! user directory, fixed service port, or external server is involved.
 
 use serde_json::{Value, json};

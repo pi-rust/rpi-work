@@ -45,6 +45,11 @@
 }
 #session-switcher input::-webkit-search-cancel-button { display: none; }
 #session-switcher .switcher-clear { width: 44px; height: 44px; flex: 0 0 auto; padding: 0; color: var(--muted); }
+#session-switcher .session-switcher-display-mode { display:flex; align-items:center; gap:var(--space-4); margin:0 0 var(--space-8); color:var(--muted); font-size:calc(10px * var(--type-scale, 1)); }
+#session-switcher .session-switcher-display-mode span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#session-switcher .session-switcher-node-heading { display:flex; align-items:center; gap:var(--space-6); padding:var(--space-7) var(--space-4); margin-bottom:var(--space-4); border-bottom:1px solid var(--line); color:var(--muted); font-size:calc(10px * var(--type-scale, 1)); }
+#session-switcher .session-switcher-node-heading strong { color:var(--text); font-weight:550; }
+#session-switcher .session-switcher-node-heading span { margin-left:auto; font-size:calc(9px * var(--type-scale, 1)); }
 #session-switcher .session-switcher-toolbar {
   display: flex;
   flex: 0 0 auto;

@@ -1,6 +1,6 @@
 //! Isolated native owner for the browser E2E. Reads test commands on stdin;
 //! never opens a user directory or installed rpi. Shutdown is cooperative.
-//! Usage: desktop_fixture <rpc-fixture> <Web-assets-directory|--web-proxy>.
+//! Usage: `desktop_fixture` <rpc-fixture> <Web-assets-directory|--web-proxy>.
 //! Proxy mode declares hosted metadata without serving assets on this listener.
 #[path = "../../../tests/support/legacy_fixture.rs"]
 mod legacy_fixture;

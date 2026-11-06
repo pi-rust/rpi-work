@@ -42,12 +42,13 @@ let lastBuildStamp = '';
 let buildRunning = false;
 let buildQueued = false;
 let buildTimer;
-const sourceExtensions = new Set(['.rs', '.css', '.toml', '.txt', '.js']);
+const sourceExtensions = new Set(['.rs', '.css', '.toml', '.txt', '.js', '.html', '.json', '.svg']);
 const gzipCache = new Map();
 const compressibleExtensions = new Set(['.wasm', '.js', '.css', '.html', '.json']);
 const sourceTargets = [
   path.join(repoRoot, 'apps', 'work-ui'),
   path.join(repoRoot, 'assets'),
+  path.join(repoRoot, 'vendor'),
   path.join(repoRoot, 'crates', 'work-client'),
   path.join(repoRoot, 'crates', 'work-core'),
   path.join(repoRoot, 'crates', 'work-update'),
@@ -345,14 +346,7 @@ function startBuild() {
 }
 
 function watchSources() {
-  const watched = [
-    path.join(repoRoot, 'apps', 'work-ui'),
-    path.join(repoRoot, 'crates', 'work-client'),
-    path.join(repoRoot, 'crates', 'work-core'),
-    path.join(repoRoot, 'crates', 'work-update'),
-    path.join(repoRoot, 'Cargo.toml'),
-    path.join(repoRoot, 'Cargo.lock'),
-  ];
+  const watched = sourceTargets;
   for (const target of watched) {
     try {
       fs.watch(target, { recursive: fs.statSync(target).isDirectory() }, scheduleBuild);

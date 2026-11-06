@@ -1,12 +1,16 @@
 use crate::{
     features::extensions,
-    shared::components::{Icon, Modal},
+    shared::{
+        app_settings,
+        app_settings::AppSettingsState,
+        components::{Icon, Modal},
+    },
 };
 use dioxus::{core::Task, prelude::*};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use work_client::{RuntimeState, WorkspaceClient};
-use work_core::extensions::{ExtensionManifest, ExtensionPin, UiExtensionPreference};
+use work_core::extensions::{ExtensionManifest, ExtensionPin, UiExtensionPreference, UiSlot};
 
 pub const CSS: &str = concat!(
     include_str!("resources.css"),
@@ -106,6 +110,22 @@ pub struct ResourceLibrary {
     pub sessions: Vec<SessionBinding>,
     pub ui_preferences: Vec<UiExtensionPreference>,
     pub storage_error: Option<String>,
+}
+
+/// Build only the local, validated design catalog for a Host preview.
+/// This intentionally does not consult `node_installed` or imply runtime loading.
+pub fn design_ui_catalog(
+    library: &ResourceLibrary,
+) -> Vec<crate::features::extensions::UiContributionEntry> {
+    library
+        .extensions
+        .iter()
+        .filter_map(|extension| extension.manifest.as_ref())
+        .flat_map(|manifest| {
+            crate::features::extensions::design_catalog(manifest).unwrap_or_default()
+        })
+        .filter(|entry| entry.contribution.slot == UiSlot::RuntimeFooter)
+        .collect()
 }
 
 impl ResourceLibrary {
@@ -986,16 +1006,43 @@ fn SkillDetail(skill: SkillResource) -> Element {
 
 #[component]
 fn ExtensionDetail(extension: ExtensionResource, library: Signal<ResourceLibrary>) -> Element {
-    let preferences = library.read().ui_preferences.clone();
+    let app_settings = try_use_context::<Signal<AppSettingsState>>();
     rsx! {
         div { class: "resource-detail-content",
             code { "{extension.id}" } span { "来源：{extension.source}" } p { "{extension.description}" }
             if let Some(manifest) = extension.manifest {
-                { let pin = manifest.pin(); rsx! {
-                    extensions::ExtensionPreview { manifest, preferences,
-                        onvisibility: move |(id, visible): (String, bool)| set_ui_visible(&mut library.write(), &pin, &id, visible),
+                {
+                    let pin = manifest.pin();
+                    let preferences = if let Some(store) = app_settings {
+                        let document = store.read().value.clone();
+                        manifest.ui.as_ref().map_or_else(Vec::new, |ui| {
+                            ui.contributions.iter().filter_map(|contribution| {
+                                let key = format!("{}/{}", pin.key(), contribution.id);
+                                (!app_settings::contribution_visible(&document, &key, true)).then(|| UiExtensionPreference {
+                                    extension: pin.clone(),
+                                    contribution_id: contribution.id.clone(),
+                                    visible: false,
+                                })
+                            }).collect()
+                        })
+                    } else {
+                        library.read().ui_preferences.clone()
+                    };
+                    rsx! {
+                        extensions::ExtensionPreview { manifest, preferences,
+                            onvisibility: move |(id, visible): (String, bool)| {
+                                if let Some(store) = app_settings {
+                                    let key = format!("{}/{}", pin.key(), id);
+                                    if app_settings::update_contribution(store, &key, json!({"visible": visible})).is_some() {
+                                        app_settings::request_write(store);
+                                    }
+                                } else {
+                                    set_ui_visible(&mut library.write(), &pin, &id, visible);
+                                }
+                            },
+                        }
                     }
-                } }
+                }
             } else { p { class: "resource-boundary", "旧版设计未声明独立的 Agent/UI 能力。保留源码，不推断工具、UI 或节点安装状态。" } }
             details { summary { "设计正文（只读源码）" } pre { "{extension.content}" } }
             p { class: "resource-boundary", "这是惰性设计预览，不执行代码；Agent 安装/加载以节点观测为准，UI 显示不授予 Agent 权限。" }

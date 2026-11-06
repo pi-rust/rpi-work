@@ -459,8 +459,16 @@ fn tool_summary(name: &str, args: &str) -> String {
     super::tool_display::target(name, args)
 }
 
-fn tool_result_hint(label: &str, failed: bool, has_output: bool) -> &'static str {
-    if failed { "查看错误" } else if label == "已取消" { "已取消" } else if label == "运行中" || label == "等待工具结果" { "等待输出" } else if has_output { "有结果" } else { "无输出" }
+fn tool_result_hint(label: &str, failed: bool, has_output: bool) -> Option<&'static str> {
+    if failed {
+        Some("查看错误")
+    } else if label == "已取消" {
+        Some("已取消")
+    } else if !has_output && label != "运行中" && label != "等待工具结果" {
+        Some("无输出")
+    } else {
+        None
+    }
 }
 
 /// Empty protocol payloads do not deserve an empty details section. Keep
@@ -639,7 +647,9 @@ fn ToolCallView(
                         }
                     }
                     super::turn_timing::ToolElapsed { id: id.clone(), timing }
-                    span { class: "tool-result-hint", role: "status", aria_label: "结果状态：{result_hint}", aria_live: "polite", "{result_hint}" }
+                    if let Some(result_hint) = result_hint {
+                        span { class: "tool-result-hint", role: "status", aria_label: "结果状态：{result_hint}", aria_live: "polite", "{result_hint}" }
+                    }
                     if !failed && label == "已完成" {
                         span { class: "tool-success-mark", aria_hidden: "true", {glyph("check")} }
                     }
@@ -692,7 +702,7 @@ fn ToolCallView(
                     } else {
                         pre { class: if failed { "call-output error-text" } else { "call-output" },
                             if output.is_empty() && images.is_empty() {
-                                span { class: "tool-empty-output", if running { "等待工具输出…" } else { "无输出" } }
+                                if !running { span { class: "tool-empty-output", "无输出" } }
                             } else { "{output}" }
                         }
                     }

@@ -38,7 +38,10 @@ async fn unsupported_or_unauthenticated_http_configuration_never_falls_back() {
                 stream.flush().unwrap();
             }
         });
-        let client = WorkspaceClient::new(&format!("http://{address}/")).unwrap();
+        // The fixture implements typed HTTP endpoints, not realtime discovery.
+        let http = work_client::WorkClient::new(&format!("http://{address}/")).unwrap();
+        http.set_remote_transport(work_client::RemoteTransport::HttpSseOnly);
+        let client = WorkspaceClient::from(http);
         assert!(
             matches!(client.session_configuration("s").await, Err(ClientError::Api { status: actual, message }) if actual.as_u16() == status && message == "{\"error\":\"fixture rejection\"}")
         );

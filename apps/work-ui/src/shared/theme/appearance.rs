@@ -1,3 +1,4 @@
+use crate::shared::app_settings::{self, AppSettingsState};
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 use std::{cell::Cell, fmt::Write as _, rc::Rc};
@@ -200,29 +201,6 @@ fn restored(value: &Value) -> (AppearanceSettings, ThemeLibrary) {
     (settings, library)
 }
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-fn preference_path() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "windows")]
-    let root = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
-    #[cfg(target_os = "macos")]
-    let root = std::env::var_os("HOME")
-        .map(|p| std::path::PathBuf::from(p).join("Library/Application Support"));
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    let root = std::env::var_os("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|p| std::path::PathBuf::from(p).join(".config")));
-    root.map(|p| p.join("rpi-work").join("appearance.json"))
-}
-fn load() -> (AppearanceSettings, ThemeLibrary) {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    if let Some(value) = preference_path()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-    {
-        return restored(&value);
-    }
-    (AppearanceSettings::default(), ThemeLibrary::default())
-}
 fn preference_value(settings: AppearanceSettings, library: &ThemeLibrary) -> Value {
     with_tool_rendering(
         json!({"theme":library.resolve(settings.theme).id,"mode":settings.mode,"density":settings.density,"customThemes":library.0.iter().map(theme_contract::theme_value).collect::<Vec<_>>()}),
@@ -230,26 +208,6 @@ fn preference_value(settings: AppearanceSettings, library: &ThemeLibrary) -> Val
         settings.tool_rendering,
     )
 }
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-fn persist_native(settings: AppearanceSettings, library: &ThemeLibrary) -> Result<(), String> {
-    let path = preference_path().ok_or("无法定位本设备的偏好目录。")?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|_| "无法创建偏好目录。")?;
-    }
-    // Keep the previous saved file intact on a failed write.
-    let temporary = path.with_extension("json.tmp");
-    std::fs::write(&temporary, preference_value(settings, library).to_string())
-        .map_err(|_| "无法保存外观偏好。")?;
-    std::fs::rename(&temporary, &path).map_err(|_| "无法替换已保存的外观偏好。".into())
-}
-#[cfg(any(target_arch = "wasm32", target_os = "android"))]
-fn persist_script(settings: AppearanceSettings, library: &ThemeLibrary) -> String {
-    let literal = serde_json::to_string(&preference_value(settings, library).to_string()).unwrap();
-    format!(
-        "try {{ if(!document.getElementById('appearance')?.open){{dioxus.send(false);}}else{{localStorage.setItem('rpi-work-appearance-v1', {literal});dioxus.send(true);}} }} catch (_) {{ dioxus.send(false); }}"
-    )
-}
-
 fn parse_portable_appearance(
     value: &Value,
     library: &ThemeLibrary,
@@ -383,23 +341,41 @@ fn apply_script(settings: AppearanceSettings, library: &ThemeLibrary) -> String 
 }
 
 pub fn use_appearance() -> Signal<AppearanceSettings> {
-    let initial = use_hook(load);
-    let settings = use_signal(|| initial.0);
-    let library = use_signal(|| initial.1);
+    let app_settings = try_use_context::<Signal<AppSettingsState>>();
+    let initial = use_hook(move || {
+        app_settings
+            .and_then(|store| store.peek().value.get("appearance").cloned())
+            .filter(Value::is_object)
+            .map_or_else(
+                || (AppearanceSettings::default(), ThemeLibrary::default()),
+                |value| restored(&value),
+            )
+    });
+    let mut settings = use_signal(|| initial.0);
+    let mut library = use_signal(|| initial.1);
     use_context_provider(|| library);
-    let ready = use_signal(|| cfg!(not(any(target_arch = "wasm32", target_os = "android"))));
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    {
-        let (mut settings, mut library, mut ready) = (settings, library, ready);
-        use_effect(move || {
-            spawn(async move {
-                if let Ok(value) = document::eval("try{dioxus.send(JSON.parse(localStorage.getItem('rpi-work-appearance-v1')||'null'));}catch(_){dioxus.send(null);}").recv::<Value>().await {
-                    if !value.is_null() { let (value, themes) = restored(&value); library.set(themes); settings.set(value); }
+    let ready = use_signal(|| true);
+    let mut unified_synced = use_signal(|| false);
+    use_effect(move || {
+        let is_ready = *ready.read();
+        let Some(app_settings) = app_settings else {
+            return;
+        };
+        if is_ready && app_settings.read().ready && !*unified_synced.read() {
+            let value = app_settings.read().value.get("appearance").cloned();
+            if let Some(value) = value.filter(Value::is_object) {
+                let (next, themes) = restored(&value);
+                library.set(themes);
+                settings.set(next);
+            } else {
+                let value = preference_value(*settings.peek(), &library.peek());
+                if app_settings::update_namespace(app_settings, "appearance", value).is_some() {
+                    app_settings::request_write(app_settings);
                 }
-                ready.set(true);
-            });
-        });
-    }
+            }
+            unified_synced.set(true);
+        }
+    });
     use_effect(move || {
         let is_ready = *ready.read();
         let value = *settings.read();
@@ -444,6 +420,7 @@ pub fn AppearancePicker(
     let mut error = use_signal(String::new);
     let mut notice = use_signal(String::new);
     let saving = use_signal(|| false);
+    let app_settings = try_use_context::<Signal<AppSettingsState>>();
     let session = use_hook(|| Rc::new(Cell::new(true)));
     let saved = use_hook(|| Rc::new(Cell::new(false)));
     let epoch = use_hook(|| Rc::new(Cell::new(0u64)));
@@ -477,41 +454,31 @@ pub fn AppearancePicker(
             if *saving.peek() || !session.get() {
                 return;
             }
+            let Some(app_settings) = app_settings else {
+                error.set("全局设置尚未加载，无法保存外观偏好。".into());
+                return;
+            };
+            if !app_settings.peek().ready {
+                error.set("全局设置尚未加载，无法保存外观偏好。".into());
+                return;
+            }
             epoch.set(epoch.get() + 1);
             let value = *settings.peek();
             let themes = library.peek().clone();
-            #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-            match persist_native(value, &themes) {
-                Ok(()) => {
-                    saved.set(true);
-                    session.set(false);
-                    onclose.call(());
-                }
-                Err(message) => error.set(message),
-            }
-            #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+            if app_settings::update_namespace(
+                app_settings,
+                "appearance",
+                preference_value(value, &themes),
+            )
+            .is_none()
             {
-                let mut saving = saving;
-                let (session, saved) = (session.clone(), saved.clone());
-                saving.set(true);
-                spawn(async move {
-                    let result = document::eval(&persist_script(value, &themes))
-                        .recv::<bool>()
-                        .await;
-                    if !session.get() {
-                        return;
-                    }
-                    saving.set(false);
-                    match result {
-                        Ok(true) => {
-                            saved.set(true);
-                            session.set(false);
-                            onclose.call(());
-                        }
-                        _ => error.set("无法保存外观偏好，请检查浏览器存储权限。".into()),
-                    }
-                });
+                error.set("无法保存外观偏好；请先修复全局设置文件。".into());
+                return;
             }
+            app_settings::request_write(app_settings);
+            saved.set(true);
+            session.set(false);
+            onclose.call(());
         }
     };
     let import = {

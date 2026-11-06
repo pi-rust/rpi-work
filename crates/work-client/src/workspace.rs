@@ -101,7 +101,7 @@ impl WorkspaceClient {
     #[must_use]
     pub fn is_local(&self) -> bool {
         match self {
-            Self::Remote(_) => false,
+            Self::Remote(client) => client.is_local_control(),
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(_) => true,
         }
@@ -141,6 +141,19 @@ impl WorkspaceClient {
     ) -> Result<Project, ClientError> {
         let _ = (name, path.as_ref(), init_git);
         match self {
+            Self::Remote(client) if client.is_local_control() => {
+                #[derive(Deserialize)]
+                struct Created {
+                    project: Project,
+                }
+                let result: Created = client
+                    .post(
+                        "api/v1/local/project-directory",
+                        serde_json::json!({"name":name,"path":path.as_ref(),"initGit":init_git}),
+                    )
+                    .await?;
+                Ok(result.project)
+            }
             Self::Remote(_) => {
                 std::future::ready(Err(unsupported("create_project_directory", "http-sse"))).await
             }
@@ -155,6 +168,17 @@ impl WorkspaceClient {
     /// Native model/auth control context, created lazily without a user project.
     pub async fn control_session(&self) -> Result<String, ClientError> {
         match self {
+            Self::Remote(client) if client.is_local_control() => {
+                #[derive(Deserialize)]
+                struct Created {
+                    #[serde(rename = "sessionId")]
+                    session_id: String,
+                }
+                let result: Created = client
+                    .post("api/v1/local/control-session", serde_json::json!({}))
+                    .await?;
+                Ok(result.session_id)
+            }
             Self::Remote(_) => {
                 std::future::ready(Err(unsupported("control_session", "http-sse"))).await
             }
@@ -311,7 +335,11 @@ impl WorkspaceClient {
         }
     }
 
-    pub async fn image(&self, project_id: &str, path: &str) -> Result<crate::ProjectImage, ClientError> {
+    pub async fn image(
+        &self,
+        project_id: &str,
+        path: &str,
+    ) -> Result<crate::ProjectImage, ClientError> {
         match self {
             Self::Remote(client) => client.image(project_id, path).await,
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]

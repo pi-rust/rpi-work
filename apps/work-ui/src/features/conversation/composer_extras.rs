@@ -69,18 +69,31 @@ impl AttachmentStore {
         ordered_images: bool,
     ) -> Result<AttachmentSubmission, String> {
         let Some(state) = self.scopes.get(scope) else {
-            return Ok(AttachmentSubmission { snapshot: AttachmentSnapshot::default(), text: text.to_owned(), content_blocks: None });
+            return Ok(AttachmentSubmission {
+                snapshot: AttachmentSnapshot::default(),
+                text: text.to_owned(),
+                content_blocks: None,
+            });
         };
         if state.loading {
             return Err("附件仍在读取；请等待读取完成后再发送。".into());
         }
         if !state.error.is_empty() {
-            return Err("附件读取或预览存在错误；请重新选择，或明确清除提示后仅发送已加入的附件。".into());
+            return Err(
+                "附件读取或预览存在错误；请重新选择，或明确清除提示后仅发送已加入的附件。".into(),
+            );
         }
         if state.files.is_empty() {
-            return Ok(AttachmentSubmission { snapshot: self.snapshot(scope), text: text.to_owned(), content_blocks: None });
+            return Ok(AttachmentSubmission {
+                snapshot: self.snapshot(scope),
+                text: text.to_owned(),
+                content_blocks: None,
+            });
         }
-        let has_images = state.files.iter().any(|file| raster_mime(&file.bytes).is_some());
+        let has_images = state
+            .files
+            .iter()
+            .any(|file| raster_mime(&file.bytes).is_some());
         if has_images && !ordered_images {
             return Err("当前节点不支持有序图片附件；图片仍保留在本地，未发送。".into());
         }
@@ -91,13 +104,19 @@ impl AttachmentStore {
         let mut total_image_bytes = 0usize;
         for file in &state.files {
             let name = clean_filename(&file.name);
-            if let Some(error) = &file.send_error { return Err(format!("{name}：{error}")); }
+            if let Some(error) = &file.send_error {
+                return Err(format!("{name}：{error}"));
+            }
             if binary_document(&file.name, &file.bytes) {
-                return Err(format!("{name}：当前仅支持图片和文本/代码附件，暂不支持 PDF、Office、压缩包等原文件发送。"));
+                return Err(format!(
+                    "{name}：当前仅支持图片和文本/代码附件，暂不支持 PDF、Office、压缩包等原文件发送。"
+                ));
             }
             if let Some(mime) = raster_mime(&file.bytes) {
                 if !matches!(mime, "image/png" | "image/jpeg") {
-                    return Err(format!("{name}：仅支持 PNG/JPEG 图片发送；{mime} 仅可本地预览，未发送。"));
+                    return Err(format!(
+                        "{name}：仅支持 PNG/JPEG 图片发送；{mime} 仅可本地预览，未发送。"
+                    ));
                 }
                 image_count += 1;
                 if image_count > MAX_IMAGES {
@@ -107,9 +126,16 @@ impl AttachmentStore {
                     || (mime.to_owned(), base64(&file.bytes)),
                     |(send_mime, encoded)| (send_mime.clone(), encoded.clone()),
                 );
-                let decoded_size = file.send_data.as_ref().map_or(file.bytes.len(), |(_, data)| data.len() * 3 / 4 - data.bytes().rev().take_while(|b| *b == b'=').count());
+                let decoded_size = file
+                    .send_data
+                    .as_ref()
+                    .map_or(file.bytes.len(), |(_, data)| {
+                        data.len() * 3 / 4 - data.bytes().rev().take_while(|b| *b == b'=').count()
+                    });
                 if decoded_size > MAX_IMAGE_BYTES || encoded.len() > MAX_IMAGE_BASE64_BYTES {
-                    return Err(format!("{name}：图片发送副本超过单图 256 KiB 限制；未自动发送。"));
+                    return Err(format!(
+                        "{name}：图片发送副本超过单图 256 KiB 限制；未自动发送。"
+                    ));
                 }
                 total_image_bytes = total_image_bytes.saturating_add(decoded_size);
                 if total_image_bytes > MAX_TOTAL_IMAGE_BYTES {
@@ -124,7 +150,9 @@ impl AttachmentStore {
             } else if let Some(content) = text_attachment(&file.bytes) {
                 append_attachment_text(&mut full_text, &format!("[附件：{name}]\n{content}"));
             } else {
-                return Err(format!("{name}：不可发送的二进制文件（PDF/Word/zip 等仅展示，不会上传）。"));
+                return Err(format!(
+                    "{name}：不可发送的二进制文件（PDF/Word/zip 等仅展示，不会上传）。"
+                ));
             }
         }
         if full_text.len() > MAX_TEXT_BYTES {
@@ -136,18 +164,26 @@ impl AttachmentStore {
         let mut blocks = vec![serde_json::json!({"type":"text", "text":full_text})];
         blocks.extend(image_blocks);
         let content_blocks = Value::Array(blocks);
-        if serde_json::to_vec(&content_blocks).map_or(true, |bytes| bytes.len() > MAX_PROMPT_BYTES) {
+        if serde_json::to_vec(&content_blocks).map_or(true, |bytes| bytes.len() > MAX_PROMPT_BYTES)
+        {
             return Err("附件命令超过 768 KiB；未发送。".into());
         }
-        Ok(AttachmentSubmission { snapshot: self.snapshot(scope), text: full_text, content_blocks: (image_count > 0).then_some(content_blocks) })
+        Ok(AttachmentSubmission {
+            snapshot: self.snapshot(scope),
+            text: full_text,
+            content_blocks: (image_count > 0).then_some(content_blocks),
+        })
     }
 
     /// Remove only IDs captured by `snapshot`; files added after preparation
     /// deliberately survive acknowledgement.
     pub fn acknowledge(&mut self, scope: &str, snapshot: &AttachmentSnapshot) {
         let remove_scope = {
-            let Some(state) = self.scopes.get_mut(scope) else { return; };
-            let ids: std::collections::BTreeSet<u64> = snapshot.files.iter().map(|(id, _)| *id).collect();
+            let Some(state) = self.scopes.get_mut(scope) else {
+                return;
+            };
+            let ids: std::collections::BTreeSet<u64> =
+                snapshot.files.iter().map(|(id, _)| *id).collect();
             state.files.retain(|file| !ids.contains(&file.id));
             state.files.is_empty() && !state.loading && state.error.is_empty()
         };
@@ -199,7 +235,12 @@ mod attachment_snapshot_tests {
         for (index, (name, bytes)) in files.iter().enumerate() {
             let mut file = local_attachment((*name).into(), bytes);
             file.id = index as u64 + 1;
-            store.scopes.entry("scope".into()).or_default().files.push(file);
+            store
+                .scopes
+                .entry("scope".into())
+                .or_default()
+                .files
+                .push(file);
         }
         store
     }
@@ -212,13 +253,28 @@ mod attachment_snapshot_tests {
         assert_eq!(sent.text, format!("请检查\n[附件：script.rs]\n{text}"));
         assert!(sent.content_blocks.is_none());
         assert_eq!(store.snapshot("scope").files.len(), 1);
-        assert!(store.prepare("other", "原文字", true).unwrap().snapshot.files.is_empty());
+        assert!(
+            store
+                .prepare("other", "原文字", true)
+                .unwrap()
+                .snapshot
+                .files
+                .is_empty()
+        );
     }
 
     #[test]
     fn image_payload_has_real_inline_bytes_and_never_drops_unsupported_images() {
-        let store = store_with(&[("photo.jpg", b"\xff\xd8\xff"), ("code.txt", b"full content")]);
-        assert!(store.prepare("scope", "", false).unwrap_err().contains("不支持"));
+        let store = store_with(&[
+            ("photo.jpg", b"\xff\xd8\xff"),
+            ("code.txt", b"full content"),
+        ]);
+        assert!(
+            store
+                .prepare("scope", "", false)
+                .unwrap_err()
+                .contains("不支持")
+        );
         let sent = store.prepare("scope", "", true).unwrap();
         let blocks = sent.content_blocks.unwrap();
         assert_eq!(blocks[1]["data"], "/9j/");
@@ -231,11 +287,20 @@ mod attachment_snapshot_tests {
     #[test]
     fn binary_and_oversized_text_are_blocked_without_silent_truncation() {
         let pdf = store_with(&[("document.pdf", b"%PDF-1.0 ascii is still a PDF")]);
-        assert!(pdf.prepare("scope", "caption", true).unwrap_err().contains("PDF"));
+        assert!(
+            pdf.prepare("scope", "caption", true)
+                .unwrap_err()
+                .contains("PDF")
+        );
         let text = "中".repeat(MAX_TEXT_BYTES / 3 + 1);
         let store = store_with(&[("long.txt", text.as_bytes())]);
         assert!(store.scopes["scope"].files[0].truncated);
-        assert!(store.prepare("scope", "", true).unwrap_err().contains("32 KiB"));
+        assert!(
+            store
+                .prepare("scope", "", true)
+                .unwrap_err()
+                .contains("32 KiB")
+        );
         assert_eq!(store.scopes["scope"].files[0].bytes, text.as_bytes());
     }
 
@@ -243,11 +308,26 @@ mod attachment_snapshot_tests {
     fn acknowledgement_only_removes_the_captured_ids_in_the_same_scope() {
         let mut store = store_with(&[("first.txt", b"first")]);
         let snapshot = store.prepare("scope", "", false).unwrap().snapshot;
-        let mut later = local_attachment("later.txt".into(), b"later"); later.id = 99;
-        store.scopes.get_mut("scope").unwrap().files.push(later.clone());
-        store.scopes.insert("other".into(), AttachmentScopeState { files: vec![later], ..Default::default() });
+        let mut later = local_attachment("later.txt".into(), b"later");
+        later.id = 99;
+        store
+            .scopes
+            .get_mut("scope")
+            .unwrap()
+            .files
+            .push(later.clone());
+        store.scopes.insert(
+            "other".into(),
+            AttachmentScopeState {
+                files: vec![later],
+                ..Default::default()
+            },
+        );
         store.acknowledge("scope", &snapshot);
-        assert_eq!(store.snapshot("scope").files, vec![(99, "later.txt".into())]);
+        assert_eq!(
+            store.snapshot("scope").files,
+            vec![(99, "later.txt".into())]
+        );
         assert_eq!(store.snapshot("other").files.len(), 1);
         store.acknowledge("scope", &snapshot);
         assert_eq!(store.snapshot("scope").files.len(), 1);
@@ -255,18 +335,36 @@ mod attachment_snapshot_tests {
 
     #[test]
     fn limits_decode_failure_and_loading_fail_before_submission() {
-        let mut bytes = vec![0; MAX_IMAGE_BYTES + 1]; bytes[..3].copy_from_slice(b"\xff\xd8\xff");
-        assert!(store_with(&[("big.jpg", &bytes)]).prepare("scope", "", true).is_err());
+        let mut bytes = vec![0; MAX_IMAGE_BYTES + 1];
+        bytes[..3].copy_from_slice(b"\xff\xd8\xff");
+        assert!(
+            store_with(&[("big.jpg", &bytes)])
+                .prepare("scope", "", true)
+                .is_err()
+        );
         let mut store = store_with(&[("bad.jpg", b"\xff\xd8\xff")]);
         store.scopes.get_mut("scope").unwrap().files[0].send_error = Some("无法解码".into());
-        assert!(store.prepare("scope", "", true).unwrap_err().contains("无法解码"));
+        assert!(
+            store
+                .prepare("scope", "", true)
+                .unwrap_err()
+                .contains("无法解码")
+        );
         store.scopes.get_mut("scope").unwrap().loading = true;
-        assert!(store.prepare("scope", "", true).unwrap_err().contains("仍在读取"));
+        assert!(
+            store
+                .prepare("scope", "", true)
+                .unwrap_err()
+                .contains("仍在读取")
+        );
         assert!(!clean_filename("a\n/b\\c.txt").contains(['\n', '/', '\\']));
         let mut partial = store_with(&[("accepted.txt", b"text")]);
         partial.scopes.get_mut("scope").unwrap().error = "another file failed to read".into();
         assert!(partial.snapshot("scope").failed);
-        assert!(partial.prepare("scope", "caption", true).is_err(), "never send a partial selection without acknowledgement");
+        assert!(
+            partial.prepare("scope", "caption", true).is_err(),
+            "never send a partial selection without acknowledgement"
+        );
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -330,16 +428,42 @@ fn clean_filename(name: &str) -> String {
         })
         .collect::<String>();
     cleaned = cleaned.trim().chars().take(160).collect();
-    if cleaned.is_empty() { "未命名附件".into() } else { cleaned }
+    if cleaned.is_empty() {
+        "未命名附件".into()
+    } else {
+        cleaned
+    }
 }
 
 fn binary_document(name: &str, bytes: &[u8]) -> bool {
-    bytes.starts_with(b"%PDF-") || matches!(name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str(), "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "zip" | "rar" | "7z" | "exe" | "dll" | "wasm")
+    bytes.starts_with(b"%PDF-")
+        || matches!(
+            name.rsplit('.')
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase()
+                .as_str(),
+            "pdf"
+                | "doc"
+                | "docx"
+                | "xls"
+                | "xlsx"
+                | "ppt"
+                | "pptx"
+                | "zip"
+                | "rar"
+                | "7z"
+                | "exe"
+                | "dll"
+                | "wasm"
+        )
 }
 
 fn text_attachment(bytes: &[u8]) -> Option<&str> {
     std::str::from_utf8(bytes).ok().filter(|text| {
-        !text.chars().any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+        !text
+            .chars()
+            .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
     })
 }
 
@@ -401,7 +525,11 @@ fn local_attachment(name: String, bytes: &[u8]) -> LocalAttachment {
     // Extension names are only a hint: UTF-8 text without binary controls is safe
     // to show in <pre>. HTML/SVG are never inserted as markup or used as a URL.
     let extension = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    let text = if image.is_none() { text_attachment(bytes) } else { None };
+    let text = if image.is_none() {
+        text_attachment(bytes)
+    } else {
+        None
+    };
     let (text, truncated) = text.map_or((None, false), |text| {
         let (text, cut) = clipped(text, MAX_QUOTE);
         (Some(text.to_owned()), cut)
@@ -432,23 +560,37 @@ fn local_attachment(name: String, bytes: &[u8]) -> LocalAttachment {
 }
 
 fn attachment_label(file: &LocalAttachment, images_supported: bool) -> &'static str {
-    if file.send_error.is_some() { "图片读取失败，无法发送" }
-    else if binary_document(&file.name, &file.bytes) { "暂不支持发送此文件类型" }
-    else if file.image.is_some() {
-        if !images_supported { "节点不支持图片发送" }
-        else if !matches!(raster_mime(&file.bytes), Some("image/png" | "image/jpeg")) { "仅预览，需转换为 PNG/JPEG" }
-        else if file.send_data.is_some() { "待发送压缩图片，原文件不上传" }
-        else { "待发送图片" }
+    if file.send_error.is_some() {
+        "图片读取失败，无法发送"
+    } else if binary_document(&file.name, &file.bytes) {
+        "暂不支持发送此文件类型"
+    } else if file.image.is_some() {
+        if !images_supported {
+            "节点不支持图片发送"
+        } else if !matches!(raster_mime(&file.bytes), Some("image/png" | "image/jpeg")) {
+            "仅预览，需转换为 PNG/JPEG"
+        } else if file.send_data.is_some() {
+            "待发送压缩图片，原文件不上传"
+        } else {
+            "待发送图片"
+        }
     } else if file.text.is_some() {
-        if file.bytes.len() > MAX_TEXT_BYTES { "内容过大，暂不能发送" } else { "待发送完整文本" }
-    } else { "仅预览，暂不支持发送" }
+        if file.bytes.len() > MAX_TEXT_BYTES {
+            "内容过大，暂不能发送"
+        } else {
+            "待发送完整文本"
+        }
+    } else {
+        "仅预览，暂不支持发送"
+    }
 }
 
 // Only JSON-quoted raster bytes enter this fixed script; never a file path, URL
 // or source text. Bound the send copy independently of the local preview limit.
 async fn prepare_image(file: &mut LocalAttachment) -> Result<(), String> {
     let source = serde_json::to_string(file.image.as_deref().unwrap_or_default()).unwrap();
-    let script = format!(r#"
+    let script = format!(
+        r#"
 (async () => {{
   let image;
   try {{
@@ -505,12 +647,23 @@ async fn prepare_image(file: &mut LocalAttachment) -> Result<(), String> {
     throw new Error('budget');
   }} catch (_) {{ dioxus.send({{ok:false}}); }}
   finally {{ if (image) image.src = ''; }}
-}})();"#);
-    let result = document::eval(&script).recv::<Value>().await.map_err(|_| "无法准备图片发送副本；请重新选择。".to_owned())?;
-    if result["ok"] != true { return Err("图片无法解码、像素过大或压缩失败；请换用有效的 PNG/JPEG 图片。".into()); }
-    if result["original"] == true { return Ok(()); }
-    let data = result["data"].as_str().filter(|data| !data.is_empty() && data.len() <= SEND_IMAGE_TARGET.div_ceil(3) * 4)
-        .ok_or_else(|| "压缩图片超过发送限制；未发送。".to_owned())?.to_owned();
+}})();"#
+    );
+    let result = document::eval(&script)
+        .recv::<Value>()
+        .await
+        .map_err(|_| "无法准备图片发送副本；请重新选择。".to_owned())?;
+    if result["ok"] != true {
+        return Err("图片无法解码、像素过大或压缩失败；请换用有效的 PNG/JPEG 图片。".into());
+    }
+    if result["original"] == true {
+        return Ok(());
+    }
+    let data = result["data"]
+        .as_str()
+        .filter(|data| !data.is_empty() && data.len() <= SEND_IMAGE_TARGET.div_ceil(3) * 4)
+        .ok_or_else(|| "压缩图片超过发送限制；未发送。".to_owned())?
+        .to_owned();
     file.image = Some(format!("data:image/jpeg;base64,{data}"));
     file.send_data = Some(("image/jpeg".into(), data));
     Ok(())
@@ -576,7 +729,9 @@ fn AttachmentReader(
             task.cancel();
         }
         if let Some(state) = cleanup_store.write().scopes.get_mut(&cleanup_scope) {
-            if state.loading { state.error = "附件读取已中断；请重新选择未完成的文件，或明确放弃。".into(); }
+            if state.loading {
+                state.error = "附件读取已中断；请重新选择未完成的文件，或明确放弃。".into();
+            }
             state.loading = false;
         }
     });

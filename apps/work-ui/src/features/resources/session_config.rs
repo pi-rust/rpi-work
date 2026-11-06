@@ -35,7 +35,8 @@ impl ConfigurationAccess {
 // Describe read conflicts without replaying a setter or exposing the response body.
 fn configuration_read_error(error: &ClientError) -> String {
     if matches!(error, ClientError::Api { status, .. } if status.as_u16() == 409) {
-        "节点当前状态与配置读取请求冲突（HTTP 409）。本次读取未修改会话，请稍后重新读取配置。".into()
+        "节点当前状态与配置读取请求冲突（HTTP 409）。本次读取未修改会话，请稍后重新读取配置。"
+            .into()
     } else {
         error.to_string()
     }
@@ -173,7 +174,10 @@ pub fn SessionConfig(
                 Ok(config) => config,
                 Err(e) => {
                     if *session_generation.read() == generation && *load_epoch.peek() == epoch {
-                        error.set(format!("无法读取会话配置能力：{}", configuration_read_error(&e)));
+                        error.set(format!(
+                            "无法读取会话配置能力：{}",
+                            configuration_read_error(&e)
+                        ));
                         loading.set(false);
                     }
                     return;

@@ -287,7 +287,7 @@ fn reject_bad_versions_and_ids_even_for_constructed_frames() {
                 continue;
             }
             for id in [
-                "".to_string(),
+                String::new(),
                 "   ".into(),
                 "secret\nline".into(),
                 "x\u{7f}".into(),
@@ -308,7 +308,7 @@ fn reject_bad_versions_and_ids_even_for_constructed_frames() {
     }
     for reference in [
         OperationRef {
-            owner_epoch: "".into(),
+            owner_epoch: String::new(),
             operation_id: "o".into(),
         },
         OperationRef {

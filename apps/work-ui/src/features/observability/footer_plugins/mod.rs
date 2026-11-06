@@ -4,11 +4,12 @@
 mod preferences;
 mod registry;
 
-use crate::shared::components::Icon;
+use crate::shared::{app_settings, app_settings::AppSettingsState, components::Icon};
 use dioxus::prelude::*;
 use preferences::PluginPreference;
 pub use preferences::{FooterPreferencesContext, use_footer_preferences};
 use registry::{BUILTINS, FooterItem, FooterVisual, Tone};
+use work_core::extensions::{RuntimeFooterSnapshot, UiSlot};
 
 pub const CSS: &str = include_str!("footer_plugins.css");
 
@@ -25,9 +26,63 @@ pub struct FooterContext {
     pub online: bool,
 }
 
+impl FooterContext {
+    /// Convert the built-in client context to the read-only extension host contract.
+    #[must_use]
+    pub fn host_snapshot(&self) -> RuntimeFooterSnapshot {
+        RuntimeFooterSnapshot {
+            online: self.online,
+            provider: self.provider.clone(),
+            model: self.model.clone(),
+            thinking: self.thinking.clone(),
+            input_tokens: self.metrics.input,
+            output_tokens: self.metrics.output,
+            cache_hit_rate: self.metrics.cache_percent,
+            cost: self.metrics.cost,
+            speed: self.metrics.speed,
+            requests: self.metrics.requests,
+            retries: self.metrics.retries,
+            context_used_percent: self.context.percent,
+            tool_calls: u64::try_from(self.tool_calls).ok(),
+            tool_failures: u64::try_from(self.tool_failures).ok(),
+        }
+    }
+}
+
+fn select_runtime_footer_contributions(
+    document: &serde_json::Value,
+    contributions: Vec<crate::features::extensions::UiContributionEntry>,
+) -> Vec<crate::features::extensions::UiContributionEntry> {
+    let mut contributions = contributions
+        .into_iter()
+        .enumerate()
+        .filter(|(_, entry)| {
+            entry.contribution.slot == UiSlot::RuntimeFooter
+                && app_settings::contribution_visible(document, &entry.key(), true)
+        })
+        .collect::<Vec<_>>();
+    contributions.sort_by_key(|(default_order, entry)| {
+        app_settings::contribution_order(document, &entry.key(), *default_order as i64)
+    });
+    // Keep a hostile or very large local design library from expanding the footer.
+    contributions.truncate(16);
+    contributions.into_iter().map(|(_, entry)| entry).collect()
+}
+
 #[component]
-pub fn FooterHost(context: FooterContext) -> Element {
+pub fn FooterHost(
+    context: FooterContext,
+    #[props(default)] contributions: Vec<crate::features::extensions::UiContributionEntry>,
+) -> Element {
+    // Keep the built-in footer and future UI contributions on the same bounded
+    // host snapshot contract, even before live external contributions are mounted.
+    let host_snapshot = context.host_snapshot();
+    let _ = host_snapshot.validate();
     let preferences = use_context::<FooterPreferencesContext>();
+    let settings_document = try_use_context::<Signal<AppSettingsState>>()
+        .map(|store| store.read().value.clone())
+        .unwrap_or_else(app_settings::default_value);
+    let contributions = select_runtime_footer_contributions(&settings_document, contributions);
     let settings = preferences.store.read().settings.clone();
     let collected = registry::collect(BUILTINS, &context);
     let mut groups = Vec::new();
@@ -47,7 +102,7 @@ pub fn FooterHost(context: FooterContext) -> Element {
             groups.push((*plugin, items));
         }
     }
-    if groups.is_empty() {
+    if groups.is_empty() && contributions.is_empty() {
         return rsx! {};
     }
     let show_caption = groups
@@ -78,6 +133,13 @@ pub fn FooterHost(context: FooterContext) -> Element {
                 }
             }
             if show_caption { span { class: "footer-detail", "会话累计" } }
+            for entry in contributions {
+                crate::features::extensions::RuntimeFooterContribution {
+                    contribution: entry.contribution,
+                    snapshot: host_snapshot.clone(),
+                    design_only: entry.design_only,
+                }
+            }
         }
     }
 }
@@ -203,5 +265,65 @@ fn settings_card(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use work_core::extensions::{ExtensionPin, UiContribution, UiWidget};
+
+    fn entry(id: &str, slot: UiSlot) -> crate::features::extensions::UiContributionEntry {
+        crate::features::extensions::UiContributionEntry {
+            extension: ExtensionPin {
+                id: "demo.test".into(),
+                version: "1.0.0".into(),
+            },
+            contribution: UiContribution {
+                id: id.into(),
+                slot,
+                title: id.into(),
+                widgets: vec![UiWidget::Text {
+                    text: "design".into(),
+                }],
+                host: None,
+            },
+            design_only: true,
+        }
+    }
+
+    #[test]
+    fn runtime_footer_selection_filters_and_orders_entries() {
+        let document = json!({
+            "version": 1,
+            "contributions": {
+                "demo.test@1.0.0/hidden": { "visible": false },
+                "demo.test@1.0.0/first": { "order": -10 }
+            }
+        });
+        let selected = select_runtime_footer_contributions(
+            &document,
+            vec![
+                entry("hidden", UiSlot::RuntimeFooter),
+                entry("settings", UiSlot::SettingsSection),
+                entry("last", UiSlot::RuntimeFooter),
+                entry("first", UiSlot::RuntimeFooter),
+            ],
+        );
+        assert_eq!(
+            selected
+                .iter()
+                .map(|entry| entry.contribution.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "last"]
+        );
+        let many = (0..20)
+            .map(|index| entry(&format!("item-{index}"), UiSlot::RuntimeFooter))
+            .collect();
+        assert_eq!(
+            select_runtime_footer_contributions(&json!({}), many).len(),
+            16
+        );
     }
 }

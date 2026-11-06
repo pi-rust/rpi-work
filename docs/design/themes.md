@@ -118,7 +118,7 @@ AppearanceConfig
 
 主题脚本在 head 中先于组件渲染读取偏好，设置根节点变量、明暗标记和原生控件的 `color-scheme`，减少深色启动时闪白。无 JavaScript 时由生成的默认 CSS 提供基础样式。
 
-本机偏好保存在 `rpi-work-appearance-v1`，兼容此前仅保存浅深色的 `rpi-work-prototype-theme`。跟随系统时监听系统变化，明确选择浅色或深色时保持所选模式。浏览器拒绝持久化时当前页面仍可应用主题，但不能承诺刷新后保留。
+本机偏好统一保存在客户端全局 `settings.json` 的 `appearance` 命名空间，不再读取或写入独立的 `appearance.json` / `rpi-work-appearance-v1`。跟随系统时监听系统变化，明确选择浅色或深色时保持所选模式。全局设置文件不可写时当前页面仍可应用主题，但不能承诺刷新后保留。
 
 可以导出和重新导入 `kind: rpi-work-theme / schemaVersion: 1` 的 JSON，包含主题定义、首选明暗模式和密度。自定义主题保存后可在本浏览器重新打开；取消预览会丢弃本次未保存的导入。最多保存 12 个自定义主题。
 
@@ -133,7 +133,7 @@ AppearanceConfig
 - `Theme` / `Palette`：可序列化的完整主题资源及浅深配色。
 - `AppearanceSettings`：主题、明暗模式、密度；默认 Codex + light + standard。
 - `build_tokens`：纯函数生成语义变量，用于主题 JSON、预览和 Codex 生成 CSS。
-- `use_appearance` / `AppearancePicker`：根组件的外观状态、预览、取消、保存与导入导出；Web 使用浏览器偏好，原生使用本机配置路径。
+- `use_appearance` / `AppearancePicker`：根组件的外观状态、预览、取消、保存与导入导出；所有客户端平台统一通过全局 `settings.json` 的 `appearance` 命名空间保存。
 - `apply_script`：设置根变量与语义属性，订阅系统明暗变化；切回内置主题会清除自定义 inline token。
 
 主题状态放在应用外观层，和会话运行状态分别维护。预览使用临时配置，确认才提交偏好；不通过切换整个 ConversationView 的 key 来刷新外观。

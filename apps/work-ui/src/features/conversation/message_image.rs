@@ -79,7 +79,10 @@ pub(crate) fn project_image(image: work_client::ProjectImage) -> Result<ImageBlo
     use base64::Engine as _;
     if image.bytes.is_empty()
         || image.bytes.len() > work_client::PROJECT_IMAGE_MAX_BYTES
-        || !matches!(image.media_type.as_str(), "image/png" | "image/jpeg" | "image/gif" | "image/webp")
+        || !matches!(
+            image.media_type.as_str(),
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+        )
     {
         return Err("项目图片预览支持不超过 20 MiB 的 PNG、JPEG、GIF、WebP。".into());
     }
@@ -90,7 +93,10 @@ pub(crate) fn project_image(image: work_client::ProjectImage) -> Result<ImageBlo
 }
 
 #[component]
-pub(crate) fn MessageImage(image: Result<ImageBlock, String>, #[props(default)] project: bool) -> Element {
+pub(crate) fn MessageImage(
+    image: Result<ImageBlock, String>,
+    #[props(default)] project: bool,
+) -> Element {
     let instance = use_hook(|| NEXT_INSTANCE.fetch_add(1, Ordering::Relaxed));
     let id = format!("rpi-message-image-{instance}");
     let mut status = use_signal(|| "正在加载图片…".to_owned());
@@ -176,20 +182,29 @@ mod tests {
     #[test]
     fn project_rasters_are_encoded_without_exposing_urls_or_credentials() {
         let image = project_image(work_client::ProjectImage {
-            bytes: vec![0, 1, 255], media_type: "image/png".into(),
-        }).unwrap();
+            bytes: vec![0, 1, 255],
+            media_type: "image/png".into(),
+        })
+        .unwrap();
         assert_eq!(image.data, "AAH/");
         let script = mount_script("project", &Ok(image), true);
         assert!(script.ends_with("},true);"));
         for mime in ["image/svg+xml", "text/html", "image/bmp"] {
-            assert!(project_image(work_client::ProjectImage {
-                bytes: vec![1], media_type: mime.into(),
-            }).is_err());
+            assert!(
+                project_image(work_client::ProjectImage {
+                    bytes: vec![1],
+                    media_type: mime.into(),
+                })
+                .is_err()
+            );
         }
-        assert!(project_image(work_client::ProjectImage {
-            bytes: vec![0; work_client::PROJECT_IMAGE_MAX_BYTES + 1],
-            media_type: "image/png".into(),
-        }).is_err());
+        assert!(
+            project_image(work_client::ProjectImage {
+                bytes: vec![0; work_client::PROJECT_IMAGE_MAX_BYTES + 1],
+                media_type: "image/png".into(),
+            })
+            .is_err()
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 #![cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 //! Production HTTP/SSE + owner, using the existing credential-free ACP child.
 //! Build once: cargo build -p work-client --bin acp-fixture --offline
-//! WORK_SESSION_ACCESS_ACP_FIXTURE may override the sibling binary location.
+//! `WORK_SESSION_ACCESS_ACP_FIXTURE` may override the sibling binary location.
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use work_client::{LocalWorkspace, WorkClient, WorkspaceClient};
@@ -11,16 +11,14 @@ use work_server::{HttpServer, ServerConfig};
 fn production_acp_access_dialogs_and_unified_sse() {
     if std::env::var_os("WORK_ACCESS_HTTP_WORKER").is_none() {
         let executable = std::env::current_exe().unwrap();
-        let fixture = std::env::var_os("WORK_SESSION_ACCESS_ACP_FIXTURE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
+        let fixture = std::env::var_os("WORK_SESSION_ACCESS_ACP_FIXTURE").map_or_else(|| {
                 executable
                     .parent()
                     .unwrap()
                     .parent()
                     .unwrap()
                     .join(format!("acp-fixture{}", std::env::consts::EXE_SUFFIX))
-            });
+            }, PathBuf::from);
         assert!(
             fixture.is_file(),
             "build existing acp-fixture first: {}",
@@ -231,7 +229,7 @@ async fn scenario() {
         drop(direct);
         let local_observed = native.connect_session(id.clone()).await.unwrap();
         assert_eq!(observed.messages(), local_observed.messages());
-        assert!(observed.pending_dialogs().is_empty());
+        assert_eq!(observed.pending_dialogs(), []);
         drop((observed, local_observed));
         local.suspend().await;
         // Old generation is invalid after prepare/load, despite a reused wire permission ID.

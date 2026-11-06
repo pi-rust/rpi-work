@@ -81,7 +81,12 @@ pub fn BackendMenu(
     }
 }
 
-pub(crate) fn switch_locked(online: bool, busy: bool, has_session: bool, binding_known: bool) -> bool {
+pub(crate) fn switch_locked(
+    online: bool,
+    busy: bool,
+    has_session: bool,
+    binding_known: bool,
+) -> bool {
     !online || busy || (has_session && !binding_known)
 }
 

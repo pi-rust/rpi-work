@@ -69,13 +69,18 @@
 
 ## 声明式 UI 与安全限制
 
-当前受控 slot 标签：`session-inspector`、`composer-action`、`conversation-card`、`settings-section`。它们现在只标明预期位置，**均只在资源详情/会话扩展面板静态预览，没有插入实际输入框、消息或设置页**；`composer-action` 不代表可调用动作。
+当前受控 slot 标签：`session-inspector`、`composer-action`、`conversation-card`、`settings-section`、`runtime-footer`。前四个现在只标明预期位置，**均只在资源详情/会话扩展面板静态预览，没有插入实际输入框、消息或设置页**；`composer-action` 不代表可调用动作。
+
+`runtime-footer` 是受控 Host 数据契约的声明入口，不代表当前客户端已经挂载 live UI。使用它的 contribution 必须声明 `host.capability: "runtime-footer"` 和有限的 `host.fields`，不能请求任意运行时路径。
 
 当前 widget：
 
 - `text`：纯文本；
 - `fields`：受控 label/value 列表；
-- `progress`：有上限的静态进度。
+- `progress`：有上限的静态进度；
+- `host-value`：只读 Host 字段的设计声明，必须引用同一 contribution 的 `host.fields`，当前正式应用仍只显示为设计预览。
+
+可声明的 Host 字段是固定枚举，例如 `session-model`、`usage-input-tokens`、`context-used-percent`、`tools-calls`；可声明的视觉形式是 `text`、`badge`、`count`、`context-ring`。这套字段不是 Tool 列表，也不证明 Agent 扩展已安装、授权或加载。客户端内部的 `UiContributionEntry` 只接受已校验清单作为 Host 输入；`FooterHost` 再按 `AppSettings.contributions.visible/order` 过滤和排序。工作区当前只把资源库中的已校验 manifest 作为显式 `design_only` 预览输入传给 Footer；预览项带有“设计预览”标记，仍不表示节点已安装、授权或加载。没有节点/Host 提供的 contribution catalog 时，不会把资源包当作正式 live plugin。
 
 不允许任意 HTML、脚本、CSS、URL、组件代码、可执行 action 或事件回调。Dioxus 插值负责文本转义。清单禁止未知字段、未知 runtime/schema/widget，限制 ID、版本、路径、列表数量与文本长度，并拒绝目录穿越、重复 contribution ID 和越界进度。导入校验在修改资源库之前完成，失败不留下半份包。
 
@@ -85,8 +90,9 @@
 
 1. 核实 rpi / 远程节点真实扩展 API 与权限语义，先接只读目录和 observed 状态。
 2. 独立协商安装、卸载、加载、会话配置能力，再接 desired → applied 确认、错误、revision 与运行锁边界。
-3. 在明确事件关联、数据权限和版本兼容后启用 live UI contribution；客户端只渲染受控协议，不执行节点给的前端脚本。
-4. 需要纯 UI 跨包关联、设备同步或升级策略时再扩展协议，不用当前同包设计格式冒充上游安装格式。
+3. 先实现 `work.ui.host` 的本地只读 runtime snapshot，再在明确事件关联、数据权限和版本兼容后启用 live UI contribution；客户端只渲染受控协议，不执行节点给的前端脚本。
+4. 如果 UI 需要 Agent 自定义数据，再独立协商 `runtime.observation`，不能从 Tool 列表推断数据来源。
+5. 需要纯 UI 跨包关联、设备同步或升级策略时再扩展协议，不用当前同包设计格式冒充上游安装格式。
 
 ## 验证入口
 

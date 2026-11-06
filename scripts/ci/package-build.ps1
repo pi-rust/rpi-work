@@ -47,7 +47,9 @@ This archive does not contain an Android APK or an iOS IPA.
         $extension = if ($Target -like '*windows*') { '.exe' } else { '' }
         $ui = Join-Path $binaryRoot "work-ui$extension"
         $cli = Join-Path $binaryRoot "work-cli$extension"
-        foreach ($binary in @($ui, $cli)) {
+        $nativeName = if ($Target -like '*windows*') { 'rpi_http_extension.dll' } elseif ($Target -like '*apple-darwin') { 'librpi_http_extension.dylib' } else { 'librpi_http_extension.so' }
+        $native = Join-Path $binaryRoot $nativeName
+        foreach ($binary in @($ui, $cli, $native)) {
             if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Build is missing: $binary" }
         }
         if ($Target -like '*apple-darwin') {
@@ -56,6 +58,7 @@ This archive does not contain an Android APK or an iOS IPA.
             New-Item -ItemType Directory -Force -Path $macOs, (Join-Path $contents 'Resources') | Out-Null
             Copy-Item -LiteralPath (Join-Path $repoRoot 'assets/branding/rpi.icns') -Destination (Join-Path $contents 'Resources/rpi.icns')
             Copy-Item -LiteralPath $ui -Destination (Join-Path $macOs 'work-ui')
+            Copy-Item -LiteralPath $native -Destination $macOs
             $bundleVersion = ($version -split '-')[0]
             $plist = @"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -78,6 +81,7 @@ This archive does not contain an Android APK or an iOS IPA.
             $runtimeNote = 'Unsigned macOS application bundle. Apple signing/notarization is not configured.'
         } else {
             Copy-Item -LiteralPath $ui -Destination $packageRoot
+            Copy-Item -LiteralPath $native -Destination $packageRoot
             if ($Target -like '*linux*') {
                 & chmod 755 (Join-Path $packageRoot 'work-ui')
                 if ($LASTEXITCODE -ne 0) { throw 'Setting Linux executable permissions failed.' }
@@ -87,6 +91,11 @@ This archive does not contain an Android APK or an iOS IPA.
             }
         }
         Copy-Item -LiteralPath $cli -Destination $packageRoot
+        $nativeSuffix = [IO.Path]::GetExtension($nativeName)
+        Copy-Item -LiteralPath $native -Destination (Join-Path $outputRoot "rpi-http-native-$Target$nativeSuffix")
+        $componentUi = & cargo run --quiet --locked -p rpi-http-component --bin export-component
+        if ($LASTEXITCODE -ne 0) { throw 'Component UI export failed.' }
+        [IO.File]::WriteAllText((Join-Path $outputRoot "rpi-component-ui-$Target.json"), ($componentUi -join "`n"), [Text.UTF8Encoding]::new($false))
         if ($Target -notlike '*windows*') {
             & chmod 755 (Join-Path $packageRoot 'work-cli')
             if ($LASTEXITCODE -ne 0) { throw 'Setting CLI executable permissions failed.' }
@@ -94,7 +103,7 @@ This archive does not contain an Android APK or an iOS IPA.
     }
     $buildInfo = [ordered]@{ version = $version; target = $Target; profile = $Profile; commit = "$commit".Trim(); rustc = "$rustVersion".Trim(); packagedAt = [DateTime]::UtcNow.ToString('o') }
     [IO.File]::WriteAllText((Join-Path $packageRoot 'build-info.json'), ($buildInfo | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
-    $readme = "RPI Work $version`nTarget: $Target ($Profile)`nCommit: $commit`n`n$runtimeNote`n`nA separately running compatible rpi-http/rpi-web node is required.`nThe node executable and model credentials are not included in this archive.`nSee https://github.com/pi-rust/rpi-work for connection and API documentation.`n"
+    $readme = "RPI Work $version`nTarget: $Target ($Profile)`nCommit: $commit`n`n$runtimeNote`n`nDesktop packages include the native rpi HTTP extension. A compatible rpi host must be installed; model-free startup requires requiresAgent:false service bootstrap support.`nWeb/Android connect to an existing node. Model credentials and the rpi executable are not included.`nSee https://github.com/pi-rust/rpi-work for connection and API documentation.`n"
     [IO.File]::WriteAllText((Join-Path $packageRoot 'README.txt'), $readme, [Text.UTF8Encoding]::new($false))
     if ($Target -like '*windows*' -or $Target -eq 'wasm32-unknown-unknown') {
         $archive = Join-Path $outputRoot "$packageName.zip"

@@ -19,7 +19,18 @@ struct PairingControl {
 
 /// One workspace-lifetime instance, shared by startup and all Settings layouts.
 pub(crate) fn use_pairing() {
-    let sharing = use_signal(desktop_sharing);
+    let mut sharing = use_signal(DesktopSharing::default);
+    use_effect(move || {
+        spawn(async move {
+            let mut events = document::eval(
+                "window.addEventListener('rpi-component-state-changed',()=>dioxus.send(true));",
+            );
+            sharing.set(desktop_sharing().await);
+            while events.recv::<bool>().await.is_ok() {
+                sharing.set(desktop_sharing().await);
+            }
+        });
+    });
     let request = use_signal(authorization_offer::Request::default);
     let address_draft = use_signal(String::new);
     use_context_provider(|| PairingControl {
@@ -114,34 +125,20 @@ fn connection_address(raw: &str) -> Result<String, String> {
 struct DesktopSharing {
     listening: bool,
     enabled: bool,
-    status: String,
-    warning: String,
     public_url: String,
     app_url: String,
     address_hint: String,
-    password: String,
 }
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 type DesktopSharing = crate::app::local_http::Sharing;
-fn desktop_sharing() -> DesktopSharing {
+async fn desktop_sharing() -> DesktopSharing {
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
-        crate::app::local_http::sharing()
+        crate::app::local_http::sharing().await
     }
     #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         DesktopSharing::default()
-    }
-}
-fn set_desktop_sharing(enabled: bool) -> Result<DesktopSharing, String> {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    {
-        crate::app::local_http::set_shared(enabled)
-    }
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    {
-        let _ = enabled;
-        Err("只能在节点宿主桌面修改共享设置".into())
     }
 }
 
@@ -151,7 +148,7 @@ fn phone_share_address(value: &str, owned_local: bool) -> Result<String, String>
     }
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     if owned_local {
-        return work_server::public_address(value)
+        return work_host::http::public_address(value)
             .map(|(url, _)| url.trim_end_matches('/').to_owned());
     }
     let _ = owned_local;
@@ -238,10 +235,8 @@ pub fn DevicesPage(
     let mut copy_status = use_signal(String::new);
     let mut share_error = use_signal(String::new);
     let mut share_epoch = use_signal(|| 0u64);
-    let mut show_http_password = use_signal(|| false);
-    let mut local_sharing = pairing.sharing;
+    let local_sharing = pairing.sharing;
     let sharing = local_sharing.read().clone();
-    let mut sharing_error = use_signal(String::new);
     let owns_desktop = crate::app::local_node::client().is_some();
     let current_address = connection.address.read().clone();
     let connection_epoch = *connection.epoch.read();
@@ -294,7 +289,6 @@ pub fn DevicesPage(
             share_epoch += 1;
             copy_status.set(String::new());
             share_error.set(String::new());
-            show_http_password.set(false);
             advertised_address.set(if crate::app::local_node::is_local(&node) {
                 local_public_url.clone()
             } else {
@@ -568,42 +562,6 @@ pub fn DevicesPage(
                             button { class: "button", onclick: move |_| remote_open.set(!remote_open()), "连接其他节点" }
                         }
                         if owned_local { p { class: "connection-help", "本机 RPC 和桌面 HTTP 共用这一份工作空间；首次启动默认提供局域网 App 授权入口，手机扫码后访问相同会话和任务。已关闭的共享设置和显式监听配置会保留；不会自动修改防火墙。" } }
-                        if owns_desktop {
-                            section { class: "desktop-sharing-control", aria_label: "这台电脑的共享",
-                                div { class: "desktop-sharing-heading",
-                                    div { strong { "这台电脑的共享" } p { "允许手机或其他客户端访问本机工作空间" } }
-                                    button { class: "sharing-switch", role: "switch", aria_label: "允许共享这台电脑", aria_checked: sharing.enabled,
-                                        "data-enabled": sharing.enabled, disabled: !sharing.listening,
-                                        onclick: move |_| {
-                                            let enabled = !local_sharing.read().enabled;
-                                            match set_desktop_sharing(enabled) {
-                                                Ok(info) => { local_sharing.set(info); sharing_error.set(String::new()); }
-                                                Err(message) => { local_sharing.set(desktop_sharing()); sharing_error.set(message); }
-                                            }
-                                            qr_open.set(false); show_http_password.set(false);
-                                        },
-                                        span { class: "sharing-switch-track", "aria-hidden": "true", span {} }
-                                        if sharing.enabled { "已开启" } else { "已关闭" }
-                                    }
-                                }
-                                p { class: "connection-help", role: "status", if sharing.enabled { "浏览器仍需密码登录；Android App 可使用单独的一次性扫码授权。共享不会扩大监听或更改防火墙。" } else { "其他客户端无法访问本机项目、会话及运行任务。" } }
-                                p { class: "connection-help", "关闭共享不停止本机任务，也不影响桌面连接其他节点；已连接设备需在重新开启后再次登录。" }
-                                p { class: "connection-help", "{sharing.status}" }
-                                if sharing.listening && sharing.enabled {
-                                    p { class: "connection-help", "{sharing.address_hint}" }
-                                }
-                                if !sharing.warning.is_empty() { p { class: "connection-form-error", role: "alert", "{sharing.warning}" } }
-                                if !sharing_error.read().is_empty() { p { class: "connection-form-error", role: "alert", "{sharing_error}" } }
-                                if sharing.listening && sharing.enabled {
-                                    details {
-                                        summary { "手机登录密码（仅本机查看）" }
-                                        input { r#type: if show_http_password() { "text" } else { "password" }, readonly: true, value: "{sharing.password}", aria_label: "桌面 HTTP 登录密码" }
-                                        button { class: "button", onclick: move |_| show_http_password.set(!show_http_password()), if show_http_password() { "隐藏密码" } else { "显示密码" } }
-                                        p { class: "connection-help", "密码不包含在二维码中；可配置 RPI_WORK_HTTP_PASSWORD。" }
-                                    }
-                                }
-                            }
-                        }
                         if *remote_open.read() {
                             div { class: "remote-node-form",
                                 div { class: "form-field",
@@ -834,7 +792,7 @@ fn authorization_payload(
 async fn owner_authorization() -> Result<(String, u64, String), String> {
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
-        let grant = crate::app::local_http::issue_qr_authorization()?;
+        let grant = crate::app::local_http::issue_qr_authorization().await?;
         Ok((grant.ticket, grant.expires_at, grant.node_id))
     }
     #[cfg(any(target_arch = "wasm32", target_os = "android"))]

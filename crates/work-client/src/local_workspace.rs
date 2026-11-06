@@ -110,7 +110,11 @@ impl LocalWorkspace {
     pub async fn file(&self, project_id: &str, path: &str) -> Result<FileContent, ClientError> {
         self.owner.file(project_id, path).await.map_err(Into::into)
     }
-    pub async fn image(&self, project_id: &str, path: &str) -> Result<crate::ProjectImage, ClientError> {
+    pub async fn image(
+        &self,
+        project_id: &str,
+        path: &str,
+    ) -> Result<crate::ProjectImage, ClientError> {
         self.owner.image(project_id, path).await.map_err(Into::into)
     }
     pub async fn git_status(&self, project_id: &str) -> Result<GitStatus, ClientError> {
@@ -613,7 +617,9 @@ impl work_core::api::NodeApi for LocalWorkspace {
     }
 
     fn image<'a>(
-        &'a self, project_id: &'a str, path: &'a str,
+        &'a self,
+        project_id: &'a str,
+        path: &'a str,
     ) -> work_core::api::NodeFuture<'a, crate::ProjectImage> {
         work_core::api::NodeApi::image(self.owner.as_ref(), project_id, path)
     }

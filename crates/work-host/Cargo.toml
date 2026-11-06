@@ -13,16 +13,12 @@ all = "warn"
 pedantic = "warn"
 
 [dependencies]
+rpi-node-host = { path = "../../vendor/rpi-node-host" }
+rpi-node-launcher = { path = "../../vendor/rpi-node-launcher" }
+rpi-http-runtime = { path = "../../vendor/rpi-http-runtime" }
+rpi-components = { path = "../../vendor/rpi-components" }
 work-client = { path = "../work-client" }
 work-node = { path = "../work-node" }
-work-server = { path = "../work-server" }
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tempfile = "3"
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt", "signal", "time", "sync", "macros"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_IO"] }

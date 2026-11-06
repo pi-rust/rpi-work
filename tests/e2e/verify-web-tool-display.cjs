@@ -190,9 +190,13 @@ const messages = [
         assert(!item.target.startsWith('path='));
         await assertStatus(item.id, item.failed ? '失败' : '已完成', item.icon);
         const resultHint = summary(item.id).locator('.tool-result-hint[role="status"]');
-        assert.equal(await resultHint.count(), 1);
-        assert.equal(await resultHint.getAttribute('aria-live'), 'polite');
-        assert.equal(await resultHint.getAttribute('aria-label'), item.failed ? '结果状态：查看错误' : '结果状态：有结果');
+        if (item.failed) {
+          assert.equal(await resultHint.count(), 1);
+          assert.equal(await resultHint.getAttribute('aria-live'), 'polite');
+          assert.equal(await resultHint.getAttribute('aria-label'), '结果状态：查看错误');
+        } else {
+          assert.equal(await resultHint.count(), 0, 'successful tools do not show 有结果/等待输出 status text');
+        }
         if (!item.failed) assert.equal(await isOpen(item.id), false, 'completed history starts collapsed');
       }
       for (const id of ['web-display-read', 'web-display-shell', 'web-display-search', 'web-display-functions-read']) {
