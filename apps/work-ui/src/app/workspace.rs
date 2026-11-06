@@ -3909,6 +3909,10 @@ pub(super) fn App() -> Element {
         }
         None
     };
+    let catalog_complete = {
+        let state = catalog_refresh.read();
+        !state.busy && state.message == "已拉取最新会话。"
+    };
     let mut visible_sessions = sessions
         .read()
         .iter()
@@ -4405,7 +4409,7 @@ pub(super) fn App() -> Element {
                             button { class: if active_page.read().as_str() == "meta-agent" { "nav-item active" } else { "nav-item" }, onclick: move |_| { meta_return_page.set("workspace".into()); active_page.set("meta-agent".into()); sidebar_open.set(false); }, Icon { name: "blocks" } "元Agent" }
                         }
                     }
-                    if visible_projects.is_empty() {
+                    if visible_projects.is_empty() && catalog_complete {
                         div { class: "sidebar-empty project-empty",
                             Icon { name: "folder" }
                             strong { "添加你的第一个项目" }
@@ -4415,7 +4419,7 @@ pub(super) fn App() -> Element {
                             }, "添加项目" }
                         }
                     } else {
-                        if visible_sessions.is_empty() && !catalog_refresh.read().busy {
+                        if visible_sessions.is_empty() && catalog_complete {
                             div { class: "sidebar-empty session-catalog-empty", role: "status",
                                 Icon { name: "message" }
                                 strong { "当前节点还没有活动会话" }
