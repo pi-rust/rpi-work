@@ -34,8 +34,21 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('main.app-shell')?.classList.contains('conversation-focus'));
     assert.equal(await page.getByRole('button', { name: '全屏查看消息', exact: true }).isVisible(), true);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '全屏查看消息', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('main.app-shell')?.classList.contains('conversation-focus'));
+    assert.equal(await page.locator('.sidebar').isVisible(), false);
+    assert.equal(await page.locator('.app-header').isVisible(), false);
+    assert.equal(await page.locator('.section-tabs').isVisible(), false);
+    assert.equal(await page.locator('.composer-main').isVisible(), false);
+    const mobileTranscript = await page.locator('.transcript').boundingBox();
+    assert(mobileTranscript && mobileTranscript.height > 700, `mobile message viewport is too short: ${mobileTranscript?.height}`);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('main.app-shell')?.classList.contains('conversation-focus'));
+    assert.equal(await page.getByRole('button', { name: '全屏查看消息', exact: true }).isVisible(), true);
     assert.deepEqual(errors, []);
-    console.log('PASS message focus mode hides workspace chrome, preserves messages, and exits with Escape');
+    console.log('PASS desktop and mobile message focus mode hide workspace chrome, preserve messages, and exit with Escape');
   } finally {
     await browser.close();
     await fixture.close();
