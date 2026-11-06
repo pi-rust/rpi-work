@@ -141,6 +141,8 @@ cargo run --locked -p work-cli -- watch SESSION_ID
 | crates/work-core | 纯共享 DTO、typed NodeApi、会话能力/配置契约和事件投影 |
 | crates/work-client | WorkspaceClient 本机 / 远程访问适配、HTTP/SSE、连接恢复与客户端投影 |
 | crates/work-node | 唯一 workspace owner、RPC/ACP 执行、会话绑定、数据锁与生命周期 |
+| crates/work-component-api | 通用组件包契约、校验、目录/授权与隔离面板通信桥 |
+| crates/work-http-component | 远程访问专用面板与动作映射（监听 IP/端口、分享地址、新密码） |
 | crates/work-server | 同一节点 owner 的受保护 HTTP/SSE 与可选 Web assets |
 | crates/work-host | GUI／无头共用宿主、HTTP 配置与协作退出；无 Dioxus/WebView 依赖 |
 | crates/work-update | 更新发现、签名验证、下载与安装助手 |
@@ -178,4 +180,4 @@ git push origin v0.1.9
 
 查看冻结的 HTML 原型：在仓库根目录运行 `python -m http.server 14173 --bind 127.0.0.1`，打开 <http://127.0.0.1:14173/design/prototype/>。原型使用示例数据，不是正式应用或已实现能力的证明。
 
-节点组件的自定义界面、下载安装与组合边界见[组件组合架构](docs/architecture/component-composition.md)。共享包源码在 rpi-package 维护，Work 使用随仓库分发的 vendor 快照，普通构建无需相邻 checkout。
+节点组件的自定义界面、下载安装与组合边界见[组件组合架构](docs/architecture/component-composition.md)。物理边界：rpi 能力在 rpi/extcore，HTTP 适配在 rpi-http；Work 的节点管理、组件包和专用面板在 Work（`crates/work-component-api`、`crates/work-http-component`）。Work 的多项目 owner 不是 rpi-http 的实现；Work 不下载、选择或监督 rpi HTTP 扩展作为自己的宿主运行时，也不声称新的 rpi HTTP 插件已支持 Work 现有远程工作空间协议。

@@ -1,2 +1,2 @@
 //! Compatibility facade; HTTP transport and authorization live in the shared extension runtime.
-pub use rpi_http_node::*;
+pub use work_node_service::*;

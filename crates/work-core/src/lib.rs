@@ -67,7 +67,7 @@ pub struct Usage {
     pub cache_write_tokens: Option<u64>,
 }
 
-pub use rpi_node_api::{AgentDescriptor, CapabilitySet, TransportIdentity};
+pub use work_node_api::{AgentDescriptor, CapabilitySet, TransportIdentity};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MessageBlock {
@@ -380,7 +380,7 @@ impl RunProjection {
 }
 
 /// Component package protocol, separate from inert Agent extension designs.
-pub use rpi_components as components;
+pub use work_component_api as components;
 
 #[cfg(test)]
 mod tests {

@@ -9,8 +9,7 @@ mod tests;
 pub fn node_error(error: work_client::ClientError) -> String {
     match error {
         work_client::ClientError::Api { status, .. } if matches!(status.as_u16(), 404 | 405) => {
-            "节点未提供此操作或目标已不存在，请刷新列表；旧版 rpi-http 需要更新后使用此功能。"
-                .into()
+            "节点未提供此操作或目标已不存在，请刷新列表；旧版节点服务需要更新后使用此功能。".into()
         }
         work_client::ClientError::Api { status, .. } if status.as_u16() == 401 => {
             "节点登录已失效，请重新连接并登录。".into()

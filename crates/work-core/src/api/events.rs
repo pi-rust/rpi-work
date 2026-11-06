@@ -4,7 +4,7 @@ use serde_json::Value;
 use super::{EventDecodeError, WireEvent};
 use crate::{ConnectionState, Event, EventKind, OutputMode, SettlementOutcome, Usage};
 
-pub use rpi_node_api::api::events::{dialog_from_wire, wire_event};
+pub use work_node_api::api::events::{dialog_from_wire, wire_event};
 
 pub trait WireEventProjection {
     /// Decode the wire payload into a UI event.

@@ -1,5 +1,35 @@
 # 节点扩展迁移执行记录
 
+> 本文是历史执行记录。当前有效的物理边界以
+> [节点、组件与界面组合](component-composition.md) 为准：
+> rpi 能力在 rpi/extcore，HTTP 适配在 rpi-http；Work 节点管理、组件包和专用
+> 面板在 Work。Work 不再把 `rpi-http-extension` 当作自己的节点宿主运行时。
+
+## 2026-11-07 边界修正（当前有效）
+
+后续审核确认：Work 管理节点和宿主，HTTP 扩展只把 rpi 能力服务化。
+
+- 删除 Work UI 中“节点运行时”下载、选择、恢复默认和原生信任入口；组件页只
+  保留通用 UI 包的导入/下载/授权/安装/卸载和按需面板挂载。
+- 删除 `task desktop:runtime`、CI 强制 `-p rpi-http-extension`、桌面归档中的
+  原生扩展文件，以及发布流程对 HTTP 组件制品的强制检查。
+- 专用 HTTP 设置面板仍由 Work 内部组件包提供，源码从
+  `vendor/rpi-http-component` 迁至 `crates/work-http-component`；通用桥从
+  `vendor/rpi-components` 迁至 `crates/work-component-api`。
+- Work 宿主回到本进程已有 `LocalWorkspace` 同一 owner，`work-server` HTTP
+  只接在它上面。Work 的多项目 owner 不是 `rpi-http` 的实现，也不声称 rpi 的
+  新 HTTP 插件已支持 Work 现有远程工作空间协议。
+- 节点 API、运行时、宿主、Work HTTP 适配及组件协议都已迁回本地私有 crates，
+  全部 `publish = false`；旧 vendor 快照、同步生成器和节点 DLL 监督器已移除。
+- 本轮全工作区测试 807 通过、0 失败、5 ignored；原生 UI/CLI、正式 WASM、
+  组件安装/挂载/卸载和响应式面板验证通过。隔离宿主测试明确把旧 DLL 路径设为
+  不存在，仍正常启动；分享关闭拒绝远程访问，本机继续访问同一 owner。
+- 原夹带节点逻辑的扩展 PR #226 已关闭；纯 HTTP 入口改为独立 PR #230。
+  Work 仅本地合并，不发布、不推送主分支。宿主旧补丁另以获授权的撤回 PR 处理。
+
+下文记录的是修正前的迁移过程与验证，不再代表当前 Work 的宿主启动方式或
+组件分发方式。
+
 ## 已确认的方向
 
 - 用户要求继续完成目标：能力尽量沉淀到 rpi 扩展；Work UI 只组合面板与客户端。
@@ -9,10 +39,12 @@
 
 ## 当前源码位置
 
-- Work：`D:/Projects/rpi-work`，保留用户原有未提交修改。
-- 共享包：`D:/Projects/rpi-package-work-components`，分支 `codex/work-components`。
-- rpi 启动修正：`D:/Projects/pi-rust-http-bootstrap`，分支 `codex/http-service-bootstrap`。
-- Work 消费 `vendor` 生成快照；同步脚本是 `tools/dev/sync-component-packages.py`。
+- Work：`D:/Projects/rpi-work`。
+- 当前组件源码在 Work 仓库：`crates/work-component-api`（通用桥与包契约）和
+  `crates/work-http-component`（远程访问专用面板）。
+- rpi 能力与 HTTP 适配属于 rpi 仓库：`rpi/extcore` 执行能力，`rpi-http` 提供
+  HTTP 适配。
+- `vendor/` 历史快照已移除，代码由 Work 本地私有包直接维护。
 
 ## 已迁出的包
 
@@ -34,13 +66,16 @@ work-cli serve / work-ui --headless 仍直接组合共享 node-host 的服务入
 Work 的消息投影仍留在 work-core；WireEvent 的投影
 方法通过本地 `WireEventProjection` trait 提供，节点 DTO 为共享包中的同一类型。
 
+> 上述 work-host 监督扩展的启动方式已被 2026-11-07 边界修正取代：Work 宿主
+> 回到进程内同一 `LocalWorkspace` owner，不再把该 DLL 当作宿主运行时。
+
 ## 已验证
 
 - 真实已安装 `rpi 0.20.0` 加载 `rpi_http_extension.dll`，通过旧有 ABI 启动 HTTP、
   认证、组件目录和无凭据状态读取；stdin EOF 后正常清理，模型调用数为零。
-- 原生验证脚本 `tests/e2e/verify-native-http-extension.cjs` 支持新 rpi 无模型
-  配置的启动（RPI_NATIVE_MODEL_FREE=1）；旧 rpi 的 ABI 兼容检查才使用隔离
-  合成配置。生产代码不注入合成模型密钥。
+- 历史原生验证脚本 `tests/e2e/verify-native-http-extension.cjs`（已随宿主耦合删除）
+  支持新 rpi 无模型配置的启动（RPI_NATIVE_MODEL_FREE=1）；旧 rpi 的 ABI 兼容
+  检查才使用隔离合成配置。生产代码不注入合成模型密钥。
 - 原 rpi 启动在插件接管 stdio 前强制解析模型密钥，HTTP 服务本身不需要模型。
   最小修正是通用声明 `ownsStdio:true, requiresAgent:false`：跳过无关的模型和
   AgentHarness 创建，仍使用已有生命周期和 stdio owner 约束；不改 ABI 结构。
@@ -74,16 +109,18 @@ Work 的消息投影仍留在 work-core；WireEvent 的投影
 
 ## 配置与运行时选择
 
-专用面板已支持监听 IP、端口、分享地址和新节点密码；由扩展校验并原子保存到
-节点目录的 `http-component.json`。密码只保存摘要，不返回明文。保存设置不重启
-owner 或停止任务，下次节点启动生效。显式启动参数优先于保存配置，再使用环境
-默认值。公开监听失败时，私有入口仍可修复配置，保留同一节点身份和密码摘要。
+专用面板已支持监听 IP、端口、分享地址和新节点密码；由 Work 节点校验并原子
+保存到节点数据目录。密码只保存摘要，不返回明文。保存设置不重启 owner 或
+停止任务，下次节点启动生效。显式启动参数优先于保存配置，再使用环境默认值。
+公开监听失败时，本机入口仍可修复配置，保留同一节点身份和密码摘要。
 
-通用组件页分别显示当前运行时来源、下次选择和待重启状态。恢复默认仅移除选择，
-不删除正在加载的 DLL、不停止当前节点。显式环境覆盖时不允许安装产生误导的
-下次启动承诺。浏览器及远程节点客户端不提供本机原生安装。
+历史版本曾在通用组件页显示当前运行时来源、下次选择和待重启状态，并可下载
+原生运行时。该耦合已删除：通用组件页不再出现运行时选择/恢复默认，也不再
+下载或信任节点宿主 DLL。组件页只安装 UI 包与能力授权。
 
 发布汇总脚本已有六平台 fixture 回归，真实下载与加载在 Windows 验证。发布脚本
+在修正前会校验 HTTP 组件制品；该绑定已删除，Work 发布只保留自己的归档与签名
+更新资产。
 在任何 GitHub release 修改前校验组件摘要及原生文件。尚未发布或替换安装的 rpi。
 
 ## 构建空间和最新二进制
@@ -106,25 +143,25 @@ D 盘在宽范围构建时已满。批量递归缓存删除被自动审核拒绝
 
 ## 最终目标审计（2026-11-07）
 
+> 下表是修正前的历史验收。标有“已撤销”的行不再代表当前 Work：Work 不下载、
+> 选择或监督 `rpi-http-extension` 作为宿主运行时，也不在 CI 打包或发布 HTTP
+> 组件制品。当前边界见[组件组合](component-composition.md)。
+
 | 要求 | 落点 | 最终验证 |
 | --- | --- | --- |
-| 真实原生扩展、复用现有 ABI | rpi-http-extension；独立 rpi 通用纯服务启动补丁 | 无模型密钥的实际 DLL 加载、认证及 EOF 退出通过 |
-| 节点能力沉淀、单一 owner | rpi-node-core / node-host / http-node；Work 兼容 re-export | 核心 88 项、共享 owner、会话、SSE/WS、二维码与撤权集成通过 |
+| 真实原生扩展、复用现有 ABI | rpi-http-extension；独立 rpi 通用纯服务启动补丁 | 历史：无模型密钥的实际 DLL 加载、认证及 EOF 退出通过（Work 不再以此作为宿主） |
+| 节点能力沉淀、单一 owner | rpi-node-core / node-host / http-node；Work 兼容 re-export | 历史：核心 88 项、共享 owner、会话、SSE/WS、二维码与撤权集成通过 |
 | Work UI 通用组合 | 通用组件页、能力发现、WorkspaceClient | 完整原生 UI 构建、正式 WASM 构建和真实 owner 浏览器流程通过 |
-| 精心设计且按需加载的扩展面板 | rpi-http-component；隔离 MessageChannel 桥 | 桌面/手机、懒加载、动作桥、sandbox、配置保存浏览器验证通过 |
-| 可下载原生运行时 | rpi-node-launcher Store；独立原生代码授权 | 测试 HTTPS 下载实际 DLL，再通过原有 rpi ABI 启动并退出通过 |
-| 可视化配置、下次启动生效 | 专用面板及 http-component.json | 真实 ABI 保存、重启、密码认证、公开监听失败后的本机修复通过 |
-| 当前与下次运行时选择 | work-host runtime；通用组件状态区 | 显式路径和下载缓存两条监督启动均通过；恢复默认不终止当前节点 |
-| 分发可检查 | CI、打包、组件汇总、上传前校验 | 六平台 fixture 与 Rust Bundle 精确一致；Python/PowerShell 语法通过 |
+| 精心设计且按需加载的扩展面板 | work-http-component；隔离 MessageChannel 桥 | 桌面/手机、懒加载、动作桥、sandbox、配置保存浏览器验证通过 |
+| 可下载原生运行时（已撤销） | 原 rpi-node-launcher Store；原独立原生代码授权 | 历史：测试 HTTPS 下载实际 DLL，再通过原有 rpi ABI 启动并退出通过；该 UI 与发布绑定已删除 |
+| 可视化配置、下次启动生效 | 专用面板及 http-component.json | 历史：真实 ABI 保存、重启、密码认证、公开监听失败后的本机修复通过 |
+| 当前与下次运行时选择（已撤销） | 原 work-host runtime；原通用组件状态区 | 历史：显式路径和下载缓存两条监督启动均通过；UI 状态与恢复默认已删除 |
+| 分发可检查 | CI、打包、组件汇总、上传前校验 | 已收缩为 Work 自身归档与签名更新校验；HTTP 组件强制检查已删除 |
 
-最终再次执行：`verify-native-http-extension`、`verify-http-configuration`、
-`verify-supervised-host`（显式/缓存两种）、真实 HTTPS 下载 ABI 单测、
-`verify-component-panels`、`verify-components-workspace` 和分发合约 fixture，全部通过。
-生成快照 101 文件一致。原生及 WASM 保留 3 个既有 dead_code 警告；共享工作区
-全量 fmt 仅报告既有 rpi-voice 文件格式，未改动无关代码；本次包及 Work 新代码单独检查。
-
-源码和发布流程已完成；没有提交、推送、发布或替换已安装的 rpi，也没有重启现有节点。
-Windows 原生和浏览器实际运行已验证，其他平台只验证分发描述与构建定义。
+修正前的专项脚本（`verify-native-http-extension`、`verify-http-configuration`、
+`verify-supervised-host` 和 `verify-component-assets`）随原生宿主耦合一并删除。
+当前保留 `verify-component-panels`、`verify-components-workspace` 以及 Work
+自身的签名更新/distribution 校验。
 
 ## 提交与交付跟进
 

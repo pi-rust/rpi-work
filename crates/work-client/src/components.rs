@@ -1,8 +1,8 @@
 //! Generic component protocol. No component identity or panel-specific policy.
 use crate::{ClientError, WorkClient, WorkspaceClient};
 use futures_util::StreamExt;
-use rpi_components::{Bundle, Call, InstallRequest, Installed, MAX_BUNDLE, valid_id};
 use serde_json::{Value, json};
+use work_component_api::{Bundle, Call, InstallRequest, Installed, MAX_BUNDLE, valid_id};
 
 fn check_id(id: &str) -> Result<(), ClientError> {
     if valid_id(id) {

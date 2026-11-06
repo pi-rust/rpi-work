@@ -1,0 +1,20 @@
+[package]
+publish = false
+name = "work-http-runtime"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/pi-rust/rpi-work"
+
+description = "Reusable authenticated HTTP node transport and lifecycle"
+
+[dependencies]
+axum = "0.8.9"
+tokio = { version = "1", features = ["sync", "time", "net", "rt", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+getrandom = "0.3"
+url = "2"

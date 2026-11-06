@@ -12,8 +12,8 @@ all = "warn"
 pedantic = "warn"
 
 [dependencies]
-rpi-http-node = { path = "../../vendor/rpi-http-node" }
-rpi-http-runtime = { path = "../../vendor/rpi-http-runtime" }
+work-node-service = { path = "../work-node-service" }
+work-http-runtime = { path = "../work-http-runtime" }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["compression-br", "compression-gzip"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs"] }
@@ -29,7 +29,7 @@ url = "2"
 getrandom = "0.3"
 
 [dev-dependencies]
-rpi-http-component = { path = "../../vendor/rpi-http-component" }
+work-http-component = { path = "../work-http-component" }
 # Constrain the isolated slow peer's receive window, not production sockets.
 socket2 = "0.6"
 work-client = { path = "../work-client" }

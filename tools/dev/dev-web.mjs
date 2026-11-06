@@ -48,7 +48,6 @@ const compressibleExtensions = new Set(['.wasm', '.js', '.css', '.html', '.json'
 const sourceTargets = [
   path.join(repoRoot, 'apps', 'work-ui'),
   path.join(repoRoot, 'assets'),
-  path.join(repoRoot, 'vendor'),
   path.join(repoRoot, 'crates', 'work-client'),
   path.join(repoRoot, 'crates', 'work-core'),
   path.join(repoRoot, 'crates', 'work-update'),

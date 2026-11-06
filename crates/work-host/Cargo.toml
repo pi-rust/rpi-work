@@ -13,10 +13,9 @@ all = "warn"
 pedantic = "warn"
 
 [dependencies]
-rpi-node-host = { path = "../../vendor/rpi-node-host" }
-rpi-node-launcher = { path = "../../vendor/rpi-node-launcher" }
-rpi-http-runtime = { path = "../../vendor/rpi-http-runtime" }
-rpi-components = { path = "../../vendor/rpi-components" }
+work-node-host = { path = "../work-node-host" }
+work-http-runtime = { path = "../work-http-runtime" }
+work-component-api = { path = "../work-component-api" }
 work-client = { path = "../work-client" }
 work-node = { path = "../work-node" }
 serde_json = "1"

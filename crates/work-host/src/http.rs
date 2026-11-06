@@ -1,6 +1,6 @@
 //! Client-side LAN probe; node policy and lifecycle live in the extension host.
-pub use rpi_http_runtime::public_address;
-pub use rpi_node_host::http::Sharing;
+pub use work_http_runtime::public_address;
+pub use work_node_host::http::Sharing;
 // Read only the compatibility view needed by pairing. Extra fields supplied by
 // a newer component (including custom settings) must not break composition.
 #[derive(serde::Deserialize)]

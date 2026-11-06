@@ -17,7 +17,8 @@ apps/
         observability/   用量、上下文与会话追踪
       shared/            公共组件、状态辅助和主题
   work-cli/              节点诊断 CLI
-crates/                  work-core、work-node、work-client、work-server、work-update
+crates/                  work-core、work-node、work-client、work-server、work-host、work-update、
+                         work-component-api、work-http-component
 assets/vendor/           正式应用使用的二维码、Mermaid 库及许可证
 design/prototype/        冻结的 HTML 原型和原型资源
 tests/
@@ -38,7 +39,7 @@ target/                  忽略的编译、下载、日志与临时验证数据
 .rpi/                    忽略的本机 Agent 会话
 ```
 
-`work-core` 提供共享 DTO、`NodeApi`、会话能力/配置契约和状态投影，不依赖 UI 或具体传输。`work-node` 持有权威 `LocalWorkspace`、本机 RPC/ACP 执行器、持久化与生命周期；`work-client` 的本机 facade 只包装同一个 owner，远程 facade 使用 HTTP/SSE。`work-server` 将已有 owner 暴露为受保护的 HTTP/SSE 和可选 Web assets，生产依赖不引用 `work-client`，也不创建第二个工作空间。桌面不启动 standalone `rpi-http`，但会尝试启动内嵌 HTTP 入口；默认回环监听、共享关闭。具体边界见 [架构与传输边界](../architecture/transport.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
+`work-core` 提供共享 DTO、`NodeApi`、会话能力/配置契约和状态投影，不依赖 UI 或具体传输。`work-node` 持有权威 `LocalWorkspace`、本机 RPC/ACP 执行器、持久化与生命周期；`work-client` 的本机 facade 只包装同一个 owner，远程 facade 使用 HTTP/SSE。`work-server` 将已有 owner 暴露为受保护的 HTTP/SSE 和可选 Web assets，生产依赖不引用 `work-client`，也不创建第二个工作空间。`work-component-api` 是通用组件包契约、校验、授权与隔离面板桥；`work-http-component` 是 Work 内部的远程访问专用面板。桌面不启动 standalone `rpi-http`，也不把 rpi HTTP 扩展当作自己的宿主运行时；HTTP 入口只接在同一 owner 上。具体边界见 [架构与传输边界](../architecture/transport.md) 和[组件组合](../architecture/component-composition.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
 
 正式应用通过 `assets/vendor/` 编译二维码与 Mermaid 资源，不引用设计原型。原型自己的 vendor 快照和内容哈希独立保留，以便复现历史设计；整理文档不重新生成冻结原型。
 

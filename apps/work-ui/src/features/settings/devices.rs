@@ -526,7 +526,7 @@ pub fn DevicesPage(
                     section { class: "server-overview",
                         div { class: "server-identity",
                             span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
-                            div { h2 { if owned_local { "这台电脑" } else { "当前执行节点" } } p { if owned_local { "本机工作空间 · RPC" } else { "远程执行节点 · rpi-http" } } }
+                            div { h2 { if owned_local { "这台电脑" } else { "当前执行节点" } } p { if owned_local { "本机工作空间 · RPC" } else { "远程执行节点 · HTTP/SSE" } } }
                             span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if owned_local { if online { "运行中" } else if busy { "准备中" } else { "未就绪" } } else if online { "已连接" } else if busy { "连接中" } else { "未连接" } }
                         }
                         div { class: "connection-topology",

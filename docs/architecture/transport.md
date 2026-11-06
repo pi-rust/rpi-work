@@ -5,6 +5,15 @@
 `WorkspaceClient` selects local access or authenticated remote HTTP/SSE. The
 HTTP server receives the existing node owner rather than creating a second one.
 
+Physical boundary: rpi capabilities live in `rpi/extcore`; the HTTP adaptation
+that serves rpi capabilities lives in `rpi-http`. Work owns its node management
+and dedicated panels (`crates/work-http-component`, `crates/work-component-api`).
+Work's multi-project owner is **not** an implementation of `rpi-http`, and Work
+does not download, select or supervise an rpi HTTP extension as its desktop host
+runtime. A new rpi HTTP plugin does not automatically implement Work's existing
+remote workspace protocol; interoperability must be declared and verified
+explicitly. See [component boundaries](component-composition.md).
+
 ```text
 Desktop UI → WorkspaceClient::Local → local access adapter ────────────┐
 Hosted Web / Android / remote UI → WorkClient → work-server HTTP/SSE ─┤

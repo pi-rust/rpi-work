@@ -13,8 +13,8 @@ all = "warn"
 pedantic = "warn"
 
 [dependencies]
-rpi-node-core = { path = "../../vendor/rpi-node-core" }
-rpi-components = { path = "../../vendor/rpi-components" }
+work-node-runtime = { path = "../work-node-runtime" }
+work-component-api = { path = "../work-component-api" }
 thiserror = "2"
 getrandom = "0.3"
 fs2 = "0.4"

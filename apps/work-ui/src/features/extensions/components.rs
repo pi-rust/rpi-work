@@ -21,9 +21,6 @@ pub(crate) fn ComponentsPage(
     let mut grants = use_signal(BTreeSet::<String>::new);
     let mut error = use_signal(String::new);
     let mut busy = use_signal(|| false);
-    let mut native_trust = use_signal(|| false);
-    let mut notice = use_signal(String::new);
-    let local_runtime = can_install_runtime(shared_client.read().as_ref());
     let catalog = use_resource(move || {
         let client = shared_client.read().clone();
         let _ = *connection_epoch.read();
@@ -31,18 +28,6 @@ pub(crate) fn ComponentsPage(
         async move {
             let client = client.ok_or_else(|| "请先连接节点".to_owned())?;
             client.component_catalog().await.map_err(|e| e.to_string())
-        }
-    });
-    let native_status = use_resource(move || {
-        let client = shared_client.read().clone();
-        let _ = *revision.read();
-        let _ = *connection_epoch.read();
-        async move {
-            if can_install_runtime(client.as_ref()) {
-                runtime_status().await
-            } else {
-                Ok(None)
-            }
         }
     });
     // A panel and an install candidate belong to one node connection only.
@@ -54,13 +39,6 @@ pub(crate) fn ComponentsPage(
         error.set(String::new());
     });
     let epoch = *connection_epoch.read();
-    use_effect(move || {
-        let _ = candidate
-            .read()
-            .as_ref()
-            .map(|bundle| bundle.sha256.clone());
-        native_trust.set(false);
-    });
     let items = catalog
         .read()
         .as_ref()
@@ -79,7 +57,7 @@ pub(crate) fn ComponentsPage(
         section { class: "component-settings", aria_label: "节点组件",
             div { class: "page-heading",
                 div { h1 { "节点组件" } p { "组件提供能力和专用面板，在需要时加载。" } }
-                button { class: "button", disabled: busy() || (!online && !local_runtime), onclick: move |_| install_open.set(!install_open()), "安装组件" }
+                button { class: "button", disabled: busy() || !online, onclick: move |_| install_open.set(!install_open()), "安装组件" }
             }
             if !online { p { class: "connection-form-error", "节点离线，组件操作暂不可用。" } }
             if let Some(Err(message)) = catalog.read().as_ref() {
@@ -87,26 +65,10 @@ pub(crate) fn ComponentsPage(
                 button { class: "button", onclick: move |_| revision += 1, "重试" }
             } else if catalog.read().is_none() { p { role: "status", "正在读取节点组件…" } }
             if !error.read().is_empty() { p { class: "connection-form-error", role: "alert", "{error}" } }
-            if !notice.read().is_empty() { p { role: "status", "{notice}" } }
-            if let Some(Ok(Some(runtime)))=native_status.read().as_ref() {
-                article {class:"component-card",aria_label:"节点运行时状态",
-                    strong {"节点运行时"} p {"当前：{runtime.current}"} p {"下次启动：{runtime.next}"}
-                    if runtime.pending {p {role:"status","已暂存选择，重新打开 Work 后生效；当前任务继续运行。"}}
-                    if runtime.explicit_override {p {"启动配置指定了扩展路径。取消该覆盖后，才会使用下载的运行时选择。"}}
-                    if runtime.can_reset {
-                        button {class:"button",disabled:busy(),onclick:move |_|{
-                            busy.set(true);error.set(String::new());spawn(async move{
-                                match restore_runtime_default().await {Ok(())=>{revision+=1;notice.set("已选择默认运行时，下次启动生效。".into());},Err(e)=>error.set(e)}busy.set(false);
-                            });
-                        },"恢复默认运行时，下次启动生效"}
-                    }
-                }
-            }
-            if let Some(Err(message))=native_status.read().as_ref(){p {class:"connection-form-error","{message}"}}
             if install_open() {
                 div { class: "component-install",
                     h2 { "安装组件包" }
-                    p { "从 HTTPS 地址下载，或粘贴组件包。安装前检查身份和申请的节点能力。" }
+                    p { "从 HTTPS 地址下载，或粘贴组件包。安装前检查身份和申请的节点能力。组件页只安装界面包与能力授权，不安装或加载节点宿主。" }
                     input { r#type: "url", aria_label: "组件包下载地址", placeholder: "https://…/component.json", value: "{package_url}", oninput: move |e| { package_url.set(e.value()); candidate.set(None); } }
                     button { class: "button", disabled: busy() || package_url.read().is_empty(), onclick: move |_| {
                         let address = package_url.read().clone();
@@ -132,25 +94,6 @@ pub(crate) fn ComponentsPage(
                             strong { "{bundle.manifest.title}" } code { "{bundle.manifest.id} · {bundle.manifest.version}" }
                             p { "{bundle.manifest.description}" }
                             p { class: "meta", "内容 SHA-256：{bundle.sha256}" }
-                            if let Some(runtime) = &bundle.manifest.runtime {
-                                p { "此包包含原生节点运行时。界面安装与原生代码执行分别授权。摘要用于校验内容，不能证明发布者身份。" }
-                                p { class: "meta", "支持平台：{runtime.artifacts.keys().cloned().collect::<Vec<_>>().join(\"、\")}" }
-                                label { class: "component-grant",
-                                    input { r#type: "checkbox", checked: native_trust(), onchange: move |e| native_trust.set(e.checked()) }
-                                    "我信任此来源，允许它在这台电脑运行原生代码"
-                                }
-                                button { class: "button", disabled: busy() || !native_trust() || !local_runtime, onclick: {
-                                    let bundle=bundle.clone();
-                                    move |_| {
-                                        let bundle=bundle.clone();busy.set(true);error.set(String::new());notice.set(String::new());
-                                        spawn(async move {
-                                            let result=install_native_runtime(bundle,native_trust()).await;
-                                            if *connection_epoch.read()==epoch {match result {Ok(())=>{revision+=1;notice.set("节点运行时已下载并校验。重新打开 Work 后启用；当前任务继续运行。".into());},Err(e)=>error.set(e)}}
-                                            busy.set(false);
-                                        });
-                                    }
-                                }, "下载运行时，下次启动启用" }
-                            }
                             for capability in bundle.manifest.actions.values().map(|a| a.capability.clone()).collect::<BTreeSet<_>>() {
                                 label { class: "component-grant",
                                     input { r#type: "checkbox", checked: grants.read().contains(&capability), onchange: {
@@ -214,74 +157,6 @@ pub(crate) fn ComponentsPage(
                 }
             }
         }
-    }
-}
-
-fn can_install_runtime(client: Option<&WorkspaceClient>) -> bool {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    {
-        match client {
-            Some(client) => client.is_local(),
-            None => crate::app::local_node::startup_error().is_some(),
-        }
-    }
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    {
-        let _ = client;
-        false
-    }
-}
-#[derive(Clone)]
-struct RuntimeInfo {
-    current: String,
-    next: String,
-    pending: bool,
-    can_reset: bool,
-    explicit_override: bool,
-}
-async fn runtime_status() -> Result<Option<RuntimeInfo>, String> {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    {
-        let status = work_host::runtime::status().await?;
-        Ok(Some(RuntimeInfo {
-            current: status.current,
-            next: if status.explicit_override {
-                "启动配置指定的扩展（优先）".into()
-            } else {
-                status.selected.as_ref().map_or_else(
-                    || "默认节点运行时".into(),
-                    |s| format!("{} · {}", s.id, s.version),
-                )
-            },
-            pending: status.restart_required,
-            can_reset: status.selected.is_some() && !status.explicit_override,
-            explicit_override: status.explicit_override,
-        }))
-    }
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    {
-        Ok(None)
-    }
-}
-async fn restore_runtime_default() -> Result<(), String> {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    {
-        work_host::runtime::restore_default().await
-    }
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    {
-        Err("只能在宿主桌面选择运行时".into())
-    }
-}
-async fn install_native_runtime(bundle: Bundle, trust: bool) -> Result<(), String> {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    {
-        work_host::runtime::install(bundle, trust).await.map(|_| ())
-    }
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    {
-        let _ = (bundle, trust);
-        Err("原生节点运行时只能在宿主桌面安装".into())
     }
 }
 

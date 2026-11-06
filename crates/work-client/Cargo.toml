@@ -13,7 +13,7 @@ all = "warn"
 pedantic = "warn"
 
 [dependencies]
-rpi-components = { path = "../../vendor/rpi-components" }
+work-component-api = { path = "../work-component-api" }
 async-stream = "0.3"
 async-trait = "0.1"
 futures-core = "0.3"

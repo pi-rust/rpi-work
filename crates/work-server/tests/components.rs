@@ -11,9 +11,9 @@ struct SharingOwner {
     control: work_server::SharingControl,
     address: String,
 }
-impl rpi_http_component::RemoteAccessOwner for SharingOwner {
-    fn snapshot(&self) -> rpi_http_component::Snapshot {
-        rpi_http_component::Snapshot {
+impl work_http_component::RemoteAccessOwner for SharingOwner {
+    fn snapshot(&self) -> work_http_component::Snapshot {
+        work_http_component::Snapshot {
             listening: true,
             enabled: self.control.enabled(),
             status: "fixture".into(),
@@ -134,7 +134,7 @@ async fn components_share_the_owner_and_do_not_start_an_agent() {
                 [] as [work_core::components::Installed; 0]
             );
 
-            rpi_http_component::register(
+            work_http_component::register(
                 owner.component_host(),
                 Arc::new(SharingOwner {
                     control: server.sharing_control(),

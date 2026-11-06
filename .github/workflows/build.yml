@@ -35,6 +35,7 @@ jobs:
           node --test tests/structure/check-structure.test.cjs
           node --test tests/structure/unified-ui.test.cjs tests/structure/remembered-connection.test.cjs
           node tools/review/check-structure.cjs
+          node tools/review/check-node-boundaries.cjs
       - name: Install Linux desktop dependencies
         run: |
           sudo apt-get update
@@ -97,7 +98,7 @@ jobs:
           shared-key: desktop-${{ matrix.target }}
           cache-on-failure: true
       - name: Compile release UI and CLI
-        run: cargo build --locked --release --target ${{ matrix.target }} -p work-ui -p work-cli -p rpi-http-extension
+        run: cargo build --locked --release --target ${{ matrix.target }} -p work-ui -p work-cli
       - name: Package binaries and checksums
         run: ./scripts/ci/package-build.ps1 -Target '${{ matrix.target }}'
       - uses: actions/upload-artifact@v7
@@ -197,8 +198,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify signatures and packages with the client implementation
         run: cargo run --locked -p work-update --bin verify-update -- target/release-upload
-      - name: Assemble downloadable native component
-        run: python3 scripts/ci/create-component-assets.py --artifacts target/release-artifacts --output target/release-upload --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME"
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}
