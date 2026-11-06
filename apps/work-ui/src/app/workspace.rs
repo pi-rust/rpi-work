@@ -651,6 +651,7 @@ pub(super) fn App() -> Element {
     let mut session_details_open = use_signal(|| false);
     let mut session_settings_tab = use_signal(|| "details".to_owned());
     let mut timeline_visible = use_signal(|| false);
+    let mut conversation_focus = use_signal(|| false);
     management::use_menu_behaviour();
     let mut archived_projects = management::use_archived_projects();
     let mut archive_open = use_signal(|| false);
@@ -4341,12 +4342,17 @@ pub(super) fn App() -> Element {
                     }
                 }
             }
-            main { class: format!("{}{}", match (active_page.read().as_str(), active_view.read().as_str(), *inspector_open.read()) {
+            main { class: format!("{}{}{}", match (active_page.read().as_str(), active_view.read().as_str(), *inspector_open.read()) {
                 ("workspace", "changes", _) => "app-shell review-mode",
                 ("workspace", _, false) => "app-shell context-hidden",
                 _ => "app-shell",
-            }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }), onkeydown: move |event| {
-                if event.key() == Key::Escape && *sidebar_open.read() { sidebar_open.set(false); }
+            }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }), onkeydown: move |event| {
+                if event.key() == Key::Escape && conversation_focus() {
+                    conversation_focus.set(false);
+                    let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toggle')?.focus(), 0);");
+                } else if event.key() == Key::Escape && *sidebar_open.read() {
+                    sidebar_open.set(false);
+                }
             },
                 if *sidebar_open.read() {
                     button { class: "scrim", aria_label: "关闭项目导航", onclick: move |_| sidebar_open.set(false) }
@@ -4603,6 +4609,21 @@ pub(super) fn App() -> Element {
                                     onclick: move |_| timeline_visible.set(!timeline_visible()),
                                     Icon { name: "clock" }
                                 }
+                                button { class: "icon-button conversation-focus-toggle", r#type: "button",
+                                    aria_label: "全屏查看消息",
+                                    title: "全屏查看消息（Esc 退出）",
+                                    aria_pressed: conversation_focus(),
+                                    disabled: selected_session.read().is_none(),
+                                    onclick: move |_| {
+                                        sidebar_open.set(false);
+                                        inspector_open.set(false);
+                                        btw_open.set(false);
+                                        timeline_visible.set(false);
+                                        conversation_focus.set(true);
+                                        let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toolbar button')?.focus(), 0);");
+                                    },
+                                    Icon { name: "panel" }
+                                }
                             }
                             span { class: "status-badge {task_tone}", role: "img", aria_label: "{task_label}", title: "{task_label}",
                                 i { "aria-hidden": "true" }
@@ -4719,6 +4740,16 @@ pub(super) fn App() -> Element {
                     _ => "workspace page-hidden",
                 },
                     section { class: "conversation-panel",
+                        if conversation_focus() {
+                            div { class: "conversation-focus-toolbar", role: "toolbar", aria_label: "消息专注模式",
+                                button { class: "icon-button", r#type: "button", aria_label: "退出全屏查看", title: "退出全屏查看（Esc）", onclick: move |_| {
+                                    conversation_focus.set(false);
+                                    let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toggle')?.focus(), 0);");
+                                },
+                                    Icon { name: "close" }
+                                }
+                            }
+                        }
                         if let Some(saved) = blocked_history.read().clone() {
                             div { role: "status", class: "resource-boundary",
                                 p { "只读 native 历史 · execution disabled · blocked operation: {saved[\"blockedOperationId\"]}。请在会话资源面板恢复原操作或明确修正未提交的 blocked 配置。" }

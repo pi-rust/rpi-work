@@ -149,10 +149,24 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .app-shell > .inspector { grid-column: 3; grid-row: 1; }
 .app-shell.context-hidden > .inspector,
 .app-shell.review-mode > .inspector { display: none; }
+/* Reading mode removes workspace chrome without unmounting the conversation. */
+.app-shell.conversation-focus { grid-template-columns: minmax(0, 1fr); }
+.app-shell.conversation-focus > .sidebar,
+.app-shell.conversation-focus > .inspector,
+.app-shell.conversation-focus > .main-column > .app-header { display: none; }
+.app-shell.conversation-focus > .main-column { grid-column: 1; }
+.app-shell.conversation-focus .workspace { width: 100%; }
+.app-shell.conversation-focus .section-tabs,
+.app-shell.conversation-focus .composer-main,
+.app-shell.conversation-focus .conversation-timeline { display: none; }
+.app-shell.conversation-focus .transcript { padding-top: 56px; }
+.conversation-focus-toolbar { position: absolute; z-index: 5; top: var(--space-10); right: var(--conversation-gutter); display: flex; justify-content: flex-end; }
+.conversation-focus-toolbar .icon-button { width: var(--hit-size); height: var(--hit-size); border: var(--border-width, 1px) solid var(--line); border-radius: 50%; color: var(--muted); background: color-mix(in srgb, var(--card) 92%, transparent); box-shadow: var(--shadow-sm); }
+.conversation-focus-toolbar .icon-button:hover { color: var(--text); background: var(--card); }
 .workspace.review-mode > .conversation-panel { width: 100%; }
 .workspace.review-mode .change-workspace { width: 100%; }
 .workspace.review-mode .change-layout { grid-template-columns: 260px minmax(0,1fr); }
-.conversation-panel { display: flex; flex: 1; width: 100%; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.conversation-panel { position: relative; display: flex; flex: 1; width: 100%; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .app-shell.review-mode .workspace { width: 100%; }
 .section-tabs { display: flex; align-items: center; gap: var(--space-20); height: 44px; min-height: 44px; padding: 0 var(--space-22); border-bottom: var(--border-width, 1px) solid var(--line); }
 .section-tabs > .section-tab { align-self: stretch; padding: 0; border-radius: 0; border-bottom: 2px solid transparent; color: var(--muted); font-size: calc(11px * var(--type-scale, 1)); white-space: nowrap; }
@@ -452,6 +466,9 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 
 @media (max-width: 767px) {
   .app-shell { display: flex; height: 100dvh; }
+  .app-shell.conversation-focus > .main-column { grid-column: auto; }
+  .app-shell.conversation-focus .transcript { padding-top: 56px; }
+  .app-shell.conversation-focus .conversation-focus-toolbar { top: var(--space-7); right: var(--space-10); }
   .main-column { width: 100%; }
   .sidebar { position: fixed; z-index: 40; top: var(--app-safe-top); bottom: var(--app-safe-bottom); left: var(--app-safe-left); width: min(280px,calc(100vw - 32px - var(--app-safe-left) - var(--app-safe-right))); transform: translateX(calc(-101% - var(--app-safe-left))); transition: transform var(--motion-normal); }
   .sidebar.open { transform: translateX(0); }
