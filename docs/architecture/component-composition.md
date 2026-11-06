@@ -5,7 +5,7 @@ Work 管理节点和宿主；HTTP 扩展只把 rpi 能力服务化。三层不�
 | 层 | 位置 | 职责 | 不承担 |
 | --- | --- | --- | --- |
 | rpi 能力 | rpi 仓库 `rpi/extcore` | Agent 执行、项目/会话 RPC、控制操作 | Work 的多项目 owner、Work HTTP/SSE 协议 |
-| HTTP 适配 | rpi 仓库 `rpi-http`（及其原生入口） | 把 rpi 能力暴露为认证 HTTP/SSE/WS | Work 组件目录、Work 专用面板、Work 远程 UI 协议 |
+| HTTP 适配 | rpi 仓库 `rpi-http`（及其原生入口） | 把 rpi 能力暴露为认证 HTTP/SSE | Work 组件目录、Work 专用面板、Work 远程 UI 协议 |
 | Work 节点与界面 | 本仓库 `crates/work-node`、`crates/work-server`、`crates/work-host`、`apps/work-ui` | 唯一 `LocalWorkspace` owner、节点 HTTP 入口、组件包与专用面板 | rpi 能力实现、rpi-http 的实现细节 |
 
 `rpi-http-extension` 是 rpi 侧插件 ABI 入口，不是 Work 的“节点宿主运行时”。
