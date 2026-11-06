@@ -112,9 +112,11 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .session-dot.failed { background: var(--danger); }
 .session-dot.waiting { background: var(--warning); }
 .sidebar-empty { padding: var(--space-8); color: var(--muted); font-size: calc(11px * var(--type-scale, 1)); }
-.project-empty { display: grid; justify-items: start; gap: 8px; padding: 14px 10px; }
-.project-empty strong { color: var(--text); font-size: calc(12px * var(--type-scale, 1)); font-weight: 500; }
-.project-empty .button { font-size: calc(12px * var(--type-scale, 1)); }
+.project-empty, .session-catalog-empty { display: grid; justify-items: start; gap: 8px; padding: 14px 10px; }
+.project-empty strong, .session-catalog-empty strong { color: var(--text); font-size: calc(12px * var(--type-scale, 1)); font-weight: 500; }
+.project-empty .button, .session-catalog-empty .button { font-size: calc(12px * var(--type-scale, 1)); }
+.session-catalog-empty { margin: 4px 0 10px; border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--panel) 72%, transparent); line-height: 1.55; }
+.session-catalog-empty span { max-width: 30ch; }
 .project-session-more { justify-content: flex-start; min-height: 32px; padding: 6px 8px; font-size: calc(11px * var(--type-scale, 1)); color: var(--muted); }
 .new-task { min-height: 38px; margin-bottom: var(--space-3); color: var(--text); font-size: calc(13px * var(--type-scale, 1)); font-weight: 500; }
 .shortcut { margin-left: auto; font-size: calc(10px * var(--type-scale, 1)); }

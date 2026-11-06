@@ -97,10 +97,18 @@ pub(super) fn WorkspaceSync(
             previous.cancel();
         }
         let address = address.clone();
+        if refresh.peek().epoch == epoch
+            && !refresh.peek().busy
+            && refresh.peek().message.is_empty()
+        {
+            let mut state = refresh.write();
+            state.busy = true;
+            state.message = "正在读取会话与项目…".into();
+        }
         task.set(Some(spawn(async move {
             let script = include_str!("workspace_sync.js");
             let mut clock = document::eval(&format!("const id={id};{script}"));
-            while let Ok(manual) = clock.recv::<bool>().await {
+            while let Ok(_manual) = clock.recv::<bool>().await {
                 if *connection_epoch.peek() != epoch {
                     break;
                 }
@@ -185,7 +193,11 @@ pub(super) fn WorkspaceSync(
                 if *connection_epoch.peek() != epoch {
                     break;
                 }
-                if manual && refresh.peek().epoch == epoch {
+                // The first automatic snapshot is also surfaced as a bounded
+                // catalog load: otherwise a desktop window can look empty
+                // until the first periodic refresh completes. Manual refreshes
+                // keep the same completion semantics.
+                if refresh.peek().epoch == epoch && refresh.peek().busy {
                     let mut state = refresh.write();
                     state.busy = false;
                     state.message = refresh_message(session_result, project_result).into();

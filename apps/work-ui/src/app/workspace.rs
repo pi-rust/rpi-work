@@ -146,6 +146,12 @@ pub(super) fn App() -> Element {
         if catalog_refresh.peek().epoch != epoch || !online {
             catalog_refresh.set(super::workspace_sync::RefreshState {
                 epoch,
+                busy: online,
+                message: if online {
+                    "正在读取会话与项目…".into()
+                } else {
+                    String::new()
+                },
                 ..Default::default()
             });
         }
@@ -4409,6 +4415,16 @@ pub(super) fn App() -> Element {
                             }, "添加项目" }
                         }
                     } else {
+                        if visible_sessions.is_empty() && !catalog_refresh.read().busy {
+                            div { class: "sidebar-empty session-catalog-empty", role: "status",
+                                Icon { name: "message" }
+                                strong { "当前节点还没有活动会话" }
+                                span { "创建后，会话会按项目显示在这里；已归档会话可从底部查看。" }
+                                button { class: "button", disabled: *new_session_busy.read() || !matches!(*node_connection.phase.read(), connections::Phase::Online), onclick: move |_| new_session(None),
+                                    if *new_session_busy.read() { "正在创建…" } else { "新建会话" }
+                                }
+                            }
+                        }
                         for project in visible_projects.iter() {
                             {
                                 let project_id = project.id.clone();
