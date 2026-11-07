@@ -4,25 +4,25 @@
 
 ## 1. 代码职责与依赖
 
-- `work-core`：纯共享契约、状态、事件/权限转换与投影规则，以及 typed `NodeApi` 应用端口；不依赖 Dioxus、具体网络客户端、执行进程或节点 owner。
+- `work-node-api`：纯 DTO、typed `NodeApi`、会话能力/配置与资源/realtime 契约；`work-core::api` 重导出它，`work-core` 另负责客户端事件规范化、运行投影和惰性设计。两者不持有节点 owner。
 - `work-client`：客户端连接、认证、传输适配和消息投影。`WorkspaceClient` 统一本地门面与远程访问；本地可以进程内调用，不强制绕行 HTTP。保留的 `AgentClient` / `prepare_agent_session` 是兼容入口，不得作为新 UI 业务入口。
-- `work-node`：节点应用服务及唯一 workspace owner，管理会话、绑定、数据目录/锁、runtime 生命周期和退出清理；协议与宿主适配位于 `runtime/`。不能再建第二份 owner，也不能把桌面本机悄悄替换成回环 HTTP 服务。
-- `work-server`：将认证、Origin/Host、共享/admission、HTTP/SSE 转接到同一 owner 的 typed 应用服务，不另持会话执行状态或创建 runtime。
-- `work-host`：无 GUI 依赖的单 owner 宿主，复用 node/client/server 的初始化、HTTP 配置、数据锁及协作退出；GUI 与 `work-cli serve` / `work-ui --headless` 共用，不另建会话库或执行系统。显式远程桌面是纯客户端，不能在连接失败后抢锁创建 owner。CLI 新业务走 typed 节点方法，直接 Agent 模式仅保留为显式兼容诊断。
+- `work-node-runtime`：实际唯一 workspace owner、RPC/ACP、会话绑定、原生资源和源码服务；`work-node` 仅兼容导出。不得新建第二份 owner 或把桌面本机改成回环 HTTP。
+- `work-node-service`：同 owner 的 HTTP/SSE/WebSocket adapter，`work-http-runtime` 提供认证/共享辅助；`work-server` 仅兼容导出并保留集成测试/examples。不另建 owner 或第二套执行状态。
+- `work-node-host` 实现无 GUI 单 owner 初始化、组件注册、HTTP 配置、数据锁及协作退出；`work-host` 组合应用门面和本机 client。GUI 与 `work-cli serve` / `work-ui --headless` 共用，不另建会话库或执行系统。显式远程桌面是纯客户端，不能在连接失败后抢锁创建 owner。CLI 新业务走 typed 节点方法，直接 Agent 模式仅保留为显式兼容诊断。
 - `work-ui/features/*`：领域交互与宿主控制的渲染；跨功能协调放在 `app/`，可测试的状态判断优先抽为纯函数。
 - 正式应用不得依赖 `design/prototype/`、测试 fixture、邻接仓库或仅本机存在的开发资源。测试 harness 不进入正式安装包。
 - 不为尚无真实协议的功能创建通用 Plugin Trait、独立服务或动态加载器；先确认上游契约，再增加最小适配。
 
 ## 1.1 会话中心分层：新增功能的硬约束
 
-依赖方向固定为 **客户端 → node 应用服务 → runtime / capability adapters**，共享契约放在纯 `work-core`。先从用户工作流定义 typed 应用方法，再复用已有协议；不得为了抽象对称扩展未实现的能力。
+依赖方向固定为 **客户端 → node 应用服务 → runtime / capability adapters**，共享节点契约放在 `work-node-api`，客户端投影放在 `work-core`。先从用户工作流定义 typed 应用方法，再复用已有协议；不得为了抽象对称扩展未实现的能力。
 
 - **客户端是平等的节点消费者**：Web 与 Desktop 平级，都可连接其他节点，但默认使用当前节点；Desktop 默认本机owner，Web 默认提供入口的节点，不能将默认入口永久锁定为唯一可用节点。移动客户端不托管本机节点，只连接其他设备的节点；手机浏览器仍按 Web 规则处理。三端使用相同会话语义，Desktop 额外托管 Node 不产生另一套执行协议。会话不要求先创建独立 Agent 定义。
 - **所有权唯一**：本地门面与 Server 必须共享现有 owner（同一个 Arc），不可分别持有 Manager、进程、权限表、journal 或会话锁；投影与客户端连接恢复仍归 client，不搬入 owner。
 - **UI 只走 typed 应用入口**：会话打开、状态/队列、配置、发送/恢复/停止、权限回答及统计均通过 `WorkspaceClient` / typed `NodeApi` 端口。禁止 UI 保存原生 Agent 句柄、按 Native/HTTP 分流业务、直接启动子进程，或以通用 JSON/raw command dispatcher 绕过应用服务。内部兼容 raw 通路不是新业务 API。
 - **能力来自绑定会话观察**：执行面用 `SessionAccess` 的精确命令、`snapshot_limit`、`dialog_reply`；配置面用 `SessionConfiguration` 的精确命令/协商选项。节点全局 capability、本地句柄存在、协议大类和 `for_agent(None)` 等乐观默认均不能代替观察。失败、未知、旧服务 404/401 时禁用相应动作并明确提供恢复路径，不能回退本机或推定“全部支持”。观察不是授权，也不是 installed/loaded/active/executable 的资源证明。
 - **端口和 executor 边界不扩大**：应用 future / 事件端口保持 object-safe 且不强制 `Send`；遵守现有 current-thread / LocalSet。底层 runtime 流自己的 `Send` 约束不意味着所有业务 future 必须多线程化。新增端口默认 `Unsupported` 不等于每个实现都已具备能力。
-- **协议与依赖不另起炉灶**：优先复用 extcore/RPC/ACP；`rpi-extcore` 保持 `=0.1.5`，升级须单独说明并验证。没有已确认工作流与上游契约，不增加 crate、第二套调度器或通用插件执行框架。
+- **协议与依赖不另起炉灶**：优先复用 extcore/RPC/ACP；`rpi-extcore` 保持 manifest `=0.2.6` 与 Git revision `17ba89c0098f018db76e22051fe8c73e2792dc1c`，升级须单独核对 lockfile 和原生契约，不能替换成 crates.io 同版本。没有已确认工作流与上游契约，不增加 crate、第二套调度器或通用插件执行框架。
 
 ## 1.2 会话一致性、权限与生命周期
 
@@ -51,7 +51,8 @@
 | --- | --- | --- |
 | Agent 执行 | 执行节点/宿主负责加载、权限和执行 | 客户端显示了卡片 = Agent 已加载 |
 | 纯 Agent 扩展 | 不需要自定义 UI；可使用通用工具卡 | 缺少 UI = Agent 不可用 |
-| 纯 UI 扩展 | 当前只提供客户端受控预览，不加入 Agent pins | 必须安装到节点才能显示 UI |
+| 惰性 UI 设计 | 受控静态预览，不加入 Agent pins | 设计预览 = 动态组件或节点安装 |
+| 自定义组件 Bundle | 节点安装、显式 grants、按需隔离 frame | UI 安装 = DLL 加载或宿主切换 |
 | UI 显示偏好 | 以设备、扩展版本、contribution 为边界 | 隐藏 UI = 停用 Agent 或撤销权限 |
 | 工具/权限声明 | 只是请求和设计元数据 | 清单中的工具已注册、请求的权限已获授权 |
 
@@ -59,9 +60,9 @@
 
 ## 3. Desired、observed、applied 与 UI preference 分离
 
-- **Desired**：客户端表达期望的会话配置，固定扩展 `(id, version)`；使用既有 node/session scope，不以显示名识别资源。
+- **Desired**：旧设计 pins 表达固定扩展 `(id, version)`，不接管原生配置。原生 exact 会话使用 typed native apply、operation ID 和 revision；使用既有 node/session scope，不以显示名识别资源。
 - **Observed**：来自目标执行节点的目录/安装/运行观测，必须带节点身份。没有观测时保持 unknown，不能默认“未安装”或“空闲”。
-- **Applied**：节点确认接受的实际会话配置，与 desired revision 分开；本地复选框、请求提交成功或导入成功都不能产生 applied 记录。
+- **Applied**：以原生应用结果、fresh readback 和 host generation 核对；本地复选框、请求受理或设计导入都不能产生 applied 记录。历史配置记录也不能单独证明当前可执行。
 - **UI preference**：设备本地展示偏好；不得增加 Agent 会话 revision、改变 Agent pins、授予权限或改写已发布内容。
 - 请求成功只证明相应请求已完成，不能替代后续运行事件、结算或 applied 确认。不得以工具目录反推插件安装状态。
 - 尚未支持的操作应通过 capability 和明确的 `Unsupported` 暴露；不得猜 URL、后台试探端点、伪造成功或隐式切换 transport。
@@ -82,7 +83,7 @@ Agent 会话配置仅在以下条件**同时成立**时可修改：
 - prompt HTTP/RPC 返回成功、`sending` 清空，并不意味着节点已完成运行。必须同时考虑 pending-reply / interaction 状态，覆盖运行事件尚未到达的时间窗口。
 - 正式会话界面统一使用 `app/runtime.rs::extension_config_locked`；不要在组件里重复拼接一份条件更少的判断。组件未收到明确状态时默认锁定。
 - UI 显示/隐藏不受 Agent 运行锁影响。仍可查看声明与只读预览，不能因锁定 Agent 配置而禁止普通展示操作。
-- 这只是客户端一致性保护，不能替代未来节点的 revision 校验、权限检查和原子应用边界。
+- 这只是客户端一致性保护，不能替代节点已有的 revision CAS、权限检查和原生执行 admission。pending/blocked 资源恢复使用单独 typed 恢复入口，不能伪造 idle projection 放开普通编辑。
 
 ## 5. 导入、恢复与不可变版本
 
@@ -97,11 +98,14 @@ Agent 会话配置仅在以下条件**同时成立**时可修改：
 
 ## 6. 声明式 UI 安全边界
 
-- 扩展提供数据，宿主提供渲染器；当前只允许受控 `text`、`fields`、`progress` widget。
+本节限制 `extension.design.json` 惰性设计，不限制独立 Bundle 的已隔离 HTML 协议；二者详见[扩展架构](../architecture/extensions.md)。
+
+- 设计提供数据、宿主提供渲染器，使用 allowlist widget（包括受限 `host-value` 设计声明）。
 - 禁止扩展提供任意 HTML、JS、CSS、URL、动态组件、事件处理器或可执行 action；文本经正常 Dioxus 插值转义，不使用 raw HTML 渲染扩展内容。
 - widget、slot 和 schema 使用明确 allowlist；限制条目数、文本长度和数值范围。未知字段不能被静默执行或解释为权限。
 - `composer-action` 等 slot 标签目前只是设计意图；未实现真实挂载与动作协议前，不展示为可执行入口或实时状态。
-- 未来新增动作协议必须明确节点权限、会话归属、关联 ID、版本兼容及失败反馈，不能让 UI 可见性成为授权检查。
+- 组件 Bundle 通过已有 MessageChannel 动作桥，必须经声明/grant/宿主能力策略核对；iframe 不得获得同源权限、节点凭据或父页面 DOM。通用安装器不按 HTTP 组件 ID 写业务表单，也不下载节点宿主 DLL。
+- 新增 contribution 动作需明确会话归属、关联 ID、版本兼容及失败反馈；UI 可见性不是授权。
 
 ## 7. 测试与 review 最低要求
 

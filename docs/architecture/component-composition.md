@@ -4,13 +4,13 @@ Work 管理节点和宿主；HTTP 扩展只把 rpi 能力服务化。三层不�
 
 | 层 | 位置 | 职责 | 不承担 |
 | --- | --- | --- | --- |
-| rpi 能力 | rpi 仓库 `rpi/extcore` | Agent 执行、项目/会话 RPC、控制操作 | Work 的多项目 owner、Work HTTP/SSE 协议 |
-| HTTP 适配 | rpi 仓库 `rpi-http`（及其原生入口） | 把 rpi 能力暴露为认证 HTTP/SSE | Work 组件目录、Work 专用面板、Work 远程 UI 协议 |
-| Work 节点与界面 | 本仓库 `crates/work-node`、`crates/work-server`、`crates/work-host`、`apps/work-ui` | 唯一 `LocalWorkspace` owner、节点 HTTP 入口、组件包与专用面板 | rpi 能力实现、rpi-http 的实现细节 |
+| rpi 能力 | rpi / rpi-package 的 rpi、extcore | Agent 执行、原生会话/资源能力、控制操作 | Work 的多项目 owner、Work HTTP/SSE 协议 |
+| HTTP 适配 | rpi-package 的 `rpi-http` / `rpi-http-extension` | 把 rpi 能力暴露为认证 HTTP/SSE | Work 组件目录、Work 专用面板、Work 远程 UI 协议 |
+| Work 节点与界面 | 本仓库 `work-node-runtime`、`work-node-service`、`work-node-host` 与客户端 | 唯一 `LocalWorkspace` owner、节点 HTTP 入口、组件包与专用面板 | rpi 能力实现、rpi-http 的实现细节 |
 
 `rpi-http-extension` 是 rpi 侧插件 ABI 入口，不是 Work 的“节点宿主运行时”。
 Work 不下载、不安装、不选择、不监督启动这个 DLL 来充当自己的宿主，也不在
-桌面归档中打包它。Work 宿主回到本进程已有的 `LocalWorkspace` 同一 owner，
+桌面归档中打包它。Work 宿主使用本进程已有的 `LocalWorkspace` 同一 owner，
 HTTP 入口（`work-server`）只接在这个 owner 上。
 
 Work 的多项目 owner 不是 `rpi-http` 的实现；不要把它描述成新 HTTP 插件，
@@ -20,8 +20,8 @@ Work 的多项目 owner 不是 `rpi-http` 的实现；不要把它描述成新 H
 ```mermaid
 flowchart LR
   Work[Work UI 通用组合] --> Client[WorkspaceClient]
-  Client --> Owner[crates/work-node LocalWorkspace]
-  HTTP[work-server HTTP/SSE] --> Owner
+  Client --> Owner[work-node-runtime LocalWorkspace]
+  HTTP[work-node-service HTTP/SSE/WS] --> Owner
   Panel[Work 组件包专用面板] --> Client
   Rpi[rpi 能力] --> RpiHttp[rpi-http 适配]
   RpiHttp --> RpiClients[rpi-http 自己的客户端]
@@ -87,7 +87,7 @@ node tests/e2e/verify-component-panels.cjs
 node tests/e2e/verify-components-workspace.cjs
 ```
 
-组件与 HTTP 的 Rust 集成测试仍以各 crate 的测试为准；本页不再要求构建或加载
+组件与 HTTP 的 Rust 集成测试以实际 crate 及 `work-server/tests` 为准；本页不再要求构建或加载
 `rpi_http_extension` 作为 Work 宿主。原生能力是否可用由 rpi/rpi-http 自己的
 验收决定，不能用 Work 的组件页或归档证明。
 
@@ -95,5 +95,8 @@ node tests/e2e/verify-components-workspace.cjs
 
 桌面归档只包含 `work-ui`、`work-cli` 和说明文件，不包含 rpi HTTP 扩展；CI
 不再强制导出或校验 HTTP 组件制品。签名 Work 自更新协议保留，`publish-release.py`
-只发布 `update.json`、签名和平台归档。尚未执行发布；Windows 原生和浏览器在
-本机验证，其他平台只更新构建/打包定义，不声称已在这些平台运行。
+只发布 Work 的 `update.json`、签名和平台归档。rpi HTTP 扩展独立发布；
+不能用 Work 组件页、归档或本地验证代替扩展的 ABI/平台验收。
+
+本文说明源码边界，不维护某次交付的发布状态；迁移经过见
+[历史记录](../archive/node-extension-migration.md)。

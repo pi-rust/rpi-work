@@ -1,4 +1,4 @@
-# rpi-components
+# work-component-api
 
 Versioned, transport-neutral **custom UI packages** and a node-owned capability
 registry. This crate does not start another agent/session owner and does not
@@ -22,12 +22,11 @@ Installing a user-supplied package requires explicit review of its identity and
 grants. Downloads must not carry node cookies or credentials.
 
 Current v1 intentionally supports self-contained HTML entry documents and the
-`settings` slot. An optional native runtime descriptor supplies per-platform
-HTTPS URLs, exact sizes and hashes. rpi-node-launcher separately downloads and
-stages native code after explicit trust; a selected provider is loaded through
-the existing rpi ABI on next startup. This never happens as a side effect of UI
-installation. Publisher signatures, rollback UI and additional slots are outside
-the v1 protocol. An installed UI package is never reported as a loaded native
-extension.
+`settings` slot. The Bundle schema retains an optional native runtime descriptor
+with per-platform HTTPS URLs, sizes and hashes for future consumers. Work does
+not download, select or execute native code through its component installer;
+there is no node launcher in this workspace. Publisher signatures, rollback UI
+and additional slots are outside v1. An installed UI package is never reported
+as a loaded native extension. See the Work [architecture](../../docs/architecture/component-composition.md).
 
-Run `cargo test -p rpi-components` for persistence, validation and capability tests.
+Run `cargo test -p work-component-api` for persistence, validation and capability tests.

@@ -10,22 +10,22 @@
 task dev
 ```
 
-它并行启动桌面节点与 Web 热刷新，不需要再运行 `task desktop` 或 `task node`。Web 页面 **http://127.0.0.1:14180/** 的 API 同源代理到桌面 **127.0.0.1:13031**；首次缺少共享偏好时默认开启“允许共享这台电脑”，已保存关闭时需要手动开启；让 Web 连接当前页面 origin 并使用桌面 HTTP 密码。桌面默认直接访问同一个内存 owner，不用改连外部 HTTP。
+它构建 release WASM 与 `work-cli`，以前台无头 owner 在 **http://127.0.0.1:13031/** 直接提供 Web/API，有压缩与内容哈希缓存，不热刷新。首次缺少共享偏好时开启共享，已有关闭偏好则保留。Web 使用当前页面 origin 和宿主密码访问同一 owner。无头模式用 Ctrl+C 协作退出。
 
-只需桌面时用 `task desktop`；`task node` 保留为明确独立节点（通常3030），不与桌面共享 owner。独立节点原有数据与已迁移副本继续保留。当前已经运行的旧桌面或 Web 代理不会因源码改变自动切换，不能擅自中断当前会话来启用新能力。
+频繁修改 UI 用 `task dev:desktop`：桌面 owner + **http://127.0.0.1:14180/** debug Web 构建监听/刷新，API/实时通道代理到 `13031`。只需桌面用 `task desktop`。相同 data 只能选一条 owner 启动路径；`task node` 是独立 rpi HTTP 服务（默认 `13030`），不与 Work owner 共享，也不能推定支持 Work 全部协议。独立节点原有数据与已迁移副本继续保留。当前已经运行的旧桌面或 Web 代理不会因源码改变自动切换，不能擅自中断当前会话来启用新能力。
 
 ## 端口、二维码与手机
 
-- `RPI_WORK_HTTP_PORT` 更改桌面入口与 `task dev` 的代理目标；`PORT` 更改 Web 端口。
+- `RPI_WORK_HTTP_PORT` 更改 owner 入口及 `task dev:desktop` 代理目标；`PORT` 只更改 debug Web 端口。
 - 局域网可使用 `http://<电脑IP>:14180/` 的同源 Web 代理；桌面 API 可以继续仅回环监听。
 - 直接提供桌面 Web 页面需配置显式监听、可达 origin 和已构建 assets 目录；见[桌面 HTTP 入口](desktop-http.md)。
-- HTTPS 外部域名须由明确配置的同源反向代理提供，校验 Host/Origin，不删除认证；现有代理仍指向旧3030时不会自动访问桌面，应由用户择时更改并验证。
-- 桌面“执行节点”展示 listener 状态及密码查看入口。二维码只包含地址；手机识码、确认和密码登录后读取同一会话。
+- HTTPS 外部域名须由明确配置的同源反向代理提供，校验 Host/Origin，不删除认证；现有代理仍指向独立 `13030`时不会自动访问桌面，应由用户择时更改并验证。
+- 普通分享码只包含地址，手机浏览器仍需密码；Android 原生 App 使用另发的 120 秒、单次授权码，核对节点后兑换。节点组件页可按需打开专用远程访问面板；监听配置保存后下次启动生效。
 - 手机 HTTP 页面的相机需要安全上下文，普通 LAN HTTP 可使用相册；桌面浏览器移动模拟不能替代实体手机验收。
 
 ## 手动启动 Web
 
-在新桌面已运行且入口3031可用时，另开终端启动 Web（不启动第二个 owner）：
+在 Work owner 已运行且入口 `13031` 可用时，另开终端启动 Web（不启动第二个 owner）：
 
 ```powershell
 $env:RPI_API_PORT = "13031"
@@ -36,7 +36,7 @@ node tools/dev/dev-web.mjs --watch-build --debug-build
 
 ## 对话生命周期
 
-- 项目/会话目录在可见窗口中每 3 秒刷新，focus 或恢复 visible 时立即刷新（在途请求完成后补刷），隐藏时暂停；失败保留目录并自动重试。节点与连接 epoch 隔离迟到结果，并检查本端并发目录修改，避免覆盖改名或归档。目录刷新不等于历史全量同步，当前会话仍使用下述 SSE 与历史校准。
+- 项目/会话目录在可见窗口中每 3 秒刷新，focus 或恢复 visible 时立即刷新（在途请求完成后补刷），隐藏时暂停；失败保留目录并自动重试。节点与连接 epoch 隔离迟到结果，并检查本端并发目录修改，避免覆盖改名或归档。目录刷新不等于历史全量同步，当前会话使用协商后的实时通道及历史校准。
 - SSE `ready` 表示订阅在线，不能使空闲会话进入运行状态。
 - `prompt` 接受后由 `agent_start` / `operation_accepted` 驱动运行，文本增量和工具事件都在同一对话内显示。
 - rpi的用户消息可能只写入持久化历史，不另发消息事件。客户端在运行开始读取已落盘的用户消息，在 `agent_settled` 后对齐正式历史与流式消息ID；读取最多等待5秒，不推进SSE游标、不重发prompt。
@@ -55,7 +55,7 @@ node tests/e2e/verify-dev-proxy.cjs
 
 ```powershell
 $env:WORK_UI_URL = 'http://127.0.0.1:14180/'
-$env:RPI_WORK_NODE_URL = 'http://127.0.0.1:13030'
+$env:RPI_WORK_NODE_URL = 'http://127.0.0.1:13031' # 明确使用待验证的 Work owner
 # 从本地服务环境JSON读取RPI_HTTP_PASSWORD或RPI_WEB_PASSWORD，避免把密码写进命令或报告。
 $env:RPI_WORK_NODE_ENV_FILE = 'C:/path/to/private-node-environment.json'
 # 可选：provider/model；省略则使用该验证会话当前模型。

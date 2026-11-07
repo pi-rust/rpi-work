@@ -17,8 +17,20 @@ apps/
         observability/   用量、上下文与会话追踪
       shared/            公共组件、状态辅助和主题
   work-cli/              节点诊断 CLI
-crates/                  work-core、work-node、work-client、work-server、work-host、work-update、
-                         work-component-api、work-http-component
+crates/
+  work-node-api/         节点 DTO、NodeApi、会话/原生资源/realtime 契约
+  work-core/             重导出 API、事件规范化与运行投影、惰性扩展设计
+  work-node-runtime/     实际 workspace owner、RPC/ACP、资源及源码服务
+  work-http-runtime/     认证、Host/Origin、共享与一次性授权
+  work-node-service/     同 owner 的 HTTP/SSE/WebSocket 和静态 Web 托管
+  work-node-host/        实际 owner 启动、数据锁、组件绑定与退出
+  work-node/             runtime 兼容导出
+  work-server/           service 兼容导出、集成测试与 examples
+  work-client/           本机/远程 adapter、连接恢复、消息投影
+  work-host/             应用宿主门面与本机 client 包装
+  work-component-api/    UI Bundle、能力注册/授权、隔离动作桥
+  work-http-component/   专用远程访问面板
+  work-update/           签名更新与安装适配
 assets/vendor/           正式应用使用的二维码、Mermaid 库及许可证
 design/prototype/        冻结的 HTML 原型和原型资源
 tests/
@@ -39,7 +51,7 @@ target/                  忽略的编译、下载、日志与临时验证数据
 .rpi/                    忽略的本机 Agent 会话
 ```
 
-`work-core` 提供共享 DTO、`NodeApi`、会话能力/配置契约和状态投影，不依赖 UI 或具体传输。`work-node` 持有权威 `LocalWorkspace`、本机 RPC/ACP 执行器、持久化与生命周期；`work-client` 的本机 facade 只包装同一个 owner，远程 facade 使用 HTTP/SSE。`work-server` 将已有 owner 暴露为受保护的 HTTP/SSE 和可选 Web assets，生产依赖不引用 `work-client`，也不创建第二个工作空间。`work-component-api` 是通用组件包契约、校验、授权与隔离面板桥；`work-http-component` 是 Work 内部的远程访问专用面板。桌面不启动 standalone `rpi-http`，也不把 rpi HTTP 扩展当作自己的宿主运行时；HTTP 入口只接在同一 owner 上。具体边界见 [架构与传输边界](../architecture/transport.md) 和[组件组合](../architecture/component-composition.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
+`work-node-api` 是共享契约实际位置；`work-core::api` 重导出契约并保留纯客户端投影。`work-node-runtime` 持有权威 `LocalWorkspace`，`work-node` 仅兼容导出；`work-client` 本机 facade 包装同一个 owner，远端使用 HTTP/SSE/WebSocket。`work-node-service` 适配已有 owner，`work-server` 兼容导出并保留集成测试；生产服务依赖不引用 `work-client`。`work-node-host` 实现无 GUI 宿主生命周期，`work-host` 提供应用门面。全部 15 个工作区成员均为私有包。`work-component-api` 是通用组件包契约、校验、授权与隔离面板桥；`work-http-component` 是 Work 内部的远程访问专用面板。桌面不启动 standalone `rpi-http`，也不把 rpi HTTP 扩展当作自己的宿主运行时；HTTP 入口只接在同一 owner 上。完整依赖见[架构总览](../architecture/overview.md)，具体传输见 [架构与传输边界](../architecture/transport.md) 和[组件组合](../architecture/component-composition.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
 
 正式应用通过 `assets/vendor/` 编译二维码与 Mermaid 资源，不引用设计原型。原型自己的 vendor 快照和内容哈希独立保留，以便复现历史设计；整理文档不重新生成冻结原型。
 
@@ -55,15 +67,18 @@ target/                  忽略的编译、下载、日志与临时验证数据
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 node tools/review/check-structure.cjs
+node tools/review/check-node-boundaries.cjs
 
 # 浏览器开发依赖只安装到本仓库 tools/node_modules。
 npm ci --prefix tools
 npm run install-browser --prefix tools
 # 或将 CHROME_PATH 指向已有 Chrome 的可执行文件。
 
-pwsh -File tools/dev/build-ui-web.ps1
-$env:PORT = '14180'
-node tools/dev/dev-web.mjs
+# release Web + 无头 owner，默认直接托管 13031；先在 .env.local 配置密码。
+task dev
+# 桌面 + debug Web 构建监听/刷新，14180 代理到 13031。
+task dev:desktop
+# 以上二选一，同一 data 不可同时启动第二个 owner。
 ```
 
 另一个终端启动图册和原型服务：
@@ -72,10 +87,10 @@ node tools/dev/dev-web.mjs
 node tools/review/ui-review-server.mjs
 ```
 
-当前界面为 `http://127.0.0.1:14180/`；原型仍可通过 `http://127.0.0.1:14182/prototype/` 访问，旧的图册地址也保留。这个 URL 是兼容入口，源文件实际位于 `design/prototype/`。
+`task dev` 的当前界面为 `http://127.0.0.1:13031/`；热刷新路径为 `http://127.0.0.1:14180/`；原型仍可通过 `http://127.0.0.1:14182/prototype/` 访问，旧的图册地址也保留。这个 URL 是兼容入口，源文件实际位于 `design/prototype/`。
 
 ```powershell
-$env:WORK_UI_URL = 'http://127.0.0.1:14180/'
+$env:WORK_UI_URL = 'http://127.0.0.1:13031/' # 若使用热刷新路径则改为 14180
 node tests/e2e/verify-device-flow.cjs
 node tests/e2e/verify-node-lifecycle.cjs
 node tests/e2e/verify-ui-conversation.cjs

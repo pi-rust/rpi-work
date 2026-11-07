@@ -4,10 +4,11 @@
 
 ## 同一个 owner
 
-桌面只创建一次 `LocalWorkspace`。本机 RPC facade 和 `work-server` HTTP/SSE adapter 持有同一个 `Arc`，共用项目、registry、会话、运行任务、历史和 ACP manager。独立 `rpi-http`（通常 13030）仍是另一个节点，不会被自动接管、关闭或合并。
+桌面只创建一次 `LocalWorkspace`。本机 facade 和 Work HTTP/SSE/WebSocket adapter 持有同一个 `Arc`，共用项目、registry、会话、运行任务、历史和 ACP manager。独立 `rpi-http`（通常 13030）仍是另一个节点，不会被自动接管、关闭或合并。
 
 - `task desktop`：启动桌面 owner，内嵌认证 API 默认 `0.0.0.0:13031`；首次没有共享偏好时启用局域网共享，仍需密码或一次性扫码授权。
-- `task dev`：并行启动上述桌面和 Web 预览；Web `14180` 的 `/api/*` 同源代理到桌面 `13031`。**不要再额外运行 `task desktop`**，否则数据目录锁会拒绝第二个 owner。
+- `task dev`：构建 release Web 并启动无头 owner，在 `13031` 直接托管，不热刷新。
+- `task dev:desktop`：并行启动桌面 owner 与 `14180` debug Web 构建监听/刷新，API/实时通道同源代理到 `13031`。相同 data 不可另开 `task desktop` 或其他 owner。
 - `task node`：显式启动独立 standalone 节点，不是桌面工作空间。
 - `work-cli serve` / `work-ui --headless`：复用 `work-host` 启动相同 owner，不创建窗口。无头要求显式非空密码；启动和正常停止见[无头节点与统一 CLI](headless-node.md)。
 - `work-ui --connect HTTP(S)_ORIGIN` 或显式远程 `RPI_WORK_NODE_URL`：只连接既有节点，不创建本机 owner；关闭窗口不停止该节点。默认拥有本机 owner 的桌面在切换远程视图后，仍可点“使用这台电脑”返回自己的 owner。
@@ -76,14 +77,14 @@ App 与浏览器地址分开：App 只需要认证 API，因此无 assets 的默
 
 默认地址按优先级选择：
 1. 显式 `RPI_WORK_HTTP_PUBLIC_URL`。
-2. 配置 `RPI_WORK_HTTP_WEB_PORT` 时，使用默认路由所选的本机私有 IPv4 与代理端口。`task dev` 默认使用 `http://<局域网IP>:14180/`。
+2. 配置 `RPI_WORK_HTTP_WEB_PORT` 时，使用默认路由所选的本机私有 IPv4 与代理端口。`task dev:desktop` 默认使用 `http://<局域网IP>:14180/`。
 3. 直接 API 模式：HTTP 已监听非回环时，使用绑定的私有 IPv4（通配 IPv4 绑定时使用默认路由地址）及 HTTP 端口作为 App 授权地址；只有另有 `RPI_WORK_HTTP_ASSETS` 时才同时作为浏览器入口。只把确切 authority 加入 Host 白名单，通配 IPv4 监听另保留 `127.0.0.1` / `localhost` authority 供本机代理使用，不开放通配 Host。
 
 检测只做本机 UDP 路由选择，不发送数据、不扫描网络。多网卡/VPN 可能选到非期望网卡，可配置 `RPI_WORK_HTTP_PUBLIC_URL`；普通 Web 分享仍可编辑“对方可访问的节点地址”。更换分享地址不切换 owner 或修改监听。无可用私有 IPv4、HTTP 启动失败、共享关闭或显式仅回环且无代理时不伪造可连接二维码；IPv6/公网入口可用显式 public URL。签发前对候选入口做无凭据 health 探测与 node ID 校验，只有验证通过才签发；本机探测不代表已穿过手机侧路由或防火墙。**不会自动更改防火墙，LAN HTTP 仅用于可信网络；需要加密时配置 HTTPS 入口。**
 
 ### 开发环境手机访问（推荐同源代理）
 
-1. 使用 `task dev`，在桌面确认共享已开启（已有关闭偏好需手动打开），确认 Web 代理目标为桌面 `13031`，不是旧 standalone `13030`。
+1. 使用 `task dev:desktop`，在桌面确认共享已开启（已有关闭偏好需手动打开），确认 Web 代理目标为桌面 `13031`，不是旧 standalone `13030`。
 2. 默认 App 授权入口使用 `http://<电脑局域网IP>:14180/`；普通浏览器地址码可从“手机连接这台电脑”打开。多网卡或自定义入口可显式配置 public URL。开发代理必须实际启动；若希望 API 只监听回环，可显式设置 `RPI_WORK_HTTP_BIND=127.0.0.1`。
 3. 默认开发 Web 与桌面直接托管 Web 都只在必要时显示宿主密码登录，随后自动加载当前节点会话，不需要为默认节点另选地址或再点连接。显式 `RPI_UI_ENTRY_MODE=standalone` 没有已确定的宿主默认节点，首次需自行选择目标；这与hosted Web进入后可主动切换其他节点是两回事。不填写手机自己的 localhost，也不要把没有 assets 的 API `13031` 当作 Web 页面；代理提供页面时应打开代理地址。
 4. 若使用自定义 HTTPS 反向代理，配置代理的 Host 白名单，保持 API 与 Web 同源；不要关闭安全校验。

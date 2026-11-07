@@ -63,9 +63,9 @@
 
 ## 5. 当前实现与剩余边界
 
-1. 桌面本机 RPC 与内嵌 `work-server` HTTP/SSE 持有同一 `Arc<LocalWorkspace>`；adapter 不再创建 owner、Service 或 registry。独立 standalone HTTP 仍是不同节点，旧副本不自动合并或迁移。
+1. 桌面本机 RPC 与内嵌 Work HTTP/SSE/WebSocket 持有同一 `Arc<LocalWorkspace>`；adapter 不再创建 owner、Service 或 registry。独立 standalone HTTP 仍是不同节点，旧副本不自动合并或迁移。
 2. 桌面保留显式远程选择与历史恢复；`task desktop` 默认明确选择 `rpi-work://local`，不再把连接 standalone HTTP 当作桌面共享。
-3. `task dev` 启动桌面 owner 与 Web；`14180` 将 API 及精确宿主声明同源代理到桌面 `13031`，默认自动进入该owner而非要求手动连接。直接启动 dev-web 也默认桌面13031和hosted策略。`task node` 才是独立 `13030` 节点；独立Web入口须显式使用standalone策略。不能同时运行第二个桌面抢占同一数据锁。
+3. `task dev` 构建 release Web 并以前台无头 owner 在 `13031` 直接托管，不热刷新；`task dev:desktop` 才是桌面 owner + `14180` debug Web 代理/刷新。直接 dev-web 默认代理 `13031` 和 hosted 策略。`task node` 是独立 rpi HTTP 服务，不能推定支持 Work 全部协议。相同 data 不能同时启动第二个 owner。
 4. 项目/会话目录在窗口可见时按 3 秒刷新，focus/visible 补刷，按节点与连接 epoch 隔离；这是目录校准，不是文件复制或历史全量合并。
 5. 桌面退出先 drain HTTP，再 shutdown 同一 workspace 的 children，最后释放 executor 和数据锁。HTTP 断流及客户端切换不停止 owner。
 6. 桌面首次默认开启共享，保存关闭选择或偏好不可读/损坏时保持关闭；开关控制真实 HTTP/SSE 访问，关闭不停止本机运行。开启后本机页才显示地址分享、密码和独立的 Android App 一次性扫码授权入口；普通分享不授予权限，专用授权码是 120 秒单次 bearer 委托。可达地址与网络监听需明确配置；可在远程视图独立控制本机共享，仍无设备审批、设备权限列表或 ACL。
@@ -87,8 +87,8 @@
 
 依赖方向为 **客户端 → Node 应用服务 → runtime**，本地调用不必绕行 HTTP：
 
-- `work-core::api` 定义共享 DTO、typed `NodeApi`、`SessionAccess`、`SessionConfiguration` 和纯状态/事件投影，不持有执行宿主。应用 future 与事件端口不强制 `Send`。
-- `work-node::workspace::LocalWorkspace` 是唯一 owner，持有 extcore Service、RPC/ACP 执行与会话绑定。`work-client::LocalWorkspace` 仅包装同一 Arc；`work-server` 接收该 owner，不另建 Manager 或运行状态。
+- `work-node-api` 定义共享 DTO、typed `NodeApi`、`SessionAccess` 和 `SessionConfiguration`；`work-core::api` 重导出契约，`work-core` 保留纯状态/事件投影，不持有执行宿主。应用 future 与事件端口不强制 `Send`。
+- `work-node-runtime::workspace::LocalWorkspace`（由 `work-node` 重导出）是唯一 owner，持有 extcore Service、RPC/ACP 执行与会话绑定。`work-client::LocalWorkspace` 仅包装同一 Arc；`work-server` 接收该 owner，不另建 Manager 或运行状态。
 - `WorkspaceClient` 与 `WorkClient` 转接会话、配置、执行、队列、对话和观测等 typed 方法。主工作台不按 native handle 是否存在选择执行路径；`AgentClient` / `prepare_agent_session` 保留为兼容和显式协议入口，不能用来新增 UI 旁路。
 - 操作能力来自绑定会话的精确观察；未知/失败不回退全局能力或本机执行。`SessionAccess` 决定执行命令、快照限量和对话回复；`SessionConfiguration` 提供配置面命令和协商选项。它们不是授权或已加载资源证明。
 - 本地保持 subscribe-before-snapshot，远端按 snapshot cursor 订阅；消息身份合并、快照恢复与客户端投影仍归 client。ACP snapshot 只恢复当前有效的 pending permissions，typed 回答由 node 核对 binding、generation 和 outstanding request。
@@ -102,5 +102,5 @@
 
 - 客户端按稳定 node ID 合并同一节点的多地址身份，以及同时在线的多节点调度；当前缓存/凭据仍按地址隔离。
 - 逐设备授权、角色/项目/会话 ACL；当前共享密码和一次性 Android 授权不是细粒度权限。
-- Package/Skills 的精确选择、实际加载与 applied 观察契约，见[资源验证](../reviews/rpi-session-resource-validation.md)及[接口提案](session-resource-contract.md)。
+- ACP 的原生资源定制、源码扩展自动构建和通用 Agent live UI contribution。RPI 的原生管理、Package/Skills 精确选择与 readback 已实现，范围见[资源架构](../architecture/resources.md)；早期接口提案不再是当前支持清单。
 - 原生 GUI、完整 APK 构建/签名、安装升级、真机和真实 Agent 的后续验收；编译和隔离 fixture 不能替代这些验证，也不代表已安装应用已更新。

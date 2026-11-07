@@ -1,8 +1,10 @@
 # RPI Work 架构与传输边界
 
+本文保留传输、消息和生命周期的详细约束。系统全貌见[架构总览](overview.md)，实际模块见[项目结构](../guides/project-structure.md)，WebSocket 协商与操作回执见[实时通道](realtime.md)，原生资源见[资源服务](resources.md)。
+
 `work-node::workspace::LocalWorkspace` is the authoritative workspace owner.
 `work-client::LocalWorkspace` is a local access adapter holding that same owner;
-`WorkspaceClient` selects local access or authenticated remote HTTP/SSE. The
+`WorkspaceClient` selects local access or authenticated remote HTTP/SSE/WebSocket. The
 HTTP server receives the existing node owner rather than creating a second one.
 
 Physical boundary: rpi capabilities live in `rpi/extcore`; the HTTP adaptation
@@ -16,31 +18,36 @@ explicitly. See [component boundaries](component-composition.md).
 
 ```text
 Desktop UI → WorkspaceClient::Local → local access adapter ────────────┐
-Hosted Web / Android / remote UI → WorkClient → work-server HTTP/SSE ─┤
+Hosted Web / Android / remote UI → WorkClient → work-node-service HTTP/SSE/WS ─┤
                                                                     ▼
                                    work-node::workspace::LocalWorkspace
                                    ├── projects/catalog/files/Git
                                    ├── RPI → rpi-extcore → rpi stdio RPC
                                    └── ACP → node-owned Agent processes
-CLI → WorkClient → existing owner's authenticated HTTP/SSE
+CLI → WorkClient → existing owner's authenticated HTTP/SSE/WS
 GUI / CLI serve → work-host → one local owner + optional HTTP entrance
 Explicit CLI rpc/acp diagnostics → AgentClient → separate native Agent
 ```
 
 ## Crate boundaries
 
-- `work-core`: shared `api` DTOs, `NodeApi`, `SessionAccess`,
-  `SessionConfiguration`, event normalization and run projection. No UI,
-  networking or execution-host implementation.
-- `work-node`: workspace state, native RPC/ACP runtimes, backend bindings,
-  persistence, process ownership and data-directory locking.
-- `work-client`: local/remote access adapters, HTTP/SSE, snapshot recovery,
-  pagination and client projection. Its native RPC/ACP facades delegate to
-  `work-node::runtime`; they are not separate execution implementations.
-- `work-server`: authenticated HTTP/SSE and optional Web assets for an existing
-  node owner. Production dependencies do not include `work-client`.
-- `work-host`: GUI-independent owner startup, HTTP policy/configuration and
-  ordered shutdown shared by GUI and foreground headless entry points.
+- `work-node-api`: DTOs, typed `NodeApi`, `SessionAccess`,
+  `SessionConfiguration`, resource and realtime contracts; no UI or host.
+- `work-core`: re-exports node contracts and adds client event normalization,
+  run projection and inert extension designs.
+- `work-node-runtime`: actual workspace owner, native RPC/ACP runtimes, backend
+  bindings, persistence, native resources and source authoring. `work-node` is
+  its compatibility re-export; source edits belong in the implementation crate.
+- `work-client`: local/remote adapters, HTTP/SSE/WebSocket, snapshot recovery,
+  pagination and client projection. Native RPC/ACP facades delegate to the node
+  runtime rather than creating another execution implementation.
+- `work-node-service`: authenticated HTTP/SSE/WebSocket and optional Web assets
+  over an existing owner; security helpers live in `work-http-runtime`.
+  `work-server` re-exports it and retains integration tests/examples. Neither
+  production server layer depends on `work-client`.
+- `work-node-host`: actual GUI-independent startup, data lock, component binding,
+  HTTP configuration and ordered shutdown. `work-host` re-exports application
+  entry points and wraps the same owner as a `WorkspaceClient::Local`.
 - `work-update`: signed release discovery and platform update operations.
 - `apps/work-ui`: shared Dioxus desktop/Web/Android UI and platform entry gates.
   `apps/work-cli` defaults to typed existing-node operations, with foreground
@@ -116,6 +123,18 @@ or requires standalone `rpi-http`, and local UI access does not authenticate
 over loopback. The retained `desktop::DesktopNode` compatibility manager is
 not the default UI startup path. Local workspace resources are Rust service
 operations, not invented project/file/Git commands on the RPI RPC wire.
+
+## Remote HTTP/SSE and WebSocket
+
+HTTP remains the authentication and resource plane. `WorkClient` defaults to
+`RemoteTransport::Auto`: authenticated transport discovery selects the realtime
+WebSocket for session requests/events. Only explicit `RealtimeNotAdvertised`
+permits HTTP/SSE fallback; network, auth and protocol errors remain errors.
+Mutations use owner-scoped bounded operation receipts. An unknown outcome must
+be queried using the original reference, never automatically replayed. Receipts
+are in-memory and owner-epoch-scoped, not durable exactly-once execution.
+See [realtime protocol](realtime.md) for discovery, authentication, reservation,
+execution and reconnect boundaries.
 
 ## Native RPI RPC
 
@@ -388,7 +407,7 @@ catalog is `<data>/rpc/projects.json`; each project registry is
 `<data>/rpc/projects/<id>/sessions.json`. The lazily created model/auth control
 context is separate from user projects under `<data>/rpc/control`.
 
-`work-node/src/workspace/migration.rs` imports accessible project aliases from
+`crates/work-node-runtime/src/workspace/migration.rs` imports accessible project aliases from
 `<data>/projects.json` and `<data>/node/projects.json`, deduplicated by canonical
 project identity. It imports missing entries and preferences from
 `<data>/sessions.json` and `<data>/node/sessions.json` only when `projectId`
@@ -396,6 +415,12 @@ matches an imported/registered project. Existing target entries are retained;
 unavailable paths and all legacy source files are preserved. No transcript is
 rewritten, and this is not global native-history discovery or a scan of all
 user session roots.
+
+Component packages live under `<data>/components`, and staged listener settings
+in `<data>/http-component.json`. Native authoring source/provenance is stored
+under `<project>/.rpi/work-authoring`; exact native configuration, transcript and
+resource operation recovery remain extcore/rpi facts, not UI desired pins. See
+[resource ownership](resources.md).
 
 ACP bindings and checkpointed events are stored in
 `<data>/rpc/agent-sessions.json`; this is node-owned history, not a client cache.

@@ -21,7 +21,7 @@ RPI Work 是围绕节点、项目和会话组织工作的个人 Agent 工作台�
 
 基本流程是：确定操作节点（Web／桌面默认当前节点，移动客户端先连接外部节点；各端均可主动切换目标）→ 完成所需认证 → 打开项目 → 创建或恢复会话 → 提交任务 → 查看消息/工具/确认 → 审阅文件与变更 → 明确继续或结束。切换客户端视图不应停止节点任务，网络断开也不等于执行终止。
 
-会话资源的产品方向是一个主 Package、多选 Skills 和 Tools；其精确选择、实际加载和观察仍有[上游契约缺口](session-resource-contract.md)。不能把资源库选择、desired pins、静态预览或命令支持当作节点 applied/执行证据。
+RPI 会话资源已通过 typed 原生服务实现主 Package、独立 Skills/扩展、tools default/only/none、精确应用与实际 readback；元 Agent 使用同一条源码开发、真实测试和本地发布路径，见[资源架构](../architecture/resources.md)。ACP 定制和源码扩展自动构建不在已实现范围。旧 desired pins、静态设计预览和目录安装仍不能代替当前宿主 applied/执行证据。
 
 ## 当前使用说明
 
@@ -31,21 +31,22 @@ RPI Work 是围绕节点、项目和会话组织工作的个人 Agent 工作台�
 | 宿主 Web / 独立 Web / Android | [认证与扫码](../guides/node-connection.md)；三种入口的认证方式不同，不能由屏幕宽度决定 |
 | 对话、队列、确认与文件审阅 | [项目、会话与消息交互](../guides/codex-interactions.md)；以节点支持、真实事件及权威回读为准 |
 | RPI 与 ACP 后端 | [执行后端](../guides/acp-backends.md)；切换后端须另建会话，不能将握手成功等同模型回复已验收 |
-| 资源库、Agent/UI 扩展与元Agent | [扩展架构](../architecture/extensions.md)、[元Agent设计](meta-agent.md)；本地设计版本与运行态应用分开 |
+| 资源库、Agent/UI 扩展与元Agent | [原生资源指南](../guides/native-resource-authoring.md)、[扩展架构](../architecture/extensions.md)；真实测试与旧设计预览分开 |
 | 主题与外观 | [主题视觉规格](../guides/theme-design.md)；UI 偏好不修改 Agent 配置 |
 | 构建、更新与测试 | [构建](../guides/ci-builds.md)、[更新](../guides/automatic-updates.md)、[测试入口](../guides/testing-artifacts.md)；编译、fixture、安装与真机验收分别记录 |
 
 ## 架构与开发约束
 
-依赖方向为 **客户端 → Node 应用服务 → runtime**，共享契约位于纯 `work-core`，节点保留唯一 owner。新增客户端业务使用 typed 应用端口，不通过 UI 原生句柄或 raw dispatcher 绕过节点服务。
+依赖方向为 **客户端 → Node 应用服务 → runtime**，节点契约位于 `work-node-api`，纯客户端投影在 `work-core`，节点保留唯一 owner。新增客户端业务使用 typed 应用端口，不通过 UI 原生句柄或 raw dispatcher 绕过节点服务。
 
 - [节点与会话归属](node-session-ownership.md)：数据归属、身份、多节点与共享边界。
-- [架构与传输](../architecture/transport.md)：当前 crate 职责、RPC/ACP/HTTP 适配与能力边界。
+- [架构总览](../architecture/overview.md)：实际 crate、数据归属与生命周期。
+- [架构与传输](../architecture/transport.md)：RPC/ACP/HTTP/SSE/WebSocket 适配与能力边界。
 - [开发规范](../guides/development-standards.md)：会话一致性、权限、草稿、配置回读和生命周期的硬约束。
 - [项目结构](../guides/project-structure.md)：代码位置与常用命令。
 
 ## 不能据此推定的能力
 
-逐设备/项目 ACL、稳定 node ID 的客户端多入口归一、Package/Skills 精确加载/applied、通用动态扩展管理和附件上传仍需各自的实现与验收。iOS 暂无安装包；Android 编译检查不能证明 APK 安装升级或真机行为通过。
+逐设备/项目 ACL、稳定 node ID 的客户端多入口归一、同页面多节点同时在线、通用 Agent live contribution、任意源码扩展自动构建和附件上传仍需各自实现与验收。原生资源管理及动态组件 Bundle 已有独立实现，不应按旧设计接口的 Unsupported 推定整体缺失。iOS 暂无安装包；Android 编译检查不能证明 APK 安装升级或真机行为通过。
 
 原型中的设备配对、模拟资源安装和示例工具状态不是上述能力的实现。旧方案、分批迁移、视觉审阅和当时测试结果统一从[归档索引](../archive/README.md)查询，不作为当前待办或发布状态。

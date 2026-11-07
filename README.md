@@ -35,11 +35,11 @@ Android 0.1.0 使用临时开发签名，首次迁移到固定签名版需要卸
 
 ### 1. 桌面使用本机；Web 默认是同一桌面的入口
 
-v0.1.9 已正式发布，包含本机 `rpi-extcore` 路径：原生桌面默认在进程内使用纯 Rust 的已发布 `rpi-extcore =0.1.5`，由它通过 stdio `rpi --mode rpc` 执行 Agent 与控制操作。桌面不需要、也不会启动 `rpi-http`，没有本机 HTTP 登录步骤。只需安装兼容的 `rpi`（应用可执行文件旁或 PATH；也可用 `RPI_WORK_RPI_BIN` 指定），模型凭据仍在 rpi 中配置。源码后续改动不会自动升级已安装的应用；请通过 Release 或应用更新安装对应版本。
+当前源码的原生桌面在进程内使用 Work owner，由锁定 Git revision 的 `rpi-extcore` Service 通过 stdio `rpi --mode rpc` 执行 Agent 与控制操作；依赖细节见[架构总览](docs/architecture/overview.md)。桌面不需要、也不会启动 `rpi-http`，没有本机 HTTP 登录步骤。只需安装兼容的 `rpi`（应用可执行文件旁或 PATH；也可用 `RPI_WORK_RPI_BIN` 指定），模型凭据仍在 rpi 中配置。源码后续改动不会自动升级已安装的应用；请通过 Release 或应用更新安装对应版本。
 
 当前源码的 Web 默认使用桌面同一个 owner 的项目、会话与运行状态：打开桌面提供的 Web 地址，有效登录直接进入，否则只输入宿主密码；不用填写节点地址或点击连接。Android 原生 App 通过桌面的一次性授权二维码进入。源码变化不自动替换已安装／正在运行的旧版本，详见下方桌面 HTTP 入口。
 
-只有需要另建独立节点时，才在项目目录显式运行以下命令；这不是默认 Web 或桌面的启动前置：
+`rpi-http` 是独立的 rpi API 服务；以下命令不创建 Work 桌面 owner，也不是默认 Work Web/桌面的启动前置。其与 Work 协议的兼容须按具体版本核验：
 
 ~~~shell
 rpi-http --project . --rpi-bin rpi --port 13030
@@ -69,7 +69,7 @@ Android 原生 App 则必须扫描宿主桌面或已登录 Web 生成的 **手�
 
 桌面可显式连接其他节点，并保留历史选择；`task desktop` 默认明确选择本机。切换视图不停止节点或任务，退出才清理 children 和数据锁。独立 standalone `rpi-http` 与旧迁移副本保持原状，不自动倒回或合并。
 
-开发预览：配置本机 Git ignored `.env.local` 中的 `RPI_WORK_HTTP_PASSWORD`（兼容 `RPI_HTTP_PASSWORD`），运行 **`task dev`**，它并行启动桌面 owner 和 Web 热刷新（14180 → 桌面13031），不需要另开 `task desktop` 或 `task node`。`RPI_WORK_HTTP_PORT` 同时控制该桌面端口与代理目标，`PORT` 修改 Web 端口。Web默认hosted，认证后自动显示同一桌面会话；直接启动dev-web也默认指向桌面13031。显式独立Web须设置 `RPI_UI_ENTRY_MODE=standalone` 及目标API端口。只需兼容 rpi，无需相邻 rpi-package 源码；`task node` 才保留为明确独立节点。配置与真实模型验证见[真实节点聊天](docs/guides/live-chat.md)。
+开发启动：在 Git ignored `.env.local` 配置 `RPI_WORK_HTTP_PASSWORD`（兼容 `RPI_HTTP_PASSWORD`）。**`task dev`** 构建 release Web，以无头 owner 在 `http://127.0.0.1:13031/` 直接托管，有压缩/内容哈希缓存，不热刷新。修改 UI 时使用 **`task dev:desktop`**，并行启动桌面 owner 与 `14180` debug Web 构建监听/刷新，API 代理到 `13031`。两条路径二选一，相同 data 不可另开第二个 owner。热刷新端口用 `PORT`，owner 端口用 `RPI_WORK_HTTP_PORT`。只需兼容 rpi，无需相邻源码；`task node` 才启动独立 rpi HTTP 服务。详见[开发入口](docs/guides/live-chat.md)。
 
 ### 3. 更新客户端
 
@@ -89,14 +89,14 @@ Android 原生 App 则必须扫描宿主桌面或已登录 Web 生成的 **手�
 - **BTW 旁问**：输入区打开独立普通会话，有独立历史与取消；发送前须确认节点 active tools 为空，不自动读取主对话，显式引用只写入主草稿。不是原生 BTW 插件加载。
 - **文件与变更**：工作空间「变更」和项目文件入口提供文件树、内容预览、Git 状态与 diff、多文件搜索和筛选、移动端列表与详情。
 - **运行信息**：任务上下文与会话追踪展示队列、上下文压缩、耗时，以及节点实际报告的 token、缓存和费用；请求已接受不等于任务已完成。
-- **会话能力与资源库**：侧栏能力库（扩展 / Packages / 技能库）和会话资源配置支持设计包导入导出、预览和版本选择。扩展固定版本是 **desired**，不代表节点 **applied**；UI 可见性独立于 Agent 配置，通用安装、加载及 applied 协议尚未接入。
-- **元Agent**：添加项目时选择元Agent用途，再从项目导航进入；支持个人源码草稿、结构校验、不可变测试快照和个人设计版本。结构检查不编译或执行源码，发布不安装或启用节点插件；真实开发会话也不会自动写回草稿。
+- **原生资源与组件**：资源页管理原生 Package/Skill/扩展；会话资源配置使用精确选择、revision 应用、实际加载观察和恢复。设置中的节点组件支持下载/导入、自定义面板按需加载与能力授权。旧设计 pins 和静态预览仍是惰性数据，独立于 native applied，见[扩展架构](docs/architecture/extensions.md)。
+- **元Agent**：节点持久化源码草稿、结构校验、不可变测试快照、真实 exact 测试会话及结算证据；通过测试后发布节点本地不可变版本。开发会话可操作同一份源码，外部修改使旧验证资格失效。静态校验不编译源码扩展，本地发布不公开上传或自动启用，见[原生资源指南](docs/guides/native-resource-authoring.md)。
 - **附件预览**：输入区可选择并本地预览支持的图片 / 文本及显式文本引用；尚未接入附件上传或直接发送图片给模型。
 - **外观与设置**：顶部「外观与主题」提供 Codex 黑白及原四套主题，共五套预设，支持浅色 / 深色 / 跟随系统、密度和主题 JSON 导入导出；工具展示可跟随主题或选择简单 / 详情，默认简单。设置中可管理执行节点与应用更新。完整视觉参数通过 JSON 编辑，尚无逐字段可视化编辑器。
 
-当前入口与能力边界见 [项目、会话与消息交互](docs/guides/codex-interactions.md)、[执行后端说明](docs/guides/acp-backends.md)及 [扩展架构](docs/architecture/extensions.md)。视觉打磨不补齐通用节点协议；本机 ACP 接入也不表示远程节点新增了 Agent 启动或资源安装协议。
+当前入口与能力边界见 [项目、会话与消息交互](docs/guides/codex-interactions.md)、[执行后端说明](docs/guides/acp-backends.md)及 [扩展架构](docs/architecture/extensions.md)。执行与资源能力由目标节点实际声明和回读；本机支持不能推定任意远程节点或 ACP 也支持原生资源配置。
 
-当前源码通过 `WorkspaceClient` 统一桌面本机原生工作空间与远程 HTTP/SSE：本机项目目录、目录索引、文件和 Git 由本地 Rust 服务提供，不虚构 RPC wire 方法；本机 RPI 执行与控制走 stdio RPC，所选本机 ACP 后端走隔离托管的 stdio ACP。Web、Android 与显式远程连接仍使用认证 HTTP/SSE。本机目录索引为 `<data>/rpc/projects.json`，会话注册表为 `<data>/rpc/projects/<id>/sessions.json`；旧应用目录索引与匹配项目的注册项可导入，源文件保留，不改写 transcript，不承诺全局原生历史发现。节点资源安装、逐设备授权、直接向模型发送图片等能力仍有协议缺口；附件本地预览不等于模型多模态输入。HTML 原型中的演示状态不代表后端已实现。历史功能边界见 [上游功能审阅](docs/archive/upstream-functional-review.md)，当前传输边界见 [transport 架构](docs/architecture/transport.md)。
+当前源码通过 `WorkspaceClient` 统一桌面本机原生工作空间与远程 HTTP/SSE/WebSocket：本机项目目录、目录索引、文件和 Git 由本地 Rust 服务提供，不虚构 RPC wire 方法；本机 RPI 执行与控制走 stdio RPC，所选本机 ACP 后端走隔离托管的 stdio ACP。Web、Android 与显式远程连接使用认证 HTTP 资源接口及协商后的 WebSocket/旧 SSE。本机目录索引为 `<data>/rpc/projects.json`，会话注册表为 `<data>/rpc/projects/<id>/sessions.json`；旧应用目录索引与匹配项目的注册项可导入，源文件保留，不改写 transcript，不承诺全局原生历史发现。ACP 原生资源定制、逐设备权限、直接向模型发送图片等能力仍有缺口；附件本地预览不等于模型多模态输入。HTML 原型中的演示状态不代表后端已实现。历史功能边界见 [上游功能审阅](docs/archive/upstream-functional-review.md)，当前传输边界见 [transport 架构](docs/architecture/transport.md)。
 
 ## 从源码运行
 
@@ -138,13 +138,18 @@ cargo run --locked -p work-cli -- watch SESSION_ID
 | apps/work-ui/src/features | 对话、项目、资源、元 Agent、设置和可观测性 |
 | apps/work-ui/src/shared | 公共组件、状态辅助与主题 |
 | apps/work-cli | 现有节点认证、typed 会话操作／订阅、无头宿主入口及显式原生诊断 |
-| crates/work-core | 纯共享 DTO、typed NodeApi、会话能力/配置契约和事件投影 |
-| crates/work-client | WorkspaceClient 本机 / 远程访问适配、HTTP/SSE、连接恢复与客户端投影 |
-| crates/work-node | 唯一 workspace owner、RPC/ACP 执行、会话绑定、数据锁与生命周期 |
+| crates/work-node-api | 共享 DTO、typed NodeApi、会话/资源/realtime 契约 |
+| crates/work-core | API 重导出、纯运行投影、事件规范化与惰性设计 |
+| crates/work-client | WorkspaceClient 本机/远程适配、HTTP/SSE/WebSocket、恢复与客户端投影 |
+| crates/work-node-runtime | 实际唯一 workspace owner、RPC/ACP、会话绑定、资源与源码服务 |
+| crates/work-node | runtime 兼容导出 |
 | crates/work-component-api | 通用组件包契约、校验、目录/授权与隔离面板通信桥 |
 | crates/work-http-component | 远程访问专用面板与动作映射（监听 IP/端口、分享地址、新密码） |
-| crates/work-server | 同一节点 owner 的受保护 HTTP/SSE 与可选 Web assets |
-| crates/work-host | GUI／无头共用宿主、HTTP 配置与协作退出；无 Dioxus/WebView 依赖 |
+| crates/work-http-runtime | HTTP 认证、Host/Origin、共享与一次性授权 |
+| crates/work-node-service | 同 owner 的 HTTP/SSE/WebSocket 与可选 Web assets |
+| crates/work-server | service 兼容导出，保留集成测试和 examples |
+| crates/work-node-host | GUI/无头共用的实际宿主、HTTP 配置、组件绑定与协作退出 |
+| crates/work-host | 宿主应用门面及本机 client 包装；无 Dioxus/WebView 依赖 |
 | crates/work-update | 更新发现、签名验证、下载与安装助手 |
 | assets/vendor | 正式客户端使用的二维码、Mermaid 库及许可证 |
 | design/prototype | 保留内容与校验基准的 HTML 设计参考 |
@@ -172,9 +177,9 @@ git push origin v0.1.9
 
 ## 文档
 
-- **产品与架构**：[产品范围](docs/design/product-design.md) · [架构与传输](docs/architecture/transport.md) · [节点与会话归属](docs/design/node-session-ownership.md)
+- **产品与架构**：[产品范围](docs/design/product-design.md) · [架构总览](docs/architecture/overview.md) · [架构与传输](docs/architecture/transport.md) · [节点与会话归属](docs/design/node-session-ownership.md)
 - **使用与连接**：[对话、项目和文件审阅](docs/guides/codex-interactions.md) · [ACP 后端](docs/guides/acp-backends.md) · [节点连接与扫码](docs/guides/node-connection.md) · [主题视觉规格](docs/guides/theme-design.md)
-- **能力与扩展**：[Agent / UI 扩展边界](docs/architecture/extensions.md) · [开发 Demo](docs/guides/extension-demo.md) · [产品与资源共识](docs/design/头脑风暴文档.md) · [资源契约提案](docs/design/session-resource-contract.md)
+- **能力与扩展**：[Agent / UI 扩展边界](docs/architecture/extensions.md) · [开发 Demo](docs/guides/extension-demo.md) · [原生资源与源码开发](docs/guides/native-resource-authoring.md) · [组件组合](docs/architecture/component-composition.md)
 - **开发与验证**：[开发规范](docs/guides/development-standards.md) · [项目结构](docs/guides/project-structure.md) · [多平台编译](docs/guides/ci-builds.md) · [自动更新](docs/guides/automatic-updates.md) · [测试与产物](docs/guides/testing-artifacts.md)
 - **完整索引与历史**：[文档导航](docs/README.md) · [旧方案、迁移及验收归档](docs/archive/README.md)
 

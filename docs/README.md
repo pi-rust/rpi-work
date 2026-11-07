@@ -19,16 +19,23 @@
 
 ## 当前架构与约束
 
+- [架构总览与模块依赖](architecture/overview.md)
 - [架构与传输边界](architecture/transport.md)
+- [实时通道、回执与断线恢复](architecture/realtime.md)
+- [原生资源与源码服务](architecture/resources.md)
+- [组件包、专用面板与能力授权](architecture/component-composition.md)
 - [节点、客户端与会话归属](design/node-session-ownership.md)
-- [Agent 与 UI 扩展的独立契约](architecture/extensions.md)
+- [原生扩展、动态组件和惰性设计的独立契约](architecture/extensions.md)
+- [原生资源与持久化源码开发](guides/native-resource-authoring.md)
+- [精选 Package 发现与安装](guides/curated-packages.md)
+- [架构文档审查记录（2026-11-07）](reviews/architecture-review-2026-11-07.md)
 - [真实原生扩展与实时 UI Demo（开发验证，不是产品通用协议）](guides/extension-demo.md)
 
-## 产品方向、未完成契约与审查
+## 产品方向、历史契约与审查
 
 - [Matrix-Agent 产品与资源共识（含建议与未确定项）](design/头脑风暴文档.md)
 - [Package、Skills 与扩展管理基础梳理（源码核验与实施建议）](design/resource-management-foundation.md)
-- [会话资源配置最小契约（提案，非已有 API）](design/session-resource-contract.md)
+- [会话资源配置最小契约（历史提案，当前实现见资源指南）](design/session-resource-contract.md)
 - [rpi 会话资源验证：事实与未解决缺口](reviews/rpi-session-resource-validation.md)
 - [开源与可扩展性审查快照（待逐项复核）](reviews/open-source-extensibility-review.md)
 

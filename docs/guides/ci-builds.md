@@ -24,7 +24,7 @@
 
 桌面包未配置发行签名，也不是 Windows MSI 或 macOS DMG。Windows 需要 WebView2；Linux 动态依赖 GTK 3、WebKitGTK 4.1、libxdo 和兼容 glibc，当前基线为 Ubuntu 24.04。macOS `.app` 未配置 Apple 签名或公证。
 
-手机可以使用响应式Web或Android原生APK；iOS原生IPA尚未接入。客户端不捆绑相邻仓库的 `rpi-http` / `rpi-web` 或模型凭据，需要连接另行运行的兼容节点。
+手机可以使用响应式Web或Android原生APK；iOS原生IPA尚未接入。客户端不捆绑相邻仓库的 `rpi-http` / `rpi-web`、rpi HTTP 扩展或模型凭据。桌面在安装兼容 rpi 后默认托管本机 Work owner；Web/Android 连接已有 Work 节点，显式远程桌面也只作为客户端。
 
 ## Android APK
 
