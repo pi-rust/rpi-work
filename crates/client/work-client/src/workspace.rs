@@ -12,6 +12,10 @@ use crate::{
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::Value;
+use work_core::api::{
+    ToolProgramBodyQuery, ToolProgramBodyResponse, ToolProgramChildPage, ToolProgramChildrenQuery,
+    ToolProgramPhasePage, ToolProgramPhasesQuery, ToolProgramSnapshot, ToolProgramSnapshotRequest,
+};
 
 /// HTTP everywhere; an in-process native workspace on desktop platforms only.
 #[derive(Clone)]
@@ -691,6 +695,82 @@ impl WorkspaceClient {
             Self::Remote(client) => client.snapshot_with_limit(session_id, limit).await,
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             Self::Local(client) => client.snapshot_with_limit(session_id, limit).await,
+        }
+    }
+
+    pub async fn tool_program_snapshot(
+        &self,
+        session_id: &str,
+    ) -> Result<ToolProgramSnapshot, ClientError> {
+        match self {
+            Self::Remote(client) => client.tool_program_snapshot(session_id).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => {
+                let request = ToolProgramSnapshotRequest {
+                    children: ToolProgramChildrenQuery {
+                        direction: "newestFirst".into(),
+                        limit: 8,
+                        max_bytes: 128 * 1024,
+                        ..Default::default()
+                    },
+                    phase_limit: 8,
+                };
+                let value = client
+                    .tool_program_snapshot(session_id, serde_json::to_value(request)?)
+                    .await?;
+                Ok(serde_json::from_value(value)?)
+            }
+        }
+    }
+
+    pub async fn tool_program_children(
+        &self,
+        session_id: &str,
+        query: ToolProgramChildrenQuery,
+    ) -> Result<ToolProgramChildPage, ClientError> {
+        match self {
+            Self::Remote(client) => client.tool_program_children(session_id, query).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => {
+                let value = client
+                    .tool_program_children(session_id, serde_json::to_value(query)?)
+                    .await?;
+                Ok(serde_json::from_value(value)?)
+            }
+        }
+    }
+
+    pub async fn tool_program_phases(
+        &self,
+        session_id: &str,
+        query: ToolProgramPhasesQuery,
+    ) -> Result<ToolProgramPhasePage, ClientError> {
+        match self {
+            Self::Remote(client) => client.tool_program_phases(session_id, query).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => {
+                let value = client
+                    .tool_program_phases(session_id, serde_json::to_value(query)?)
+                    .await?;
+                Ok(serde_json::from_value(value)?)
+            }
+        }
+    }
+
+    pub async fn tool_program_body(
+        &self,
+        session_id: &str,
+        query: ToolProgramBodyQuery,
+    ) -> Result<ToolProgramBodyResponse, ClientError> {
+        match self {
+            Self::Remote(client) => client.tool_program_body(session_id, query).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => {
+                let value = client
+                    .tool_program_body(session_id, serde_json::to_value(query)?)
+                    .await?;
+                Ok(serde_json::from_value(value)?)
+            }
         }
     }
 

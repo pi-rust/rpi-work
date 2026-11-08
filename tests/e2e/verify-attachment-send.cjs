@@ -44,8 +44,33 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     await page.locator('.server-details [role=status]').filter({hasText:'在线'}).waitFor();
     await page.getByRole('button',{name:'返回会话',exact:true}).click();
     await page.locator('.project-row').filter({hasText:'rpi-work'}).click();
-    await page.locator('[data-session-id="dark"] .session-item').click();
+    await page.locator('[data-session-id="dark"] .session-item').first().click();
     await page.waitForFunction(()=>document.querySelector('.composer-main textarea')?.dataset.imeReady==='true');
+    await page.waitForFunction(()=>Boolean(window.__rpiAttachmentPasteBindings?.size));
+    await page.evaluate(({name,mime,data})=>{
+      const target=document.querySelector('.composer-main textarea');
+      const bytes=Uint8Array.from(atob(data),character=>character.charCodeAt(0));
+      const transfer=new DataTransfer();transfer.items.add(new File([bytes],name,{type:mime}));
+      target.dispatchEvent(new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true}));
+    },{name:'粘贴截图.png',mime:'image/png',data:samples.small});
+    await page.waitForFunction(()=>document.querySelectorAll('.draft-attachments .draft-chip').length===1);
+    assert.equal(await page.getByRole('button',{name:'预览 粘贴截图.png',exact:true}).count(),1);
+    await page.getByRole('button',{name:'移除 粘贴截图.png',exact:true}).click();
+    await page.evaluate(async data=>{
+      const target=document.querySelector('.composer-main textarea');
+      const clipboard=Object.getOwnPropertyDescriptor(Navigator.prototype,'clipboard')||Object.getOwnPropertyDescriptor(window,'clipboard');
+      const previous=navigator.clipboard;
+      Object.defineProperty(navigator,'clipboard',{configurable:true,value:{read:async()=>[{types:['image/png'],getType:async()=>new Blob([Uint8Array.from(atob(data),character=>character.charCodeAt(0))],{type:'image/png'})}]} });
+      const event=new Event('paste',{bubbles:true,cancelable:true});
+      Object.defineProperty(event,'clipboardData',{value:{types:['image/png'],files:[],items:[]}});
+      target.dispatchEvent(event);
+      await new Promise(resolve=>setTimeout(resolve,0));
+      if(clipboard)Object.defineProperty(navigator,'clipboard',clipboard);else Object.defineProperty(navigator,'clipboard',{configurable:true,value:previous});
+    },samples.small);
+    await page.waitForFunction(()=>document.querySelectorAll('.draft-attachments .draft-chip').length===1);
+    assert.equal(await page.getByRole('button',{name:'预览 粘贴附件.png',exact:true}).count(),1);
+    await page.getByRole('button',{name:'移除 粘贴附件.png',exact:true}).click();
+    pass('clipboard paste works through both DataTransfer and the desktop WebView clipboard fallback');
     await field().fill('请检查图片和说明');
     await choose([photo,text]);
     for(const name of [photo.name,text.name]) {
@@ -58,7 +83,9 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     assert.equal(prompts().length,0);pass('file selection shows decodable image and full safe text previews without uploading');
 
     fixture.controls.promptDelayMs=1000;
+    const firstPromptRequest=page.waitForRequest(request=>request.url().endsWith('/dark/commands')&&request.postDataJSON()?.type==='prompt');
     await send().click();
+    await firstPromptRequest;
     await page.waitForFunction(()=>Boolean(document.querySelector('.pending-user-message .conversation-message-image')));
     assert.equal(prompts().length,1);
     const first=prompts()[0].body;
@@ -98,18 +125,18 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     pass('oversized-dimension photo is explicitly represented as a bounded JPEG visual copy, never an omitted image');
 
     await field().fill('保留本地');await choose([photo]);
-    await page.locator('[data-session-id="architecture"] .session-item').click();
+    await page.locator('[data-session-id="architecture"] .session-item').first().click();
     await page.waitForFunction(()=>document.querySelector('.session-entry.selected')?.dataset.sessionId==='architecture');
     assert.equal(await chips().count(),0);
-    await page.locator('[data-session-id="dark"] .session-item').click();
+    await page.locator('[data-session-id="dark"] .session-item').first().click();
     await page.waitForFunction(()=>document.querySelector('.session-entry.selected')?.dataset.sessionId==='dark');
     assert.equal(await chips().count(),1);assert.equal(await field().inputValue(),'保留本地');
     const before=prompts().length;fixture.controls.promptContent=false;
     await ready();await send().click();await page.locator('.composer-foot [role=status]').filter({hasText:'unsupported'}).waitFor();
     assert.equal(prompts().length,before);assert.equal(await chips().count(),1);
     await page.getByRole('button',{name:`移除 ${photo.name}`,exact:true}).click();
-    await page.locator('[data-session-id="architecture"] .session-item').click();
-    await page.locator('[data-session-id="dark"] .session-item').click();
+    await page.locator('[data-session-id="architecture"] .session-item').first().click();
+    await page.locator('[data-session-id="dark"] .session-item').first().click();
     await choose([photo]);await ready();await send().click();
     await page.locator('.composer-foot [role=status]').filter({hasText:'不支持有序图片'}).waitFor();
     assert.equal(prompts().length,before);assert.equal(await chips().count(),1);
@@ -121,7 +148,11 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     await settle(prompts().at(-1).body,5);
     pass('node/session switching isolates attachments; lost/absent image capability fails closed while complete text attachments still work on old nodes');
 
-    // A running native turn supports text queues only. Never downgrade images.
+    // An interrupted run must not make accepted follow-up entries disappear.
+    fixture.setQueue([{entryId:'survive-abort',queue:'followUp',text:'终止后仍保留',status:'queued'}]);
+    await page.locator('[data-entry-id="survive-abort"]').waitFor();
+    // Simulate a transient empty read during settlement; explicit Refresh
+    // remains the user-controlled way to accept that empty server snapshot.
     fixture.emit({type:'agent_start',runId:'queue-image-guard'});
     await field().fill('运行中图片保留');await choose([photo]);
     await page.getByRole('button',{name:'停止运行',exact:true}).waitFor();
@@ -129,11 +160,16 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     await field().press('Enter');await page.locator('.composer-foot [role=status]').filter({hasText:'未排队'}).waitFor();
     assert.equal(fixture.requests.filter(r=>r.body?.type==='queue_message').length,queuedBefore);
     const abortBefore=fixture.requests.filter(r=>r.body?.type==='abort').length;
+    const abortRequest=page.waitForRequest(request=>request.url().endsWith('/dark/commands')&&request.postDataJSON()?.type==='abort');
     await page.getByRole('button',{name:'停止运行',exact:true}).click();
+    await abortRequest;
     await page.waitForFunction(()=>document.querySelector('.send-button')?.disabled);
     assert.equal(fixture.requests.filter(r=>r.body?.type==='abort').length,abortBefore+1);
     assert.equal(await chips().count(),1);assert.equal(await field().inputValue(),'运行中图片保留');
+    fixture.setQueue([]);
     fixture.emit({type:'agent_settled',runId:'queue-image-guard',outcome:'interrupted',pendingResume:false});await ready();
+    await page.locator('[data-entry-id="survive-abort"]').waitFor();
+    assert.equal(await page.locator('[data-entry-id="survive-abort"]').count(),1);
     await page.getByRole('button',{name:`移除 ${photo.name}`,exact:true}).click();
     fixture.emit({type:'agent_start',runId:'queue-text-fixture'});
     await choose([text]);await field().fill('排队完整文本');await page.getByRole('button',{name:'停止运行',exact:true}).waitFor();await field().press('Enter');
@@ -147,10 +183,10 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     await input().setInputFiles({name:'slow.txt',mimeType:'text/plain',buffer:Buffer.from('slow complete file')});
     await page.locator('.attachment-files-slot [role=status]').filter({hasText:'正在读取'}).waitFor();
     await field().fill('读取期间不发送');await field().press('Enter');await page.locator('.composer-foot [role=status]').filter({hasText:'附件仍在读取'}).waitFor();assert.equal(prompts().length,loadingCount);
-    await page.locator('[data-session-id="architecture"] .session-item').click();
+    await page.locator('[data-session-id="architecture"] .session-item').first().click();
     await page.waitForFunction(()=>document.querySelector('.session-entry.selected')?.dataset.sessionId==='architecture');
     await page.evaluate(()=>window.__releaseAttachmentRead());
-    await page.locator('[data-session-id="dark"] .session-item').click();
+    await page.locator('[data-session-id="dark"] .session-item').first().click();
     await page.locator('.attachment-files-slot [role=alert]').filter({hasText:'附件读取已中断'}).waitFor();
     assert.equal(await chips().count(),0);await ready();await send().click();await page.locator('.composer-foot [role=status]').filter({hasText:'附件读取或预览存在错误'}).waitFor();assert.equal(prompts().length,loadingCount);
     await page.getByRole('button',{name:'清除提示，仅保留已加入的附件',exact:true}).click();
@@ -170,7 +206,7 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     await page.locator('.composer-foot [role=status]').filter({hasText:'32 KiB'}).waitFor();assert.equal(prompts().length,count);assert.equal(await chips().count(),1);
     await page.getByRole('button',{name:'移除 large.txt',exact:true}).click();
     fixture.controls.promptContent=PROFILE;
-    await page.locator('[data-session-id="architecture"] .session-item').click();await page.locator('[data-session-id="dark"] .session-item').click();
+    await page.locator('[data-session-id="architecture"] .session-item').first().click();await page.locator('[data-session-id="dark"] .session-item').first().click();
     await choose([{name:'broken.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10,1])}]);await ready();await send().click();
     await page.locator('.composer-foot [role=status]').filter({hasText:/无法解码|附件读取或预览存在错误/}).waitFor();assert.equal(prompts().length,count);assert.match(await chips().innerText(),/图片读取失败/);
     await page.getByRole('button',{name:'移除 broken.png',exact:true}).click();
@@ -183,10 +219,12 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     pass('unsupported PDF, oversized complete text, corrupt images and excessive pixel headers block the entire send without silent omission, truncation or unbounded browser decode');
 
     fixture.controls.promptContent=PROFILE;
-    await page.locator('[data-session-id="architecture"] .session-item').click();await page.locator('[data-session-id="dark"] .session-item').click();
+    await page.locator('[data-session-id="architecture"] .session-item').first().click();await page.locator('[data-session-id="dark"] .session-item').first().click();
     await choose([photo,text]);
     for(const mode of ['light','dark']) {
-      await page.getByRole('button',{name:'外观与主题',exact:true}).click();const theme=page.getByRole('dialog',{name:'外观与主题',exact:true});await theme.getByLabel('明暗模式',{exact:true}).selectOption(mode);await theme.getByRole('button',{name:'保存',exact:true}).click();await theme.waitFor({state:'hidden'});
+      await page.getByRole('button',{name:'更多操作',exact:true}).click();
+      await page.getByRole('menu',{name:'更多操作',exact:true}).getByRole('menuitem',{name:'外观与主题',exact:true}).click();
+      const theme=page.getByRole('dialog',{name:'外观与主题',exact:true});await theme.getByLabel('明暗模式',{exact:true}).selectOption(mode);await theme.getByRole('button',{name:'保存',exact:true}).click();await theme.waitFor({state:'hidden'});
       for(const width of [1440,390,320]) {
         await page.setViewportSize({width,height:width===1440?1000:844});
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no viewport overflow');

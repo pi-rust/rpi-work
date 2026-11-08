@@ -6,11 +6,11 @@ use axum::{
 };
 use std::sync::Arc;
 use tokio::sync::watch;
+pub mod access;
 pub mod pairing;
 pub mod security;
 pub mod sharing;
-pub use pairing::QrAuthorization;
-pub use sharing::SharingControl;
+pub use access::{AuthLease, Generation, QrAuthorization, Security, SharingControl};
 
 pub struct AccessState {
     pub security: security::Security,

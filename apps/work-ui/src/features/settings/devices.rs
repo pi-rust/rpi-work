@@ -70,8 +70,10 @@ pub(crate) fn DesktopPairing(
         AuthorizationQr {
             shared_client, base_url, owned_local, available,
             public_url: sharing.app_url.clone(),
-            address_draft: control.address_draft.read().clone(),
-            automatic: cfg!(not(any(target_arch = "wasm32", target_os = "android"))) && owned_local,
+            address_draft: control.address_draft,
+            // Do not open an authorization QR modal just by entering the page;
+            // generate it only after the user explicitly requests sharing.
+            automatic: false,
             request: control.request,
             view,
         }
@@ -140,6 +142,15 @@ async fn desktop_sharing() -> DesktopSharing {
     {
         DesktopSharing::default()
     }
+}
+
+async fn set_desktop_sharing(enabled: bool) -> Result<(), String> {
+    let client = crate::app::local_node::client().ok_or("本机节点尚未准备好".to_owned())?;
+    client
+        .component_capability("node.sharing.write", serde_json::json!({"enabled": enabled}))
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn phone_share_address(value: &str, owned_local: bool) -> Result<String, String> {
@@ -236,6 +247,7 @@ pub fn DevicesPage(
     let mut share_error = use_signal(String::new);
     let mut share_epoch = use_signal(|| 0u64);
     let local_sharing = pairing.sharing;
+    let mut sharing_state = local_sharing;
     let sharing = local_sharing.read().clone();
     let owns_desktop = crate::app::local_node::client().is_some();
     let current_address = connection.address.read().clone();
@@ -502,8 +514,23 @@ pub fn DevicesPage(
                         h1 { if owned_local { "本机工作空间" } else { "电脑运行，手机接续" } }
                         p { if owned_local { "Agent 在这台电脑上运行，通过本机 RPC 使用模型、工具和项目文件。" } else { "PC 提供 Agent 服务，手机作为客户端查看、发送和确认。" } }
                     }
-                    if share_available {
-                        button { class: "button primary", onclick: move |_| open_share(()), Icon { name: "phone".to_owned() } "{share_title}" }
+                    if owned_local {
+                        button {
+                            class: "sharing-switch",
+                            role: "switch",
+                            aria_checked: sharing.enabled,
+                            disabled: !sharing.listening,
+                            onclick: move |_| {
+                                let next = !sharing_state.peek().enabled;
+                                spawn(async move {
+                                    if set_desktop_sharing(next).await.is_ok() {
+                                        sharing_state.with_mut(|state| state.enabled = next);
+                                    }
+                                });
+                            },
+                            span { class: "sharing-switch-track", span {} }
+                            span { if sharing.enabled { "允许手机访问" } else { "禁止手机访问" } }
+                        }
                     }
                 }
                 section { class: "device-auth-entry",
@@ -561,7 +588,7 @@ pub fn DevicesPage(
                             }
                             button { class: "button", onclick: move |_| remote_open.set(!remote_open()), "连接其他节点" }
                         }
-                        if owned_local { p { class: "connection-help", "本机 RPC 和桌面 HTTP 共用这一份工作空间；首次启动默认提供局域网 App 授权入口，手机扫码后访问相同会话和任务。已关闭的共享设置和显式监听配置会保留；不会自动修改防火墙。" } }
+                        if owned_local { p { class: "connection-help", "本机 RPC 和桌面 HTTP 共用这一份工作空间；远程协作默认关闭。开启并保存后，手机可通过二维码访问相同会话和任务；共享开关与 HTTP 配置会记住，不会自动修改防火墙。" } }
                         if *remote_open.read() {
                             div { class: "remote-node-form",
                                 div { class: "form-field",
@@ -846,7 +873,7 @@ fn AuthorizationQr(
     owned_local: bool,
     public_url: String,
     available: bool,
-    address_draft: String,
+    address_draft: Signal<String>,
     automatic: bool,
     request: Signal<authorization_offer::Request>,
     view: String,
@@ -860,11 +887,11 @@ fn AuthorizationQr(
     let mut message = use_signal(String::new);
     let node = connection.address.read().clone();
     let node_epoch = *connection.epoch.read();
-    let draft = base_url.read().clone();
-    let target = if owned_local {
-        public_url.clone()
+    let draft = address_draft.read().trim().to_owned();
+    let target = if draft.is_empty() {
+        if owned_local { public_url.clone() } else { node.clone() }
     } else {
-        node.clone()
+        draft.clone()
     };
     // Show the exact normalized origin encoded into the authorization payload,
     // not the desktop-only rpi-work identity or a trailing-slash variant.
@@ -873,8 +900,8 @@ fn AuthorizationQr(
     let scope = (
         node,
         node_epoch,
-        draft,
-        address_draft,
+        draft.clone(),
+        base_url.read().clone(),
         public_url,
         available,
         owned_local,
@@ -1055,6 +1082,14 @@ fn AuthorizationQr(
                     p { class: "device-auth-warning", "任何人在过期前扫描此码，都可访问当前工作空间（项目、会话与运行任务）。只向你信任的 Android 手机展示。" }
                     p { class: "modal-help", "120 秒有效，仅可使用一次；二维码不含密码。请用 Android 原生 App 扫描并确认授权，浏览器仍需密码登录。" }
                     div { class: "connection-share-source", small { "手机访问地址 · 当前授权节点" } code { "{target}" } }
+                    div { class: "form-field device-auth-address-field",
+                        label { r#for: "device-auth-address", "手机访问地址（可填写自定义域名）" }
+                        input {
+                            id: "device-auth-address", r#type: "url", value: "{target}",
+                            placeholder: "https://work.example.com",
+                            oninput: move |event| address_draft.set(event.value()),
+                        }
+                    }
                     if secret.read().is_some() && *remaining.read() > 0 {
                         div { class: "pairing-qr", id: "device-auth-qr-code", "data-request": "{request_epoch}", aria_label: "手机 App 一次性授权二维码" }
                         p { class: "device-auth-countdown", role: "status", "{remaining} 秒后过期 · 仅可使用一次" }

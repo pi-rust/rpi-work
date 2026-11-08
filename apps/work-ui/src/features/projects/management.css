@@ -7,6 +7,9 @@
 .session-entry .session-item{width:100%;overflow:hidden}.session-row-menu{width:26px;height:32px;padding:0;color:var(--muted)}
 .session-entry .session-title{flex:1 1 0;min-width:0}
 .session-entry .session-dot{margin:0 3px}
+.session-title-wrap{display:grid;min-width:0;flex:1;gap:1px}
+.session-title-wrap .session-title{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-context{min-width:0;overflow:hidden;color:var(--muted);font-size:calc(9px * var(--type-scale, 1));font-weight:400;line-height:1.35;overflow-wrap:anywhere;text-overflow:ellipsis;white-space:nowrap}
 .session-entry .session-dot.offline{background:var(--muted)}
 .session-activity-spinner{display:inline-block;box-sizing:border-box;width:12px;height:12px;flex:0 0 12px;border:2px solid var(--line);border-top-color:currentColor;border-right-color:currentColor;border-radius:50%;color:var(--accent);animation:session-activity-spin .8s linear infinite}
 .session-activity-label{flex:0 0 auto;white-space:nowrap;font-size:calc(10px * var(--type-scale, 1));line-height:1.2;color:var(--muted)}

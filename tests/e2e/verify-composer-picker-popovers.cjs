@@ -170,6 +170,8 @@ async function until(check, message) {
     await open(model, modelDialog);
     assert.equal(await modelDialog().getAttribute('id'), 'composer-model-picker');
     await measure(modelDialog, model, 320, 'light', 1280, 'model');
+    assert(!await focused(search()), 'opening the model picker must not focus the search box');
+    assert(await focused(modelDialog().locator(`[data-model-id="${CURRENT}"]`)), 'opening the model picker focuses the current model');
     // Native pointer clicks, never force:true: a modal/backdrop would block this.
     await thinking().click(); await thinkingDialog().waitFor(); await modelDialog().waitFor({ state: 'hidden' });
     await until(async () => await model().getAttribute('aria-expanded') === 'false', 'switch closes previous picker');

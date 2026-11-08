@@ -22,7 +22,7 @@
 - **UI 只走 typed 应用入口**：会话打开、状态/队列、配置、发送/恢复/停止、权限回答及统计均通过 `WorkspaceClient` / typed `NodeApi` 端口。禁止 UI 保存原生 Agent 句柄、按 Native/HTTP 分流业务、直接启动子进程，或以通用 JSON/raw command dispatcher 绕过应用服务。内部兼容 raw 通路不是新业务 API。
 - **能力来自绑定会话观察**：执行面用 `SessionAccess` 的精确命令、`snapshot_limit`、`dialog_reply`；配置面用 `SessionConfiguration` 的精确命令/协商选项。节点全局 capability、本地句柄存在、协议大类和 `for_agent(None)` 等乐观默认均不能代替观察。失败、未知、旧服务 404/401 时禁用相应动作并明确提供恢复路径，不能回退本机或推定“全部支持”。观察不是授权，也不是 installed/loaded/active/executable 的资源证明。
 - **端口和 executor 边界不扩大**：应用 future / 事件端口保持 object-safe 且不强制 `Send`；遵守现有 current-thread / LocalSet。底层 runtime 流自己的 `Send` 约束不意味着所有业务 future 必须多线程化。新增端口默认 `Unsupported` 不等于每个实现都已具备能力。
-- **协议与依赖不另起炉灶**：优先复用 extcore/RPC/ACP；`rpi-extcore` 保持 manifest `=0.2.6` 与 Git revision `17ba89c0098f018db76e22051fe8c73e2792dc1c`，升级须单独核对 lockfile 和原生契约，不能替换成 crates.io 同版本。没有已确认工作流与上游契约，不增加 crate、第二套调度器或通用插件执行框架。
+- **协议与依赖不另起炉灶**：优先复用 extcore/RPC/ACP；当前 `rpi-extcore` 使用 manifest `=0.2.11` 与 Git revision `1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd`，升级须单独核对 lockfile 和原生契约，不能替换成 crates.io 同版本。没有已确认工作流与上游契约，不增加 crate、第二套调度器或通用插件执行框架。
 
 ## 1.2 会话一致性、权限与生命周期
 

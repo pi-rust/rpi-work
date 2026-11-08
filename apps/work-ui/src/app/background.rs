@@ -53,6 +53,7 @@ pub(crate) fn QueueSync(
     session_generation: Signal<u64>,
     mut queue: Signal<Option<QueueSnapshot>>,
     revision: Signal<u64>,
+    preserve_empty: Signal<bool>,
 ) -> Element {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let id = use_hook(|| NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
@@ -100,7 +101,17 @@ pub(crate) fn QueueSync(
                 // A poll started before withdrawal/readback must not resurrect
                 // a removed row after the action's authoritative response.
                 if *revision.peek() == observed_revision {
-                    if let Ok(snapshot) = snapshot { queue.set(Some(snapshot)); }
+                    if let Ok(snapshot) = snapshot {
+                        let keep_cached = *preserve_empty.peek()
+                            && snapshot.items.is_empty()
+                            && queue
+                                .peek()
+                                .as_ref()
+                                .is_some_and(|current| !current.items.is_empty());
+                        if !keep_cached {
+                            queue.set(Some(snapshot));
+                        }
+                    }
                 }
                 let _ = document::eval(&format!("window.__rpiQueueSync?.get({id})?.complete();"));
             }

@@ -44,10 +44,8 @@ pub fn SettingsPage(
                         onclick: move |_| settings_section.set("settings".to_owned()), Icon { name: "settings" } "通用" }
                     button { class: if section == "app-settings" { "active" } else { "" }, aria_current: if section == "app-settings" { "page" } else { "" },
                         onclick: move |_| settings_section.set("app-settings".to_owned()), Icon { name: "code" } "全局设置文件" }
-                    button { class: if section == "devices" { "active" } else { "" }, aria_current: if section == "devices" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("devices".to_owned()), Icon { name: "monitor" } if mobile_client { "连接我的电脑" } else { "执行节点" } }
-                    button { class: if section == "components" { "active" } else { "" }, aria_current: if section == "components" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("components".to_owned()), Icon { name: "blocks" } "节点组件" }
+                    button { class: if section == "devices" || section == "components" { "active" } else { "" }, aria_current: if section == "devices" || section == "components" { "page" } else { "" },
+                        onclick: move |_| settings_section.set("devices".to_owned()), Icon { name: "monitor" } if mobile_client { "电脑连接与组件" } else { "执行节点与组件" } }
                     button { class: if section == "providers" { "active" } else { "" }, aria_current: if section == "providers" { "page" } else { "" },
                         onclick: move |_| settings_section.set("providers".to_owned()), Icon { name: "server" } "供应商" }
                     button { class: if section == "footer" { "active" } else { "" }, aria_current: if section == "footer" { "page" } else { "" },
@@ -72,11 +70,7 @@ pub fn SettingsPage(
                     }
                     button { class: "settings-card", onclick: move |_| settings_section.set("devices".to_owned()),
                         span { class: "settings-card-icon", Icon { name: "monitor" } }
-                        strong { if mobile_client { "连接我的电脑" } else { "执行节点" } } p { if mobile_client { "扫描电脑二维码，连接项目与会话。" } else { "使用本机执行节点，或连接其他节点。" } } small { if mobile_client { "扫码连接" } else { "本机与其他节点" } } Icon { name: "chevron-right" }
-                    }
-                    button { class: "settings-card", onclick: move |_| settings_section.set("components".to_owned()),
-                        span { class: "settings-card-icon", Icon { name: "blocks" } }
-                        strong { "节点组件" } p { "安装组件，并按需打开组件提供的专用界面。" } small { "当前执行节点" } Icon { name: "chevron-right" }
+                        strong { if mobile_client { "电脑连接与组件" } else { "执行节点与组件" } } p { if mobile_client { "连接电脑，并管理当前节点组件。" } else { "管理执行节点、连接方式与节点组件。" } } small { if mobile_client { "连接与组件" } else { "本机与其他节点" } } Icon { name: "chevron-right" }
                     }
                     button { class: "settings-card", onclick: move |_| settings_section.set("providers".to_owned()),
                         span { class: "settings-card-icon", Icon { name: "server" } }
@@ -103,13 +97,16 @@ pub fn SettingsPage(
                 SessionDisplaySettings {}
             } else if section == "updates" {
                 crate::features::settings::updates::UpdatePage { busy: update_busy }
-            } else if section == "components" {
-                crate::features::extensions::components::ComponentsPage { shared_client, connection_epoch, online }
+            } else if section == "devices" || section == "components" {
+                div { class: "settings-node-workbench",
+                    DevicesPage { shared_client, requests, base_url, status, auth_state, password, capabilities, onconnect, onlogin, mobile_client }
+                    crate::features::extensions::components::ComponentsPage { shared_client, connection_epoch, online }
+                }
             } else if section == "providers" {
                 ProviderSettings {
                     shared_client, connection_epoch, online, selected_session, session_generation,
                     onreturn: move |_| active_page.set("workspace".to_owned()),
-                    oncomponents: move |_| settings_section.set("components".to_owned()),
+                    oncomponents: move |_| settings_section.set("devices".to_owned()),
                 }
             } else {
                 DevicesPage { shared_client, requests, base_url, status, auth_state, password, capabilities, onconnect, onlogin, mobile_client }

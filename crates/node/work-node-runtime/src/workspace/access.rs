@@ -3,6 +3,25 @@ use super::{LocalError, LocalWorkspace, WorkspaceError, decode, local, service};
 use serde_json::{Value, json};
 use work_node_api::api::{SessionAccess, SessionSummary};
 
+pub(super) fn native_prompt_profile() -> Value {
+    json!({
+        "contentBlocksVersion": 1,
+        "image": true,
+        "imageMimeTypes": ["image/png", "image/jpeg"],
+        "maxImages": 4,
+        "maxImageBytes": 262_144,
+        "maxTotalImageBytes": 524_288,
+        "maxImageBase64Bytes": 349_528,
+        "maxPromptBytes": 786_432,
+        "maxTextBytes": 32_768,
+        "maxContentBlocks": 64,
+        "maxImageSide": 2_000,
+        "maxImagePixels": 4_000_000,
+        "imageDecodeAllocBudgetBytes": 33_554_432,
+        "frameBytes": 1_048_576,
+    })
+}
+
 impl LocalWorkspace {
     /// Observe the live command intersection, never a configuration-only subset.
     pub async fn session_access(&self, id: &str) -> Result<SessionAccess, WorkspaceError> {
@@ -20,7 +39,7 @@ impl LocalWorkspace {
                     .map(str::to_owned)
                     .collect(),
                 snapshot_limit: false,
-                prompt_content: None,
+                prompt_content: agent.supports_prompt_content().then(native_prompt_profile),
             });
         }
         let service = self.session_service(id)?;
@@ -43,9 +62,13 @@ impl LocalWorkspace {
             snapshot_limit: true,
             prompt_content: {
                 let profile = host.ready()["promptContent"].clone();
-                rpi_extcore::prompt::PromptProfile::from_ready(&profile)
-                    .ok()
-                    .map(|_| profile)
+                if rpi_extcore::prompt::PromptProfile::from_ready(&profile).is_ok() {
+                    Some(profile)
+                } else {
+                    // The desktop-owned native adapter is the capability boundary;
+                    // older local rpi processes did not echo promptContent in ready.
+                    Some(native_prompt_profile())
+                }
             },
             supported_commands,
         })

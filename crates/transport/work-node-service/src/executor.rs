@@ -1,6 +1,6 @@
 //! Shared admission and `LocalSet` dispatch. Network handlers only send owned,
 //! Send messages; the supplied workspace remains the sole !Send RPC owner.
-use crate::{ServerState, routes, security::AuthLease};
+use crate::{access::AuthLease, routes, ServerState};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, oneshot};

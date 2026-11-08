@@ -276,36 +276,6 @@ pub(crate) fn task_status(
     })
 }
 
-pub(crate) fn connection_status(
-    projection: Option<&RunProjection>,
-    connection: &super::connections::Phase,
-    local: bool,
-) -> (&'static str, &'static str) {
-    use super::connections::Phase;
-    if let Some(run) = projection {
-        return match run.connection {
-            ConnectionState::Online => ("online", "节点在线"),
-            ConnectionState::Reconnecting => ("reconnecting", "节点重连中"),
-            ConnectionState::Resyncing => ("resyncing", "节点同步中"),
-            ConnectionState::Offline => ("offline", "节点已断开"),
-        };
-    }
-    match connection {
-        Phase::Online => (
-            "online",
-            if local {
-                "本机节点在线"
-            } else {
-                "节点在线"
-            },
-        ),
-        Phase::Connecting | Phase::Authenticating => ("reconnecting", "节点连接中"),
-        Phase::PasswordRequired => ("offline", "节点需要登录"),
-        Phase::Failed(_) => ("offline", "节点连接失败"),
-        Phase::Idle => ("offline", "节点未连接"),
-    }
-}
-
 pub(crate) fn projection_status(
     projection: Option<&RunProjection>,
     connection: &super::connections::Phase,

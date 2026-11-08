@@ -36,6 +36,6 @@ work-node-api = { path = "../../foundation/work-node-api", version = "0.1.0" }
 tempfile = "3"
 
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
-rpi-extcore = { version = "=0.2.6", git = "https://github.com/pi-rust/rpi-package", rev = "17ba89c0098f018db76e22051fe8c73e2792dc1c" }
+rpi-extcore = { version = "=0.2.11", git = "https://github.com/pi-rust/rpi-package", rev = "1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd" }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }

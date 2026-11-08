@@ -19,14 +19,17 @@ async function check(name,fn){try{await fn();results.push({name,passed:true});co
     await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();
     await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).first().waitFor();
     await page.locator('.composer-main textarea').fill('文件预览必须保留本条草稿');
-    await page.getByRole('tab',{name:/^变更/}).click();
-    await page.locator('.change-file').filter({hasText:'src/theme.rs'}).click();
+    await page.getByRole('button',{name:'打开项目文件',exact:true}).click();
+    let review=page.getByRole('dialog',{name:/项目文件/});
+    await review.getByRole('tab',{name:/^变更/}).click();
+    await review.locator('.change-file').filter({hasText:'src/theme.rs'}).click();
     await check('change view shows patch with added/deleted lines and line numbers',async()=>{
       await page.locator('.change-preview').getByText(/let theme = "dark"/).waitFor();
       assert(await page.locator('.change-preview .diff-line.add').count()>0);
       assert(await page.locator('.change-preview .diff-line.del').count()>0);
       assert(await page.locator('.change-preview .line-number').count()>0);
     });
+    await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'打开项目文件',exact:true}).click();
     const modal=page.getByRole('dialog',{name:/项目文件/});
     await modal.locator('.project-file-row').filter({hasText:'README.md'}).click();
@@ -45,17 +48,18 @@ async function check(name,fn){try{await fn();results.push({name,passed:true});co
     });
     await page.keyboard.press('Escape');
     await check('closing file browser restores the original diff and draft',async()=>{
-      assert.match(await page.locator('.selected-file-heading').innerText(),/src\/theme.rs/);
-      await page.getByRole('tab',{name:'对话',exact:true}).click();
+      assert.equal(await page.locator('.selected-file-heading').count(),0);
       assert.equal(await page.locator('.composer-main textarea').inputValue(),'文件预览必须保留本条草稿');
-      await page.getByRole('tab',{name:/^变更/}).click();
-      assert.match(await page.locator('.selected-file-heading').innerText(),/src\/theme.rs/);
+      await page.getByRole('button',{name:'打开项目文件',exact:true}).click();
+      review=page.getByRole('dialog',{name:/项目文件/});
+      await review.getByRole('tab',{name:/^变更/}).click();
+      assert.match(await review.locator('.selected-file-heading').innerText(),/src\/theme.rs/);
+      await page.keyboard.press('Escape');
     });
     await check('deleted Git file still renders its patch',async()=>{
       await page.locator('.change-file').filter({hasText:'src/module-2.rs'}).click();
       await page.locator('.change-preview').getByText(/let theme = "dark"/).waitFor();
     });
-    await page.getByRole('tab',{name:'对话',exact:true}).click();
     await page.getByRole('button',{name:'打开项目文件',exact:true}).click();
     await modal.locator('.project-file-row').filter({hasText:'README.md'}).click();
     await check('file path quote appends to draft without sending a model prompt',async()=>{

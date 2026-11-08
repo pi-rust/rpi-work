@@ -128,6 +128,7 @@
     for (const control of composer.querySelectorAll('.composer-model-picker, .composer-thinking-select')) resize.observe(control);
   }
   mutation.observe(menu, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['open', 'disabled'] });
-  const initial = menu.querySelector('input[type="search"]') || options().find(e => e.getAttribute('aria-pressed') === 'true') || options()[0] || focusables()[0];
+  // Keep the picker usable without opening the soft keyboard on mobile.
+  const initial = options().find(e => e.getAttribute('aria-pressed') === 'true') || options()[0] || focusables().find(e => !e.matches('input[type="search"]'));
   initial?.focus({ preventScroll: true });
 }

@@ -151,6 +151,13 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
       assert(box && box.x >= 0 && box.x + box.width <= width);
       const listBox = await panel.locator('.composer-queue-list').boundingBox();
       assert(listBox && listBox.height <= 240);
+      const mobileRow = await panel.locator('.composer-queue-item').first().evaluate(element => {
+        const content = element.querySelector('.composer-queue-content').getBoundingClientRect();
+        const actions = element.querySelector('.composer-queue-actions').getBoundingClientRect();
+        return { contentBottom: content.bottom, actionsTop: actions.top, actionsRight: actions.right, rowRight: element.getBoundingClientRect().right };
+      });
+      assert(mobileRow.actionsTop >= mobileRow.contentBottom - 1, `${width}: actions occupy a separate row below the message`);
+      assert(mobileRow.actionsRight <= mobileRow.rowRight + 1, `${width}: actions stay inside the queue row`);
     }
     assert.equal(commandCount('prompt'), 0);
     assert.equal(commandCount('queue_message'), 0);

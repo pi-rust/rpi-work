@@ -135,7 +135,8 @@ const packageDesign = {
     await measure('files', ['.project-file-row', '.project-preview-title strong']);
     if (!baseline) assert.equal(await computed('.project-file-row', 'font-size'), '14px');
     await shot('files'); await page.keyboard.press('Escape');
-    await page.getByRole('tab', { name: /^变更/ }).click();
+    await page.getByRole('button', { name: '打开项目文件', exact: true }).click();
+    await files.getByRole('tab', { name: /^变更/ }).click();
     await page.locator('.change-file').first().click(); await page.locator('.selected-diff-scroll').waitFor();
     await measure('review', ['.diff-lines', '.diff-hunk']);
     if (!baseline) {
@@ -147,7 +148,7 @@ const packageDesign = {
     if (!baseline) assert.equal(await computed('.diff-lines', 'background-color'), await computed('.change-preview', 'background-color'));
     await shot('review-dark');
     await saveMode('light');
-    await page.getByRole('tab', { name: '对话', exact: true }).click();
+    await page.keyboard.press('Escape');
     pass('read-only files and actual fixture diffs retain the existing review actions');
 
     for (const width of [1280, 390, 320]) {
@@ -185,7 +186,7 @@ const packageDesign = {
         await files.locator('.project-file-row').filter({ hasText: 'README.md' }).click();
         await files.getByRole('heading', { name: 'RPI Work', exact: true }).waitFor();
         await bounded('.project-files-modal'); await shot(`files-${width}`); await page.keyboard.press('Escape');
-        await page.locator('.section-tabs').evaluate(e => { e.scrollLeft = 0; });
+        await page.locator('.app-header .top-actions').evaluate(e => { e.scrollLeft = 0; });
       }
       assert.equal(await page.locator('.composer textarea').inputValue(), draft);
     }

@@ -22,10 +22,10 @@ use work_node_runtime::{
 pub(crate) mod session_operations;
 mod timeline;
 
-pub(crate) fn router(access: Arc<work_http_runtime::AccessState>) -> Router<Arc<ServerState>> {
+pub(crate) fn router(access: Arc<crate::access::AccessState>) -> Router<Arc<ServerState>> {
     Router::new()
         .route("/.well-known/rpi-work-entry", get(hosted_entry))
-        .merge(work_http_runtime::auth_router(access))
+        .merge(crate::access::auth_router(access))
         .route("/api/v1/realtime", get(crate::realtime::upgrade))
         .route("/api/v1/transports", get(crate::realtime::discovery))
         .route("/api/v1/{*path}", any(dispatch))
@@ -457,6 +457,18 @@ async fn perform(
                 timeline::parameters(&query, true)?,
             )
             .await?
+        }
+        ("POST", ["sessions", id, "tool-program", "children", "query"]) => {
+            w.tool_program_children(id, body).await?
+        }
+        ("POST", ["sessions", id, "tool-program", "phases", "query"]) => {
+            w.tool_program_phases(id, body).await?
+        }
+        ("POST", ["sessions", id, "tool-program", "body", "query"]) => {
+            w.tool_program_body(id, body).await?
+        }
+        ("POST", ["sessions", id, "tool-program", "snapshot"]) => {
+            w.tool_program_snapshot(id, body).await?
         }
         ("POST", ["sessions", id, "dialogs"]) => {
             use work_node_api::api::realtime::RealtimeOperationKind as Kind;

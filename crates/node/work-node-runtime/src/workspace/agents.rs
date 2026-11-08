@@ -971,6 +971,10 @@ impl PreparedAgent {
         matches!(command, "prompt" | "abort" | "cancel")
     }
     #[must_use]
+    pub fn supports_prompt_content(&self) -> bool {
+        self.live.client.supports_prompt_content()
+    }
+    #[must_use]
     pub fn supports_config_option(&self, id: &str, config: &str) -> bool {
         self.validate(id).is_ok()
             && RuntimeTransport::supports_config_option(
@@ -1104,6 +1108,9 @@ impl PreparedAgent {
         self.validate(id)?;
         match command {
             "prompt" => {
+                let content_blocks = payload.get("contentBlocks").cloned();
+                let message = payload["message"].as_str().unwrap_or_default().to_owned();
+                let journal_content = content_blocks.clone().unwrap_or_else(|| json!(message));
                 let guard = self.live.prompt.clone().try_lock_owned().map_err(|_| {
                     WorkspaceError::Runtime(RuntimeError::Acp(
                         "ACP session already has an active prompt".into(),
@@ -1121,22 +1128,22 @@ impl PreparedAgent {
                         r.summary.status = "running".into();
                         r.assistant.clear();
                         vec![frame("agent_start", json!({"type":"agent_start"})),
-                            frame("message_end", json!({"type":"message_end","message":{"role":"user","content":payload["message"],"entryId":format!("{id}:user:{}",r.summary.last_seq+1)}}))]
+                            frame("message_end", json!({"type":"message_end","message":{"role":"user","content":journal_content,"entryId":format!("{id}:user:{}",r.summary.last_seq+1)}}))]
                     })?;
                     completion
                 };
                 let live = self.live.clone();
                 let store = self.store.clone();
                 let id = self.id.clone();
-                let message = payload["message"].as_str().unwrap_or_default().to_owned();
                 // Own the concrete Send future, never the UI's ?Send transport future.
                 let task = tokio::spawn(async move {
                     let _guard = guard;
-                    let result = live
-                        .client
-                        .prompt(&live.external, &message)
-                        .await
-                        .map_err(WorkspaceError::from);
+                    let result = if let Some(content) = content_blocks {
+                        live.client.prompt_content(&live.external, &content).await
+                    } else {
+                        live.client.prompt(&live.external, &message).await
+                    }
+                    .map_err(WorkspaceError::from);
                     match result {
                         Ok(value) => {
                             completion.changed().await.map_err(|_| {

@@ -180,6 +180,8 @@ pub fn UserTimeline(
     history: Signal<super::history_window::HistoryWindow>,
     client: Signal<Option<WorkspaceClient>>,
     session_id: String,
+    selected_child: Signal<Option<String>>,
+    selected_phase: Signal<Option<String>>,
     #[props(default)] native_queries: bool,
 ) -> Element {
     let instance = use_hook(|| NEXT_INSTANCE.fetch_add(1, Ordering::Relaxed));
@@ -432,6 +434,7 @@ pub fn UserTimeline(
         "还有更早消息尚未加载。"
     };
     rsx! {
+        super::tool_program::ToolProgramWorkbench { client, session_id: session_id.clone(), selected_child, selected_phase }
         HistoricalReader { state: reading, onload: move |query| load_window.call(query), onclose: move |()| close_reader.call(()) }
         div {
             id: "{id}", class: "conversation-timeline", "data-session-scope": scope,

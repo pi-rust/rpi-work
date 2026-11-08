@@ -149,7 +149,8 @@ pub fn SessionSwitcher(
                             r#type: "button", role: "treeitem", aria_expanded: node_expanded.to_string(),
                             aria_label: format!("{}节点，{} 个会话", node_tree_label, matching.len()),
                             onclick: move |_| node_expanded.toggle(),
-                            Icon { name: "chevron-right" } Icon { name: "server" }
+                            Icon { name: "chevron-right" }
+                            Icon { name: if node_tree_label == "本地节点" { "monitor" } else { "cloud" } }
                             strong { "{node_tree_label}" } span { "{matching.len()} 个会话" }
                         }
                         if *node_expanded.read() {

@@ -56,8 +56,14 @@ pub(crate) fn ComponentsPage(
         style { {include_str!("components.css")} }
         section { class: "component-settings", aria_label: "节点组件",
             div { class: "page-heading",
-                div { h1 { "节点组件" } p { "组件提供能力和专用面板，在需要时加载。" } }
-                button { class: "button", disabled: busy() || !online, onclick: move |_| install_open.set(!install_open()), "安装组件" }
+                div { h1 { "节点组件" } p { "组件提供能力和专用面板，在需要时加载；远程协作由宿主的 rpi-http-extension 提供。" } }
+                button { class: "button", disabled: busy() || !online, onclick: move |_| install_open.set(!install_open()), "安装其他组件" }
+            }
+            if !items.iter().any(|component| component.manifest.id == "rpi-http") {
+                div { class: "component-missing", role: "status",
+                    strong { "当前宿主未提供远程协作扩展" }
+                    p { "rpi-http-extension 未加载，无法在这里开启远程协作、配置 HTTP 或生成手机授权二维码。请升级或重新启动当前执行节点。" }
+                }
             }
             if !online { p { class: "connection-form-error", "节点离线，组件操作暂不可用。" } }
             if let Some(Err(message)) = catalog.read().as_ref() {
@@ -129,15 +135,15 @@ pub(crate) fn ComponentsPage(
                 div { class: "component-catalog",
                     for component in items {
                         article { class: "component-card", key: "{component.manifest.id}",
-                            div { strong { "{component.manifest.title}" } span { class: "meta", "{component.manifest.version}" } }
-                            p { "{component.manifest.description}" }
+                            div { strong { if component.manifest.id == "rpi-http" { "远程协作" } else { "{component.manifest.title}" } } span { class: "meta", if component.manifest.id == "rpi-http" { "宿主扩展 · rpi-http-extension" } else { "{component.manifest.version}" } } }
+                            p { if component.manifest.id == "rpi-http" { "由宿主扩展管理 HTTP 访问、共享开关、节点配置和手机授权。配置会保存在当前执行节点。" } else { "{component.manifest.description}" } }
                             for panel in &component.manifest.panels {
                                 button { class: "button", disabled: !online || !component.enabled, onclick: {
                                     let id = component.manifest.id.clone(); let panel = panel.id.clone();
                                     move |_| selected.set(Some((id.clone(), panel.clone())))
                                 }, "打开{panel.title}" }
                             }
-                            if component.source != "bundled" {
+                            if component.source != "bundled" && component.manifest.id != "rpi-http" {
                                 button { class: "button", disabled: busy() || !online, onclick: {
                                     let id = component.manifest.id.clone();
                                     move |_| {

@@ -1,8 +1,8 @@
 //! Authenticated JSON-text WS adapter. Owner work stays on the existing `LocalSet`.
 use crate::{
-    ServerState,
+    access::AuthLease,
     executor::{self, RealtimeAction, RealtimeReply},
-    security::AuthLease,
+    ServerState,
 };
 use axum::{
     Json,

@@ -25,14 +25,14 @@ const timeout=(p,ms=30000)=>Promise.race([p,new Promise((_,reject)=>{const t=set
         const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
         await page.goto(node.address,{waitUntil:'domcontentloaded',timeout:90000});
         await page.getByRole('button',{name:'打开设置',exact:true}).click({timeout:90000});
-        await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'节点组件',exact:true}).click();
+        await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点与组件',exact:true}).click();
         await page.getByRole('button',{name:'打开远程访问',exact:true}).waitFor();
         assert.equal(await page.locator('.component-frame').count(),0);
         await page.getByRole('button',{name:'打开远程访问',exact:true}).click();
         const remote=page.frameLocator('.component-frame');
         await remote.getByText('正在共享',{exact:true}).waitFor();assert.equal(await remote.getByRole('switch').isDisabled(),true);
         await page.getByRole('button',{name:'返回组件目录'}).click();
-        await page.getByRole('button',{name:'安装组件',exact:true}).click();
+        await page.getByRole('button',{name:'安装其他组件',exact:true}).click();
         await page.getByText('粘贴组件包 JSON',{exact:true}).click();
         const manifest={schemaVersion:1,id:'custom-notes',version:'1.0.0',title:'自定义记录面板',description:'独立布局，不修改 Work UI',panels:[{id:'notes',title:'记录面板',slot:'settings',entry:'index.html',protocol:1}],actions:{}};
         const files={'index.html':'<!doctype html><html lang="zh-CN"><body style="font:18px system-ui;padding:32px;background:#eff5ee"><h1>我的独立界面</h1><p>由安装包提供完整布局。</p></body></html>'};

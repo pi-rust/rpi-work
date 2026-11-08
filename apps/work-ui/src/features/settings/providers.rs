@@ -267,9 +267,9 @@ impl Confirmation {
 enum Edit {
     OpenNew,
     ResumeDefinition,
+    UseHostDefinition(ProviderDefinition),
     OpenDefinition(ProviderDefinition),
     OpenKey(String),
-    OpenNewKey,
     NewKeyId(String),
     Close,
     Id(String),
@@ -434,12 +434,18 @@ fn ProviderSettingsState(
                 editor.set(Editor::Definition);
                 confirmation.set(None);
             }
-            Edit::OpenKey(id) => {
-                editor.set(Editor::Key(id));
+            Edit::UseHostDefinition(d) => {
+                let mut value = DefinitionDraft::from(d);
+                value.existing = false;
+                for model in &mut value.models {
+                    model.original_id = None;
+                }
+                draft.set(value);
+                editor.set(Editor::Definition);
                 confirmation.set(None);
             }
-            Edit::OpenNewKey => {
-                editor.set(Editor::NewKey(String::new()));
+            Edit::OpenKey(id) => {
+                editor.set(Editor::Key(id));
                 confirmation.set(None);
             }
             Edit::NewKeyId(id) => {
@@ -565,7 +571,7 @@ fn ProviderSettingsState(
                 }
                 (_, readback) => {
                     catalog.set(readback.ok().filter(|c| !c.revision.is_empty()));
-                    error.set("提交失败、超时或回读不匹配，结果待核对。写入保持锁定；请点击「刷新并核对」重新读取后检查，不会自动重试，也不代表节点已取消操作。".into());
+                    error.set("提交失败、超时或回读不匹配，结果待核对。写入保持锁定；请重新进入供应商页面以重新读取宿主目录，不会自动重试，也不代表节点已取消操作。".into());
                 }
             }
         });
@@ -836,6 +842,17 @@ fn ProviderSettingsState(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let host_definitions = catalog
+        .read()
+        .as_ref()
+        .map(|value| {
+            value
+                .providers
+                .iter()
+                .filter_map(|entry| entry.definition.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let draft_value = draft();
     let editor_value = editor();
     let definition_title = if draft_value.existing {
@@ -849,10 +866,8 @@ fn ProviderSettingsState(
             div { class: "page-heading provider-toolbar",
                 div { h1 { "模型供应商" } p { "管理当前节点的模型连接，配置后即可在会话中选择。" } }
                 div { class: "provider-actions",
-                    button { class: "button", disabled: *busy.read() || !context.online, onclick: move |_| refresh.call(()), Icon { name: "refresh" } "刷新并核对" }
                     button { class: "button provider-extension-button", disabled: !context.online, onclick: move |event| { secret.set(String::new()); if is_fresh(&mounted.peek(), *ticket.peek()) { oncomponents.call(event); } }, Icon { name: "download" } "下载 Provider 扩展" }
                     button { class: "button primary", disabled: !enabled, onclick: move |_| edit.call(Edit::OpenNew), Icon { name: "plus" } "添加供应商" }
-                    button { class: "button", disabled: !enabled, onclick: move |_| edit.call(Edit::OpenNewKey), "添加独立凭据" }
                 }
             }
             div { class: "provider-overview", role: "note",
@@ -926,13 +941,38 @@ fn ProviderSettingsState(
                 }
             }
             div { class: "provider-section-heading provider-section-heading-muted", h2 { "可添加" } span { "· 0" } }
-            p { class: "provider-empty-hint", "暂无可添加的 Provider。点击顶部「下载 Provider 扩展」获取更多供应商。" }
+            p { class: "provider-empty-hint", "供应商目录由当前宿主提供；需要新增宿主未内置的供应商时，请先下载 Provider 扩展。" }
             if editor_value == Editor::Definition {
                 Modal { id: "provider-definition", title: definition_title, class: "provider-dialog", trap_focus: true, onclose: move |()| edit.call(Edit::Close),
                     div { class: "modal-body provider-management",
                         p { class: "provider-note", "这里只保存供应商定义，不会保存或替换 API Key。已有供应商和模型 ID 不能直接改名；移除模型后保存会删除它的高级配置。" }
                         fieldset { disabled: !enabled,
                             legend { "供应商" }
+                            if !host_definitions.is_empty() {
+                                label { r#for: "provider-host-template", "宿主支持的供应商模板"
+                                    select {
+                                        id: "provider-host-template",
+                                        aria_label: "宿主支持的供应商模板",
+                                        onchange: {
+                                            let templates = host_definitions.clone();
+                                            move |event| {
+                                                if event.value() == "custom" {
+                                                    edit.call(Edit::OpenNew);
+                                                } else if let Some(definition) = templates.iter().find(|item| item.id == event.value()) {
+                                                    edit.call(Edit::UseHostDefinition(definition.clone()));
+                                                }
+                                            }
+                                        },
+                                        option { value: "custom", "自定义供应商" }
+                                        for definition in host_definitions.iter() {
+                                            {
+                                                let label = if definition.name.is_empty() { definition.id.clone() } else { definition.name.clone() };
+                                                rsx! { option { value: "{definition.id}", "{label} · {definition.id}" } }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             div { class: "provider-fields",
                                 label { r#for: "provider-definition-id", "供应商 ID", input { id: "provider-definition-id", value: "{draft_value.id}", disabled: draft_value.existing, oninput: move |e| edit.call(Edit::Id(e.value())) } }
                                 label { r#for: "provider-definition-name", "显示名称", input { id: "provider-definition-name", value: "{draft_value.name}", oninput: move |e| edit.call(Edit::Name(e.value())) } }

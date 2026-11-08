@@ -457,6 +457,21 @@ struct WsSocket {
     _error: Closure<dyn FnMut(Event)>,
     _close: Closure<dyn FnMut(Event)>,
 }
+
+impl Drop for WsSocket {
+    fn drop(&mut self) {
+        // The browser keeps event-handler function references on the WebSocket.
+        // Detach them before Rust drops the wasm-bindgen closures; otherwise a
+        // late error/close event calls into a dropped Rust closure and traps the
+        // whole WASM event loop.
+        self.socket.set_onopen(None);
+        self.socket.set_onmessage(None);
+        self.socket.set_onerror(None);
+        self.socket.set_onclose(None);
+        let _ = self.socket.close();
+    }
+}
+
 async fn connect(client: &WorkClient) -> Result<(WsSocket, Hello), ClientError> {
     if client.bearer_token.is_some() {
         return Err(denied());
@@ -528,6 +543,14 @@ async fn connect(client: &WorkClient) -> Result<(WsSocket, Hello), ClientError> 
         let _ = sender.try_send(Err(unavailable()));
     }) as Box<dyn FnMut(_)>);
     socket.set_onclose(Some(close.as_ref().unchecked_ref()));
+    let mut ws = WsSocket {
+        socket,
+        frames: receiver,
+        _open: open,
+        _message: message,
+        _error: error,
+        _close: close,
+    };
     match futures_util::future::select(
         open_rx,
         gloo_timers::future::sleep(std::time::Duration::from_millis(CONNECT_TIMEOUT_MS as u64))
@@ -538,14 +561,6 @@ async fn connect(client: &WorkClient) -> Result<(WsSocket, Hello), ClientError> 
         futures_util::future::Either::Left((result, _)) => result.map_err(|_| unavailable())??,
         futures_util::future::Either::Right((result, _)) => result?,
     }
-    let mut ws = WsSocket {
-        socket,
-        frames: receiver,
-        _open: open,
-        _message: message,
-        _error: error,
-        _close: close,
-    };
     let incoming = ws.frames.next().await.ok_or_else(unavailable)??;
     let ServerFrame::Hello { hello, .. } = incoming.frame else {
         return Err(unavailable());

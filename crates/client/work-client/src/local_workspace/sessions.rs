@@ -88,6 +88,46 @@ impl LocalWorkspace {
             .await
             .map_err(Into::into)
     }
+    pub async fn tool_program_children(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, ClientError> {
+        self.owner
+            .tool_program_children(session_id, payload)
+            .await
+            .map_err(Into::into)
+    }
+    pub async fn tool_program_phases(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, ClientError> {
+        self.owner
+            .tool_program_phases(session_id, payload)
+            .await
+            .map_err(Into::into)
+    }
+    pub async fn tool_program_body(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, ClientError> {
+        self.owner
+            .tool_program_body(session_id, payload)
+            .await
+            .map_err(Into::into)
+    }
+    pub async fn tool_program_snapshot(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, ClientError> {
+        self.owner
+            .tool_program_snapshot(session_id, payload)
+            .await
+            .map_err(Into::into)
+    }
     pub async fn command<T: for<'de> Deserialize<'de>>(
         &self,
         session_id: &str,

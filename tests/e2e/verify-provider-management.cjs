@@ -138,9 +138,9 @@ const until = async (fn, label, timeout = 20000) => {
     await manager().getByRole('alert').filter({ hasText: '结果待核对' }).waitFor();
     assert(await manager().getByRole('button', { name: '添加供应商', exact: true }).isDisabled());
     assert.equal(JSON.parse(fs.readFileSync(modelsPath)).providers['browser-gateway'].baseUrl, 'https://edited.invalid/v2');
-    await manager().getByRole('button', { name: '刷新并核对', exact: true }).click();
-    await until(async () => await manager().getByRole('button', { name: '添加供应商', exact: true }).isEnabled(), 'explicit recovery');
-    assert.equal(requests.filter(r => r.path === '/api/v1/providers' && r.method === 'POST').length, postsBefore + 1);
+    await page.reload(); await openSettings();
+    await until(async () => await manager().getByRole('button', { name: '添加供应商', exact: true }).isEnabled(), 'automatic reread recovery');
+    assert.equal(requests.filter(r => r.path === '/api/v1/providers' && r.method === 'POST').length, postsBefore);
     await manager().getByRole('button', { name: '恢复未保存定义草稿', exact: true }).click();
     assert.equal(await dialog().getByLabel('Base URL', { exact: true }).inputValue(), 'https://stale-edit.invalid/v1');
     await dialog().getByRole('button', { name: '取消', exact: true }).click();
@@ -160,28 +160,6 @@ const until = async (fn, label, timeout = 20000) => {
     await manager().getByRole('status').filter({ hasText: '已释放 0 个空闲宿主' }).waitFor();
     assert.equal((await api('sessions')).sessions.length, 0);
     pass('explicit source-specific credential clearing, OAuth record deletion and config deletion preserve truthful independent states');
-    stage = 'independent-credential';
-    const definitionsBeforeKey = fs.readFileSync(modelsPath);
-    await manager().getByRole('button', { name: '添加独立凭据', exact: true }).click();
-    await dialog().getByLabel('凭据供应商 ID', { exact: true }).fill('before-id-change');
-    await dialog().getByLabel('新 API Key', { exact: true }).fill(KEY);
-    await dialog().getByLabel('凭据供应商 ID', { exact: true }).fill('openai');
-    assert.equal(await dialog().getByLabel('新 API Key', { exact: true }).inputValue(), '', 'changing target clears key');
-    await dialog().getByLabel('新 API Key', { exact: true }).fill(KEY);
-    await dialog().getByRole('button', { name: '仅保存 API Key', exact: true }).click(); await notice().waitFor();
-    row = (await api('providers')).providers.find(p => p.id === 'openai'); assert(!row.configured && row.storedCredential === 'apiKey');
-    assert.deepEqual(fs.readFileSync(modelsPath), definitionsBeforeKey);
-    const beforeCollision = requests.filter(r => r.path === '/api/v1/providers' && r.method === 'POST').length;
-    await manager().getByRole('button', { name: '添加独立凭据', exact: true }).click();
-    await dialog().getByLabel('凭据供应商 ID', { exact: true }).fill('openai');
-    await dialog().getByLabel('新 API Key', { exact: true }).fill('must-not-replace-fixture');
-    await dialog().getByRole('button', { name: '仅保存 API Key', exact: true }).click();
-    await dialog().getByRole('alert').filter({ hasText: '已有保存凭据' }).waitFor();
-    assert.equal(requests.filter(r => r.path === '/api/v1/providers' && r.method === 'POST').length, beforeCollision);
-    assert.equal(JSON.parse(fs.readFileSync(authPath)).openai.key, '$!provider-fixture $$VAR $${MISSING} $$(not-a-command)');
-    await dialog().getByRole('button', { name: '取消并清空', exact: true }).click();
-    await confirm(card('openai').getByRole('button', { name: '清除已存 API Key', exact: true }));
-    pass('builtin credential-only creation changes no definitions; target changes clear input and existing records cannot be silently replaced');
     stage = 'responsive';
     for (const theme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: theme }); await until(() => page.evaluate(t => document.documentElement.dataset.mode === t, theme), 'actual color mode');
@@ -206,8 +184,8 @@ const until = async (fn, label, timeout = 20000) => {
     pass('verified real light/dark 1440/390/320 shared form layout, keyboard labels and 44px targets');
     stage = 'reload'; await page.setViewportSize({ width: 1440, height: 1000 }); await page.reload(); await openSettings();
     assert.equal(await manager().locator('.provider-entry').count(), 1);
-    const refresh = manager().getByRole('button', { name: '刷新并核对', exact: true }); await refresh.focus(); await page.keyboard.press('Enter');
-    await until(async () => await manager().getByRole('button', { name: '添加供应商', exact: true }).isEnabled(), 'keyboard refresh');
+    await page.reload(); await openSettings();
+    await until(async () => await manager().getByRole('button', { name: '添加供应商', exact: true }).isEnabled(), 'reload provider catalog');
     assert.equal((await api('sessions')).sessions.length, 0); assert.equal(errors.length, 0, errors.join('\n'));
     pass('reload retains saved state with no secret draft or automatic host/model session');
   } catch (e) {

@@ -13,7 +13,7 @@
 
 `work-node-api` 定义原生目录、管理请求、精确配置、操作结果和 authoring 类型。Work owner 校验项目、来源根和 opaque references，持有源码/provenance 记录并适配原生服务。extcore/rpi 拥有安装、精确加载、宿主代次、revision CAS、执行 admission、操作恢复与 transcript；Work 不维护另一套 desired 配置执行器。
 
-依赖固定在 `rpi-package` Git revision `17ba89c0098f018db76e22051fe8c73e2792dc1c`（manifest `rpi-extcore =0.2.6`，Cargo.lock 同源）。该修订包含已审核的资源契约，不能仅按版本号换成 crates.io `0.2.6`。升级需核对原生运行时支持及真实 readback；邻接 checkout 不是生产依赖。
+依赖固定在 `rpi-package` Git revision `1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd`（manifest `rpi-extcore =0.2.11`，Cargo.lock 同源）。该修订包含已审核的资源契约，不能仅按版本号换成 crates.io `0.2.11`。升级需核对原生运行时支持及真实 readback；邻接 checkout 不是生产依赖。
 
 ## 四组功能
 

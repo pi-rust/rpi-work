@@ -47,7 +47,7 @@ flowchart TB
 
 `work-core::api` 和 `work-node::workspace` 等公开路径仍可使用，但源码分别在 `work-node-api` 和 `work-node-runtime`。`NodeApi` 是进程内 object-safe 应用端口，future/事件流不强制 `Send`；它不是网络协议或授权凭据。HTTP handler 适配已有 owner，不能因此假定所有操作均通过 trait 动态分发。
 
-当前 `rpi-extcore` 锁定 Git revision `17ba89c0098f018db76e22051fe8c73e2792dc1c`，manifest 版本为 `=0.2.6`。该 revision 的内容不能用 crates.io 同版本号替换；构建不依赖相邻仓库或本机路径覆盖。依赖细节见[资源与源码服务](resources.md)。
+当前 `rpi-extcore` 锁定 Git revision `1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd`，manifest 版本为 `=0.2.11`。该 revision 的内容不能用 crates.io 同版本号替换；构建不依赖相邻仓库或本机路径覆盖。依赖细节见[资源与源码服务](resources.md)。
 
 ## 启动与生命周期
 

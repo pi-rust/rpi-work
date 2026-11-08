@@ -18,9 +18,9 @@ use super::{
     history::message_id,
     identity::{node_origin, project_scope_key, session_scope_key},
     runtime::{
-        InteractionState, SessionObservation, connection_status, conversation_title,
-        default_node_url, extension_config_locked, interaction_state, phase_label,
-        projection_status, resource_snapshot, sync_sidebar_session, task_status, transport_online,
+        InteractionState, SessionObservation, conversation_title, default_node_url,
+        extension_config_locked, interaction_state, phase_label, projection_status,
+        resource_snapshot, sync_sidebar_session, transport_online,
     },
     transcript_order::{RowSource, TranscriptOrder},
 };
@@ -34,8 +34,8 @@ use crate::{
         conversation::{
             activity, composer_extras, composer_input, execution_backend, history_pager,
             history_window::HistoryWindow, message_image, message_links, message_queue,
-            model_picker, output_motion, scroll_follow, timeline as conversation, turn_timing,
-            user_timeline,
+            model_picker, output_motion, scroll_follow, timeline as conversation, tool_program,
+            turn_timing, user_timeline,
         },
         meta_agent,
         observability::{runtime_stats, traces},
@@ -290,6 +290,8 @@ pub(super) fn App() -> Element {
     let mut change_diff = use_signal(|| None::<Diff>);
     let mut change_error = use_signal(|| None::<String>);
     let mut selected_session = use_signal(|| None::<String>);
+    let selected_tool_program_child = use_signal(|| None::<String>);
+    let selected_tool_program_phase = use_signal(|| None::<String>);
     let mut selected_session_title = use_signal(|| None::<String>);
     let mut session_generation = use_signal(|| 0u64);
     let requests = use_signal(Vec::<Task>::new);
@@ -335,7 +337,6 @@ pub(super) fn App() -> Element {
             project_id,
         )));
     };
-    let mut active_view = use_signal(|| "conversation".to_owned());
     let mut sidebar_open = use_signal(|| false);
     use_effect(move || {
         let open = *sidebar_open.read();
@@ -405,6 +406,7 @@ pub(super) fn App() -> Element {
         });
     });
     let mut project_files_open = use_signal(|| false);
+    let mut project_file_tab = use_signal(|| "files".to_owned());
     let mut project_file_preview = use_signal(|| false);
     let mut project_file_lines = use_signal(|| None::<(usize, usize)>);
     let mut reported_files = use_signal(|| (String::new(), Vec::<work_client::FileEntry>::new()));
@@ -481,6 +483,9 @@ pub(super) fn App() -> Element {
     let mut pending_enter = use_signal(|| None::<(String, u64, u64)>);
     let mut queue = use_signal(|| None::<QueueSnapshot>);
     let mut queue_revision = use_signal(|| 0u64);
+    // An abort settles the active run, but must not make already accepted
+    // follow-up messages disappear while the node is still reconciling them.
+    let mut queue_preserve_empty = use_signal(|| false);
     let mut queue_busy = use_signal(std::collections::HashSet::<String>::new);
     let mut queue_errors = use_signal(std::collections::HashMap::<String, String>::new);
     let mut queue_history = use_signal(std::collections::HashMap::<String, QueueSnapshot>::new);
@@ -673,13 +678,11 @@ pub(super) fn App() -> Element {
     let mut project_aliases_loaded = use_signal(|| false);
     settings::use_pairing();
     let mut active_page = use_signal(|| "workspace".to_owned());
+    let mut advanced_features_expanded = use_signal(|| false);
     // Leaving the composer abandons automatic navigation for this attempt.
     // Returning before its response arrives must not restore that intent.
     use_effect(move || {
-        if *new_session_follow.read()
-            && (active_page.read().as_str() != "workspace"
-                || active_view.read().as_str() != "conversation")
-        {
+        if *new_session_follow.read() && active_page.read().as_str() != "workspace" {
             new_session_follow.set(false);
         }
     });
@@ -1613,6 +1616,7 @@ pub(super) fn App() -> Element {
                             session_binding.set(None);
                             selected_session_title.set(None);
                             delete_confirmation.set(false);
+                            queue_preserve_empty.set(false);
                             queue.set(None);
                             runtime_state.set(None);
                             pending_dialogs.set(Vec::new());
@@ -1661,6 +1665,7 @@ pub(super) fn App() -> Element {
         delete_confirmation.set(false);
         // Do not expose commands until this exact session observation is ready.
         selected_session.set(None);
+        queue_preserve_empty.set(false);
         queue.set(None);
         runtime_state.set(None);
         projection.set(None);
@@ -2247,7 +2252,15 @@ pub(super) fn App() -> Element {
                                                         return;
                                                     }
                                                     if let Ok(snapshot) = result {
-                                                        queue.set(Some(snapshot));
+                                                        let keep_cached = *queue_preserve_empty
+                                                            .peek()
+                                                            && snapshot.items.is_empty()
+                                                            && queue.peek().as_ref().is_some_and(
+                                                                |current| !current.items.is_empty(),
+                                                            );
+                                                        if !keep_cached {
+                                                            queue.set(Some(snapshot));
+                                                        }
                                                     }
                                                 }
                                                 if refresh_access.supports_command("get_state") {
@@ -2332,6 +2345,7 @@ pub(super) fn App() -> Element {
         selected_session_title.set(None);
         transcript.set(Vec::new());
         projection.set(None);
+        queue_preserve_empty.set(false);
         queue.set(None);
         runtime_state.set(None);
         pending_dialogs.set(Vec::new());
@@ -2439,7 +2453,6 @@ pub(super) fn App() -> Element {
         // its persisted binding nor its scope-keyed draft is changed by this path.
         let backend = selected_backend.peek().clone();
         select_project(project_id.clone(), false);
-        active_view.set("conversation".into());
         new_session_busy.set(true);
         new_session_follow.set(true);
         status.set("正在准备新会话…".into());
@@ -2507,9 +2520,7 @@ pub(super) fn App() -> Element {
             if *node_connection.epoch.peek() != epoch {
                 return;
             }
-            let follow = *new_session_follow.peek()
-                && active_page.peek().as_str() == "workspace"
-                && active_view.peek().as_str() == "conversation";
+            let follow = *new_session_follow.peek() && active_page.peek().as_str() == "workspace";
             new_session_follow.set(false);
             match result {
                 Ok(mut session) => {
@@ -2853,7 +2864,7 @@ pub(super) fn App() -> Element {
         let scope = (node_url.read().clone(), selected_project.read().clone());
         let client = shared_client.read().clone();
         let descriptor = transport_descriptor.read().clone();
-        let reviewing = active_view.read().as_str() == "changes";
+        let reviewing = *project_files_open.read() && project_file_tab.read().as_str() == "changes";
         let _refresh = *git_refresh.read();
         let scope_changed = git_scope.peek().as_ref() != Some(&scope);
         if scope_changed {
@@ -3245,6 +3256,7 @@ pub(super) fn App() -> Element {
         let can_read_queue = session_supports("get_queue");
         let generation = *session_generation.read();
         let context = model_context();
+        queue_preserve_empty.set(false);
         sending.write().insert(scope.clone());
         let pending_status = "正在投递消息，等待节点确认…";
         status.set(pending_status.into());
@@ -3548,6 +3560,9 @@ pub(super) fn App() -> Element {
             return;
         }
         let context = model_context();
+        // Any explicit queue action is authoritative, including Refresh/Clear;
+        // it may replace a cached snapshot preserved after abort.
+        queue_preserve_empty.set(false);
         queue_busy.write().insert(scope.clone());
         queue_revision += 1;
         queue_errors.write().remove(&scope);
@@ -3769,6 +3784,9 @@ pub(super) fn App() -> Element {
             return;
         }
         // Stop cancels future intent, not the draft or an already accepted send.
+        // Keep the last accepted queue snapshot visible through the interrupted
+        // settlement; an abort response must not look like clear_queue.
+        queue_preserve_empty.set(true);
         pending_enter.set(None);
         stopping.write().insert(scope.clone());
         let context = model_context();
@@ -3785,6 +3803,7 @@ pub(super) fn App() -> Element {
             let still_stopping = stopping.peek().contains(&scope);
             if result.is_err() {
                 stopping.write().remove(&scope);
+                queue_preserve_empty.set(false);
             }
             if still_stopping {
                 match result {
@@ -4330,29 +4349,6 @@ pub(super) fn App() -> Element {
         .unwrap_or_default();
     let transport_ready =
         transport_online(projection.read().as_ref(), &node_connection.phase.read());
-    let (task_tone, task_label) = if interaction.is_active() {
-        match interaction {
-            InteractionState::AwaitingInput => ("awaiting-input", "等待确认"),
-            InteractionState::Cancelling => ("cancelling", "停止中"),
-            InteractionState::Sending | InteractionState::Running => ("running", "执行中"),
-            InteractionState::Disconnected | InteractionState::Ready => task_status(
-                projection.read().as_ref(),
-                &node_connection.phase.read(),
-                local_workspace,
-            ),
-        }
-    } else {
-        task_status(
-            projection.read().as_ref(),
-            &node_connection.phase.read(),
-            local_workspace,
-        )
-    };
-    let (connection_tone, node_connection_label) = connection_status(
-        projection.read().as_ref(),
-        &node_connection.phase.read(),
-        local_workspace,
-    );
     // A complete message must take over its live slot, not jump ahead of older
     // projection-only replies. Pagination inserts before surviving history anchors.
     let order_scope = format!(
@@ -4435,37 +4431,140 @@ pub(super) fn App() -> Element {
         })
         .collect();
 
-    let header_menu_actions = move || {
-        rsx! {
-            if workspace_page {
-                button { role: "menuitem", disabled: selected_session.read().is_none(), onclick: move |_| { session_settings_tab.set("details".into()); session_details_open.set(true); }, Icon { name: "settings" } "会话设置" }
-            }
-            button { role: "menuitem", onclick: move |_| appearance_open.set(true), Icon { name: "sparkles" } "外观与主题" }
-            if workspace_page && active_view.read().as_str() == "changes" {
-                button { role: "menuitem", disabled: *git_loading.read() || selected_project.read().is_none(), onclick: move |_| git_refresh += 1,
-                    Icon { name: "refresh" } if *git_loading.read() { "刷新中…" } else { "刷新变更" }
-                }
-            }
-            button { role: "menuitem", disabled: !matches!(*node_connection.phase.read(), connections::Phase::Online) || catalog_refresh.read().busy,
-                onclick: move |_| {
-                    if !matches!(*node_connection.phase.peek(), connections::Phase::Online) || catalog_refresh.peek().busy { return; }
-                    let mut refresh = catalog_refresh.write();
-                    refresh.epoch = *node_connection.epoch.peek();
-                    refresh.request = refresh.request.saturating_add(1);
-                    refresh.busy = true;
-                    refresh.message.clear();
-                }, Icon { name: "refresh" } "刷新会话"
-            }
-            if let Some(session_id) = selected_session.read().as_ref() {
-                if development_associations.read().contains_key(&session_scope_key(&node_origin(node_url.read().as_str()), session_id)) {
-                    button { role: "menuitem", onclick: move |_| active_page.set("meta-agent".into()), "回到元Agent源稿" }
-                }
-            }
-            div { class: "header-menu-connection", role: "img", aria_label: "{node_connection_label}",
-                Icon { name: if connection_tone == "online" { "server" } else { "info" } } "{node_connection_label}"
-            }
-            hr {}
-        }
+    let changes_panel = rsx! {
+                            div { id: "changes-panel", role: "tabpanel", aria_busy: *git_loading.read(), aria_labelledby: "project-changes-tab", class: if *change_mobile_preview.read() { "change-workspace show-diff" } else { "change-workspace" },
+                                div { class: "review-overview",
+                                    div { class: "review-heading",
+                                        h2 { "变更" span { class: "review-total", "{change_count}" } }
+                                        if let Some(branch) = repository_snapshot.as_ref().and_then(|repo| repo.branch.as_ref()) {
+                                            p { class: "review-branch", title: "{branch}", "{branch}" }
+                                        }
+                                    }
+                                    div { class: "review-actions",
+                                        span { class: "review-progress", title: "仅记录本次阅读进度，不代表 Git 暂存或提交；刷新后重置。", "{reviewed_count}/{change_count} 已审阅" }
+                                    }
+                                }
+                                div { class: "change-layout",
+                                    aside { class: "change-browser",
+                                        div { class: "change-filters",
+                                            div { class: "change-search", Icon { name: "search".to_owned() } input { aria_label: "搜索变更文件", placeholder: "搜索文件…", value: "{change_query}", oninput: move |event| change_query.set(event.value()) } }
+                                            div { class: "change-filter-row",
+                                                input { aria_label: "筛选目录", placeholder: "所有目录", value: "{change_directory_filter}", oninput: move |event| change_directory_filter.set(event.value()) }
+                                                select { aria_label: "筛选变更类型", value: "{change_status_filter}", onchange: move |event| change_status_filter.set(event.value()),
+                                                    option { value: "all", "全部类型" }
+                                                    option { value: "M", "已修改 M" }
+                                                    option { value: "A", "新增 A" }
+                                                    option { value: "D", "删除 D" }
+                                                    option { value: "R", "重命名 R" }
+                                                    option { value: "C", "复制 C" }
+                                                    option { value: "U", "冲突 U" }
+                                                    option { value: "T", "类型变化 T" }
+                                                }
+                                            }
+                                            div { class: "change-filter-footer",
+                                                label { input { r#type: "checkbox", checked: *changes_unreviewed.read(), onchange: move |event| changes_unreviewed.set(event.checked()) } "仅未审阅" }
+                                                button { class: "change-clear-filters", disabled: change_query.read().is_empty() && change_directory_filter.read().is_empty() && change_status_filter.read().as_str() == "all" && !*changes_unreviewed.read(), onclick: move |_| {
+                                                    change_query.set(String::new());
+                                                    change_directory_filter.set(String::new());
+                                                    change_status_filter.set("all".into());
+                                                    changes_unreviewed.set(false);
+                                                }, "清除筛选" }
+                                            }
+                                        }
+                                        div { class: "change-list-caption", span { "文件" } span { "{visible_changes.len()} / {change_count}" } }
+                                        if *git_loading.read() {
+                                            div { class: "change-no-results", role: "status", "正在读取 Git 状态…" }
+                                        } else if let Some(error) = git_error.read().as_ref() {
+                                            div { class: "change-no-results error-text", role: "alert", strong { "Git 状态读取失败" } p { "{error}" }
+                                                button { onclick: move |_| git_refresh += 1, "重试读取变更" }
+                                            }
+                                        } else if git_status.read().is_none() {
+                                            div { class: "change-no-results", "连接项目后加载 Git 状态。" }
+                                        } else if repository_snapshot.as_ref().is_some_and(|repo| !repo.is_repository) {
+                                            div { class: "change-no-results", "当前项目不是 Git 仓库。" }
+                                        } else if repository_snapshot.as_ref().is_some_and(|repo| repo.files.is_empty()) {
+                                            div { class: "change-no-results", "工作区干净，没有变更。" }
+                                        } else if visible_changes.is_empty() {
+                                            div { class: "change-no-results", strong { "没有匹配的变更" } p { "试试其他路径、类型或审阅筛选。" } }
+                                        } else {
+                                            div { class: "change-file-list",
+                                                for changed in visible_changes.iter() {
+                                                    {
+                                                        let path = changed.path.clone();
+                                                        let status_code = change_status_label(&changed.status);
+                                                        let (directory, filename) = changed.path.rsplit_once(['/', '\\']).unwrap_or(("", &changed.path));
+                                                        let selected = selected_change_file.read().as_ref() == Some(&path);
+                                                        let staged = changed.staged && !changed.unstaged;
+                                                        let reviewed = reviewed_changes.read().contains(&path);
+                                                        rsx! {
+                                                            button {
+                                                                key: "review-file-{path}",
+                                                                "data-change-path": "{path}", title: "{path}", aria_pressed: selected,
+                                                                class: if selected { "change-file selected" } else { "change-file" },
+                                                                onclick: move |_| open_change(path.clone(), staged),
+                                                                Icon { name: "file".to_owned() }
+                                                                span { class: "change-file-name",
+                                                                    strong { "{filename}" }
+                                                                    small { class: "change-file-context",
+                                                                        if !directory.is_empty() { span { class: "change-file-directory", "{directory}" } span { "·" } }
+                                                                        span { class: "change-file-stage", if changed.staged && changed.unstaged { "已暂存 + 工作区变更" } else if changed.staged { "已暂存" } else if changed.status == "??" { "未追踪" } else { "工作区变更" } }
+                                                                    }
+                                                                    if let Some(original) = changed.original_path.as_ref() { small { class: "change-file-origin", title: "原路径：{original}", "← {original}" } }
+                                                                }
+                                                                span { class: "file-change-status status-{status_code}", title: "Git 状态：{changed.status}", "{status_code}" }
+                                                                span { class: if reviewed { "file-review-mark reviewed" } else { "file-review-mark" }, aria_label: if reviewed { "已审阅" } else { "未审阅" }, if reviewed { "✓" } else { "·" } }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    section { class: "change-preview",
+                                        if let Some(path) = selected_change_file.read().clone() {
+                                            {
+                                                let reviewed_path = path.clone();
+                                                let unstaged_path = path.clone();
+                                                let staged_path = path.clone();
+                                                let changed = repository_snapshot.as_ref().and_then(|repo| repo.files.iter().find(|file| file.path == path));
+                                                let has_staged = changed.is_some_and(|file| file.staged);
+                                                let has_unstaged = changed.is_some_and(|file| file.unstaged);
+                                                rsx! {
+                                                    div { class: "selected-file-heading",
+                                                        button { class: "back-to-files", aria_label: "返回文件列表", onclick: move |_| change_mobile_preview.set(false), Icon { name: "back".to_owned() } span { "文件列表" } }
+                                                        div { class: "review-file-title", strong { title: "{path}", "{path}" }
+                                                            small { if *change_staged.read() { "HEAD → 暂存区" } else { "暂存区 → 工作区" } }
+                                                        }
+                                                    }
+                                                    div { class: "review-file-toolbar",
+                                                        div { class: "review-diff-switch", role: "group", aria_label: "Diff 基准",
+                                                            button { disabled: !has_unstaged, aria_label: "工作区 diff", aria_pressed: !*change_staged.read(), onclick: move |_| open_change(unstaged_path.clone(), false), "工作区" }
+                                                            button { disabled: !has_staged, aria_label: "已暂存 diff", aria_pressed: *change_staged.read(), onclick: move |_| open_change(staged_path.clone(), true), "已暂存" }
+                                                        }
+                                                        label { class: "review-mark-control", title: "本地阅读进度，刷新变更后重置。", input { r#type: "checkbox", aria_label: "已审阅（仅本地）", checked: reviewed_snapshot.contains(&reviewed_path), onchange: move |event| {
+                                                            if event.checked() { reviewed_changes.write().insert(reviewed_path.clone()); } else { reviewed_changes.write().remove(&reviewed_path); }
+                                                        } } "标记已审阅" }
+                                                    }
+                                                }
+                                            }
+                                            if let Some(patch) = change_diff.read().as_ref() {
+                                                div { class: "selected-diff-scroll", {render_diff(&patch.patch)} }
+                                            } else if let Some(error) = change_error.read().as_ref() {
+                                                div { class: "change-preview-empty error-text", strong { "Git patch 读取失败" } p { "{error}" }
+                                                    button { onclick: move |_| {
+                                                        let staged = *change_staged.peek();
+                                                        open_change(path.clone(), staged);
+                                                    }, "重试读取 diff" }
+                                                }
+                                            } else {
+                                                div { class: "change-preview-empty", "正在加载 Git patch…" }
+                                            }
+                                        } else {
+                                            div { class: "change-preview-empty", "从左侧选择一个文件查看 diff" }
+                                        }
+                                    }
+                                }
+                            }
     };
 
     rsx! {
@@ -4535,10 +4634,9 @@ pub(super) fn App() -> Element {
                     }
                 }
             }
-            main { class: format!("{}{}{}", match (active_page.read().as_str(), active_view.read().as_str(), *inspector_open.read()) {
-                ("settings", _, _) => "app-shell context-hidden",
-                ("workspace", "changes", _) => "app-shell review-mode",
-                ("workspace", _, false) => "app-shell context-hidden",
+            main { class: format!("{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
+                ("settings", _) => "app-shell context-hidden",
+                ("workspace", false) => "app-shell context-hidden",
                 _ => "app-shell",
             }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }),
                 "data-device-mode": if mobile_device { "mobile" } else { "desktop" },
@@ -4559,21 +4657,16 @@ pub(super) fn App() -> Element {
                         strong { "rpi" span { "work" } }
                         span { class: "version", "MVP" }
                     }
-                    node_info::WorkspaceLocation {
-                        local: node_display_local,
-                        address: node_url.read().clone(),
-                        onsettings: move |()| { active_page.set("settings".into()); settings_section.set("devices".into()); sidebar_open.set(false); },
-                    }
-                    button { class: "search-trigger", onclick: move |_| { global_search_open.set(true); },
-                        Icon { name: "search" } span { "搜索项目与会话" } kbd { "⌘ K" }
-                    }
                     nav { class: "primary-nav", aria_label: "主导航",
-                        button { class: if active_page.read().as_str() == "workspace" { "nav-item active" } else { "nav-item" }, onclick: move |_| { active_page.set("workspace".to_owned()); sidebar_open.set(false); }, Icon { name: "layout" } "工作空间" }
                         if !resource_nav_items.is_empty() {
-                            div { class: "nav-group", aria_label: "能力库",
-                                div { class: "nav-group-label", "能力库" }
-                                for (page, icon, title, _) in resource_nav_items.iter() {
-                                    button { class: if active_page.read().as_str() == *page { "nav-item active" } else { "nav-item" }, onclick: { let page = (*page).to_owned(); move |_| { active_page.set(page.clone()); sidebar_open.set(false); } }, Icon { name: (*icon).to_owned() } "{title}" }
+                            div { class: "nav-group advanced-nav-group", aria_label: "高级功能",
+                                button { class: if resource_nav_items.iter().any(|(page, _, _, _)| active_page.read().as_str() == *page) { "nav-item nav-disclosure-trigger active" } else { "nav-item nav-disclosure-trigger" }, r#type: "button", aria_expanded: advanced_features_expanded.to_string(), onclick: move |_| advanced_features_expanded.toggle(), Icon { name: "blocks" } span { "高级功能" } Icon { name: if *advanced_features_expanded.read() { "chevron-down" } else { "chevron-right" } } }
+                                if *advanced_features_expanded.read() {
+                                    div { class: "nav-subitems",
+                                        for (page, icon, title, _) in resource_nav_items.iter() {
+                                            button { class: if active_page.read().as_str() == *page { "nav-item active" } else { "nav-item" }, onclick: { let page = (*page).to_owned(); move |_| { active_page.set(page.clone()); sidebar_open.set(false); } }, Icon { name: (*icon).to_owned() } "{title}" }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4587,11 +4680,14 @@ pub(super) fn App() -> Element {
                                     {
                                         let id = session.session_id.clone();
                                         let selected = selected_session.read().as_ref() == Some(&id);
+                                        let project_label = session.project_id.as_ref().and_then(|project_id| {
+                                            projects.read().iter().find(|project| &project.id == project_id).map(|project| project.name.clone())
+                                        }).unwrap_or_else(|| "无项目".to_owned());
+                                        let recent_context = format!("项目：{project_label} · 节点：{node_display_label}");
                                         rsx! {
                                             management::SidebarSession {
                                                 key: "recent-sidebar-session-{id}", session: session.clone(), selected,
-                                                activity: sidebar_activity(session),
-                                                scope: session_scope_key(&node_url.read(), &id),
+                                                activity: sidebar_activity(session), context: Some(recent_context),
                                                 busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
                                                 now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
                                                 onnodeinfo: { let project_id=session.project_id.clone(); move |()| show_node_info(project_id.clone()) },
@@ -4600,6 +4696,9 @@ pub(super) fn App() -> Element {
                                     }
                                 }
                             }
+                        }
+                        div { class: "sidebar-session-divider", role: "separator", aria_label: "当前项目与会话",
+                            span { "当前项目与会话" }
                         }
                     }
                     div { class: "section-label",
@@ -4616,9 +4715,11 @@ pub(super) fn App() -> Element {
                                     class: if node_display_local { "sidebar-node-tree-info local" } else { "sidebar-node-tree-info remote" },
                                     r#type: "button", aria_label: "查看节点详情", title: "查看节点详情",
                                     onclick: move |_| show_node_info(None),
-                                    Icon { name: if node_display_local { "monitor" } else { "cloud" } }
-                                    span { "{node_display_label}" }
-                                    span { class: "sidebar-node-tree-status {node_status_tone}", title: node_status_short_label, aria_label: node_status_short_label }
+                                    span { class: "sidebar-node-tree-icon-wrap",
+                                        Icon { name: if node_display_local { "monitor" } else { "cloud" } }
+                                        span { class: "sidebar-node-tree-status {node_status_tone}", title: node_status_short_label, aria_label: node_status_short_label }
+                                    }
+                                    span { class: "sidebar-node-tree-label", "{node_display_label}" }
                                 }
                             }
                         }
@@ -4752,8 +4853,7 @@ pub(super) fn App() -> Element {
                                                             management::SidebarSession {
                                                                 key: "sidebar-session-{id}", session: session.clone(), selected,
                                                                 activity: sidebar_activity(session),
-                                                                scope: session_scope_key(&node_url.read(), &id),
-                                                                busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
+                                                                                busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
                                                                 now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
                                                                 onnodeinfo: { let project_id=session.project_id.clone(); move |()| show_node_info(project_id.clone()) },
                                                             }
@@ -4801,7 +4901,6 @@ pub(super) fn App() -> Element {
                                         management::SidebarSession {
                                             key: "sidebar-session-{id}", session: session.clone(), selected,
                                             activity: sidebar_activity(session),
-                                            scope: session_scope_key(&node_url.read(), &id),
                                             busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
                                             now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
                                             onnodeinfo: { let project_id=session.project_id.clone(); move |()| show_node_info(project_id.clone()) },
@@ -4853,57 +4952,25 @@ pub(super) fn App() -> Element {
                             }
                         }
                         div { class: "top-actions",
-                            if workspace_page && active_view.read().as_str() == "conversation" {
+                            if workspace_page {
                                 button { class: "icon-button timeline-toggle", r#type: "button",
                                     aria_label: if timeline_visible() { "隐藏时间线" } else { "显示时间线" },
                                     title: if timeline_visible() { "隐藏时间线" } else { "显示时间线" },
                                     aria_pressed: timeline_visible(), aria_expanded: timeline_visible(),
-                                    disabled: selected_session.read().is_none() || active_view.read().as_str() != "conversation",
+                                    disabled: selected_session.read().is_none(),
                                     onclick: move |_| timeline_visible.set(!timeline_visible()),
                                     Icon { name: "clock" }
                                 }
-                                button { class: "icon-button conversation-focus-toggle", r#type: "button",
-                                    aria_label: "全屏查看消息",
-                                    title: "全屏查看消息（Esc 退出）",
-                                    aria_pressed: conversation_focus(),
-                                    disabled: selected_session.read().is_none(),
-                                    onclick: move |_| {
-                                        sidebar_open.set(false);
-                                        inspector_open.set(false);
-                                        btw_open.set(false);
-                                        timeline_visible.set(false);
-                                        conversation_focus.set(true);
-                                        let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toolbar button')?.focus(), 0);");
-                                    },
-                                    Icon { name: "fullscreen" }
-                                }
+                                button { class: "icon-button", r#type: "button", aria_label: "打开项目文件", title: "项目文件与变更", onclick: move |_| {
+                                    project_file_tab.set("files".into());
+                                    project_files_open.set(true);
+                                }, Icon { name: "file".to_owned() } }
                             }
-                            span { class: "status-badge {task_tone}", role: "img", aria_label: "{task_label}", title: "{task_label}",
-                                i { "aria-hidden": "true" }
-                                span { class: "header-status-icon", Icon { name: match task_label {
-                                    "生成文本" => "edit",
-                                    "执行工具" => "tool",
-                                    _ => match task_tone {
-                                        "ready" | "completed" => "check",
-                                        "running" | "cancelling" => "clock",
-                                        "awaiting-input" => "ask",
-                                        "interrupted" => "close",
-                                        _ => "info",
-                                    },
-                                } } }
-                                span { class: "header-status-label", "{task_label}" }
-                            }
-                            button { class: "context-toggle", aria_label: "查看任务上下文", onclick: move |_| {
-                                let current = *inspector_open.read();
-                                inspector_open.set(!current);
+                            button { class: "icon-button conversation-focus-toggle", r#type: "button", aria_label: "全屏查看", title: "全屏查看", onclick: move |_| conversation_focus.set(true), Icon { name: "fullscreen" } }
+                            button { class: "context-toggle", r#type: "button", aria_label: if *inspector_open.read() { "关闭右侧任务上下文" } else { "打开右侧任务上下文" }, title: if *inspector_open.read() { "关闭右侧侧边栏" } else { "打开右侧侧边栏" }, aria_expanded: inspector_open.to_string(), onclick: move |_| {
+                                let next = !*inspector_open.read();
+                                inspector_open.set(next);
                             }, Icon { name: "panel".to_owned() } }
-                            if let Some(session)=sessions.read().iter().find(|session| selected_session.read().as_deref() == Some(session.session_id.as_str())) {
-                                management::SessionMenu { id: session.session_id.clone(), title: session.title.clone().unwrap_or_default(), archived: session.archived, pinned: session.pinned,
-                                    prefix: "header".to_owned(), extra_actions: Some(header_menu_actions()), busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &session.session_id)), onaction: session_action }
-                            } else {
-                                button { class: "header-more icon-button", aria_label: "更多操作", aria_haspopup: "menu", "popovertarget": "header-workspace-menu", Icon { name: "more" } }
-                                div { id: "header-workspace-menu", class: "workspace-menu", popover: "auto", role: "menu", aria_label: "更多操作", {header_menu_actions()} }
-                            }
                         }
                     }
                 if *show_project_form.read() {
@@ -4985,11 +5052,9 @@ pub(super) fn App() -> Element {
                         onconnect: connect, onlogin: login, onappearance: move |()| appearance_open.set(true)
                     }
                 }
-                div { class: match (active_page.read().as_str(), *inspector_open.read(), active_view.read().as_str()) {
-                    ("workspace", true, "changes") => "workspace review-mode",
-                    ("workspace", true, _) => "workspace",
-                    ("workspace", false, "changes") => "workspace context-hidden review-mode",
-                    ("workspace", false, _) => "workspace context-hidden",
+                div { class: match (active_page.read().as_str(), *inspector_open.read()) {
+                    ("workspace", true) => "workspace",
+                    ("workspace", false) => "workspace context-hidden",
                     _ => "workspace page-hidden",
                 },
                     section { class: "conversation-panel",
@@ -5019,179 +5084,17 @@ pub(super) fn App() -> Element {
                                 }
                             }
                         }
-                        div { class: "section-tabs", role: "tablist", aria_label: "工作区视图",
-                            button {
-                                id: "conversation-tab",
-                                class: if active_view.read().as_str() == "conversation" { "section-tab active" } else { "section-tab" },
-                                role: "tab", aria_selected: active_view.read().as_str() == "conversation", aria_controls: "conversation-panel",
-                                onclick: move |_| active_view.set("conversation".to_owned()),
-                                Icon { name: "message".to_owned() } "对话"
-                            }
-                            button {
-                                id: "changes-tab",
-                                class: if active_view.read().as_str() == "changes" { "section-tab active" } else { "section-tab" },
-                                role: "tab", aria_selected: active_view.read().as_str() == "changes", aria_controls: "changes-panel",
-                                onclick: move |_| active_view.set("changes".to_owned()),
-                                Icon { name: "diff".to_owned() } "变更"
-                                if let Some(repository) = git_status.read().as_ref() {
-                                    span { class: "tab-count", "{repository.files.len()}" }
-                                }
-                            }
-                            button { class: "tab-resource", aria_label: "打开项目文件", onclick: move |_| project_files_open.set(true), Icon { name: "file".to_owned() } span { class: "resource-label", "项目文件" } }
-                            if active_view.read().as_str() == "conversation" {
-                                button { class: "tab-resource", aria_label: "打开会话资源配置", aria_haspopup: "dialog",
-                                    disabled: selected_session.read().is_none(),
-                                    onclick: move |_| { session_settings_tab.set("design".into()); session_details_open.set(true); },
-                                    Icon { name: "blocks" } span { class: "resource-label", "设计引用" }
-                                }
-                            }
-                        }
-                        if active_view.read().as_str() == "changes" {
-                            div { id: "changes-panel", role: "tabpanel", aria_busy: *git_loading.read(), aria_labelledby: "changes-tab", class: if *change_mobile_preview.read() { "change-workspace show-diff" } else { "change-workspace" },
-                                div { class: "review-overview",
-                                    div { class: "review-heading",
-                                        h2 { "变更" span { class: "review-total", "{change_count}" } }
-                                        if let Some(branch) = repository_snapshot.as_ref().and_then(|repo| repo.branch.as_ref()) {
-                                            p { class: "review-branch", title: "{branch}", "{branch}" }
-                                        }
-                                    }
-                                    div { class: "review-actions",
-                                        span { class: "review-progress", title: "仅记录本次阅读进度，不代表 Git 暂存或提交；刷新后重置。", "{reviewed_count}/{change_count} 已审阅" }
-                                    }
-                                }
-                                div { class: "change-layout",
-                                    aside { class: "change-browser",
-                                        div { class: "change-filters",
-                                            div { class: "change-search", Icon { name: "search".to_owned() } input { aria_label: "搜索变更文件", placeholder: "搜索文件…", value: "{change_query}", oninput: move |event| change_query.set(event.value()) } }
-                                            div { class: "change-filter-row",
-                                                input { aria_label: "筛选目录", placeholder: "所有目录", value: "{change_directory_filter}", oninput: move |event| change_directory_filter.set(event.value()) }
-                                                select { aria_label: "筛选变更类型", value: "{change_status_filter}", onchange: move |event| change_status_filter.set(event.value()),
-                                                    option { value: "all", "全部类型" }
-                                                    option { value: "M", "已修改 M" }
-                                                    option { value: "A", "新增 A" }
-                                                    option { value: "D", "删除 D" }
-                                                    option { value: "R", "重命名 R" }
-                                                    option { value: "C", "复制 C" }
-                                                    option { value: "U", "冲突 U" }
-                                                    option { value: "T", "类型变化 T" }
-                                                }
-                                            }
-                                            div { class: "change-filter-footer",
-                                                label { input { r#type: "checkbox", checked: *changes_unreviewed.read(), onchange: move |event| changes_unreviewed.set(event.checked()) } "仅未审阅" }
-                                                button { class: "change-clear-filters", disabled: change_query.read().is_empty() && change_directory_filter.read().is_empty() && change_status_filter.read().as_str() == "all" && !*changes_unreviewed.read(), onclick: move |_| {
-                                                    change_query.set(String::new());
-                                                    change_directory_filter.set(String::new());
-                                                    change_status_filter.set("all".into());
-                                                    changes_unreviewed.set(false);
-                                                }, "清除筛选" }
-                                            }
-                                        }
-                                        div { class: "change-list-caption", span { "文件" } span { "{visible_changes.len()} / {change_count}" } }
-                                        if *git_loading.read() {
-                                            div { class: "change-no-results", role: "status", "正在读取 Git 状态…" }
-                                        } else if let Some(error) = git_error.read().as_ref() {
-                                            div { class: "change-no-results error-text", role: "alert", strong { "Git 状态读取失败" } p { "{error}" }
-                                                button { onclick: move |_| git_refresh += 1, "重试读取变更" }
-                                            }
-                                        } else if git_status.read().is_none() {
-                                            div { class: "change-no-results", "连接项目后加载 Git 状态。" }
-                                        } else if repository_snapshot.as_ref().is_some_and(|repo| !repo.is_repository) {
-                                            div { class: "change-no-results", "当前项目不是 Git 仓库。" }
-                                        } else if repository_snapshot.as_ref().is_some_and(|repo| repo.files.is_empty()) {
-                                            div { class: "change-no-results", "工作区干净，没有变更。" }
-                                        } else if visible_changes.is_empty() {
-                                            div { class: "change-no-results", strong { "没有匹配的变更" } p { "试试其他路径、类型或审阅筛选。" } }
-                                        } else {
-                                            div { class: "change-file-list",
-                                                for changed in visible_changes.iter() {
-                                                    {
-                                                        let path = changed.path.clone();
-                                                        let status_code = change_status_label(&changed.status);
-                                                        let (directory, filename) = changed.path.rsplit_once(['/', '\\']).unwrap_or(("", &changed.path));
-                                                        let selected = selected_change_file.read().as_ref() == Some(&path);
-                                                        let staged = changed.staged && !changed.unstaged;
-                                                        let reviewed = reviewed_changes.read().contains(&path);
-                                                        rsx! {
-                                                            button {
-                                                                key: "review-file-{path}",
-                                                                "data-change-path": "{path}", title: "{path}", aria_pressed: selected,
-                                                                class: if selected { "change-file selected" } else { "change-file" },
-                                                                onclick: move |_| open_change(path.clone(), staged),
-                                                                Icon { name: "file".to_owned() }
-                                                                span { class: "change-file-name",
-                                                                    strong { "{filename}" }
-                                                                    small { class: "change-file-context",
-                                                                        if !directory.is_empty() { span { class: "change-file-directory", "{directory}" } span { "·" } }
-                                                                        span { class: "change-file-stage", if changed.staged && changed.unstaged { "已暂存 + 工作区变更" } else if changed.staged { "已暂存" } else if changed.status == "??" { "未追踪" } else { "工作区变更" } }
-                                                                    }
-                                                                    if let Some(original) = changed.original_path.as_ref() { small { class: "change-file-origin", title: "原路径：{original}", "← {original}" } }
-                                                                }
-                                                                span { class: "file-change-status status-{status_code}", title: "Git 状态：{changed.status}", "{status_code}" }
-                                                                span { class: if reviewed { "file-review-mark reviewed" } else { "file-review-mark" }, aria_label: if reviewed { "已审阅" } else { "未审阅" }, if reviewed { "✓" } else { "·" } }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    section { class: "change-preview",
-                                        if let Some(path) = selected_change_file.read().clone() {
-                                            {
-                                                let reviewed_path = path.clone();
-                                                let unstaged_path = path.clone();
-                                                let staged_path = path.clone();
-                                                let changed = repository_snapshot.as_ref().and_then(|repo| repo.files.iter().find(|file| file.path == path));
-                                                let has_staged = changed.is_some_and(|file| file.staged);
-                                                let has_unstaged = changed.is_some_and(|file| file.unstaged);
-                                                rsx! {
-                                                    div { class: "selected-file-heading",
-                                                        button { class: "back-to-files", aria_label: "返回文件列表", onclick: move |_| change_mobile_preview.set(false), Icon { name: "back".to_owned() } span { "文件列表" } }
-                                                        div { class: "review-file-title", strong { title: "{path}", "{path}" }
-                                                            small { if *change_staged.read() { "HEAD → 暂存区" } else { "暂存区 → 工作区" } }
-                                                        }
-                                                    }
-                                                    div { class: "review-file-toolbar",
-                                                        div { class: "review-diff-switch", role: "group", aria_label: "Diff 基准",
-                                                            button { disabled: !has_unstaged, aria_label: "工作区 diff", aria_pressed: !*change_staged.read(), onclick: move |_| open_change(unstaged_path.clone(), false), "工作区" }
-                                                            button { disabled: !has_staged, aria_label: "已暂存 diff", aria_pressed: *change_staged.read(), onclick: move |_| open_change(staged_path.clone(), true), "已暂存" }
-                                                        }
-                                                        label { class: "review-mark-control", title: "本地阅读进度，刷新变更后重置。", input { r#type: "checkbox", aria_label: "已审阅（仅本地）", checked: reviewed_snapshot.contains(&reviewed_path), onchange: move |event| {
-                                                            if event.checked() { reviewed_changes.write().insert(reviewed_path.clone()); } else { reviewed_changes.write().remove(&reviewed_path); }
-                                                        } } "标记已审阅" }
-                                                    }
-                                                }
-                                            }
-                                            if let Some(patch) = change_diff.read().as_ref() {
-                                                div { class: "selected-diff-scroll", {render_diff(&patch.patch)} }
-                                            } else if let Some(error) = change_error.read().as_ref() {
-                                                div { class: "change-preview-empty error-text", strong { "Git patch 读取失败" } p { "{error}" }
-                                                    button { onclick: move |_| {
-                                                        let staged = *change_staged.peek();
-                                                        open_change(path.clone(), staged);
-                                                    }, "重试读取 diff" }
-                                                }
-                                            } else {
-                                                div { class: "change-preview-empty", "正在加载 Git patch…" }
-                                            }
-                                        } else {
-                                            div { class: "change-preview-empty", "从左侧选择一个文件查看 diff" }
-                                        }
-                                    }
-                                }
+                        if active_page.read().as_str() == "workspace" {
+                            if let Some(session_id) = selected_session.read().clone() {
+                                QueueSync { key: "queue-sync-{session_generation}", session_id, client: shared_client, session_generation, queue, revision: queue_revision, preserve_empty: queue_preserve_empty }
                             }
                         }
                         if active_page.read().as_str() == "workspace" {
                             if let Some(session_id) = selected_session.read().clone() {
-                                QueueSync { key: "queue-sync-{session_generation}", session_id, client: shared_client, session_generation, queue, revision: queue_revision }
-                            }
-                        }
-                        if active_view.read().as_str() == "conversation" {
-                            if let Some(session_id) = selected_session.read().clone() {
                                 scroll_follow::ScrollFollow { scope: session_scope_key(&node_url.read(), &session_id), selector: ".transcript".to_owned() }
                             }
                             div { class: "transcript-frame",
-                            div { id: "conversation-panel", role: "tabpanel", aria_labelledby: "conversation-tab", class: "transcript", "data-session-scope": selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),
+                            div { id: "conversation-panel", role: "tabpanel", aria_label: "对话", class: "transcript", "data-session-scope": selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),
                                 if let Some(session_id) = selected_session.read().clone() {
                                     history_pager::HistoryPager {
                                         key: "history-pager-{session_generation}",
@@ -5273,6 +5176,8 @@ pub(super) fn App() -> Element {
                                     key: "user-timeline-{session_generation}",
                                     scope: session_scope_key(&node_url.read(), session_id), transcript,
                                     history: history_window, client: shared_client, session_id: session_id.clone(),
+                                    selected_child: selected_tool_program_child,
+                                    selected_phase: selected_tool_program_phase,
                                     native_queries: session_supports("get_message_summaries") && session_supports("get_message_window"),
                                 }
                             }
@@ -5470,12 +5375,16 @@ pub(super) fn App() -> Element {
                                 }
                                 div { class: "composer-actions",
                                     button {
+                                        r#type: "button",
                                         class: if composer_stop { "send-button is-stop is-loading" } else if composer_loading { "send-button is-loading" } else if composer_continue.is_some() { "send-button is-continue" } else { "send-button" },
                                         disabled: (!composer_stop && (config_verification_required || model_switching || thinking_switching || submitting || composer_loading || continuation_disabled || (composer_empty && composer_continue.is_none()))) || !transport_ready || selected_session.read().is_none() || projection.read().is_none() || interaction == InteractionState::Cancelling || (if composer_stop { !session_supports("abort") } else if composer_continue == Some(ContinueAction::Resume) { !resume_supported() } else if interaction.can_queue() { !session_supports("queue_message") } else { !session_supports("prompt") }),
                                         aria_label: if composer_stop { if interaction == InteractionState::Cancelling { "正在停止…" } else { "停止运行" } } else if composer_loading { activity_label.unwrap_or("正在处理…") } else if composer_continue.is_some() { "继续会话" } else if interaction.can_queue() { "加入队列" } else { "发送消息" },
                                         aria_busy: composer_loading || composer_stop,
                                         title: if composer_stop { "停止当前任务" } else if composer_loading { "等待当前任务完成" } else if continuation_disabled { "当前节点不支持继续此会话" } else if composer_continue == Some(ContinueAction::Resume) { "恢复节点报告的待恢复会话" } else if composer_continue.is_some() { "发送“继续”，接着上一轮执行" } else if interaction.can_queue() { "加入后续消息队列" } else { "发送消息" },
-                                        onclick: move |event| { if composer_stop { abort(event); } else { send_or_command(); } },
+                                        onclick: move |event| {
+                                            event.prevent_default();
+                                            if composer_stop { abort(event); } else { send_or_command(); }
+                                        },
                                         if composer_stop && interaction != InteractionState::Cancelling {
                                             span { class: "composer-stop-icon", "aria-hidden": "true" }
                                         } else if composer_loading {
@@ -5509,6 +5418,12 @@ pub(super) fn App() -> Element {
                 aside { class: if *inspector_open.read() { "inspector visible" } else { "inspector" },
                         h3 { "任务上下文" button { class: "inspector-close", aria_label: "关闭任务上下文", onclick: move |_| inspector_open.set(false), Icon { name: "close".to_owned() } } }
                         div { class: "inspector-content",
+                        if let Some(session_id) = selected_session.read().as_ref() {
+                            section { class: "inspector-card tool-program-inspector-card", aria_label: "Tool Program 工作台",
+                                strong { class: "inspector-label", "Tool Program 工作台" }
+                                tool_program::ToolProgramWorkbench { client: shared_client, session_id: session_id.clone(), selected_child: selected_tool_program_child, selected_phase: selected_tool_program_phase }
+                            }
+                        }
                         if let Some((project, resource, association)) = meta_inspector.clone() {
                             section { class: "inspector-card meta-inspector", id: "meta-agent-context", aria_label: "元Agent上下文",
                                 div { class: "meta-inspector-label", "元Agent" span { if association.is_some() { "开发会话" } else { "能力项目" } } }
@@ -5564,7 +5479,7 @@ pub(super) fn App() -> Element {
                                 }
                                 button { onclick: move |_| context_open.set(true), Icon { name: "panel".to_owned() } "管理上下文" }
                                 button { disabled: !session_supports("get_queue"), onclick: move |_| {
-                                    active_page.set("workspace".into()); active_view.set("conversation".into());
+                                    active_page.set("workspace".into());
                                     if queue.read().as_ref().is_none_or(|snapshot| !snapshot.items.iter().any(|item| message_queue::QueueStatus::from_wire(item.status.as_deref()).is_active())) { status.set("没有待处理消息；运行时发送新消息即可排队。".into()); }
                                     let _ = document::eval("requestAnimationFrame(() => { document.querySelector('.composer-queue-heading[aria-expanded=false]')?.click(); document.querySelector('.composer-main')?.scrollIntoView({block:'nearest'}); });");
                                 }, Icon { name: "message".to_owned() } "队列 {queue.read().as_ref().map(|q| q.items.iter().filter(|item| message_queue::QueueStatus::from_wire(item.status.as_deref()).is_active()).count()).unwrap_or(0)}" }
@@ -5634,7 +5549,11 @@ pub(super) fn App() -> Element {
                                         }
                                     }
                                 }
-                                button { class: "inspector-small-button", onclick: move |_| { active_page.set("workspace".into()); active_view.set("changes".into()); }, "查看全部变更" }
+                                button { class: "inspector-small-button", onclick: move |_| {
+                                    active_page.set("workspace".into());
+                                    project_file_tab.set("changes".into());
+                                    project_files_open.set(true);
+                                }, "查看全部变更" }
                             }
                         }
                         if sessions.read().iter().find(|item| selected_session.read().as_deref() == Some(item.session_id.as_str())).is_some_and(|item| item.pending_resume) {
@@ -5753,6 +5672,13 @@ pub(super) fn App() -> Element {
                 }
                 if *project_files_open.read() {
                     Modal { id: "project-files", title: "项目文件", subtitle: format!("{} · 实时文件 · 只读", selected_project_name.read().as_deref().unwrap_or("项目")), class: if *project_file_preview.read() { "project-files-modal show-preview" } else { "project-files-modal" }, onclose: move |()| { project_files_open.set(false); project_file_preview.set(false); },
+                            div { class: "project-files-tabs", role: "tablist", aria_label: "项目工作区",
+                                button { id: "project-files-tab", r#type: "button", role: "tab", class: if project_file_tab.read().as_str() == "files" { "active" } else { "" }, aria_selected: project_file_tab.read().as_str() == "files", onclick: move |_| { project_file_tab.set("files".into()); project_file_preview.set(false); }, Icon { name: "file".to_owned() } "项目文件" }
+                                button { id: "project-changes-tab", r#type: "button", role: "tab", class: if project_file_tab.read().as_str() == "changes" { "active" } else { "" }, aria_selected: project_file_tab.read().as_str() == "changes", onclick: move |_| { project_file_tab.set("changes".into()); git_refresh += 1; }, Icon { name: "diff".to_owned() } "变更"
+                                    if let Some(repository) = git_status.read().as_ref() { span { class: "tab-count", "{repository.files.len()}" } }
+                                }
+                            }
+                            if project_file_tab.read().as_str() == "files" {
                             div { class: "project-files-layout",
                                 if let (Some(_client), Some(project)) = (shared_client.read().clone(), selected_project.read().clone()) {
                                     project_files::Browser { key: "{node_url}-{project}", client: shared_client, project: project.clone(), scope: format!("{node_url}\u{1f}{project}"),
@@ -5797,6 +5723,9 @@ pub(super) fn App() -> Element {
                                         div { class: "project-preview-empty", "从左侧选择文件查看内容" }
                                     }
                                 }
+                            }
+                            } else {
+                                {changes_panel}
                             }
                     }
                 }

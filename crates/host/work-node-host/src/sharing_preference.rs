@@ -10,9 +10,9 @@ struct Preference {
 
 pub(super) fn load(path: &Path) -> Result<bool, String> {
     match std::fs::symlink_metadata(path) {
-        // First-run LAN access is the desktop default; an explicit saved false
-        // or any unreadable/invalid preference below still fails closed.
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        // Remote collaboration is opt-in on first run; an explicit saved value
+        // is preserved, while any unreadable/invalid preference below fails closed.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         // A dangling link is an invalid saved preference, not a first run.
         Ok(meta) if meta.is_file() && meta.len() <= 4096 => {}
         _ => return Err("无法读取共享设置，已保持关闭".into()),
@@ -40,10 +40,10 @@ pub(super) fn save(path: &Path, allow_sharing: bool) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
-    fn first_run_defaults_to_sharing_but_invalid_preferences_fail_closed() {
+    fn first_run_disables_sharing_but_invalid_preferences_fail_closed() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("sharing.json");
-        assert!(load(&path).unwrap());
+        assert!(!load(&path).unwrap());
         for value in [
             "",
             "{}",

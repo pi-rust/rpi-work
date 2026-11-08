@@ -6,7 +6,7 @@ This guide describes the **formal Work implementation**, not the inert design pr
 
 `work-core::api::NodeApi` → existing `work-node-runtime::workspace::LocalWorkspace` → reviewed `rpi-extcore`/native Service. Local clients call the same owner directly; authenticated HTTP is an adapter. NodeApi remains object-safe and non-Send. Node authorizes projects, local source roots and opaque references and stores authoring/provenance records. Native/core alone own installation, host lifecycle, exact configuration, revision CAS, operation recovery, history, admission and run settlement.
 
-The prerequisite upgrade from `rpi-extcore =0.1.5` is pinned to `https://github.com/pi-rust/rpi-package`, revision `17ba89c0098f018db76e22051fe8c73e2792dc1c` (reviewed core PR #170). Cargo.lock records the same immutable Git source for the related core crates. No adjacent checkout/path fallback or machine-global Cargo override is required.
+The current `rpi-extcore =0.2.11` dependency is pinned to `https://github.com/pi-rust/rpi-package`, revision `1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd`. Cargo.lock records the same immutable Git source for the related core crates. No adjacent checkout/path fallback or machine-global Cargo override is required.
 
 ## Formal entry points
 

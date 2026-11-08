@@ -6,8 +6,9 @@ use work_node_runtime::workspace::LocalWorkspace;
 mod executor;
 mod realtime;
 mod routes;
+pub(crate) use work_http_runtime::access;
 pub(crate) use work_http_runtime::security;
-pub use work_http_runtime::{QrAuthorization, SharingControl, public_address, random_secret};
+pub use work_http_runtime::{public_address, random_secret, QrAuthorization, SharingControl};
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -23,7 +24,7 @@ pub struct ServerConfig {
 }
 pub(crate) struct ServerState {
     pub workspace: Arc<LocalWorkspace>,
-    pub access: Arc<work_http_runtime::AccessState>,
+    pub access: Arc<access::AccessState>,
     pub assets: Option<PathBuf>,
     pub web_proxy: bool,
     pub requests: mpsc::Sender<executor::ExecutorRequest>,
@@ -31,7 +32,7 @@ pub(crate) struct ServerState {
     pub realtime: Arc<realtime::RealtimeState>,
 }
 impl std::ops::Deref for ServerState {
-    type Target = work_http_runtime::AccessState;
+    type Target = access::AccessState;
     fn deref(&self) -> &Self::Target {
         &self.access
     }
@@ -45,7 +46,7 @@ pub struct HttpServer {
     thread: Option<std::thread::JoinHandle<()>>,
     address: SocketAddr,
     sharing: SharingControl,
-    pairing: Arc<work_http_runtime::pairing::Pairing>,
+    pairing: Arc<access::Pairing>,
     realtime: Arc<realtime::RealtimeState>,
 }
 impl HttpServer {
@@ -105,9 +106,7 @@ impl HttpServer {
         }
         let sharing = SharingControl::new(control.is_some() || config.allow_sharing);
         let access = sharing.clone();
-        let pairing = Arc::new(work_http_runtime::pairing::Pairing::new(
-            config.node_id.clone(),
-        ));
+        let pairing = Arc::new(access::Pairing::new(config.node_id.clone()));
         let pairing_state = pairing.clone();
         let realtime = Arc::new(realtime::RealtimeState::new());
         let realtime_state = realtime.clone();
@@ -133,7 +132,7 @@ impl HttpServer {
                 };
                 let security=match security{Ok(s)=>s,Err(e)=>{let _=ready.send(Err(e));return;}};
                 let (requests,mut pending)=mpsc::channel::<executor::ExecutorRequest>(128);
-                let state=Arc::new(ServerState{workspace,access:Arc::new(work_http_runtime::AccessState{security,shutdown:stopped.clone(),node_id:config.node_id,sharing:access,pairing:pairing_state}),assets:config.assets,web_proxy:config.web_proxy,requests,admission:Arc::new(tokio::sync::Semaphore::new(64)),realtime:realtime_state});
+                let state=Arc::new(ServerState{workspace,access:Arc::new(access::AccessState{security,shutdown:stopped.clone(),node_id:config.node_id,sharing:access,pairing:pairing_state}),assets:config.assets,web_proxy:config.web_proxy,requests,admission:Arc::new(tokio::sync::Semaphore::new(64)),realtime:realtime_state});
                 let worker_state=state.clone();
                 let (listener_done,mut listener_closed)=watch::channel(false);
                 tokio::task::spawn_local(async move {

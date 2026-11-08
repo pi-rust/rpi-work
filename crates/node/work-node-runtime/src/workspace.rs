@@ -142,6 +142,19 @@ fn decode<T: for<'de> Deserialize<'de>>(reply: impl IntoReply) -> Result<T, Work
     }
     local(serde_json::from_value(reply.value).map_err(LocalError::from))
 }
+fn decode_tool_program<T: Serialize>(
+    reply: Result<T, (ReplyKind, Value)>,
+) -> Result<Value, WorkspaceError> {
+    let reply = reply.and_then(|value| {
+        serde_json::to_value(value).map_err(|error| {
+            (
+                ReplyKind::Internal,
+                json!({"error": format!("tool program response serialization failed: {error}")}),
+            )
+        })
+    });
+    decode(reply)
+}
 fn alias_name(name: &str) -> Result<String, LocalError> {
     let name = name.trim();
     if name.is_empty() || name.chars().any(char::is_control) {
@@ -926,6 +939,70 @@ impl LocalWorkspace {
         let service = self.session_service(session_id)?;
         decode(service::snapshot(&service, session_id.into()).await)
     }
+    pub async fn tool_program_children(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, WorkspaceError> {
+        if self.inner.agents.contains(session_id)? {
+            return Err(unsupported("tool_program_children", "acp"));
+        }
+        let request: rpi_extcore::service::tool_program_queries::ChildPageQuery =
+            serde_json::from_value(payload).map_err(LocalError::from)?;
+        let service = self.session_service(session_id)?;
+        Ok(decode_tool_program(
+            service::child_summaries(&service, session_id.into(), request).await,
+        )?)
+    }
+
+    pub async fn tool_program_phases(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, WorkspaceError> {
+        if self.inner.agents.contains(session_id)? {
+            return Err(unsupported("tool_program_phases", "acp"));
+        }
+        let request: rpi_extcore::service::tool_program_queries::ChildPhaseQuery =
+            serde_json::from_value(payload).map_err(LocalError::from)?;
+        let service = self.session_service(session_id)?;
+        Ok(decode_tool_program(
+            service::child_phases(&service, session_id.into(), request).await,
+        )?)
+    }
+
+    pub async fn tool_program_body(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, WorkspaceError> {
+        if self.inner.agents.contains(session_id)? {
+            return Err(unsupported("tool_program_body", "acp"));
+        }
+        let request: rpi_extcore::service::tool_program_queries::ChildBodyQuery =
+            serde_json::from_value(payload).map_err(LocalError::from)?;
+        let service = self.session_service(session_id)?;
+        Ok(decode_tool_program(
+            service::child_body(&service, session_id.into(), request).await,
+        )?)
+    }
+
+    pub async fn tool_program_snapshot(
+        &self,
+        session_id: &str,
+        payload: Value,
+    ) -> Result<Value, WorkspaceError> {
+        if self.inner.agents.contains(session_id)? {
+            return Err(unsupported("tool_program_snapshot", "acp"));
+        }
+        let request: rpi_extcore::service::ChildSnapshotQuery =
+            serde_json::from_value(payload).map_err(LocalError::from)?;
+        let service = self.session_service(session_id)?;
+        Ok(decode_tool_program(
+            service::child_snapshot(&service, session_id.into(), request).await,
+        )?)
+    }
+
     pub async fn snapshot_with_limit(
         &self,
         session_id: &str,
@@ -956,9 +1033,16 @@ impl LocalWorkspace {
         payload: Value,
     ) -> Result<HostResponse<T>, WorkspaceError> {
         if self.inner.agents.contains(session_id)? {
-            // ACP currently accepts only legacy text, never silently omit blocks.
-            if payload.get("contentBlocks").is_some() || payload.get("images").is_some() {
-                return Err(unsupported("prompt_content", "acp"));
+            let ordered = payload.get("contentBlocks").is_some();
+            if payload.get("images").is_some() {
+                return Err(unsupported("images", "acp; use contentBlocks"));
+            }
+            if ordered {
+                let agent = self.inner.agents.prepare(session_id, false).await?;
+                if !agent.supports_prompt_content() {
+                    return Err(unsupported("prompt_content", "acp agent image capability"));
+                }
+                access::validate_prompt_content(&payload, &access::native_prompt_profile())?;
             }
             let kind = payload["type"].as_str().unwrap_or_default();
             if !matches!(kind, "prompt" | "abort" | "cancel") {
@@ -1004,7 +1088,13 @@ impl LocalWorkspace {
             ))));
         }
         if ordered {
-            access::validate_prompt_content(&payload, &host.ready()["promptContent"])?;
+            let advertised = host.ready()["promptContent"].clone();
+            let profile = if rpi_extcore::prompt::PromptProfile::from_ready(&advertised).is_ok() {
+                advertised
+            } else {
+                access::native_prompt_profile()
+            };
+            access::validate_prompt_content(&payload, &profile)?;
             drop(lease);
             // HostSession::send does not validate prompts and replaces id with
             // a UUID. The validator reserves that exact envelope size above.

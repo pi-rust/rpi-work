@@ -64,7 +64,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .sidebar-node-group-label { display:inline-flex; align-items:center; gap:var(--space-4); margin-left:auto; color:var(--muted); font-size:calc(9px * var(--type-scale, 1)); font-weight:450; max-width:48%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-node-group-label svg { width:12px; height:12px; flex:none; }
 .sidebar-node-group-label.flat { color:var(--accent); }
-.sidebar-node-tree-header { display:flex; align-items:center; flex:1; min-width:0; }
+.sidebar-node-tree-header { display:flex; align-items:center; flex:1; min-width:0; margin-left:-4px; }
 .sidebar-node-tree-toggle { display:grid; place-items:center; width:24px; height:28px; flex:none; padding:0; color:var(--muted); background:transparent; }
 .section-label .sidebar-node-tree-toggle { width:24px; height:32px; }
 .sidebar-node-tree-toggle > .icon { width:12px; height:12px; transition:transform var(--motion-fast); }
@@ -75,15 +75,19 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .sidebar-node-tree-info.local > .icon { color:var(--accent); }
 .sidebar-node-tree-info.remote > .icon { color:var(--muted); }
 .section-label .sidebar-node-tree-info { width:auto; height:32px; padding:0 var(--space-4); }
-.sidebar-node-tree-info > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sidebar-node-tree-status { display:block; width:6px; height:6px; flex:none; margin-left:var(--space-4); border-radius:50%; background:var(--danger); }
+.sidebar-node-tree-info > .sidebar-node-tree-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-node-tree-icon-wrap { position:relative; display:grid; place-items:center; width:14px; height:14px; flex:none; }
+.sidebar-node-tree-icon-wrap > .icon { width:14px; height:14px; color:var(--muted); }
+.sidebar-node-tree-info.local .sidebar-node-tree-icon-wrap > .icon { color:var(--accent); }
+.sidebar-node-tree-info.remote .sidebar-node-tree-icon-wrap > .icon { color:var(--muted); }
+.sidebar-node-tree-status { position:absolute; right:-3px; bottom:-3px; display:block; width:6px; height:6px; flex:none; border:1px solid var(--panel); border-radius:50%; background:var(--danger); }
+.sidebar-node-tree-children { margin-left:18px; padding-left:8px; border-left:1px solid var(--line); }
 .sidebar-node-tree-status.online { background:var(--success); }
 .sidebar-node-tree-status.auth,
 .sidebar-node-tree-status.unready { background:var(--warning, #946300); }
 .sidebar-node-tree-status.checking,
 .sidebar-node-tree-status.connecting { background:var(--muted); }
-.sidebar-node-tree-children { margin-left:6px; padding-left:6px; border-left:1px solid var(--line); }
-.sidebar-node-tree-children .section-label { margin-left:-6px; padding-left:6px; }
+.sidebar-node-tree-children .section-label { margin-left:-8px; padding-left:8px; }
 .sidebar-projects { flex: 1; min-height: 60px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; padding-bottom: var(--space-12); }
 .brand { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-14); min-height: 30px; padding: 0 var(--space-8); color: var(--text); text-decoration: none; }
 .brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 25px; height: 25px; flex-shrink: 0; }
@@ -105,6 +109,15 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .nav-item, .project-row, .profile, .new-task { width: 100%; min-width: 0; justify-content: flex-start; text-align: left; padding: var(--space-9) var(--space-10); color: var(--muted); }
 .nav-item { height: var(--control-height); font-size: calc(12px * var(--type-scale, 1)); }
 .nav-item.active { color: var(--selected-text); background: var(--selected-bg); }
+.nav-disclosure-trigger { display: flex; align-items: center; gap: var(--space-7); }
+.nav-disclosure-trigger > span { flex: 1; min-width: 0; }
+.nav-disclosure-trigger > .icon:last-child { width: 12px; height: 12px; color: var(--muted); }
+.nav-subitems { display: grid; gap: var(--space-2); margin: 0 0 var(--space-3) var(--space-12); padding-left: var(--space-8); border-left: 1px solid var(--line); }
+.nav-subitems .nav-item { min-height: 34px; height: 34px; padding: var(--space-6) var(--space-9); font-size: calc(11px * var(--type-scale, 1)); }
+.sidebar-session-divider { display: flex; align-items: center; gap: var(--space-7); margin: var(--space-12) var(--space-10) var(--space-6); color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); white-space: nowrap; }
+.sidebar-session-divider::before, .sidebar-session-divider::after { content: ""; height: 1px; background: var(--line-strong); }
+.sidebar-session-divider::before { width: var(--space-8); }
+.sidebar-session-divider::after { flex: 1; }
 .project-row.selected { color: var(--text); font-weight: 550; }
 .nav-count, .project-count { margin-left: auto; color: var(--muted); font-size: calc(11px * var(--type-scale, 1)); }
 .section-label { display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-12); padding: 0 var(--space-10) var(--space-5); color: var(--muted); font-size: calc(11px * var(--type-scale, 1)); }
@@ -132,7 +145,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-updated { flex-shrink: 0; color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); font-variant-numeric: tabular-nums; }
 .session-dot, .status-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--success); }
-.session-dot.running { background: var(--info); }
+.session-dot.running { background: var(--success); }
 .session-dot.failed { background: var(--danger); }
 .session-dot.waiting { background: var(--warning); }
 .sidebar-empty { padding: var(--space-8); color: var(--muted); font-size: calc(11px * var(--type-scale, 1)); }
@@ -549,6 +562,8 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
   .settings-navigation .settings-return { width: 100%; justify-content: flex-start; margin: 0; }
   input, select, textarea { font-size: 16px; }
   .nav-item, .project-row, .session-item, .new-task, .project-file-row { min-height: 44px; }
+  .sidebar-section-toggle { width: 44px; min-width: 44px; height: 44px; }
+  .nav-subitems .nav-item { min-height: 44px; height: 44px; }
   .project-entry { grid-template-columns: 28px 44px minmax(0, 1fr) 44px 44px; }
   .sidebar-projects[data-session-display-mode="grouped"] .project-entry { grid-template-columns: 28px minmax(0, 1fr) 44px 44px; }
   .project-toggle { width:28px;height:44px; }
@@ -838,7 +853,7 @@ small, .meta { font-size: var(--font-assist); }
 .app-shell:not(.conversation-focus) .section-tabs>.section-tab.active{background:var(--accent-bg);color:var(--accent)}
 .app-shell .transcript{padding-top:var(--space-32);padding-bottom:var(--space-28)}
 .app-shell .timeline-card{box-shadow:none}
-.app-shell .composer-main{padding:var(--space-12) var(--conversation-gutter) var(--space-12);border-top:1px solid var(--line);background:var(--panel)}
+.app-shell .composer-main{padding:var(--space-12) var(--conversation-gutter) var(--space-12);border-top:0;background:var(--bg)}
 .app-shell .composer-main .composer{width:min(100%,var(--conversation-content-max));margin:0 auto;padding:var(--space-14) var(--space-15) var(--space-10);border-color:var(--line-strong);box-shadow:0 4px 18px var(--shadow-color)}
 .app-shell .composer-main .composer textarea{min-height:86px;font-size:var(--font-body);line-height:1.7}
 .app-shell .composer-main:focus-within .composer{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg),0 4px 18px var(--shadow-color)}
@@ -860,6 +875,8 @@ small, .meta { font-size: var(--font-assist); }
 /* The context inspector is a drawer, not a permanent third column. Opening it
    should reveal more context without shrinking the conversation underneath. */
 @media(min-width:1101px){
+  /* Keep the drawer control above the wide-screen inspector so it remains usable for closing it. */
+  .app-shell > .main-column > .app-header .context-toggle { position: fixed; z-index: 31; top: var(--app-safe-top); right: var(--app-safe-right); }
   .app-shell:not(.context-hidden):not(.btw-open){grid-template-columns:var(--sidebar-width) minmax(0,1fr)}
   .app-shell:not(.context-hidden):not(.btw-open)>.inspector{position:absolute;z-index:30;top:0;right:0;bottom:0;width:min(360px,calc(100% - var(--sidebar-width) - 32px));border-left:1px solid var(--line);box-shadow:-12px 0 32px var(--shadow-color)}
   .app-shell:not(.context-hidden):not(.btw-open)>.main-column{grid-column:2}
@@ -1040,4 +1057,48 @@ small, .meta { font-size: var(--font-assist); }
   .app-shell[data-device-mode="mobile"] .sidebar {
     transition: none;
   }
+}
+
+/* Project files and Git changes share one modal instead of competing with the conversation tab bar. */
+.project-files-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex: 0 0 auto;
+  padding: var(--space-7) var(--space-14) 0;
+  border-bottom: var(--border-width, 1px) solid var(--line);
+}
+.project-files-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 40px;
+  padding: 0 var(--space-10);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.project-files-tabs button:hover,
+.project-files-tabs button.active {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+.project-files-tabs button.active { border-bottom-color: var(--accent); }
+.project-files-tabs .icon { width: 14px; height: 14px; }
+.project-files-tabs .tab-count { font: var(--font-assist) var(--mono); }
+.project-files-modal > #changes-panel {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-12) var(--space-14) 0;
+}
+.project-files-modal > #changes-panel .review-overview { flex: 0 0 auto; }
+.project-files-modal > #changes-panel .change-layout { min-height: 0; }
+@media (max-width: 700px) {
+  .project-files-tabs { padding-inline: var(--space-10); }
+  .project-files-tabs button { min-height: 44px; padding-inline: var(--space-8); }
+  .project-files-modal > #changes-panel { padding: var(--space-8) 0 0; }
 }

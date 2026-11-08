@@ -7,6 +7,7 @@ use std::{
     collections::BTreeMap,
     future::Future,
     rc::Rc,
+    sync::atomic::{AtomicU64, Ordering},
 };
 use work_client::{ModelDescriptor, SessionConnection, WorkspaceClient};
 use work_core::{ConnectionState, MessageBlock, RunPhase};
@@ -24,6 +25,7 @@ const MAX_IMAGE_BASE64_BYTES: usize = 349_528;
 const MAX_CONTENT_BLOCKS: usize = 64;
 const MAX_PROMPT_BYTES: usize = 768 * 1024;
 const SEND_IMAGE_TARGET: usize = 128 * 1024;
+static NEXT_ATTACHMENT_READER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttachmentSubmission {
@@ -95,7 +97,7 @@ impl AttachmentStore {
             .iter()
             .any(|file| raster_mime(&file.bytes).is_some());
         if has_images && !ordered_images {
-            return Err("当前节点不支持有序图片附件；图片仍保留在本地，未发送。".into());
+            return Err("图片已粘贴到本地附件，但当前节点不支持有序图片内容（未声明 prompt_content 能力）；图片仍保留在本地，未发送。请切换到支持 prompt_content 的节点/Agent，或移除图片后发送文本。".into());
         }
 
         let mut full_text = text.to_owned();
@@ -717,11 +719,15 @@ fn AttachmentReader(
     images_supported: bool,
     disabled: bool,
 ) -> Element {
+    let instance = use_hook(|| NEXT_ATTACHMENT_READER.fetch_add(1, Ordering::Relaxed));
+    let input_id = format!("rpi-attachment-input-{instance}");
+    let input_id_json = serde_json::to_string(&input_id).unwrap();
     let alive = use_hook(|| Rc::new(Cell::new(true)));
     let pending = use_hook(|| Rc::new(RefCell::new(None::<Task>)));
     let drop_alive = alive.clone();
     let drop_pending = pending.clone();
     let cleanup_scope = scope.clone();
+    let paste_cleanup_id = input_id_json.clone();
     let mut cleanup_store = store;
     use_drop(move || {
         drop_alive.set(false);
@@ -734,14 +740,95 @@ fn AttachmentReader(
             }
             state.loading = false;
         }
+        let script = format!(
+            "window.__rpiAttachmentPasteBindings?.get({paste_cleanup_id})?.cleanup?.();window.__rpiAttachmentPasteBindings?.delete({paste_cleanup_id});"
+        );
+        spawn(async move {
+            let _ = document::eval(&script).await;
+        });
     });
     let state = store.read().scopes.get(&scope).cloned().unwrap_or_default();
     let read_scope = scope.clone();
+    let paste_input_id = input_id_json.clone();
     rsx! {
         div { class: "composer-extras attachment-picker attachment-button-slot",
             label { class: "extras-add icon-button", title: if images_supported { "添加待发送图片或文本附件" } else { "添加文本附件；当前节点不支持图片发送" }, aria_label: "添加本地附件",
                 ExtraIcon { kind: "paperclip" }
-                input { r#type: "file", multiple: true, disabled: state.loading || disabled, aria_label: "选择本地附件，可多选",
+                input { id: input_id, r#type: "file", multiple: true, disabled: state.loading || disabled, aria_label: "选择本地附件，可多选",
+                    onmounted: move |_| {
+                        let input_id = paste_input_id.clone();
+                        spawn(async move {
+                            let script = format!(r#"(() => {{
+                                const input = document.getElementById({input_id});
+                                if (!input) return false;
+                                const bindings = window.__rpiAttachmentPasteBindings ||= new Map();
+                                if (bindings.has({input_id})) return true;
+                                const installFiles = files => {{
+                                    if (!files.length || input.disabled) return false;
+                                    try {{
+                                        const transfer = new DataTransfer();
+                                        files.forEach(file => transfer.items.add(file));
+                                        input.files = transfer.files;
+                                        input.dispatchEvent(new Event('change', {{bubbles: true}}));
+                                        return true;
+                                    }} catch (_) {{ return false; }}
+                                }};
+                                const directFiles = clipboard => {{
+                                    const files = [
+                                        ...Array.from(clipboard?.files || []),
+                                        ...Array.from(clipboard?.items || [])
+                                            .filter(item => item.kind === 'file')
+                                            .map(item => item.getAsFile())
+                                            .filter(Boolean),
+                                    ];
+                                    const seen = new Set();
+                                    return files.filter(file => {{
+                                        const key = `${{file.name}}:${{file.size}}:${{file.type}}:${{file.lastModified}}`;
+                                        if (seen.has(key)) return false;
+                                        seen.add(key);
+                                        return true;
+                                    }});
+                                }};
+                                const clipboardItemName = type => {{
+                                    const extension = type.split('/')[1]?.split('+')[0] || 'bin';
+                                    return `粘贴附件.${{extension === 'jpeg' ? 'jpg' : extension}}`;
+                                }};
+                                const readNavigatorClipboard = async () => {{
+                                    if (!navigator.clipboard?.read) return [];
+                                    const files = [];
+                                    for (const item of await navigator.clipboard.read()) {{
+                                        for (const type of item.types || []) {{
+                                            if (type.startsWith('text/')) continue;
+                                            const blob = await item.getType(type);
+                                            files.push(new File([blob], clipboardItemName(type), {{type}}));
+                                        }}
+                                    }}
+                                    return files;
+                                }};
+                                const handler = event => {{
+                                    // Do not use `instanceof HTMLTextAreaElement` here: native
+                                    // WebViews can deliver the event target from another DOM realm.
+                                    const target = event.target;
+                                    if (!target || target.getAttribute?.('aria-label') !== '发送给 agent 的消息') return;
+                                    if (input.disabled) return;
+                                    const files = directFiles(event.clipboardData);
+                                    const clipboardTypes = Array.from(event.clipboardData?.types || []);
+                                    const mayContainFile = files.length > 0 || clipboardTypes.includes('Files') || clipboardTypes.some(type => type.startsWith('image/'));
+                                    if (!mayContainFile) return;
+                                    event.preventDefault();
+                                    if (installFiles(files)) return;
+                                    // Desktop WebViews may expose only MIME types on the paste
+                                    // event. Read the native clipboard as a fallback instead of
+                                    // silently dropping the image/file.
+                                    readNavigatorClipboard().then(installFiles).catch(() => {{}});
+                                }};
+                                document.addEventListener('paste', handler, true);
+                                bindings.set({input_id}, {{ cleanup: () => document.removeEventListener('paste', handler, true) }});
+                                return true;
+                            }})()"#);
+                            let _ = document::eval(&script).await;
+                        });
+                    },
                     onclick: move |_| {
                         spawn(async { let _ = document::eval("document.querySelectorAll('.attachment-picker input[type=file]').forEach(input => input.value = '');").await; });
                     },

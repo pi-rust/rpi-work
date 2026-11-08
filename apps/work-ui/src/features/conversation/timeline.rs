@@ -2,7 +2,7 @@
 //! and scope/request keys. Render functions consume the current snapshot only.
 use super::message_image::{ImageBlock, MessageImage, image_block};
 use super::message_presentation::{CodeBlock, CopyButton, task_item};
-use crate::features::observability::traces::{ToolTiming, tool_timing};
+use crate::features::observability::traces::{ToolTiming, status_label, tool_timing};
 use crate::shared::components::Icon;
 use dioxus::prelude::*;
 use serde_json::{Value, json};
@@ -579,6 +579,9 @@ fn ToolCallView(
     };
     let shell = super::tool_display::is_shell(&name);
     let running = matches!(label.as_str(), "运行中" | "等待工具结果");
+    let delegation = is_delegation_tool(&name);
+    let is_program = name == "program" || name.ends_with(":program");
+    let delegation_info = delegation.then(|| delegation_info(&args, &output));
     let state_class = if failed {
         "tool-error failed"
     } else if running {
@@ -588,7 +591,9 @@ fn ToolCallView(
     } else {
         "tool-done"
     };
-    let kind_class = if shell {
+    let kind_class = if delegation {
+        "delegation-card"
+    } else if shell {
         "shell-card"
     } else if skill_read {
         "read-card skill-card"
@@ -603,6 +608,14 @@ fn ToolCallView(
         .iter()
         .filter(|item| item.status == "completed")
         .count();
+    let delegation_turns = delegation_info.as_ref().and_then(|info| {
+        info.turns.map(|turns| {
+            info.max_turns.map_or_else(
+                || format!("轮次 · {turns}"),
+                |max| format!("轮次 · {turns} / {max}"),
+            )
+        })
+    });
     rsx! {
         div { class: "conversation-widget conversation-tool", aria_busy: running,
             if !plan.is_empty() {
@@ -639,6 +652,9 @@ fn ToolCallView(
                         strong { class: "tool-action", title: "{name}", "{action}" }
                         if !summary.is_empty() { code { class: "tool-target", title: "{summary}", "{summary}" } }
                     }
+                    if is_program {
+                        a { class: "tool-program-entry-link", href: "#tool-program-workbench", "打开 Tool Program" }
+                    }
                     if let Some((added, removed)) = edit_counts {
                         span { class: "tool-summary-meta edit-count", title: "调用参数中的增删行数预览，不代表实际落盘改动", aria_label: "变更预览：新增 {added} 行，删除 {removed} 行",
                             span { class: "add", "+{added}" }
@@ -655,6 +671,41 @@ fn ToolCallView(
                     {glyph("chevron-right")}
                 }
                 if failed { div { class: "inline-call-warning", role: "status", "工具执行失败，请查看工具结果。" } }
+                if delegation {
+                    section { class: "delegation-summary", aria_label: "委派任务摘要",
+                        div { class: "delegation-summary-heading",
+                            span { class: "delegation-glyph", {glyph("branch")} }
+                            div {
+                                strong { "委派任务" }
+                                span { "{status_label(label.as_str())}" }
+                            }
+                        }
+                        if let Some(info) = delegation_info.as_ref() {
+                            if !info.task.is_empty() { p { class: "delegation-task", "{info.task}" } }
+                            if !info.role.is_empty() { span { class: "delegation-role", "角色 · {info.role}" } }
+                            if let Some(session) = info.session_id.as_deref() {
+                                code { class: "delegation-session", "子会话 · {session}" }
+                                a { class: "tool-program-entry-link", href: "?session={session}#tool-program-workbench", "打开子会话 Tool Program" }
+                            }
+                            if let Some(child) = info.child_id.as_deref() {
+                                code { class: "delegation-child", "子任务 · {child}" }
+                            }
+                            if let Some(turns) = delegation_turns.as_deref() {
+                                span { class: "delegation-turns", "{turns}" }
+                            }
+                            if info.turn_limited { p { class: "delegation-limit", "已达到轮数上限，已完成的工作请查看报告。" } }
+                        }
+                    }
+                }
+                if let Some(info) = delegation_info.as_ref() {
+                    if !info.report.is_empty() {
+                        section { class: "delegation-report", aria_label: "委派报告", {markdown_view(&info.report)} }
+                    } else if !info.error.is_empty() {
+                        p { class: "delegation-error", role: "alert", "{info.error}" }
+                    } else if running {
+                        p { class: "delegation-empty", role: "status", "等待子任务输出…" }
+                    }
+                }
                 div { class: "call-body tool-detail",
                     if let Some(command) = command {
                         super::command_preview::CommandPreview { command }
@@ -711,6 +762,101 @@ fn ToolCallView(
                 }
             }
         }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct DelegationInfo {
+    task: String,
+    role: String,
+    status: String,
+    turns: Option<u64>,
+    max_turns: Option<u64>,
+    turn_limited: bool,
+    child_id: Option<String>,
+    session_id: Option<String>,
+    report: String,
+    error: String,
+}
+
+fn is_delegation_tool(name: &str) -> bool {
+    matches!(
+        name.trim()
+            .to_ascii_lowercase()
+            .trim_start_matches("functions."),
+        "delegate_task" | "subagent"
+    )
+}
+
+fn delegation_field(raw: &str, keys: &[&str]) -> Option<String> {
+    let value = serde_json::from_str::<Value>(raw).ok()?;
+    let object = value.as_object()?;
+    keys.iter().find_map(|key| {
+        object.get(*key).and_then(|value| match value {
+            Value::String(text) if !text.trim().is_empty() => Some(text.trim().to_owned()),
+            _ => None,
+        })
+    })
+}
+
+fn delegation_info(args: &str, output: &str) -> DelegationInfo {
+    let input = serde_json::from_str::<Value>(args).unwrap_or_default();
+    let mut result = serde_json::from_str::<Value>(output).unwrap_or_default();
+    // Hosts may wrap the structured result in a text content block.
+    if result.get("kind").and_then(Value::as_str) != Some("rpi-delegation") {
+        if let Some(text) = result
+            .get("content")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find_map(|item| item.get("text").and_then(Value::as_str))
+            })
+        {
+            result = serde_json::from_str(text).unwrap_or_default();
+        }
+    }
+    let text = |value: &Value, keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| value.get(*key).and_then(Value::as_str))
+            .unwrap_or("")
+            .trim()
+            .to_owned()
+    };
+    let number =
+        |value: &Value, key: &str| value.get(key).and_then(Value::as_u64).filter(|n| *n <= 128);
+    let task = text(&result, &["task"]);
+    let role = text(&result, &["role"]);
+    DelegationInfo {
+        task: if task.is_empty() {
+            text(&input, &["task"])
+        } else {
+            task
+        },
+        role: if role.is_empty() {
+            text(&input, &["role"])
+        } else {
+            role
+        },
+        status: text(&result, &["status"]),
+        turns: number(&result, "turns"),
+        max_turns: number(&result, "maxTurns"),
+        turn_limited: result
+            .get("turnLimited")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        child_id: delegation_field(output, &["childId", "child_id"]),
+        session_id: delegation_field(
+            output,
+            &[
+                "sessionId",
+                "session_id",
+                "childSessionId",
+                "child_session_id",
+            ],
+        ),
+        report: text(&result, &["report"]),
+        error: text(&result, &["error", "message"]),
     }
 }
 
@@ -1697,6 +1843,28 @@ mod tests {
             history_tool_output(&json!({"content":[],"result":"fallback"})),
             "fallback"
         );
+    }
+
+    #[test]
+    fn delegation_summary_reads_only_explicit_task_and_child_session_fields() {
+        assert!(is_delegation_tool(" functions.DELEGATE_TASK "));
+        assert!(is_delegation_tool("subagent"));
+        assert!(!is_delegation_tool("tool"));
+        assert_eq!(
+            delegation_field(
+                r#"{"task":"  inspect the UI  ","description":"fallback"}"#,
+                &["task", "description"]
+            ),
+            Some("inspect the UI".into())
+        );
+        assert_eq!(
+            delegation_field(
+                r#"{"sessionId":"child-1","token":"secret"}"#,
+                &["sessionId"]
+            ),
+            Some("child-1".into())
+        );
+        assert_eq!(delegation_field("not-json", &["task"]), None);
     }
 
     fn pending(ui: Value) -> PendingDialog {

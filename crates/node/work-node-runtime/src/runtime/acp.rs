@@ -47,6 +47,7 @@ struct AcpInner {
     pending: State<HashMap<String, PendingRequest>>,
     permissions: State<HashMap<String, PendingPermission>>,
     config_options: State<HashMap<String, Vec<Value>>>,
+    prompt_content: std::sync::atomic::AtomicBool,
     events: broadcast::Sender<WireEvent>,
     terminal: watch::Sender<Option<String>>,
     descriptor: RwLock<AgentDescriptor>,
@@ -113,6 +114,7 @@ impl AcpClient {
             pending: State::new(HashMap::new()),
             permissions: State::new(HashMap::new()),
             config_options: State::new(HashMap::new()),
+            prompt_content: std::sync::atomic::AtomicBool::new(false),
             events,
             terminal: watch::channel(None).0,
             descriptor: RwLock::new(AgentDescriptor {
@@ -177,6 +179,13 @@ impl AcpClient {
             {
                 descriptor.capabilities.session_resume = true;
             }
+            client.inner.prompt_content.store(
+                initialized
+                    .pointer("/agentCapabilities/promptCapabilities/image")
+                    .and_then(Value::as_bool)
+                    == Some(true),
+                Ordering::Release,
+            );
         }
         Ok(client)
     }
@@ -184,6 +193,11 @@ impl AcpClient {
     #[must_use]
     pub fn descriptor(&self) -> AgentDescriptor {
         self.descriptor_snapshot()
+    }
+
+    #[must_use]
+    pub fn supports_prompt_content(&self) -> bool {
+        self.inner.prompt_content.load(Ordering::Acquire)
     }
 
     fn descriptor_snapshot(&self) -> AgentDescriptor {
@@ -381,10 +395,23 @@ impl AcpClient {
     }
 
     pub async fn prompt(&self, session_id: &str, text: &str) -> Result<Value, RuntimeError> {
+        self.prompt_value(session_id, json!([{"type":"text", "text": text}]))
+            .await
+    }
+
+    pub async fn prompt_content(
+        &self,
+        session_id: &str,
+        content: &Value,
+    ) -> Result<Value, RuntimeError> {
+        self.prompt_value(session_id, content.clone()).await
+    }
+
+    async fn prompt_value(&self, session_id: &str, prompt: Value) -> Result<Value, RuntimeError> {
         let result = self
             .request(
                 "session/prompt",
-                json!({"sessionId": session_id, "prompt": [{"type":"text", "text": text}]}),
+                json!({"sessionId": session_id, "prompt": prompt}),
             )
             .await?;
         let stop_reason = result

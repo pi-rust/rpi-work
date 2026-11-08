@@ -34,6 +34,7 @@ mod extensions;
 pub use components::download_component;
 mod message_page;
 mod message_queries;
+mod tool_program;
 mod node_api;
 mod prompt_content;
 mod providers;

@@ -4606,7 +4606,7 @@ dependencies = [
 [[package]]
 name = "rpi-durable-core"
 version = "0.2.0"
-source = "git+https://github.com/pi-rust/rpi-package?rev=17ba89c0098f018db76e22051fe8c73e2792dc1c#17ba89c0098f018db76e22051fe8c73e2792dc1c"
+source = "git+https://github.com/pi-rust/rpi-package?rev=1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd#1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd"
 dependencies = [
  "serde",
  "serde_json",
@@ -4614,10 +4614,11 @@ dependencies = [
 
 [[package]]
 name = "rpi-extcore"
-version = "0.2.6"
-source = "git+https://github.com/pi-rust/rpi-package?rev=17ba89c0098f018db76e22051fe8c73e2792dc1c#17ba89c0098f018db76e22051fe8c73e2792dc1c"
+version = "0.2.11"
+source = "git+https://github.com/pi-rust/rpi-package?rev=1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd#1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd"
 dependencies = [
  "base64 0.22.1",
+ "fs2",
  "futures-util",
  "rpi-durable-core",
  "rpi-mcp-core",
@@ -4630,8 +4631,8 @@ dependencies = [
 
 [[package]]
 name = "rpi-mcp-core"
-version = "0.1.0"
-source = "git+https://github.com/pi-rust/rpi-package?rev=17ba89c0098f018db76e22051fe8c73e2792dc1c#17ba89c0098f018db76e22051fe8c73e2792dc1c"
+version = "0.1.1"
+source = "git+https://github.com/pi-rust/rpi-package?rev=1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd#1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd"
 dependencies = [
  "libc",
  "reqwest",
@@ -6866,13 +6867,16 @@ dependencies = [
  "base64 0.22.1",
  "dioxus",
  "embed-resource",
+ "futures-util",
  "gloo-timers",
  "jni 0.21.1",
  "ndk-context",
  "rfd",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
+ "web-sys",
  "web-time",
  "work-client",
  "work-core",

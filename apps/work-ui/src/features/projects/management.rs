@@ -126,13 +126,13 @@ pub enum SidebarActivity {
 impl SidebarActivity {
     pub fn status(self) -> Option<(&'static str, &'static str)> {
         match self {
-            Self::Loading => Some(("loading", "加载中")),
-            Self::Sending => Some(("sending", "发送中")),
-            Self::WaitingReply => Some(("loading", "等待回复")),
+            Self::Loading => Some(("waiting", "加载中")),
+            Self::Sending => Some(("running", "发送中")),
+            Self::WaitingReply => Some(("waiting", "等待回复")),
             Self::Running => Some(("running", "运行中")),
             Self::AwaitingInput => Some(("waiting", "等待确认")),
-            Self::Cancelling => Some(("cancelling", "停止中")),
-            Self::Disconnected => Some(("offline", "已断开")),
+            Self::Cancelling => Some(("running", "停止中")),
+            Self::Disconnected => Some(("failed", "已断开")),
             Self::Idle => None,
         }
     }
@@ -237,7 +237,7 @@ pub fn SidebarSession(
     busy: bool,
     now: u64,
     #[props(default)] activity: Option<SidebarActivity>,
-    #[props(default)] scope: String,
+    #[props(default)] context: Option<String>,
     #[props(default)] onnodeinfo: Option<EventHandler>,
     onopen: EventHandler<String>,
     onaction: EventHandler<SessionAction>,
@@ -245,15 +245,6 @@ pub fn SidebarSession(
     let id = session.session_id.clone();
     let title = session.title.clone().unwrap_or_else(|| "未命名会话".into());
     let status = sidebar_activity_status(&session, activity);
-    let spinning = activity.map_or_else(
-        || {
-            matches!(
-                status,
-                Some(("loading" | "sending" | "running" | "cancelling", _))
-            )
-        },
-        SidebarActivity::spinning,
-    );
     let description =
         status.map_or_else(|| title.clone(), |(_, label)| format!("{title} · {label}"));
     let menu = format!("session-menu-{id}");
@@ -263,26 +254,21 @@ pub fn SidebarSession(
             button {
                 class: if selected { "session-item current" } else { "session-item" },
                 aria_label: "{title}", "aria-description": status.map(|(_, label)| label),
-                aria_busy: if spinning { "true" } else { "false" },
+                aria_busy: "false",
                 aria_current: if selected { "true" } else { "false" }, title: "{description}",
                 onclick: { let id=id.clone(); move |_| onopen.call(id.clone()) },
                 oncontextmenu: move |event| { event.prevent_default(); open_menu(&menu); },
-                if let Some((tone, label)) = status.filter(|_| !spinning) {
-                    span { class: "session-dot {tone}", title: "{label}", "aria-hidden": "true" }
-                }
-                span { class: "session-title", "{title}" }
                 if let Some((tone, label)) = status {
-                    if spinning {
-                        crate::features::conversation::activity::Spinner {
-                            scope: Some(scope), class: "session-activity-spinner {tone}", title: label.to_owned(),
-                        }
+                    span { class: "session-dot {tone}", title: "{label}", aria_label: label, "aria-hidden": "true" }
+                }
+                span { class: "session-title-wrap",
+                    span { class: "session-title", "{title}" }
+                    if let Some(context) = context.as_deref() {
+                        small { class: "session-context", "{context}" }
                     }
-                    small { class: "session-activity-label {tone}", "aria-hidden": "true", "{label}" }
                 }
                 if session.pinned { small { class: "session-pin", "置顶" } }
-                if !spinning {
-                    small { class: "session-updated", "aria-hidden": "true", "{updated}" }
-                }
+                small { class: "session-updated", "aria-hidden": "true", "{updated}" }
             }
             SessionMenu { id: id.clone(), title: title.clone(), archived: session.archived, pinned: session.pinned, busy, onaction, onnodeinfo }
         }
