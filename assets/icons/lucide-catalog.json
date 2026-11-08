@@ -17,6 +17,8 @@
     "folder": "folder",
     "file": "file-text",
     "panel": "panel-right",
+    "fullscreen": "maximize-2",
+    "fullscreen-exit": "minimize-2",
     "layout": "panels-top-left",
     "blocks": "blocks",
     "check": "check",
@@ -370,6 +372,76 @@
         ]
       ],
       "sourceSha256": "c5cba9593a49a7a2a542a3cbfd8c8eb5c8658186569e146845fd0bc39b32118f"
+    },
+    "maximize-2": {
+      "nodes": [
+        [
+          "polyline",
+          {
+            "points": "15 3 21 3 21 9"
+          }
+        ],
+        [
+          "polyline",
+          {
+            "points": "9 21 3 21 3 15"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "21",
+            "x2": "14",
+            "y1": "3",
+            "y2": "10"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "3",
+            "x2": "10",
+            "y1": "21",
+            "y2": "14"
+          }
+        ]
+      ],
+      "sourceSha256": "9a1c09c809f7b94ceb83fa0b543fc256783daca4868d5f0005df889b37f8734d"
+    },
+    "minimize-2": {
+      "nodes": [
+        [
+          "polyline",
+          {
+            "points": "4 14 10 14 10 20"
+          }
+        ],
+        [
+          "polyline",
+          {
+            "points": "20 10 14 10 14 4"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "14",
+            "x2": "21",
+            "y1": "10",
+            "y2": "3"
+          }
+        ],
+        [
+          "line",
+          {
+            "x1": "3",
+            "x2": "10",
+            "y1": "21",
+            "y2": "14"
+          }
+        ]
+      ],
+      "sourceSha256": "5b6b2c9c20d59645dc5ff63f1a8be7be66d0152bb0e51e72b88b499fc4fcbfd8"
     },
     "panels-top-left": {
       "nodes": [

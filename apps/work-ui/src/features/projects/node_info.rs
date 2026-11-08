@@ -255,6 +255,20 @@ pub fn is_local(client: Option<&WorkspaceClient>, address: &str) -> bool {
     client.is_some_and(WorkspaceClient::is_local) || local_node::is_local(address)
 }
 
+/// A hosted Web entry is a remote transport, but it is still the user's own
+/// node. Keep that ownership distinct from arbitrary nodes selected later.
+pub fn is_local_or_hosted(
+    client: Option<&WorkspaceClient>,
+    address: &str,
+    hosted_address: Option<&str>,
+) -> bool {
+    is_local(client, address)
+        || hosted_address.is_some_and(|hosted| {
+            !hosted.trim().is_empty()
+                && identity::node_origin(hosted) == identity::node_origin(address)
+        })
+}
+
 /// Never return arbitrary malformed input. Validate before `node_origin`, which
 /// intentionally tolerates invalid ports for identity matching (not UI display).
 pub fn safe_address(raw: &str) -> String {
@@ -330,12 +344,7 @@ pub fn NodeBadge(
         "远程节点"
     };
     let icon = if local { "monitor" } else { "cloud" };
-    let marker = match tone.as_str() {
-        "auth" | "unready" => "!",
-        "unknown" => "?",
-        "offline" => "/",
-        _ => "",
-    };
+    let status_label = if tone == "online" { "在线" } else { "离线" };
     rsx! {
         button {
             r#type: "button",
@@ -354,8 +363,8 @@ pub fn NodeBadge(
             span {
                 class: "project-node-status",
                 "data-state": tone,
-                aria_hidden: "true",
-                "{marker}"
+                title: status_label,
+                aria_label: status_label
             }
         }
     }
@@ -647,6 +656,25 @@ mod tests {
         let remote = WorkspaceClient::new("http://localhost:3030").unwrap();
         assert!(!is_local(Some(&remote), "http://localhost:3030"));
         assert!(is_local(Some(&remote), "rpi-work://local"));
+    }
+
+    #[test]
+    fn hosted_entry_is_presented_as_the_owned_local_node() {
+        assert!(is_local_or_hosted(
+            None,
+            "http://192.168.3.27:14180/api",
+            Some("http://192.168.3.27:14180/"),
+        ));
+        assert!(is_local_or_hosted(
+            None,
+            "rpi-work://local",
+            Some("http://192.168.3.27:14180/"),
+        ));
+        assert!(!is_local_or_hosted(
+            None,
+            "http://192.168.3.28:14180/",
+            Some("http://192.168.3.27:14180/"),
+        ));
     }
 
     #[test]

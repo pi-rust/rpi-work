@@ -27,46 +27,21 @@
 }
 .project-node-button .project-node-status {
   position: absolute;
-  right: -1px;
-  bottom: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  right: 1px;
+  bottom: 7px;
+  display: block;
   box-sizing: border-box;
-  width: 11px;
-  height: 11px;
-  border: 1px solid currentColor;
+  width: 6px;
+  height: 6px;
+  border: 0;
   border-radius: 50%;
-  background: var(--bg);
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
+  background: var(--danger, #be4141);
 }
-.project-node-status[data-state="online"] {
-  width: 8px;
-  height: 8px;
-  right: 0;
-  bottom: 6px;
-  background: var(--success, #23854a);
-  color: var(--success, #23854a);
-  box-shadow: 0 0 0 2px var(--bg);
-}
-.project-node-status[data-state="checking"],
-.project-node-status[data-state="connecting"] {
-  border: 2px solid var(--muted);
-  border-top-color: transparent;
-  animation: node-info-spin 1s linear infinite;
-}
-.project-node-status[data-state="offline"] {
-  color: var(--danger, #be4141);
-  font-size: 12px;
-}
+.project-node-status[data-state="online"] { background: var(--success, #23854a); }
 .project-node-status[data-state="auth"],
-.project-node-status[data-state="unready"] {
-  color: var(--warning, #946300);
-  border-radius: 3px;
-}
+.project-node-status[data-state="unready"] { background: var(--warning, #946300); }
+.project-node-status[data-state="checking"],
+.project-node-status[data-state="connecting"] { background: var(--muted); }
 @keyframes node-info-spin { to { transform: rotate(360deg); } }
 
 .node-info-dialog {
@@ -138,7 +113,7 @@
 
 @media (max-width: 700px) {
   .project-node-button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
-  .project-node-button .project-node-status { right: 7px; bottom: 8px; }
+  .project-node-button .project-node-status { right: 8px; bottom: 9px; }
   .node-info-dialog {
     max-width: calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
     max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
@@ -165,7 +140,42 @@
 .workspace-location strong{font-size:calc(11px * var(--type-scale,1));font-weight:550}
 .workspace-location small{font:calc(9px * var(--type-scale,1))/1.5 var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .workspace-location:hover{background:var(--card)}
+.workspace-location[data-node-kind="local"]{width:36px;height:36px;min-height:36px;padding:0;justify-content:center;gap:0}
+.workspace-location[data-node-kind="local"]>span,
+.workspace-location[data-node-kind="local"]>.icon:last-child{display:none}
 .workspace-location:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .inspector-environment .environment-origin{display:block;font:calc(9px * var(--type-scale,1))/1.6 var(--mono);color:var(--muted);overflow-wrap:anywhere;margin:6px 0}
 .inspector-environment .environment-heading>div{min-width:0}
 .inspector-environment .environment-heading strong{overflow-wrap:anywhere}
+
+/* Status dots remain solid and independent from ownership icons. */
+.project-node-status,
+.project-node-button .project-node-status,
+.sidebar-node-tree-status,
+.resource-context-status::before {
+  border-radius: 50%;
+}
+.project-node-status,
+.sidebar-node-tree-status {
+  width: var(--status-dot-size, 7px);
+  height: var(--status-dot-size, 7px);
+}
+.project-node-status[data-state="online"],
+.sidebar-node-tree-status.online {
+  background: var(--success);
+}
+.project-node-status[data-state="offline"],
+.sidebar-node-tree-status:not(.online):not(.auth):not(.unready):not(.checking):not(.connecting) {
+  background: var(--danger);
+}
+.node-info-dialog .node-info-actions button {
+  min-height: var(--hit-size, 44px);
+}
+@media (max-width: 700px), (pointer: coarse) {
+  .node-info-dialog .node-info-actions {
+    justify-content: stretch;
+  }
+  .node-info-dialog .node-info-actions button {
+    flex: 1 1 10rem;
+  }
+}

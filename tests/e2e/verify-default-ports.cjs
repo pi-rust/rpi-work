@@ -7,10 +7,10 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '../..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-const node = read('crates/work-node/src/lib.rs');
+const node = read('crates/node/work-node/src/lib.rs');
 assert.match(node, /port: 13030,/);
 assert.match(read('apps/work-cli/src/args.rs'), /const DEFAULT_URL: &str = "http:\/\/127\.0\.0\.1:13031\/"/);
-assert.match(read('crates/work-host/src/http.rs'), /env::var\("RPI_WORK_HTTP_PORT"\)\s*\.unwrap_or_else\(\|_\| "13031"/);
+assert.match(read('crates/host/work-host/src/http.rs'), /env::var\("RPI_WORK_HTTP_PORT"\)\s*\.unwrap_or_else\(\|_\| "13031"/);
 assert.match(read('tools/dev/migrate-idle-sessions.py'), /add_argument\("--port", type=int, default=13030\)/);
 const task = read('Taskfile.yml');
 assert.match(task, /PORT: '\{\{\.PORT \| default "14180"\}\}'/);

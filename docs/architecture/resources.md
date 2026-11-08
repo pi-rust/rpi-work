@@ -24,7 +24,7 @@
 | 节点源码开发 | Package/Skill/extension 草稿、revision/digest、静态校验、不可变测试快照、真实测试、个人版本发布 | 校验不编译；源码 extension 不等于可加载 DLL |
 | 精选资源与 Provider | 数据包发现/获取后显式安装；Provider 配置与 owned idle host release | 不是任意 URL 市场或停止外部宿主的进程管理器 |
 
-普通新 RPI 会话在首轮前准备并选择真实 base Package，开发会话选择 developer Package。资源源码从 `crates/work-node-runtime/assets/packages` 编译嵌入，并通过内容/provenance 校验交给原生安装器；不覆盖用户拥有的同名安装。旧未配置会话保留 legacy 状态，不能按更宽默认配置伪装精确创建成功。ACP 原生资源定制返回 Unsupported。
+普通新 RPI 会话在首轮前准备并选择真实 base Package，开发会话选择 developer Package。资源源码从 `crates/node/work-node-runtime/assets/packages` 编译嵌入，并通过内容/provenance 校验交给原生安装器；不覆盖用户拥有的同名安装。旧未配置会话保留 legacy 状态，不能按更宽默认配置伪装精确创建成功。ACP 原生资源定制返回 Unsupported。
 
 ## 应用、观测与恢复
 
@@ -52,10 +52,10 @@ Work 自定义组件 Bundle 是独立的 UI/能力授权协议，安装面板不
 
 ## 核查入口
 
-- [节点契约](../../crates/work-node-api/src/api/node.rs)
-- [资源适配](../../crates/work-node-runtime/src/workspace/resources.rs)
-- [源码服务](../../crates/work-node-runtime/src/workspace/authoring.rs)
-- [客户端适配](../../crates/work-client/src/resources.rs)
+- [节点契约](../../crates/foundation/work-node-api/src/api/node.rs)
+- [资源适配](../../crates/node/work-node-runtime/src/workspace/resources.rs)
+- [源码服务](../../crates/node/work-node-runtime/src/workspace/authoring.rs)
+- [客户端适配](../../crates/client/work-client/src/resources.rs)
 - [真实原生验收脚本](../../tests/e2e/native-resource-workflow.py)
 
 真实验收须显式提供受核验的 native binary，并使用隔离 Agent/项目/Provider 根和本地模型 fixture。本文本次更新只核对源码与文档，不宣称重新执行了真实 Agent/设备验收。

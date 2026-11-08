@@ -227,14 +227,6 @@ impl MetaStore {
             selected_by_project,
         }
     }
-    fn to_json(&self) -> Value {
-        let resources: Vec<Value> = self.resources.iter().map(|r| {
-            let tests: Vec<Value> = r.tests.iter().map(snapshot_json).collect();
-            let releases: Vec<Value> = r.releases.iter().map(|rel| json!({"version":rel.version,"revision":rel.revision,"sources":source_json(&rel.sources),"test":snapshot_json(&rel.test)})).collect();
-            json!({"projectId":r.project_id,"id":r.id,"name":r.name,"kind":r.kind,"version":r.version,"revision":r.revision,"sources":source_json(&r.sources),"baseline":source_json(&r.baseline),"tests":tests,"releases":releases})
-        }).collect();
-        json!({"resources":resources,"selected":self.selected_by_project})
-    }
 }
 fn snapshot_json(s: &MetaSnapshot) -> Value {
     json!({"revision":s.revision,"version":s.version,"sources":source_json(&s.sources),"passed":s.passed,"durationMs":s.duration_ms})

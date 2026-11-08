@@ -52,16 +52,6 @@ impl Appearance {
             Self::Custom(_) => "custom-11",
         }
     }
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Codex => "Codex 黑白",
-            Self::Paper => "纸与苔绿",
-            Self::Ocean => "海湾蓝",
-            Self::Graphite => "石墨紫",
-            Self::Reddit => "Reddit 橙",
-            Self::Custom(_) => "自定义主题",
-        }
-    }
     pub const fn all() -> [Self; 5] {
         [
             Self::Codex,

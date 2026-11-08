@@ -1148,10 +1148,18 @@ pub fn SessionResources(
     let content = rsx! {
         if let Some(project) = native_project.clone() {
             super::native::NativeResources {
-                key: "native-session-{project}-{selected_session:?}-{connection_epoch}-{session_generation}",
-                project, session: selected_session.read().clone(), shared_client,
+                key: "native-project-defaults-{project}-{connection_epoch}",
+                project: project.clone(), session: None, shared_client,
                 connection_epoch, session_generation, idle: !extension_config_locked, online: native_online, configuration_only: true,
                 onopen: on_native_open,
+            }
+            if selected_session.read().is_some() {
+                super::native::NativeResources {
+                    key: "native-session-{project}-{selected_session:?}-{connection_epoch}-{session_generation}",
+                    project, session: selected_session.read().clone(), shared_client,
+                    connection_epoch, session_generation, idle: !extension_config_locked, online: native_online, configuration_only: true,
+                    onopen: on_native_open,
+                }
             }
         }
         p { class: "resource-boundary", "以下为旧惰性设计/引用偏好，不是 native installed、loaded 或模型有效状态。" }

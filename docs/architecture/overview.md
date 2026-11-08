@@ -38,7 +38,7 @@ flowchart TB
 | `work-node-service` | 将已有 owner 适配为 HTTP/SSE/WebSocket，按配置托管 Web assets | 依赖 runtime/API/HTTP 辅助层，不依赖客户端 |
 | `work-node-host` | 数据锁、owner 初始化、HTTP 配置、内置组件绑定及协作退出 | 组合 runtime、service 和组件；无 GUI 依赖 |
 | `work-node` / `work-server` | 分别重导出 runtime / service 的兼容门面 | 修改实现应进入实际 crate |
-| `work-client` | `WorkspaceClient` 本地/远程适配，认证、传输、快照恢复与客户端投影 | 原生本地 adapter 依赖 `work-node`；Web/Android 不托管 owner |
+| `work-client` | `WorkspaceClient` 本地/远程适配，认证、传输、快照恢复与客户端投影 | 原生本地 adapter 直接依赖 `work-node-runtime`；Web/Android 不托管 owner |
 | `work-host` | 面向应用的宿主门面，将已有 owner 包装为本地客户端 | 组合 `work-node-host` 与 `work-client` |
 | `work-component-api` | Bundle、校验、目录、能力授权和隔离面板通信桥 | 独立于 rpi 原生插件 ABI |
 | `work-http-component` | 远程访问专用界面和动作契约 | 宿主绑定真实能力，通用 UI 负责安装和挂载 |
@@ -57,11 +57,11 @@ flowchart TB
 | `work-cli serve` / `work-ui --headless` | 同一宿主工厂、数据目录和锁；要求显式非空密码，HTTP 启动失败即清理退出 |
 | `work-ui --connect ORIGIN` | 纯客户端，不获取本机锁；连接失败也不回退创建 owner |
 | Web / Android App / 普通 CLI 命令 | 访问目标节点，不在客户端创建执行宿主 |
-| 显式 RPC/ACP CLI 诊断、旧 `NodeManager` | 独立诊断/兼容路径，不是默认工作台启动方式 |
+| 显式 RPC/ACP CLI 诊断 | 直接使用节点 runtime 的显式诊断路径，不是默认工作台启动方式 |
 
 每进程仅接受一次本机宿主启动尝试。`LocalGuard` 保留数据锁，退出顺序是：停止网络接收并 drain 在途操作 → 停止 workspace children → 释放 HTTP executor → 释放锁。超时或清理失败保留所有权至清理完成或进程退出。切换节点、页面离开、网络断流和关闭共享均不停止 owner 任务。
 
-GUI 的 HTTP 启动失败仍保留本机入口以修复配置。共享开关立即撤销外部会话/连接；监听地址、端口和密码等配置保存后在下次启动生效。实现见 [work-node-host](../../crates/work-node-host/src/lib.rs) 与[组件组合](component-composition.md)。
+GUI 的 HTTP 启动失败仍保留本机入口以修复配置。共享开关立即撤销外部会话/连接；监听地址、端口和密码等配置保存后在下次启动生效。实现见 [work-node-host](../../crates/host/work-node-host/src/lib.rs) 与[组件组合](component-composition.md)。
 
 ## 数据与状态归属
 

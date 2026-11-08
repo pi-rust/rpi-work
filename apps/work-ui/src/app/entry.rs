@@ -51,7 +51,7 @@ fn hosted_metadata(status: u16, body: &str, navigated: bool) -> Result<Option<St
     if status == 404 {
         return if navigated {
             Err(
-                "目标未提供宿主 Web 入口，请配置 Web assets 或同源代理；可使用浏览器返回原入口。"
+                "目标未提供节点 Web 入口，请配置 Web assets 或同源代理；可使用浏览器返回原入口。"
                     .into(),
             )
         } else {
@@ -59,18 +59,18 @@ fn hosted_metadata(status: u16, body: &str, navigated: bool) -> Result<Option<St
         };
     }
     if status != 200 {
-        return Err("无法确认宿主入口，请重试。".into());
+        return Err("无法确认节点入口，请重试。".into());
     }
     let value: serde_json::Value =
-        serde_json::from_str(body).map_err(|_| "宿主入口信息无效，请重试。".to_owned())?;
+        serde_json::from_str(body).map_err(|_| "节点入口信息无效，请重试。".to_owned())?;
     if value["version"].as_u64() != Some(1) || value["mode"].as_str() != Some("hosted") {
-        return Err("宿主入口版本或模式无效，请重试。".into());
+        return Err("节点入口版本或模式无效，请重试。".into());
     }
     value["nodeId"]
         .as_str()
         .filter(|id| !id.trim().is_empty())
         .map(|id| Some(id.to_owned()))
-        .ok_or_else(|| "宿主入口缺少节点标识，请重试。".into())
+        .ok_or_else(|| "节点入口缺少节点标识，请重试。".into())
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -114,14 +114,14 @@ async fn discover() -> Result<WebGate, String> {
     );
     let response = with_timeout(request.recv::<serde_json::Value>())
         .await?
-        .map_err(|_| "无法读取宿主入口，请重试。".to_owned())?;
+        .map_err(|_| "无法读取节点入口，请重试。".to_owned())?;
     let status = response["status"]
         .as_u64()
         .and_then(|status| u16::try_from(status).ok())
-        .ok_or_else(|| "无法连接宿主，请检查网络后重试。".to_owned())?;
+        .ok_or_else(|| "无法连接节点，请检查网络后重试。".to_owned())?;
     let body = response["body"]
         .as_str()
-        .ok_or_else(|| "宿主入口信息无效，请重试。".to_owned())?;
+        .ok_or_else(|| "节点入口信息无效，请重试。".to_owned())?;
     let Some(_node_id) = hosted_metadata(
         status,
         body,
@@ -132,16 +132,16 @@ async fn discover() -> Result<WebGate, String> {
     };
     let address = response["origin"]
         .as_str()
-        .ok_or_else(|| "无法确定宿主地址。".to_owned())?
+        .ok_or_else(|| "无法确定节点地址。".to_owned())?
         .to_owned();
-    let client = work_client::WorkClient::new(&address).map_err(|_| "宿主地址无效。".to_owned())?;
+    let client = work_client::WorkClient::new(&address).map_err(|_| "节点地址无效。".to_owned())?;
     let auth = with_timeout(client.auth())
         .await?
         .map_err(|error| match error {
             work_client::ClientError::Api { status, .. } if status.as_u16() == 403 => {
-                "宿主未开启共享或拒绝访问，请在宿主桌面检查共享设置。".to_owned()
+                "节点未开启共享或拒绝访问，请在节点桌面检查共享设置。".to_owned()
             }
-            _ => "无法验证宿主登录状态，请重试。".to_owned(),
+            _ => "无法验证节点登录状态，请重试。".to_owned(),
         })?;
     let node = EntryNode {
         address,
@@ -173,7 +173,7 @@ fn HostedEntry() -> Element {
             let error = other.and_then(Result::err);
             rsx! {
                 EntryFrame {
-                    h1 { "登录宿主" }
+                    h1 { "登录" }
                     if let Some(message) = error {
                         p { role: "alert", class: "entry-error", "{message}" }
                         button {
@@ -182,7 +182,7 @@ fn HostedEntry() -> Element {
                             "重试"
                         }
                     } else {
-                        p { role: "status", "aria-live": "polite", "aria-busy": "true", "正在验证宿主入口…" }
+                        p { role: "status", "aria-live": "polite", "aria-busy": "true", "正在验证入口…" }
                     }
                 }
             }
@@ -242,8 +242,8 @@ fn HostedLogin(node: EntryNode, #[props(default = false)] initially_authorized: 
         ConnectionEntryFrame {
             ConnectionScreen {
                 address, fixed_address: true, fixed_target: true,
-                password: password(), password_label: "宿主密码", submit_label: "登录宿主",
-                help: "此页面由当前电脑托管，登录目标固定为当前宿主。请输入宿主密码，登录后访问工作台。".to_owned(),
+                password: password(), password_label: "密码", submit_label: "登录",
+                help: "此页面由当前电脑托管，登录目标固定为当前节点。请输入密码，登录后访问工作台。".to_owned(),
                 busy: busy(), error: error(), warning: warning(),
                 onaddress: move |_| {},
                 onpassword: move |value| { password.set(value); error.set(String::new()); },
@@ -267,8 +267,8 @@ fn HostedLogin(node: EntryNode, #[props(default = false)] initially_authorized: 
                         busy.set(false);
                         match result {
                             Ok(Ok(auth)) if hosted_authorized(&auth) => authorized.set(true),
-                            Ok(Ok(_)) => error.set("宿主尚未确认登录，请检查密码与宿主认证配置后重试。".into()),
-                            Ok(Err(_)) => error.set("登录失败，请检查宿主密码后重试。".into()),
+                            Ok(Ok(_)) => error.set("尚未确认登录，请检查密码与认证配置后重试。".into()),
+                            Ok(Err(_)) => error.set("登录失败，请检查密码后重试。".into()),
                             Err(_) => error.set("登录超时，请检查网络后重试。".into()),
                         }
                     })));

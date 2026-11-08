@@ -10,6 +10,8 @@ use work_core::AgentDescriptor;
 pub struct NodeHistory {
     pub recent: Vec<String>,
     pub selected: Option<String>,
+    /// Canonical address to stable node identity, used only to collapse aliases.
+    node_ids: std::collections::BTreeMap<String, String>,
 }
 
 impl NodeHistory {
@@ -39,29 +41,81 @@ impl NodeHistory {
                 break;
             }
         }
+        if let Some(entries) = value["nodeIds"].as_object() {
+            for (raw_address, raw_id) in entries {
+                let Some(address) = normalize_address(raw_address, false).ok() else {
+                    continue;
+                };
+                let Some(node_id) = raw_id.as_str().filter(|id| valid_node_id(id)) else {
+                    continue;
+                };
+                if history.recent.iter().any(|item| item == &address) {
+                    history.node_ids.insert(address, node_id.to_owned());
+                }
+            }
+        }
         history
     }
 
     /// Record a successfully connected node, never a draft or failed address.
     /// The local workspace is a selection, not a remote recent entry.
     pub fn select(&mut self, address: &str) {
-        if let Some(address) = selection_address(address, true) {
-            if address != "rpi-work://local" {
-                self.recent.retain(|item| item != &address);
-                self.recent.insert(0, address.clone());
-                self.recent.truncate(8);
+        self.select_with_identity(address, None);
+    }
+
+    /// Record a successful connection and collapse known aliases of the same node.
+    pub fn select_with_identity(&mut self, address: &str, node_id: Option<&str>) {
+        let Some(address) = selection_address(address, true) else {
+            return;
+        };
+        if address != "rpi-work://local" {
+            if let Some(node_id) = node_id.filter(|id| valid_node_id(id)) {
+                let aliases: Vec<_> = self
+                    .recent
+                    .iter()
+                    .filter(|item| {
+                        *item != &address
+                            && self
+                                .node_ids
+                                .get(*item)
+                                .is_some_and(|known| known == node_id)
+                    })
+                    .cloned()
+                    .collect();
+                for alias in aliases {
+                    self.recent.retain(|item| item != &alias);
+                    self.node_ids.remove(&alias);
+                }
+                self.node_ids.insert(address.clone(), node_id.to_owned());
             }
-            self.selected = Some(address);
+            self.recent.retain(|item| item != &address);
+            self.recent.insert(0, address.clone());
+            self.recent.truncate(8);
+            self.node_ids
+                .retain(|known_address, _| self.recent.iter().any(|item| item == known_address));
         }
+        self.selected = Some(address);
     }
 
     pub fn remember(&mut self, address: &str) {
         self.select(address);
     }
 
-    fn value(&self) -> Value {
-        json!({"version":1,"recent":self.recent,"selected":self.selected})
+    pub fn remember_with_identity(&mut self, address: &str, node_id: Option<&str>) {
+        if node_id.is_none() {
+            self.remember(address);
+        } else {
+            self.select_with_identity(address, node_id);
+        }
     }
+
+    fn value(&self) -> Value {
+        json!({"version":1,"recent":self.recent,"selected":self.selected,"nodeIds":self.node_ids})
+    }
+}
+
+fn valid_node_id(id: &str) -> bool {
+    !id.trim().is_empty() && id.len() <= 256 && !id.chars().any(char::is_control)
 }
 
 fn selection_address(raw: &str, allow_local: bool) -> Option<String> {
@@ -362,6 +416,7 @@ pub struct Workspace {
     pub capabilities: Capabilities,
     pub sessions: Vec<SessionSummary>,
     pub projects: Vec<Project>,
+    pub node_id: Option<String>,
 }
 
 pub enum ConnectionOutcome {
@@ -422,12 +477,20 @@ pub async fn open(
             .projects()
             .await
             .map_err(|error| format!("项目加载失败：{error}"))?;
+        // Identity is a best-effort alias key. Older nodes may not expose it;
+        // that must not make an otherwise usable connection fail.
+        let node_id = if client.is_local() {
+            None
+        } else {
+            client.node_identity().await.ok()
+        };
         Ok(ConnectionOutcome::Ready(Box::new(Workspace {
             transport: descriptor,
             auth,
             capabilities,
             sessions,
             projects,
+            node_id,
         })))
     })
     .await?
@@ -633,7 +696,7 @@ mod tests {
         assert_eq!(history.recent, ["https://pc.test:3030"]);
         assert_eq!(
             history.value(),
-            json!({"version":1,"recent":["https://pc.test:3030"],"selected":null})
+            json!({"version":1,"recent":["https://pc.test:3030"],"selected":null,"nodeIds":{}})
         );
         assert_eq!(
             NodeHistory::restore(&json!({"version":2,"recent":["https://pc.test"]})).recent,
@@ -709,6 +772,41 @@ mod tests {
         let restored = NodeHistory::restore(&history.value());
         assert_eq!(restored.selected, history.selected);
         assert_eq!(restored.recent, history.recent);
+    }
+
+    #[test]
+    fn stable_node_identity_collapses_address_aliases_and_round_trips() {
+        let mut history = NodeHistory::default();
+        history.remember_with_identity("https://pc.test:3031/", Some("node-pc"));
+        history.remember_with_identity("https://pc.test:3032/", Some("node-pc"));
+        history.remember_with_identity("https://other.test", Some("node-other"));
+
+        assert_eq!(
+            history.recent,
+            ["https://other.test", "https://pc.test:3032"]
+        );
+        assert_eq!(
+            history.value()["nodeIds"],
+            json!({"https://other.test":"node-other","https://pc.test:3032":"node-pc"})
+        );
+
+        let restored = NodeHistory::restore(&history.value());
+        assert_eq!(restored.recent, history.recent);
+        assert_eq!(restored.value()["nodeIds"], history.value()["nodeIds"]);
+    }
+
+    #[test]
+    fn invalid_node_identity_is_not_persisted_or_used_for_aliases() {
+        let mut history = NodeHistory::default();
+        history.remember_with_identity("https://safe.test", Some("node-safe"));
+        for node_id in ["", "  ", "node\nunsafe"] {
+            history.remember_with_identity("https://other.test", Some(node_id));
+        }
+        assert!(history.recent.contains(&"https://other.test".to_owned()));
+        assert_eq!(
+            history.value()["nodeIds"],
+            json!({"https://safe.test":"node-safe"})
+        );
     }
 
     #[test]
@@ -799,6 +897,7 @@ mod tests {
         let mut history = NodeHistory {
             selected: Some("rpi-work://local".into()),
             recent: vec!["rpi-work://local".into(), "https://remote.test/".into()],
+            ..NodeHistory::default()
         };
         assert_eq!(
             startup_address(None, &history, "https://origin.test/", false),

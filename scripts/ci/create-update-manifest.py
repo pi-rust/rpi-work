@@ -52,7 +52,7 @@ def create(root: Path, tag: str, notes: str, key_pem: str, output: Path) -> dict
         private.write_text(key_pem, encoding="ascii")
         private.chmod(0o600)
         public = subprocess.run(["openssl", "pkey", "-in", str(private), "-pubout", "-outform", "DER"], check=True, capture_output=True).stdout
-        expected = base64.b64decode((repo / "crates/work-update/update-public-key.txt").read_text().strip(), validate=True)
+        expected = base64.b64decode((repo / "crates/update/work-update/update-public-key.txt").read_text().strip(), validate=True)
         if public[:12] != bytes.fromhex("302a300506032b6570032100") or public[12:] != expected:
             raise ValueError("Signing key does not match the public key embedded in the client")
         signature = Path(tmp) / "signature.bin"

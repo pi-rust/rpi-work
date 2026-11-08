@@ -15,6 +15,7 @@ pub(super) fn resource_kind(kind: &str) -> &'static str {
 pub fn ResourceCenter(
     kind: String,
     project: Option<String>,
+    project_name: Option<String>,
     session: Option<String>,
     session_name: Option<String>,
     session_scope: Option<String>,
@@ -31,6 +32,7 @@ pub fn ResourceCenter(
     let context_key = serde_json::to_string(&(
         &kind,
         &project,
+        &project_name,
         &session,
         connection_epoch(),
         session_generation(),
@@ -38,7 +40,7 @@ pub fn ResourceCenter(
     .unwrap_or_default();
     rsx! {
         for owner in [context_key] {
-            ResourceCenterState { key: "{owner}", kind: kind.clone(), project: project.clone(), session: session.clone(), session_name: session_name.clone(), session_scope: session_scope.clone(),
+            ResourceCenterState { key: "{owner}", kind: kind.clone(), project: project.clone(), project_name: project_name.clone(), session: session.clone(), session_name: session_name.clone(), session_scope: session_scope.clone(),
                 library, shared_client, connection_epoch, session_generation, idle, online, onopen, onconfigure, onback }
         }
     }
@@ -48,6 +50,7 @@ pub fn ResourceCenter(
 fn ResourceCenterState(
     kind: String,
     project: Option<String>,
+    project_name: Option<String>,
     session: Option<String>,
     session_name: Option<String>,
     session_scope: Option<String>,
@@ -71,33 +74,45 @@ fn ResourceCenterState(
         _ => "Packages",
     };
     let category = resource_kind(&kind);
-    let project_label = project.as_deref().unwrap_or("未选择项目");
+    let project_label = project_name
+        .as_deref()
+        .filter(|name| !name.trim().is_empty())
+        .or(project.as_deref())
+        .unwrap_or("未选择项目");
     rsx! {
         section { class: "resource-center", aria_label: "{title}资源中心",
             style { {include_str!("center.css")} }
             header { class: "resource-center-heading",
                 div {
                     h1 { "{title}" }
-                    p { "节点资源、发现目录和本地设计，分开管理。" }
+                    if kind != "extensions" && kind != "packages" && kind != "skills" {
+                        p { "节点资源、发现目录和本地设计，分开管理。" }
+                    }
                 }
                 button { class: "button", onclick: move |_| onback.call(()), "返回对话" }
             }
-            div { class: "resource-center-context",
-                span { class: "resource-context-project", "当前项目：{project_label}" }
-                span { class: if online { "resource-context-status online" } else { "resource-context-status offline" }, role: "status", if online { "节点在线" } else { "节点离线" } }
-                button { class: "button", disabled: session.is_none(), onclick: move |_| onconfigure.call(()), "会话资源设置" }
-            }
-            nav { class: "resource-center-views", aria_label: "资源视图",
-                for (key, label) in [("node", "当前节点"), ("discovery", "发现资源"), ("design", "本地设计")] {
-                    button {
-                        r#type: "button", aria_pressed: view() == key,
-                        aria_current: if view() == key { "page" } else { "false" },
-                        class: if view() == key { "active" } else { "" },
-                        onclick: move |_| {
-                            view.set(key.to_owned());
-                            if key == "discovery" { discovered.set(true); }
-                            if key == "design" { designed.set(true); }
-                        }, "{label}"
+            if kind == "extensions" || kind == "packages" || kind == "skills" {
+                div { class: "resource-center-context resource-simple-context",
+                    span { class: "resource-context-project", "当前项目：{project_label}" }
+                }
+            } else {
+                div { class: "resource-center-context",
+                    span { class: "resource-context-project", "当前项目：{project_label}" }
+                    span { class: if online { "resource-context-status online" } else { "resource-context-status offline" }, role: "status", if online { "节点在线" } else { "节点离线" } }
+                    button { class: "button", disabled: session.is_none(), onclick: move |_| onconfigure.call(()), "会话资源设置" }
+                }
+                nav { class: "resource-center-views", aria_label: "资源视图",
+                    for (key, label) in [("node", "当前节点"), ("discovery", "发现资源"), ("design", "本地设计")] {
+                        button {
+                            r#type: "button", aria_pressed: view() == key,
+                            aria_current: if view() == key { "page" } else { "false" },
+                            class: if view() == key { "active" } else { "" },
+                            onclick: move |_| {
+                                view.set(key.to_owned());
+                                if key == "discovery" { discovered.set(true); }
+                                if key == "design" { designed.set(true); }
+                            }, "{label}"
+                        }
                     }
                 }
             }

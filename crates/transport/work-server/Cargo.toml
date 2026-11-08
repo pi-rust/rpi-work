@@ -1,0 +1,39 @@
+[package]
+name = "work-server"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[lints.rust]
+unsafe_code = "warn"
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[dependencies]
+work-node-service = { path = "../work-node-service" }
+serde_json = "1"
+
+[dev-dependencies]
+work-http-component = { path = "../../components/work-http-component" }
+work-core = { path = "../../foundation/work-core" }
+work-node-runtime = { path = "../../node/work-node-runtime" }
+# The remaining dependencies are used by integration tests and examples.
+axum = { version = "0.8", features = ["ws"] }
+# Constrain the isolated slow peer's receive window, not production sockets.
+socket2 = "0.6"
+work-client = { path = "../../client/work-client" }
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "handshake"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls", "stream"] }
+serde = { version = "1", features = ["derive"] }
+futures-util = { version = "0.3", features = ["sink"] }
+sha2 = "0.10"
+url = "2"
+
+# Protocol fixture; no installed rpi process is touched.
+[[bin]]
+name = "work-server-rpc-fixture"
+path = "tests/support/rpc-fixture.rs"

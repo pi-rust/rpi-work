@@ -23,7 +23,7 @@
 
 签名缺失、版本不匹配、平台制品不完整均会阻止发布。已公开的同版本Release不会被脚本覆盖；更新必须使用新版本。不包含iOS、应用商店签名或桌面OS公证。
 
-仓库Secrets：`UPDATE_SIGNING_KEY`（Ed25519 PEM）、`ANDROID_KEYSTORE_BASE64`（PKCS12）、`ANDROID_KEYSTORE_PASSWORD`。私钥不进入Git。当前签名备份在本机用户目录 `.config/rpi-work/signing/`，已限制为当前Windows用户访问；需另行安全备份，尤其不要丢失Android签名证书。公钥在 `crates/work-update/update-public-key.txt`；更换更新签名密钥需规划旧版本信任迁移，不能直接替换后指望旧客户端接受。
+仓库Secrets：`UPDATE_SIGNING_KEY`（Ed25519 PEM）、`ANDROID_KEYSTORE_BASE64`（PKCS12）、`ANDROID_KEYSTORE_PASSWORD`。私钥不进入Git。当前签名备份在本机用户目录 `.config/rpi-work/signing/`，已限制为当前Windows用户访问；需另行安全备份，尤其不要丢失Android签名证书。公钥在 `crates/update/work-update/update-public-key.txt`；更换更新签名密钥需规划旧版本信任迁移，不能直接替换后指望旧客户端接受。
 
 Android release包使用固定证书；缺少密钥的本地/PR构建生成带 `-dev` 的开发包，不进入更新清单。Dioxus 0.7.10模板的versionCode恒为1，脚本重新构建Gradle release，设为 `major×1,000,000 + minor×1,000 + patch`，minor和patch要求小于1000。Android 0.1.0原临时开发签名包无法覆盖升级为固定签名版，需先卸载旧包；手机本地偏好会清除，电脑节点数据保留。
 

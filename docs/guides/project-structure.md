@@ -18,19 +18,26 @@ apps/
       shared/            公共组件、状态辅助和主题
   work-cli/              节点诊断 CLI
 crates/
-  work-node-api/         节点 DTO、NodeApi、会话/原生资源/realtime 契约
-  work-core/             重导出 API、事件规范化与运行投影、惰性扩展设计
-  work-node-runtime/     实际 workspace owner、RPC/ACP、资源及源码服务
-  work-http-runtime/     认证、Host/Origin、共享与一次性授权
-  work-node-service/     同 owner 的 HTTP/SSE/WebSocket 和静态 Web 托管
-  work-node-host/        实际 owner 启动、数据锁、组件绑定与退出
-  work-node/             runtime 兼容导出
-  work-server/           service 兼容导出、集成测试与 examples
-  work-client/           本机/远程 adapter、连接恢复、消息投影
-  work-host/             应用宿主门面与本机 client 包装
-  work-component-api/    UI Bundle、能力注册/授权、隔离动作桥
-  work-http-component/   专用远程访问面板
-  work-update/           签名更新与安装适配
+  foundation/
+    work-node-api/       节点 DTO、NodeApi、会话/原生资源/realtime 契约
+    work-core/           重导出 API、事件规范化与运行投影、惰性扩展设计
+  node/
+    work-node-runtime/   实际 workspace owner、RPC/ACP、资源及源码服务
+    work-node/           runtime 兼容导出
+  transport/
+    work-http-runtime/   认证、Host/Origin、共享与一次性授权
+    work-node-service/   同 owner 的 HTTP/SSE/WebSocket 和静态 Web 托管
+    work-server/         service 兼容导出、集成测试与 examples
+  client/
+    work-client/         本机/远程 adapter、连接恢复、消息投影
+  host/
+    work-node-host/      实际 owner 启动、数据锁、组件绑定与退出
+    work-host/           应用宿主门面与本机 client 包装
+  components/
+    work-component-api/  UI Bundle、能力注册/授权、隔离动作桥
+    work-http-component/ 专用远程访问面板
+  update/
+    work-update/         签名更新与安装适配
 assets/vendor/           正式应用使用的二维码、Mermaid 库及许可证
 design/prototype/        冻结的 HTML 原型和原型资源
 tests/

@@ -41,7 +41,7 @@
 - 节点身份回答“是哪一份工作空间”，连接地址回答“从哪里访问”。HTTP、代理、RPC 是访问路径，不应各自成为会话所有者。
 - 同一个节点可以有本机 RPC、回环 HTTP、局域网或 HTTPS 代理等不同入口；只有明确映射到同一个权威工作空间时，才可视为同一个节点。
 - 不根据端口、主机名、项目路径或服务名称自动认定两个入口是同一个节点。
-- `rpi-work://local` 只在当前设备上下文有意义，不是跨设备全局节点 ID。当前连接地址只是客户端状态的隔离 key，不是稳定全局 `node_id`；同一节点经回环、代理或不同域名访问的多入口识别仍未实现。源码新增持久化桌面 `node-id` 和 health `nodeId`；客户端尚未据此统一不同地址的状态 key。
+- `rpi-work://local` 只在当前设备上下文有意义，不是跨设备全局节点 ID。远程节点通过 health `nodeId` 提供稳定身份；客户端会持久化地址到节点身份的映射，并据此合并连接历史中的同节点地址别名。身份读取失败时仍按地址保留记录；其他会话、缓存和凭据状态仍须遵守各自明确的节点作用域。
 - 会话操作至少按 `(节点身份, 会话 ID)` 隔离；项目、草稿、事件游标与连接凭据也必须有明确节点作用域，不能跨节点复用。
 
 ## 3. 多节点客户端
@@ -79,7 +79,7 @@
 - 一个端连接多个节点：操作、草稿、事件与凭据互不串用；相同会话 ID 在不同节点也不会冲突。
 - Web／桌面平级：Web由A提供时默认进入A，主动连接B后可读写获授权的B会话，再返回A；默认入口失败不能自动跳B。宿主登录目标仍固定A，A的密码、Cookie和QR票据不得作为B的凭据。不得仅验证“hosted不能切换目标”便宣称满足此设计。
 - 移动客户端：未连接外部节点时显示连接／授权入口，不生成本机工作空间；更换外部节点后数据和凭据隔离，不能fallback到手机localhost。
-- 同一节点通过不同入口访问：稳定身份与多入口识别是后续目标，当前地址隔离 key 不能保证自动识别；不能据此宣称已经验收。
+- 同一节点通过不同入口访问：连接历史已使用稳定身份合并已成功确认的同节点地址；这不等于所有缓存、会话状态都改为全局身份键，也不等于同时在线的多节点调度已经实现。
 - 断线重连：从节点重新校准状态，不重复发送 prompt 或重放有副作用的操作。
 - 权限/共享功能另行验收，不把本设计中的边界描述算作实现证据。
 
@@ -88,7 +88,7 @@
 依赖方向为 **客户端 → Node 应用服务 → runtime**，本地调用不必绕行 HTTP：
 
 - `work-node-api` 定义共享 DTO、typed `NodeApi`、`SessionAccess` 和 `SessionConfiguration`；`work-core::api` 重导出契约，`work-core` 保留纯状态/事件投影，不持有执行宿主。应用 future 与事件端口不强制 `Send`。
-- `work-node-runtime::workspace::LocalWorkspace`（由 `work-node` 重导出）是唯一 owner，持有 extcore Service、RPC/ACP 执行与会话绑定。`work-client::LocalWorkspace` 仅包装同一 Arc；`work-server` 接收该 owner，不另建 Manager 或运行状态。
+- `work-node-runtime::workspace::LocalWorkspace` 是唯一 owner，持有 extcore Service、RPC/ACP 执行与会话绑定；`work-node` 仅保留兼容重导出。`work-client::LocalWorkspace` 仅包装同一 Arc；`work-server` 接收该 owner，不另建 Manager 或运行状态。
 - `WorkspaceClient` 与 `WorkClient` 转接会话、配置、执行、队列、对话和观测等 typed 方法。主工作台不按 native handle 是否存在选择执行路径；`AgentClient` / `prepare_agent_session` 保留为兼容和显式协议入口，不能用来新增 UI 旁路。
 - 操作能力来自绑定会话的精确观察；未知/失败不回退全局能力或本机执行。`SessionAccess` 决定执行命令、快照限量和对话回复；`SessionConfiguration` 提供配置面命令和协商选项。它们不是授权或已加载资源证明。
 - 本地保持 subscribe-before-snapshot，远端按 snapshot cursor 订阅；消息身份合并、快照恢复与客户端投影仍归 client。ACP snapshot 只恢复当前有效的 pending permissions，typed 回答由 node 核对 binding、generation 和 outstanding request。
@@ -100,7 +100,7 @@
 
 以下仍不构成已完成能力：
 
-- 客户端按稳定 node ID 合并同一节点的多地址身份，以及同时在线的多节点调度；当前缓存/凭据仍按地址隔离。
+- 客户端已在连接历史中按稳定 node ID 合并同一节点的多地址身份；同时在线的多节点调度尚未实现，其他缓存/凭据仍按各自地址或显式节点作用域隔离。
 - 逐设备授权、角色/项目/会话 ACL；当前共享密码和一次性 Android 授权不是细粒度权限。
 - ACP 的原生资源定制、源码扩展自动构建和通用 Agent live UI contribution。RPI 的原生管理、Package/Skills 精确选择与 readback 已实现，范围见[资源架构](../architecture/resources.md)；早期接口提案不再是当前支持清单。
 - 原生 GUI、完整 APK 构建/签名、安装升级、真机和真实 Agent 的后续验收；编译和隔离 fixture 不能替代这些验证，也不代表已安装应用已更新。

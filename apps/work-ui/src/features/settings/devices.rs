@@ -634,13 +634,13 @@ pub fn DevicesPage(
                     show_password: navigation.is_none(),
                     home_address: home_address.clone(),
                     onhome: return_home.map(|nav| EventHandler::new(move |()| nav.navigate.call(nav.home_address.peek().clone()))),
-                    help: navigation.map(|_| "填写目标节点支持宿主声明的 Web 入口地址。将在目标页面独立登录，不转发当前密码或授权票据；仅提供 API 的节点需先配置 Web 入口。离开不会停止节点任务，请先保留未提交的输入。".to_owned()),
+                    help: navigation.map(|_| "填写目标节点提供的 Web 入口地址。将在目标页面独立登录，不转发当前密码或授权票据；仅提供 API 的节点需先配置 Web 入口。离开不会停止节点任务，请先保留未提交的输入。".to_owned()),
                     show_form: (!scoped_entry && !mobile_authorized) || *remote_open.read(),
                     manual: *manual_open.read(),
                     address: mobile_form_address.clone(),
                     password: password.read().value.clone(), busy, error: error.read().clone(),
                     fixed_address: login_current || !phone_address.read().is_empty(),
-                    submit_label: if navigation.is_some() { "连接节点" } else if login_current { "登录电脑" } else if phone_address.read().is_empty() { "连接电脑" } else { "连接这台电脑" },
+                    submit_label: if navigation.is_some() { "连接节点" } else if login_current { "登录" } else if phone_address.read().is_empty() { "连接电脑" } else { "连接这台电脑" },
                     onswitch: move |()| {
                         if let Some(restart) = session_control.and_then(|control| control.restart) { restart.call(()); }
                         else {
@@ -735,7 +735,7 @@ pub fn DevicesPage(
                                 }
                                 p { class: "connection-form-error", role: "alert", "{share_error}" }
                                 if owned_local { p { class: "modal-help", "{sharing.address_hint}" } }
-                                p { class: "modal-help", "默认分享当前连接。若地址为 localhost 或回环，请改为同一节点可达的局域网或 HTTPS 同源 Web/代理入口。填写地址不会切换节点或开启宿主共享。" }
+                                p { class: "modal-help", "默认分享当前连接。若地址为 localhost 或回环，请改为同一节点可达的局域网或 HTTPS 同源 Web/代理入口。填写地址不会切换节点或开启节点共享。" }
                                 label { r#for: "device-address-payload", "连接信息 · 可手动复制" }
                                 textarea { id: "device-address-payload", rows: "3", readonly: true, value: phone_share_address(&address, owned_local).map(|value| qr_payload(&value)).unwrap_or_default() }
                                 p { class: "modal-help", role: "status", "{copy_status}" }
@@ -797,7 +797,7 @@ async fn owner_authorization() -> Result<(String, u64, String), String> {
     }
     #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
-        Err("只能在宿主桌面签发本机授权。".into())
+        Err("只能在节点桌面签发本机授权。".into())
     }
 }
 

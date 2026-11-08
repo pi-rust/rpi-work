@@ -2,14 +2,14 @@
 
 本文保留传输、消息和生命周期的详细约束。系统全貌见[架构总览](overview.md)，实际模块见[项目结构](../guides/project-structure.md)，WebSocket 协商与操作回执见[实时通道](realtime.md)，原生资源见[资源服务](resources.md)。
 
-`work-node::workspace::LocalWorkspace` is the authoritative workspace owner.
+`work-node-runtime::workspace::LocalWorkspace` is the authoritative workspace owner.
 `work-client::LocalWorkspace` is a local access adapter holding that same owner;
 `WorkspaceClient` selects local access or authenticated remote HTTP/SSE/WebSocket. The
 HTTP server receives the existing node owner rather than creating a second one.
 
 Physical boundary: rpi capabilities live in `rpi/extcore`; the HTTP adaptation
 that serves rpi capabilities lives in `rpi-http`. Work owns its node management
-and dedicated panels (`crates/work-http-component`, `crates/work-component-api`).
+and dedicated panels (`crates/components/work-http-component`, `crates/components/work-component-api`).
 Work's multi-project owner is **not** an implementation of `rpi-http`, and Work
 does not download, select or supervise an rpi HTTP extension as its desktop host
 runtime. A new rpi HTTP plugin does not automatically implement Work's existing
@@ -20,7 +20,7 @@ explicitly. See [component boundaries](component-composition.md).
 Desktop UI → WorkspaceClient::Local → local access adapter ────────────┐
 Hosted Web / Android / remote UI → WorkClient → work-node-service HTTP/SSE/WS ─┤
                                                                     ▼
-                                   work-node::workspace::LocalWorkspace
+                                   work-node-runtime::workspace::LocalWorkspace
                                    ├── projects/catalog/files/Git
                                    ├── RPI → rpi-extcore → rpi stdio RPC
                                    └── ACP → node-owned Agent processes
@@ -116,13 +116,13 @@ A transport returns `ClientError::Unsupported` when a command is outside its
 negotiated surface; it must not fabricate a successful response.
 
 `WorkspaceClient::local_rpc` wraps the node workspace after
-`work-node::local::LocalRuntime` resolves `rpi` and holds the data lock.
+`work-node-runtime::local::LocalRuntime` resolves `rpi` and holds the data lock.
+The public `work-node::local` path remains a compatibility re-export.
 `work-host::http` passes `workspace.node_owner()` to `HttpServer::start`.
 This opens the embedded listener when configuration permits, but never spawns
 or requires standalone `rpi-http`, and local UI access does not authenticate
-over loopback. The retained `desktop::DesktopNode` compatibility manager is
-not the default UI startup path. Local workspace resources are Rust service
-operations, not invented project/file/Git commands on the RPI RPC wire.
+over loopback. Local workspace resources are Rust service operations, not
+invented project/file/Git commands on the RPI RPC wire.
 
 ## Remote HTTP/SSE and WebSocket
 
@@ -151,7 +151,7 @@ participates in protocol parsing.
 
 ## ACP
 
-The native `work-node::runtime::AcpClient` starts an ACP stdio executable and performs ACP v1
+The native `work-node-runtime::runtime::AcpClient` starts an ACP stdio executable and performs ACP v1
 `initialize`/`session/new` negotiation. It supports text prompts, cancellation,
 streaming `session/update` notifications, permission requests, session config
 options, and explicit JSON-RPC responses to agent-initiated requests. The
@@ -374,7 +374,7 @@ attachment transfer or native desktop/Android/live-backend E2E.
 
 ## Desktop native workspace
 
-`work-node::workspace::LocalWorkspace` owns the app catalog, per-project
+`work-node-runtime::workspace::LocalWorkspace` owns the app catalog, per-project
 `rpi-extcore::service::Service` instances and ACP backend manager. Projects,
 folders, files and Git are local Rust operations. RPI execution/control uses
 `rpi --mode rpc` stdio children owned through extcore; selected ACP bindings use
@@ -407,7 +407,7 @@ catalog is `<data>/rpc/projects.json`; each project registry is
 `<data>/rpc/projects/<id>/sessions.json`. The lazily created model/auth control
 context is separate from user projects under `<data>/rpc/control`.
 
-`crates/work-node-runtime/src/workspace/migration.rs` imports accessible project aliases from
+`crates/node/work-node-runtime/src/workspace/migration.rs` imports accessible project aliases from
 `<data>/projects.json` and `<data>/node/projects.json`, deduplicated by canonical
 project identity. It imports missing entries and preferences from
 `<data>/sessions.json` and `<data>/node/sessions.json` only when `projectId`

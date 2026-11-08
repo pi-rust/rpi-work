@@ -92,6 +92,6 @@ node tools/review/smoke-acp-agents.mjs --adapters target/acp-tools
 # 单后端可加 --backend claude；此处不默认运行 --prompt。
 ```
 
-此前浏览器证据：`artifacts/agent-backends-validation.json`、`artifacts/agent-backends-320.png`、`artifacts/agent-backends-390.png`，以及 `artifacts/agent-backends-resource-tab-desktop.png`、`artifacts/agent-backends-resource-tab-390.png`、`artifacts/agent-backends-resource-tab-320.png`。这些本机产物只说明各次测试的范围，不构成当前功能或远程能力的完整清单。当前会话能力和配置边界以 `SessionAccess` / `SessionConfiguration` 及节点的真实响应为准；HTTP 隔离测试见 `crates/work-server/tests/session_access_acp.rs`、`session_configuration.rs` 和 `session_services.rs`。fixture 通过不等于真实桌面 WebView、Android 或模型端到端验收。
+此前浏览器证据：`artifacts/agent-backends-validation.json`、`artifacts/agent-backends-320.png`、`artifacts/agent-backends-390.png`，以及 `artifacts/agent-backends-resource-tab-desktop.png`、`artifacts/agent-backends-resource-tab-390.png`、`artifacts/agent-backends-resource-tab-320.png`。这些本机产物只说明各次测试的范围，不构成当前功能或远程能力的完整清单。当前会话能力和配置边界以 `SessionAccess` / `SessionConfiguration` 及节点的真实响应为准；HTTP 隔离测试见 `crates/transport/work-server/tests/session_access_acp.rs`、`session_configuration.rs` 和 `session_services.rs`。fixture 通过不等于真实桌面 WebView、Android 或模型端到端验收。
 
 完整回归入口与此前消息/主题行为见 [项目、会话与消息交互](codex-interactions.md)、[功能面审阅](../archive/codex-visual-review.md)。源码、隔离验证与发布状态分别判断；已安装应用不会自动获得本地源码改动。

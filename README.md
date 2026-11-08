@@ -138,19 +138,19 @@ cargo run --locked -p work-cli -- watch SESSION_ID
 | apps/work-ui/src/features | 对话、项目、资源、元 Agent、设置和可观测性 |
 | apps/work-ui/src/shared | 公共组件、状态辅助与主题 |
 | apps/work-cli | 现有节点认证、typed 会话操作／订阅、无头宿主入口及显式原生诊断 |
-| crates/work-node-api | 共享 DTO、typed NodeApi、会话/资源/realtime 契约 |
-| crates/work-core | API 重导出、纯运行投影、事件规范化与惰性设计 |
-| crates/work-client | WorkspaceClient 本机/远程适配、HTTP/SSE/WebSocket、恢复与客户端投影 |
-| crates/work-node-runtime | 实际唯一 workspace owner、RPC/ACP、会话绑定、资源与源码服务 |
-| crates/work-node | runtime 兼容导出 |
-| crates/work-component-api | 通用组件包契约、校验、目录/授权与隔离面板通信桥 |
-| crates/work-http-component | 远程访问专用面板与动作映射（监听 IP/端口、分享地址、新密码） |
-| crates/work-http-runtime | HTTP 认证、Host/Origin、共享与一次性授权 |
-| crates/work-node-service | 同 owner 的 HTTP/SSE/WebSocket 与可选 Web assets |
-| crates/work-server | service 兼容导出，保留集成测试和 examples |
-| crates/work-node-host | GUI/无头共用的实际宿主、HTTP 配置、组件绑定与协作退出 |
-| crates/work-host | 宿主应用门面及本机 client 包装；无 Dioxus/WebView 依赖 |
-| crates/work-update | 更新发现、签名验证、下载与安装助手 |
+| crates/foundation/work-node-api | 共享 DTO、typed NodeApi、会话/资源/realtime 契约 |
+| crates/foundation/work-core | API 重导出、纯运行投影、事件规范化与惰性设计 |
+| crates/client/work-client | WorkspaceClient 本机/远程适配、HTTP/SSE/WebSocket、恢复与客户端投影 |
+| crates/node/work-node-runtime | 实际唯一 workspace owner、RPC/ACP、会话绑定、资源与源码服务 |
+| crates/node/work-node | runtime 兼容导出 |
+| crates/components/work-component-api | 通用组件包契约、校验、目录/授权与隔离面板通信桥 |
+| crates/components/work-http-component | 远程访问专用面板与动作映射（监听 IP/端口、分享地址、新密码） |
+| crates/transport/work-http-runtime | HTTP 认证、Host/Origin、共享与一次性授权 |
+| crates/transport/work-node-service | 同 owner 的 HTTP/SSE/WebSocket 与可选 Web assets |
+| crates/transport/work-server | service 兼容导出，保留集成测试和 examples |
+| crates/host/work-node-host | GUI/无头共用的实际宿主、HTTP 配置、组件绑定与协作退出 |
+| crates/host/work-host | 宿主应用门面及本机 client 包装；无 Dioxus/WebView 依赖 |
+| crates/update/work-update | 更新发现、签名验证、下载与安装助手 |
 | assets/vendor | 正式客户端使用的二维码、Mermaid 库及许可证 |
 | design/prototype | 保留内容与校验基准的 HTML 设计参考 |
 | tests | 集成测试、原型测试、模块验证入口及 fixture |
@@ -185,4 +185,4 @@ git push origin v0.1.9
 
 查看冻结的 HTML 原型：在仓库根目录运行 `python -m http.server 14173 --bind 127.0.0.1`，打开 <http://127.0.0.1:14173/design/prototype/>。原型使用示例数据，不是正式应用或已实现能力的证明。
 
-节点组件的自定义界面、下载安装与组合边界见[组件组合架构](docs/architecture/component-composition.md)。物理边界：rpi 能力在 rpi/extcore，HTTP 适配在 rpi-http；Work 的节点管理、组件包和专用面板在 Work（`crates/work-component-api`、`crates/work-http-component`）。Work 的多项目 owner 不是 rpi-http 的实现；Work 不下载、选择或监督 rpi HTTP 扩展作为自己的宿主运行时，也不声称新的 rpi HTTP 插件已支持 Work 现有远程工作空间协议。
+节点组件的自定义界面、下载安装与组合边界见[组件组合架构](docs/architecture/component-composition.md)。物理边界：rpi 能力在 rpi/extcore，HTTP 适配在 rpi-http；Work 的节点管理、组件包和专用面板在 Work（`crates/components/work-component-api`、`crates/components/work-http-component`）。Work 的多项目 owner 不是 rpi-http 的实现；Work 不下载、选择或监督 rpi HTTP 扩展作为自己的宿主运行时，也不声称新的 rpi HTTP 插件已支持 Work 现有远程工作空间协议。

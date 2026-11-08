@@ -230,3 +230,39 @@
   .resource-modal .resource-segments{width:100%;flex-wrap:wrap}
   .resource-modal .resource-segments>button{flex:1 0 auto;min-height:44px}
 }
+
+/* Canonical resource library surfaces. */
+.resources-page {
+  width: min(100%, var(--page-content-max, 1180px));
+  padding-inline: var(--page-inline, clamp(var(--space-14), 4vw, var(--space-48)));
+}
+.resources-page .resource-grid {
+  gap: var(--space-14);
+}
+.resources-page .resource-card {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-control);
+}
+.resources-page .resource-card-title h3 {
+  line-height: 1.45;
+}
+.resources-page .resource-actions {
+  gap: var(--space-6);
+}
+@media (max-width: 700px), (pointer: coarse) {
+  .resources-page {
+    padding-inline: var(--space-14);
+  }
+  .resources-page .resource-heading-actions {
+    justify-content: stretch;
+  }
+  .resources-page .resource-heading-actions > .button {
+    min-height: var(--hit-size);
+  }
+  .resources-page .resource-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .resources-page .resource-card {
+    box-shadow: none;
+  }
+}

@@ -47,9 +47,42 @@
 #session-switcher .switcher-clear { width: 44px; height: 44px; flex: 0 0 auto; padding: 0; color: var(--muted); }
 #session-switcher .session-switcher-display-mode { display:flex; align-items:center; gap:var(--space-4); margin:0 0 var(--space-8); color:var(--muted); font-size:calc(10px * var(--type-scale, 1)); }
 #session-switcher .session-switcher-display-mode span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#session-switcher .session-switcher-node-heading { display:flex; align-items:center; gap:var(--space-6); padding:var(--space-7) var(--space-4); margin-bottom:var(--space-4); border-bottom:1px solid var(--line); color:var(--muted); font-size:calc(10px * var(--type-scale, 1)); }
-#session-switcher .session-switcher-node-heading strong { color:var(--text); font-weight:550; }
-#session-switcher .session-switcher-node-heading span { margin-left:auto; font-size:calc(9px * var(--type-scale, 1)); }
+#session-switcher .session-switcher-tree-node,
+#session-switcher .session-switcher-tree-project {
+  display: grid;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+#session-switcher .session-switcher-tree-node:hover,
+#session-switcher .session-switcher-tree-project:hover { background: var(--panel); }
+#session-switcher .session-switcher-tree-node > .icon:first-child,
+#session-switcher .session-switcher-tree-project > .icon:first-child { transition: transform var(--motion-fast); }
+#session-switcher .session-switcher-tree-node.expanded > .icon:first-child,
+#session-switcher .session-switcher-tree-project.expanded > .icon:first-child { transform: rotate(90deg); }
+#session-switcher .session-switcher-tree-node > .icon:nth-child(2),
+#session-switcher .session-switcher-tree-project > .icon:nth-child(2) { color: var(--accent); }
+#session-switcher .session-switcher-tree-node strong,
+#session-switcher .session-switcher-tree-project strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: calc(12px * var(--type-scale, 1)); font-weight: 550; }
+#session-switcher .session-switcher-tree-node span,
+#session-switcher .session-switcher-tree-project span { margin-left: auto; font-size: calc(9px * var(--type-scale, 1)); white-space: nowrap; }
+#session-switcher .session-switcher-tree-project { min-height: 40px; border-bottom: 0; }
+#session-switcher .session-switcher-tree-project.standalone { grid-template-columns: 16px minmax(0, 1fr) auto; color: var(--muted); }
+#session-switcher .session-switcher-tree-project.standalone strong { color: var(--muted); font-size: calc(11px * var(--type-scale, 1)); }
+#session-switcher .session-switcher-project-tree { border-left: 1px solid var(--line); margin-left: 10px; padding-left: 10px; }
+#session-switcher .session-switcher-project-children { display: grid; gap: 2px; margin: 0 0 4px 16px; padding-left: 8px; }
+#session-switcher .session-switcher-project-children .session-switcher-row { border-bottom: 0; }
+#session-switcher .session-switcher-tree-node:focus-visible,
+#session-switcher .session-switcher-tree-project:focus-visible { outline: 2px solid var(--focus-color); outline-offset: -2px; }
 #session-switcher .session-switcher-toolbar {
   display: flex;
   flex: 0 0 auto;

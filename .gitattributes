@@ -1,4 +1,4 @@
 # Embedded Work component identities and strict skill frontmatter are canonical.
-crates/work-node-runtime/assets/** text eol=lf
-crates/work-http-component/ui/** text eol=lf
-crates/work-component-api/ui-host/** text eol=lf
+crates/node/work-node-runtime/assets/** text eol=lf
+crates/components/work-http-component/ui/** text eol=lf
+crates/components/work-component-api/ui-host/** text eol=lf

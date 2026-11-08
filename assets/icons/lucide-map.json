@@ -14,6 +14,8 @@
   "folder": "folder",
   "file": "file-text",
   "panel": "panel-right",
+  "fullscreen": "maximize-2",
+  "fullscreen-exit": "minimize-2",
   "layout": "panels-top-left",
   "blocks": "blocks",
   "check": "check",

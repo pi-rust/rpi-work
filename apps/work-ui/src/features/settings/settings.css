@@ -16,5 +16,265 @@
 .provider-connection-dialog,.provider-model-dialog{width:min(610px,calc(100vw - 30px));max-width:calc(100vw - 30px);max-height:calc(100dvh - 30px);box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;padding:0}.provider-connection-dialog>.modal-header,.provider-model-dialog>.modal-header{flex:none}.provider-connection-dialog>.modal-body,.provider-model-dialog>.modal-body{min-height:0;flex:1 1 auto;max-height:none;overflow:auto;overscroll-behavior:contain;padding:22px}.provider-connection-dialog>.modal-footer,.provider-model-dialog>.modal-footer{flex:none;display:flex;justify-content:flex-end;gap:8px;padding:15px 22px;border-top:1px solid var(--line);background:var(--bg)}.provider-connection-dialog .provider-credentials{display:grid;gap:12px}.provider-connection-dialog .form-field,.provider-model-dialog .form-field{display:grid;gap:7px;min-width:0}.provider-connection-dialog input,.provider-model-dialog select{width:100%;max-width:100%;min-width:0;box-sizing:border-box}.provider-connection-dialog .meta,.provider-connection-dialog .notice,.provider-model-dialog .meta{font-size:calc(11px * var(--type-scale, 1));line-height:1.8;overflow-wrap:anywhere}.provider-connection-dialog .connection-form-error,.provider-model-dialog .connection-form-error{font-size:calc(11px * var(--type-scale, 1));color:var(--danger);line-height:1.8;overflow-wrap:anywhere}
 .provider-page .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}.provider-page .provider-card-meta{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:10px}.provider-page .provider-card-meta strong{font-size:calc(10px * var(--type-scale, 1));font-weight:500;color:var(--text);overflow-wrap:anywhere}.provider-page .provider-card-heading .auth-state{margin-left:auto;white-space:nowrap}.provider-page .provider-capability-summary{margin:16px 0}.provider-page .provider-card-meta{margin-top:0}.provider-page .provider-card-actions .icon-button{width:32px;height:32px}.provider-page .provider-oauth-note{margin:4px 0;color:var(--muted);font-size:calc(9px * var(--type-scale, 1));line-height:1.5}
 @media(max-width:700px){.provider-page h1{font-size:calc(23px * var(--type-scale, 1))}.provider-page .provider-group{padding:16px}.provider-page .provider-card-meta{grid-template-columns:auto minmax(0,1fr)}.provider-page .provider-card-actions .button{min-height:44px}.provider-page .provider-card-actions .icon-button{width:44px;height:44px}.provider-connection-dialog>.modal-body,.provider-model-dialog>.modal-body{padding:17px}.provider-connection-dialog input,.provider-model-dialog select{font-size:16px}}
+
+[data-device-mode="mobile"] .settings-page .settings-navigation{flex-wrap:nowrap;align-items:center;gap:6px;overflow-x:auto}
+[data-device-mode="mobile"] .settings-page .settings-navigation>nav{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));flex:1;min-width:0;gap:3px}
+[data-device-mode="mobile"] .settings-page .settings-navigation>nav>button{min-width:0;min-height:44px;padding:0 3px;gap:0;font-size:calc(10px * var(--type-scale, 1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+[data-device-mode="mobile"] .settings-page .settings-navigation>.settings-return{width:44px;min-width:44px;min-height:44px;padding:0;font-size:0;margin:0;flex:0 0 44px}
+[data-device-mode="mobile"] .settings-page .settings-navigation>.settings-return>.icon{width:16px;height:16px}
+
+/* Android browsers may expose a wide CSS viewport even when the client is touch-first. */
+@media (pointer: coarse){
+  .settings-page .settings-navigation{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;overflow:hidden}
+  .settings-page .settings-navigation>nav{display:flex;flex:1 1 auto;min-width:0;gap:4px;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;scrollbar-width:none}
+  .settings-page .settings-navigation>nav::-webkit-scrollbar{display:none}
+  .settings-page .settings-navigation>nav>button{flex:0 0 auto;min-width:44px;min-height:44px;padding:0 10px;white-space:nowrap}
+  .settings-page .settings-navigation>.settings-return{width:44px;min-width:44px;min-height:44px;padding:0;font-size:0;margin:0;flex:0 0 44px}
+  .settings-page .settings-navigation>.settings-return>.icon{width:16px;height:16px}
+}
 @media(max-width:700px){.settings-page .settings-navigation{flex-wrap:nowrap;align-items:center;gap:6px}.settings-page .settings-navigation>nav{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));flex:1;min-width:0;gap:3px}.settings-page .settings-navigation>nav>button{min-width:0;min-height:44px;padding:0 3px;gap:0;font-size:calc(10px * var(--type-scale, 1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.settings-page .settings-navigation>nav>button>.icon{display:none}.settings-page .settings-navigation>.settings-return{width:36px;min-width:36px;padding:0;font-size:0;margin:0;flex:0 0 36px}.settings-page .settings-navigation>.settings-return>.icon{width:16px;height:16px}}
 .app-settings-editor{display:grid;gap:12px;max-width:900px}.app-settings-editor h2{margin:0;font-size:calc(16px * var(--type-scale, 1));font-weight:550}.app-settings-help,.app-settings-path{margin:0;color:var(--muted);font-size:calc(11px * var(--type-scale, 1));line-height:1.8;overflow-wrap:anywhere}.app-settings-path{font-family:var(--mono)}.app-settings-json{width:100%;min-height:440px;box-sizing:border-box;resize:vertical;padding:14px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--code);color:var(--body-text);font:calc(11px * var(--type-scale, 1))/1.7 var(--mono);tab-size:2}.app-settings-json:focus{border-color:var(--accent);outline:2px solid var(--accent-bg);outline-offset:1px}.app-settings-error,.app-settings-notice{margin:0;padding:10px 12px;border-radius:var(--radius-sm);font-size:calc(11px * var(--type-scale, 1));line-height:1.7;overflow-wrap:anywhere}.app-settings-error{color:var(--danger);background:var(--danger-bg)}.app-settings-notice{color:var(--success);background:var(--success-bg)}.app-settings-actions{display:flex;gap:8px;flex-wrap:wrap}.app-settings-actions button{min-height:36px}@media(max-width:700px){.app-settings-json{min-height:360px;font-size:16px}.app-settings-actions button{min-height:44px}}
+
+/* Keep the settings taxonomy readable on phones: scroll the category rail instead of
+   shrinking seven labels into unreadable equal-width cells. */
+@media(max-width:700px){
+  .settings-page .settings-navigation{display:flex;flex-wrap:nowrap;align-items:center;gap:var(--space-8);overflow-x:auto;scrollbar-width:none}
+  .settings-page .settings-navigation::-webkit-scrollbar{display:none}
+  .settings-page .settings-navigation>nav{display:flex;flex:0 0 auto;min-width:max-content;gap:var(--space-3)}
+  .settings-page .settings-navigation>nav>button{display:inline-flex;flex:0 0 auto;width:auto;min-width:max-content;min-height:44px;padding:0 var(--space-10);font-size:var(--font-assist);white-space:nowrap}
+  .settings-page .settings-navigation>nav>button>.icon{display:block;width:14px;height:14px}
+  .settings-page .settings-navigation>.settings-return{display:inline-flex;flex:0 0 auto;width:auto;min-width:44px;min-height:44px;margin:0;padding:0 var(--space-10);font-size:0}
+  .settings-page .settings-navigation>.settings-return>.icon{width:16px;height:16px}
+}
+
+/* Canonical settings rail: readable labels, one scroll container, fixed return action. */
+.settings-page .settings-navigation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  overflow: hidden;
+  padding-block: var(--space-8);
+}
+.settings-page .settings-navigation > nav {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.settings-page .settings-navigation > nav > button {
+  min-height: var(--hit-size);
+  padding-inline: var(--space-10);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.settings-page .settings-navigation > nav > button.active {
+  border-color: var(--accent-line);
+  background: var(--accent-bg);
+}
+.settings-page .settings-navigation > .settings-return {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: var(--hit-size);
+  min-height: var(--hit-size);
+  margin: 0;
+  padding-inline: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.settings-page .settings-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+.settings-page .settings-card {
+  min-height: 164px;
+  padding: var(--space-18);
+  border-radius: var(--radius-md);
+}
+@media (max-width: 900px) {
+  .settings-page .settings-cards { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px), (pointer: coarse) {
+  .settings-page .settings-navigation {
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .settings-page .settings-navigation::-webkit-scrollbar { display: none; }
+  .settings-page .settings-navigation > nav {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .settings-page .settings-navigation > nav::-webkit-scrollbar { display: none; }
+  .settings-page .settings-navigation > nav > button {
+    flex: 0 0 auto;
+    min-width: max-content;
+    padding-inline: var(--space-10);
+    font-size: var(--font-assist);
+  }
+  .settings-page .settings-navigation > .settings-return {
+    width: var(--hit-size);
+    min-width: var(--hit-size);
+    padding: 0;
+    font-size: 0;
+  }
+  .settings-page .settings-navigation > .settings-return > .icon {
+    width: var(--icon-lg);
+    height: var(--icon-lg);
+  }
+  .settings-page .settings-card {
+    min-height: 0;
+    padding: var(--space-16);
+  }
+}
+
+/* Mobile settings are a native list, not seven compressed tabs. The same
+   buttons and state remain shared with desktop; only their layout changes. */
+@media (max-width: 700px), (pointer: coarse) {
+  .app-shell:has(.settings-page) .settings-page .settings-navigation {
+    position: static;
+    display: grid;
+    align-items: stretch;
+    gap: var(--space-8);
+    margin: 0 0 var(--space-20);
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    backdrop-filter: none;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+    width: 100%;
+    overflow: visible;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 56px;
+    padding: 0 var(--space-14);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--text);
+    text-align: left;
+    font-size: var(--font-body);
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button > .icon {
+    width: var(--icon-lg);
+    height: var(--icon-lg);
+    margin-right: var(--space-8);
+    color: var(--muted);
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button.active {
+    border-color: var(--accent-line);
+    background: var(--accent-bg);
+    color: var(--accent);
+    box-shadow: none;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > .settings-return {
+    order: -1;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 var(--space-12);
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: var(--font-assist);
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > .settings-return > .icon {
+    margin-right: var(--space-6);
+  }
+  .app-shell:has(.settings-page) .settings-page > .page-heading {
+    margin-top: var(--space-4);
+  }
+}
+
+/* Correction: mobile settings keep a compact, swipeable category rail.
+   Do not expand every category into a tall page-level menu. */
+@media (max-width: 700px), (pointer: coarse) {
+  .app-shell:has(.settings-page) .settings-page .settings-navigation {
+    position: sticky;
+    top: 0;
+    z-index: var(--layer-sticky, 10);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-6);
+    width: auto;
+    min-height: calc(var(--hit-size) + var(--space-8));
+    margin: calc(var(--space-24) * -1) calc(var(--space-14) * -1) var(--space-20);
+    padding: var(--space-6) var(--space-14);
+    overflow: hidden;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    backdrop-filter: blur(12px);
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    width: auto;
+    gap: var(--space-3);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav::-webkit-scrollbar {
+    display: none;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: auto;
+    min-width: max-content;
+    min-height: var(--hit-size);
+    padding: 0 var(--space-10);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    font-size: var(--font-assist);
+    white-space: nowrap;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button > .icon {
+    width: var(--icon-md);
+    height: var(--icon-md);
+    margin-right: var(--space-5);
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button.active {
+    border-color: var(--accent-line);
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > .settings-return {
+    order: initial;
+    display: inline-flex;
+    flex: 0 0 var(--hit-size);
+    width: var(--hit-size);
+    min-width: var(--hit-size);
+    min-height: var(--hit-size);
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--card);
+    font-size: 0;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > .settings-return > .icon {
+    width: var(--icon-lg);
+    height: var(--icon-lg);
+    margin: 0;
+  }
+}

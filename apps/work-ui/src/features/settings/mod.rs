@@ -106,7 +106,11 @@ pub fn SettingsPage(
             } else if section == "components" {
                 crate::features::extensions::components::ComponentsPage { shared_client, connection_epoch, online }
             } else if section == "providers" {
-                ProviderSettings { shared_client, connection_epoch, online, selected_session, session_generation, onreturn: move |_| active_page.set("workspace".to_owned()) }
+                ProviderSettings {
+                    shared_client, connection_epoch, online, selected_session, session_generation,
+                    onreturn: move |_| active_page.set("workspace".to_owned()),
+                    oncomponents: move |_| settings_section.set("components".to_owned()),
+                }
             } else {
                 DevicesPage { shared_client, requests, base_url, status, auth_state, password, capabilities, onconnect, onlogin, mobile_client }
             }

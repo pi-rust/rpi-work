@@ -26,7 +26,7 @@ const {chromium}=require('../support/browser.cjs');
   await page.waitForFunction(()=>!document.querySelector('#toast').classList.contains('show'));
   await page.screenshot({path:'artifacts/prototype-changes-desktop.png',animations:'disabled'});
   pass('120 files use grouped file browser and one selected diff');
-  await page.locator('#change-search').fill('crates/work-client/src/');assert.equal(await page.locator('.change-file').count(),17);
+  await page.locator('#change-search').fill('crates/client/work-client/src/');assert.equal(await page.locator('.change-file').count(),17);
   await page.locator('#change-search').fill('not-a-file');assert.equal(await page.locator('.change-file').count(),0);
   await page.locator('[data-review-action="reset"]').click();
   await page.locator('#change-status').selectOption('R');assert.equal(await page.locator('.change-file').count(),6);

@@ -100,14 +100,6 @@ pub(crate) fn static_html_preview(source: &str) -> String {
     rendered
 }
 
-pub(crate) fn render_project_file(
-    content: &work_client::FileContent,
-    mode: &str,
-    wrap: bool,
-) -> Element {
-    render_project_file_at(content, mode, wrap, None)
-}
-
 pub(crate) fn render_project_file_at(
     content: &work_client::FileContent,
     mode: &str,

@@ -76,9 +76,9 @@
 - `GET /api/v1/providers`：脱敏保存目录与 opaque revision。
 - `POST /api/v1/providers`：严格 typed mutation，要求 `expectedRevision`。
 - `POST /api/v1/providers/release-idle-hosts`：空对象请求，释放既有空闲资源。
-- core：`crates/work-core/src/api/providers.rs`。
-- 唯一 owner：`crates/work-node/src/workspace/providers.rs`。
-- typed 门面：`crates/work-client/src/providers.rs`。
+- core：`crates/foundation/work-core/src/api/providers.rs`。
+- 唯一 owner：`crates/node/work-node-runtime/src/workspace/providers.rs`；`work-node` 仅保留兼容导出。
+- typed 门面：`crates/client/work-client/src/providers.rs`。
 - 共享页面：`apps/work-ui/src/features/settings/providers.rs`。
 
 验证范围、命令和平台限制见 [Provider 验证记录](../../artifacts/providers/README.md)。

@@ -2,9 +2,9 @@
 use dioxus::prelude::*;
 use work_client::WorkspaceClient;
 use work_core::api::{
-    NativeApply, NativeCatalog, NativeCreate, NativeDesired, NativeKind, NativeManagement,
-    NativeOperationStatus, NativeReadiness, NativeResource, NativeScope, NativeSelection,
-    NativeSessionResources, NativeTools, NodeApi,
+    NativeApply, NativeCatalog, NativeConfiguration, NativeCreate, NativeDesired, NativeKind,
+    NativeManagement, NativeOperationStatus, NativeReadiness, NativeReference, NativeResource,
+    NativeScope, NativeSelection, NativeSessionResources, NativeTools, NodeApi,
 };
 
 pub(super) fn recorded_version(value: String) -> Option<String> {
@@ -37,6 +37,56 @@ fn selection(desired: &NativeDesired) -> Option<NativeSelection> {
         supplementary_instructions: desired.supplementary_instructions.clone()?,
     })
 }
+
+fn project_observation(value: work_core::api::NativeProjectResources) -> NativeSessionResources {
+    let configuration = value.selection.map(|selection| NativeConfiguration {
+        revision: value.revision,
+        desired: NativeDesired {
+            main_package: Some(NativeReference {
+                reference: Some(selection.main_package.clone()),
+                identity: selection.main_package,
+                diagnostic: None,
+            }),
+            package_instructions: selection.package_instructions,
+            skills: selection
+                .skills
+                .into_iter()
+                .map(|reference| NativeReference {
+                    identity: reference.clone(),
+                    reference: Some(reference),
+                    diagnostic: None,
+                })
+                .collect(),
+            extensions: selection
+                .extensions
+                .into_iter()
+                .map(|reference| NativeReference {
+                    identity: reference.clone(),
+                    reference: Some(reference),
+                    diagnostic: None,
+                })
+                .collect(),
+            tools: selection.tools,
+            supplementary_instructions: Some(selection.supplementary_instructions),
+        },
+        historical_observation: None,
+    });
+    let configured = configuration.is_some();
+    NativeSessionResources {
+        configuration,
+        operations: vec![],
+        readiness: if configured {
+            NativeReadiness::Verified
+        } else {
+            NativeReadiness::Legacy
+        },
+        executable: None,
+        actual: None,
+        generation: None,
+        diagnostic: value.diagnostic,
+    }
+}
+
 fn recovery_admission(state: &NativeSessionResources) -> (bool, bool) {
     // This is permission to REQUEST explicit recovery, never proof of idle or
     // executability. Only the current typed owner operation grants this lane.
@@ -54,6 +104,25 @@ fn recovery_admission(state: &NativeSessionResources) -> (bool, bool) {
         && latest.is_some_and(|op| op.status == NativeOperationStatus::Blocked);
     (retry, correct)
 }
+fn display_resource_name(name: &str) -> String {
+    let Some(marker) = name.rfind("-v") else {
+        return name.to_owned();
+    };
+    let suffix = &name[marker + 2..];
+    let Some((version, digest)) = suffix.split_once('-') else {
+        return name.to_owned();
+    };
+    let valid_version = version.matches('.').count() >= 1
+        && !version.is_empty()
+        && version.chars().all(|ch| ch.is_ascii_digit() || ch == '.');
+    let valid_digest = digest.len() >= 8 && digest.chars().all(|ch| ch.is_ascii_hexdigit());
+    if valid_version && valid_digest {
+        name[..marker].to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
 fn resource_matches(resource: &NativeResource, kind: &str, query: &str, scope: &str) -> bool {
     let category = match resource.kind {
         NativeKind::Package => "package",
@@ -176,6 +245,11 @@ pub fn NativeResources(
                 } else {
                     None
                 };
+                let project_state = if session.is_none() {
+                    Some(NodeApi::native_project_resources(&client, &project).await)
+                } else {
+                    None
+                };
                 if *connection_epoch.peek() != epoch
                     || *session_generation.peek() != generation
                     || *ticket.peek() != next
@@ -221,6 +295,19 @@ pub fn NativeResources(
                                 }
                             }
                             observed.set(Some(value));
+                        }
+                        Err(e) => {
+                            observed.set(None);
+                            session_error.set(e.to_string());
+                        }
+                    }
+                } else if let Some(result) = project_state {
+                    match result {
+                        Ok(value) => {
+                            if !*dirty.peek() {
+                                editor.set(value.selection.clone());
+                            }
+                            observed.set(Some(project_observation(value)));
                         }
                         Err(e) => {
                             observed.set(None);
@@ -284,7 +371,8 @@ pub fn NativeResources(
         });
     };
     let session_apply = use_signal(|| session.clone());
-    let mut apply = move |retry: bool, supersede: bool| {
+    let project_apply = project.clone();
+    let apply = Callback::new(move |(retry, supersede): (bool, bool)| {
         let recovery = observed
             .peek()
             .as_ref()
@@ -297,10 +385,11 @@ pub fn NativeResources(
         {
             return;
         }
-        let (Some(client), Some(id)) = (shared_client.peek().clone(), session_apply.peek().clone())
-        else {
+        let Some(client) = shared_client.peek().clone() else {
             return;
         };
+        let id = session_apply.peek().clone();
+        let project = project_apply.clone();
         let request = if retry {
             last_request.peek().clone()
         } else {
@@ -334,7 +423,11 @@ pub fn NativeResources(
         let epoch = *connection_epoch.peek();
         let generation = *session_generation.peek();
         spawn(async move {
-            let result = NodeApi::native_apply(&client, &id, request).await;
+            let result = if let Some(id) = id.as_deref() {
+                NodeApi::native_apply(&client, id, request).await
+            } else {
+                NodeApi::native_apply_project(&client, &project, request).await
+            };
             if *connection_epoch.peek() != epoch || *session_generation.peek() != generation {
                 return;
             }
@@ -350,7 +443,9 @@ pub fn NativeResources(
                     ));
                     if op.status == NativeOperationStatus::Applied {
                         dirty.set(false);
-                        onopen.call(id);
+                        if let Some(id) = id {
+                            onopen.call(id);
+                        }
                     }
                     refresh += 1;
                 }
@@ -361,7 +456,7 @@ pub fn NativeResources(
                 }
             }
         });
-    };
+    });
     let project_release = use_signal(|| project.clone());
     let release = move |_| {
         if *busy.peek() || *loading.peek() || !online {
@@ -429,21 +524,29 @@ pub fn NativeResources(
     };
     let current = observed.read().clone();
     let recovery = current.as_ref().map(recovery_admission).unwrap_or_default();
+    let simple_resource =
+        matches!(kind.as_str(), "extension" | "package" | "skill") && !configuration_only;
     let correction = online && recovery.1;
     rsx! {
-        section { class: "native-resources", aria_label: "原生执行资源", aria_busy: loading() || busy(),
+        section { class: if simple_resource { "native-resources resource-simple-list" } else { "native-resources" }, aria_label: "原生执行资源", aria_busy: loading() || busy(),
             style { {include_str!("native.css")} }
-            if configuration_only { h2 { "会话执行资源" } }
+            if configuration_only {
+                h2 { if session.is_some() { "会话执行资源" } else { "项目默认资源组合" } }
+            }
             if !configuration_only {
                 div { class: "native-list-heading",
-                    h2 { "节点资源" }
-                    button { class: "button", disabled: busy() || loading() || !online, onclick: move |_| { error.set(String::new()); refresh += 1; }, "刷新目录 / 回读" }
+                    h2 { if simple_resource { "资源列表" } else { "节点资源" } }
+                    if !simple_resource {
+                        button { class: "button", disabled: busy() || loading() || !online, onclick: move |_| { error.set(String::new()); refresh += 1; }, "刷新目录 / 回读" }
+                    }
                 }
-                div { class: "native-resource-filters",
-                    label { "搜索节点资源" input { r#type: "search", aria_label: "搜索节点资源", value: "{query}", placeholder: "名称、用途或来源…", oninput: move |e| query.set(e.value()) } }
-                    label { "资源范围" select { aria_label: "资源范围", value: "{scope_filter}", onchange: move |e| scope_filter.set(e.value()),
-                        option { value: "all", "全部范围" } option { value: "project", "当前项目" } option { value: "global", "节点全局" }
-                    } }
+                if !simple_resource {
+                    div { class: "native-resource-filters",
+                        label { "搜索节点资源" input { r#type: "search", aria_label: "搜索节点资源", value: "{query}", placeholder: "名称、用途或来源…", oninput: move |e| query.set(e.value()) } }
+                        label { "资源范围" select { aria_label: "资源范围", value: "{scope_filter}", onchange: move |e| scope_filter.set(e.value()),
+                            option { value: "all", "全部范围" } option { value: "project", "当前项目" } option { value: "global", "节点全局" }
+                        } }
+                    }
                 }
                 if !online { p { class: "resource-empty resource-state-block", role: "status", "执行节点离线。重连后重新读取资源，不从本地设计推断安装状态。" } }
                 else if loading() { p { class: "resource-loading resource-state-block", role: "status", "正在读取节点目录…" } }
@@ -451,30 +554,41 @@ pub fn NativeResources(
                 if !session_error().is_empty() { p { class: "native-list-count resource-state-block", role: "status", "会话选择未核实：{session_error}。可在会话资源设置中重试。" } }
                 if let Some(catalog) = catalog.read().as_ref() {
                     { let resources = catalog.resources.iter().filter(|r| resource_matches(r, &kind, &query(), &scope_filter())).cloned().collect::<Vec<_>>(); rsx! {
-                        p { class: "native-list-count", "{resources.len()} 项资源 · 安装、会话选择与实际加载分别核实" }
+                        if !simple_resource {
+                            p { class: "native-list-count", "{resources.len()} 项资源 · 安装、会话选择与实际加载分别核实" }
+                        }
                         if resources.is_empty() && !loading() {
                             p { class: "resource-empty", role: "status",
-                                if query().trim().is_empty() && scope_filter() == "all" { "此分类暂无节点资源。可前往发现资源，或展开下方安装入口。" }
+                                if simple_resource {
+                                    match kind.as_str() {
+                                        "extension" => "当前项目暂无扩展。",
+                                        "package" => "当前项目暂无 Package。",
+                                        _ => "当前项目暂无技能。",
+                                    }
+                                }
+                                else if query().trim().is_empty() && scope_filter() == "all" { "此分类暂无节点资源。可前往发现资源，或展开下方安装入口。" }
                                 else { "没有匹配的节点资源，请调整搜索或范围。" }
                             }
                         }
                         div { class: "native-resource-list",
                             for resource in resources {
-                                { let open_resource = resource.clone(); let selected = current.as_ref().and_then(|s| s.configuration.as_ref()).map(|c| c.desired.main_package.as_ref().is_some_and(|r| r.reference.as_deref() == Some(resource.reference.as_str())) || c.desired.skills.iter().chain(&c.desired.extensions).any(|r| r.reference.as_deref() == Some(resource.reference.as_str()))); let installation = super::detail::installation_label(&resource.facts); let selection_text = match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" }; let install_class = match resource.facts["installed"].as_bool() { Some(true) => "installed", Some(false) => "not-installed", None => "unknown" }; let selection_class = match selected { Some(true) => "selected", Some(false) => "not-selected", None => "unknown" }; rsx! {
+                                { let open_resource = resource.clone(); let display_name = display_resource_name(&resource.name); let selected = current.as_ref().and_then(|s| s.configuration.as_ref()).map(|c| c.desired.main_package.as_ref().is_some_and(|r| r.reference.as_deref() == Some(resource.reference.as_str())) || c.desired.skills.iter().chain(&c.desired.extensions).any(|r| r.reference.as_deref() == Some(resource.reference.as_str()))); let installation = super::detail::installation_label(&resource.facts); let selection_text = match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" }; let install_class = match resource.facts["installed"].as_bool() { Some(true) => "installed", Some(false) => "not-installed", None => "unknown" }; let selection_class = match selected { Some(true) => "selected", Some(false) => "not-selected", None => "unknown" }; rsx! {
                                     article { key: "{resource.reference}", class: "native-resource-card",
                                         div { class: "native-resource-heading",
-                                            h3 { "{resource.name}" }
+                                            h3 { "{display_name}" }
                                             span { class: "native-install-state {install_class}", role: "status", aria_label: "安装状态：{installation}", "{installation}" }
                                         }
-                                        if let Some(description) = resource.facts["description"].as_str() { p { class: "native-resource-description", "{description}" } }
-                                        p { class: "native-resource-meta",
-                                            {super::detail::scope_label(resource.scope)}
-                                            if let Some(version) = resource.facts["version"].as_str() { " · 记录版本 {version}" }
-                                        }
-                                        div { class: "native-resource-footer",
-                                            span { class: "native-selection-state {selection_class}", role: "status", aria_label: "{selection_text}", "{selection_text}" }
-                                            span { class: "native-load-state", role: "status", aria_label: "实际加载状态：未核实", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
-                                            button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, "查看详情" }
+                                        if !simple_resource {
+                                            if let Some(description) = resource.facts["description"].as_str() { p { class: "native-resource-description", "{description}" } }
+                                            p { class: "native-resource-meta",
+                                                {super::detail::scope_label(resource.scope)}
+                                                if let Some(version) = resource.facts["version"].as_str() { " · 记录版本 {version}" }
+                                            }
+                                            div { class: "native-resource-footer",
+                                                span { class: "native-selection-state {selection_class}", role: "status", aria_label: "{selection_text}", "{selection_text}" }
+                                                span { class: "native-load-state", role: "status", aria_label: "实际加载状态：未核实", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
+                                                button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, "查看详情" }
+                                            }
                                         }
                                     }
                                 } }
@@ -504,13 +618,13 @@ pub fn NativeResources(
                 }
             }
             if configuration_only {
-                if loading() { p { role: "status", "正在读取会话资源…" } }
+                if loading() { p { role: "status", "正在读取资源组合…" } }
                 if !online { p { role: "status", "执行节点离线，无法核实会话资源。" } }
                 if !catalog_error().is_empty() { p { role: "alert", class: "resource-error", "目录读取失败：{catalog_error}" } }
             if !session_error().is_empty() { p { role: "alert", class: "resource-error", "会话资源读取失败：{session_error}" } }
             if let Some(state) = current {
                 div { class: "native-readiness-status", "data-readiness": readiness_key(state.readiness), role: "status", aria_atomic: "true",
-                    h3 { "会话资源：{readiness_label(state.readiness)}" }
+                    h3 { if session.is_some() { "会话资源：{readiness_label(state.readiness)}" } else { "项目默认资源组合" } }
                     p { match state.executable { Some(true) => "节点已验证可执行", Some(false) => "节点未允许执行", None => "可执行状态未核实" } }
                 }
                 details { summary { "会话状态诊断" } p { "host generation: {state.generation:?} · {state.diagnostic:?}" } }
@@ -526,7 +640,7 @@ pub fn NativeResources(
                 }
                 if let Some(value) = editor.read().clone() {
                     fieldset { disabled: busy() || loading() || !online || (!idle && !correction),
-                        legend { "会话资源选择" }
+                        legend { if session.is_some() { "会话资源选择" } else { "项目默认资源选择" } }
                         label { "主 Package" select { aria_label: "会话主 Package", value: "{value.main_package}", onchange: move |e| { if let Some(v) = editor.write().as_mut() { v.main_package = e.value(); } dirty.set(true); },
                             if let Some(c) = catalog.read().as_ref() { for r in c.resources.iter().filter(|r| r.kind == NativeKind::Package) { option { value: "{r.reference}", "{r.name} · {r.scope:?}" } } }
                         } }
@@ -542,9 +656,9 @@ pub fn NativeResources(
                     }
                 }
                 div { class: "native-actions",
-                    button { class: "button primary", disabled: busy() || loading() || !online || !idle || editor.read().is_none(), onclick: move |_| apply(false, false), "应用会话资源" }
-                    button { class: "button", disabled: busy() || loading() || !online || last_request.read().is_none() || (!idle && !recovery.0), onclick: move |_| apply(true, false), "重试原操作" }
-                    if state.operations.last().is_some_and(|op| op.status == NativeOperationStatus::Blocked) { button { class: "button", disabled: busy() || loading() || !online || (!idle && !correction) || editor.read().is_none(), onclick: move |_| apply(false, true), "明确修正被阻止的配置（需确认原操作未提交）" } }
+                    button { class: "button primary", disabled: busy() || loading() || !online || !idle || editor.read().is_none(), onclick: move |_| apply.call((false, false)), if session.is_some() { "应用会话资源" } else { "保存项目默认组合" } }
+                    button { class: "button", disabled: busy() || loading() || !online || last_request.read().is_none() || (!idle && !recovery.0), onclick: move |_| apply.call((true, false)), "重试原操作" }
+                    if state.operations.last().is_some_and(|op| op.status == NativeOperationStatus::Blocked) { button { class: "button", disabled: busy() || loading() || !online || (!idle && !correction) || editor.read().is_none(), onclick: move |_| apply.call((false, true)), "明确修正被阻止的配置（需确认原操作未提交）" } }
                 }
                 if correction { p { class: "meta", "此会话当前只能读取历史。可重试原操作，或明确修正被阻止的配置；节点重新验证成功前不能发送消息。" } }
                 else if !idle { p { class: "meta", "常规配置需会话在线、已同步且完全空闲。未完成的原操作可单独恢复，节点仍会重新验证。" } }
@@ -572,6 +686,19 @@ pub fn NativeResources(
 mod presentation_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn display_name_hides_version_and_digest_suffix_only() {
+        assert_eq!(
+            display_resource_name("rpi_acp-v0.2.13-37410c15e8a849f2aaeebce774f156d4"),
+            "rpi_acp"
+        );
+        assert_eq!(display_resource_name("rpi_ask_user"), "rpi_ask_user");
+        assert_eq!(
+            display_resource_name("custom-vnext-not-a-digest"),
+            "custom-vnext-not-a-digest"
+        );
+    }
 
     #[test]
     fn category_scope_and_search_intersect_without_using_installation_or_lease() {

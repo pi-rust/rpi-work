@@ -16,7 +16,7 @@ import time
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / 'crates/work-host/src/ready_output.rs'
+SOURCE = ROOT / 'crates/host/work-node-host/src/ready_output.rs'
 REPORT = ROOT / 'artifacts/headless-node/unix-ready-output'
 checks = []
 

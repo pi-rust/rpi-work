@@ -6667,7 +6667,6 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "work-cli"
 version = "0.1.0"
 dependencies = [
- "futures-util",
  "serde",
  "serde_json",
  "tokio",
@@ -6699,7 +6698,7 @@ dependencies = [
  "web-sys",
  "work-component-api",
  "work-core",
- "work-node",
+ "work-node-runtime",
 ]
 
 [[package]]
@@ -6717,7 +6716,6 @@ dependencies = [
 name = "work-core"
 version = "0.1.0"
 dependencies = [
- "futures-core",
  "serde",
  "serde_json",
  "work-component-api",
@@ -6734,7 +6732,6 @@ dependencies = [
  "work-client",
  "work-component-api",
  "work-http-runtime",
- "work-node",
  "work-node-host",
 ]
 
@@ -6765,22 +6762,12 @@ dependencies = [
 name = "work-node"
 version = "0.1.0"
 dependencies = [
- "async-stream",
  "async-trait",
- "fs2",
- "futures-core",
  "futures-util",
- "getrandom 0.3.4",
- "reqwest",
  "rpi-extcore",
- "serde",
  "serde_json",
- "sha2",
  "tempfile",
- "thiserror 2.0.21",
  "tokio",
- "url",
- "work-component-api",
  "work-core",
  "work-node-runtime",
 ]
@@ -6805,7 +6792,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "windows-sys 0.61.2",
- "work-component-api",
  "work-http-component",
  "work-node-runtime",
  "work-node-service",
@@ -6821,7 +6807,6 @@ dependencies = [
  "futures-core",
  "futures-util",
  "getrandom 0.3.4",
- "reqwest",
  "rpi-extcore",
  "serde",
  "serde_json",
@@ -6841,12 +6826,8 @@ dependencies = [
  "async-stream",
  "axum",
  "futures-util",
- "getrandom 0.3.4",
  "serde",
  "serde_json",
- "sha2",
- "socket2",
- "subtle",
  "tempfile",
  "tokio",
  "tower-http",
@@ -6860,26 +6841,21 @@ dependencies = [
 name = "work-server"
 version = "0.1.0"
 dependencies = [
- "async-stream",
  "axum",
  "futures-util",
- "getrandom 0.3.4",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
  "socket2",
- "subtle",
  "tempfile",
  "tokio",
  "tokio-tungstenite",
- "tower-http",
  "url",
  "work-client",
  "work-core",
  "work-http-component",
- "work-http-runtime",
- "work-node",
+ "work-node-runtime",
  "work-node-service",
 ]
 

@@ -16,7 +16,7 @@
 | --- | --- |
 | 已安装宿主 | `rpi 0.14.0`，Windows x64，实际启动 RPC 进程 |
 | rpi 源码参考 | `D:/Projects/pi-rust`，`ee6ed10e0ed707383f7afc28e81655ff86a635fb`，workspace 版本 0.14.0，检查时工作区干净；未证明安装二进制由这个精确 commit 构建 |
-| Work 当前依赖 | `crates/work-client/Cargo.toml:27–28` 的 `rpi-extcore = "=0.1.5"`，已核对 `Cargo.lock` 和本机 crates.io 缓存源码 |
+| Work 当前依赖 | `crates/client/work-client/Cargo.toml:27–28` 的 `rpi-extcore = "=0.1.5"`，已核对 `Cargo.lock` 和本机 crates.io 缓存源码 |
 | 相邻 extcore 源码 | `D:/Projects/rpi-package/packages/rpi-extcore` 为 0.2.1，不当作 Work 当前依赖 |
 | 原生工具 fixture | 仓库自有 `examples/extension-demo` 源码与锁文件，SDK 0.8.3；复制到隔离目录后离线编译，没有升级或修改原示例 |
 | 模型 | 仅 `127.0.0.1` 确定性 OpenAI-compatible SSE fixture；真实宿主、真实 DLL、真实会话落盘，不使用外部模型 |
@@ -66,7 +66,7 @@ node tools/review/verify-rpi-resources.mjs --native
 ### 3.1 进程隔离不等于资源选集隔离
 
 - extcore 0.1.5 的 `src/service.rs:507–562` 为新 session 建立 Host，`src/host.rs:310–348` 启动子进程；同一个 session ID 的活跃 Host 则复用（`src/service.rs:829–866`）。
-- Work 的 `crates/work-client/src/local_workspace.rs:238–258` 按项目复用 Service。这**不是所有会话共用一个 rpi 进程**，但它们仍共享项目文件与资源目录。
+- Work 的 `crates/client/work-client/src/local_workspace/sessions.rs:78–111` 按项目复用 Service。这**不是所有会话共用一个 rpi 进程**，但它们仍共享项目文件与资源目录。
 - `--skill` 是追加资源路径，不是“只启用选中 Skills”。`session.rs:595–607` 先取项目/全局目录，再追加显式路径；`resource_dirs.rs:344–360` 还会加入所有项目 registry Package 的资源目录。
 - `--local-only` 可让扩展仅按显式路径加载（`session.rs:2014–2035`），但不提供完整 Package/Skills 白名单。实测重开时 `work_demo_counter` 已从工具注册表消失，项目 Package 的 `MAIN_PACKAGE_SKILL` 仍进入提示词。
 
@@ -138,7 +138,7 @@ Work 当前资源面板以 `active_tools` 数组作勾选/计数，并直接提�
 - extcore 0.1.5 的 `BackendConfig`（`src/service.rs:21–31`）、`CreateSessionRequest`（同文件 `486–489`）、`SessionOptions`（`src/host.rs:155–169`）没有 Package、Skills、扩展路径或系统提示词的会话资源字段。新建会话只传项目不够。
 - Work `local_workspace.rs:883–903` 及 extcore `src/protocol.rs:4–32` 限制公共命令，不能用泛型 command 假装接通不存在的资源控制协议。extcore 的 Host 底层有 JSON 透传/扩展命令能力，但不产生宿主不具备的语义。
 - Work 已有 `get_available_tools`、`get_state` 和 `set_active_tools`（`local_workspace.rs:1103–1179`），优先复用。
-- `crates/work-client/src/extensions.rs:11–22` 仍返回默认关闭能力和 Unsupported。本次隔离 demo 的安装/执行不代表生产通用扩展管理、UI 扩展或资源应用确认已交付。
+- `crates/client/work-client/src/extensions.rs:11–22` 仍返回默认关闭能力和 Unsupported。本次隔离 demo 的安装/执行不代表生产通用扩展管理、UI 扩展或资源应用确认已交付。
 
 ## 5. 对下一步设计的约束
 

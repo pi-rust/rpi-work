@@ -68,7 +68,7 @@ pub(crate) fn ComponentsPage(
             if install_open() {
                 div { class: "component-install",
                     h2 { "安装组件包" }
-                    p { "从 HTTPS 地址下载，或粘贴组件包。安装前检查身份和申请的节点能力。组件页只安装界面包与能力授权，不安装或加载节点宿主。" }
+                    p { "从 HTTPS 地址下载，或粘贴组件包。Provider 扩展也通过这里安装。安装前检查身份和申请的节点能力；组件页只安装界面包与能力授权，不安装或加载节点宿主。" }
                     input { r#type: "url", aria_label: "组件包下载地址", placeholder: "https://…/component.json", value: "{package_url}", oninput: move |e| { package_url.set(e.value()); candidate.set(None); } }
                     button { class: "button", disabled: busy() || package_url.read().is_empty(), onclick: move |_| {
                         let address = package_url.read().clone();

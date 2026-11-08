@@ -9,7 +9,7 @@ const WEB = process.env.WORK_UI_URL || 'http://127.0.0.1:14182/app/';
 const prefix = 'spacing-timing-';
 const commands = [
   'cargo test -p work-client --locked && cargo test -p work-ui --locked',
-  "rg -n 'verify-message-stream-order|message-stream-order|消息.*顺序|stream order' tests/README.md && git diff --check -- crates/work-client/src/lib.rs && node --check tests/e2e/verify-cross-turn-message-identity.cjs",
+  "rg -n 'verify-message-stream-order|message-stream-order|消息.*顺序|stream order' tests/README.md && git diff --check -- crates/client/work-client/src/lib.rs && node --check tests/e2e/verify-cross-turn-message-identity.cjs",
 ];
 const draft = '工具间距与节点计时回归草稿：不得发送或执行。';
 const terminal = elapsedMs => ({ elapsedMs, running: false });

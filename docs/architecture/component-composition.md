@@ -34,8 +34,8 @@ flowchart LR
 
 | crate | 职责 |
 | --- | --- |
-| `crates/work-component-api` | 组件包 Bundle/清单/面板/能力契约、校验与隔离 MessageChannel 桥 |
-| `crates/work-http-component` | 远程访问专用面板（共享开关、监听 IP/端口、分享地址、新节点密码）与动作映射 |
+| `crates/components/work-component-api` | 组件包 Bundle/清单/面板/能力契约、校验与隔离 MessageChannel 桥 |
+| `crates/components/work-http-component` | 远程访问专用面板（共享开关、监听 IP/端口、分享地址、新节点密码）与动作映射 |
 
 面板布局、状态呈现和请求校验都在组件 crate 内；`apps/work-ui` 只提供通用
 组件目录、安装/卸载、能力授权和按需挂载，不按组件 ID 判断 HTTP 是否存在，

@@ -8,6 +8,7 @@ use work_client::{
     RuntimeState, SessionAccess, SessionAgentBinding, SessionSummary, WorkspaceClient,
 };
 use work_core::api::realtime::{OperationOutcome, OperationStatus};
+use work_core::api::{NativeCreate, NodeApi, NodeErrorKind};
 use work_core::{RunPhase, RunProjection};
 
 use super::{
@@ -343,7 +344,8 @@ pub(super) fn App() -> Element {
                 r"
                 const side = document.querySelector('.sidebar');
                 const menu = document.querySelector('.mobile-menu');
-                const sync = () => {{ side.inert = matchMedia('(max-width:767px)').matches && !{open}; }};
+                const mobile = document.querySelector('main[data-device-mode=mobile]') || matchMedia('(max-width:767px)').matches;
+                const sync = () => {{ side.inert = Boolean(mobile) && !{open}; }};
                 sync();
                 if ({open}) side.querySelector('input,button,a')?.focus();
                 else if (side.contains(document.activeElement)) menu?.focus();
@@ -691,6 +693,7 @@ pub(super) fn App() -> Element {
     let mut archived_projects = management::use_archived_projects();
     let mut archive_open = use_signal(|| false);
     let mut expanded_projects = management::use_expanded_projects();
+    let mut node_tree_expanded = use_signal(|| true);
     let mut full_project_sessions = use_signal(std::collections::HashSet::<String>::new);
     let sidebar_now = management::use_sidebar_clock();
     let mut session_action_busy = use_signal(std::collections::HashSet::<String>::new);
@@ -804,6 +807,7 @@ pub(super) fn App() -> Element {
                         }
                     }
                     Ok(connections::ConnectionOutcome::Ready(workspace)) => {
+                        let node_id = workspace.node_id;
                         // A retained same-address session belongs to the old epoch.
                         // Reopen it through the normal access/binding observation path,
                         // just like an explicit startup session, before exposing commands.
@@ -840,7 +844,10 @@ pub(super) fn App() -> Element {
                         sessions.set(workspace.sessions);
                         projects.set(workspace.projects);
                         password.set(connections::NodePassword::default());
-                        node_connection.history.write().remember(&url);
+                        node_connection
+                            .history
+                            .write()
+                            .remember_with_identity(&url, node_id.as_deref());
                         node_connection.phase.set(connections::Phase::Online);
                         status.set(if super::local_node::is_local(&url) {
                             format!("本机已就绪 · 可打开项目或开始任务 · {transport_label}")
@@ -2124,6 +2131,19 @@ pub(super) fn App() -> Element {
                                                 .and_then(Value::as_str)
                                                 .unwrap_or("unknown")
                                                 .to_owned();
+                                            if outcome == "completed" {
+                                                let title = sessions
+                                                    .read()
+                                                    .iter()
+                                                    .find(|session| {
+                                                        session.session_id == session_id
+                                                    })
+                                                    .and_then(|session| session.title.clone())
+                                                    .filter(|title| !title.trim().is_empty())
+                                                    .unwrap_or_else(|| "当前任务".to_owned());
+                                                notice.set(Some(format!("任务完成：{title}")));
+                                                undo_archive.set(None);
+                                            }
                                             // A compacted settlement is authoritative even
                                             // without a local request/accepted event. It is
                                             // also its own epoch boundary, so late branch
@@ -2380,129 +2400,158 @@ pub(super) fn App() -> Element {
     };
 
     let mut open_project = move |project_id: String| select_project(project_id, true);
-    let mut new_session =
-        move |project_id: Option<String>| {
-            if *new_session_busy.peek() {
-                return;
-            }
-            if !matches!(*node_connection.phase.peek(), connections::Phase::Online) {
-                status.set("运行环境尚未就绪，请稍后重试。".into());
-                return;
-            }
-            let project_id = project_id
-                .or_else(|| {
-                    selected_project.peek().clone().filter(|id| {
+    let mut new_session = move |project_id: Option<String>| {
+        if *new_session_busy.peek() {
+            return;
+        }
+        if !matches!(*node_connection.phase.peek(), connections::Phase::Online) {
+            status.set("运行环境尚未就绪，请稍后重试。".into());
+            return;
+        }
+        let project_id = project_id
+            .or_else(|| {
+                selected_project.peek().clone().filter(|id| {
+                    !archived_projects
+                        .peek()
+                        .contains(&project_scope_key(&node_url.peek(), id))
+                })
+            })
+            .or_else(|| {
+                projects
+                    .peek()
+                    .iter()
+                    .find(|project| {
                         !archived_projects
                             .peek()
-                            .contains(&project_scope_key(&node_url.peek(), id))
+                            .contains(&project_scope_key(&node_url.peek(), &project.id))
                     })
-                })
-                .or_else(|| {
-                    projects
-                        .peek()
-                        .iter()
-                        .find(|project| {
-                            !archived_projects
-                                .peek()
-                                .contains(&project_scope_key(&node_url.peek(), &project.id))
-                        })
-                        .map(|project| project.id.clone())
-                });
-            let Some(project_id) = project_id else {
-                project_error.set(None);
-                show_project_form.set(true);
-                return;
+                    .map(|project| project.id.clone())
+            });
+        let Some(project_id) = project_id else {
+            project_error.set(None);
+            show_project_form.set(true);
+            return;
+        };
+        let Some(client) = shared_client.peek().clone() else {
+            return;
+        };
+        // Capture the creation preference before detaching the old session. Neither
+        // its persisted binding nor its scope-keyed draft is changed by this path.
+        let backend = selected_backend.peek().clone();
+        select_project(project_id.clone(), false);
+        active_view.set("conversation".into());
+        new_session_busy.set(true);
+        new_session_follow.set(true);
+        status.set("正在准备新会话…".into());
+        let generation = *session_generation.peek();
+        let epoch = *node_connection.epoch.peek();
+        let origin = node_url.peek().clone();
+        // A project switch must not cancel a successful POST and lose its id.
+        state::scoped_spawn(submissions, async move {
+            let project_resources = if backend == "rpi" {
+                Some(NodeApi::native_project_resources(&client, &project_id).await)
+            } else {
+                None
             };
-            let Some(client) = shared_client.peek().clone() else {
-                return;
-            };
-            // Capture the creation preference before detaching the old session. Neither
-            // its persisted binding nor its scope-keyed draft is changed by this path.
-            let backend = selected_backend.peek().clone();
-            select_project(project_id.clone(), false);
-            active_view.set("conversation".into());
-            new_session_busy.set(true);
-            new_session_follow.set(true);
-            status.set("正在准备新会话…".into());
-            let generation = *session_generation.peek();
-            let epoch = *node_connection.epoch.peek();
-            let origin = node_url.peek().clone();
-            // A project switch must not cancel a successful POST and lose its id.
-            state::scoped_spawn(submissions, async move {
-                let result =
-                    {
-                        match client
+            let create_result: Result<String, String> = match project_resources {
+                Some(Ok(resources)) => {
+                    if let Some(selection) = resources.selection {
+                        NodeApi::native_create(
+                            &client,
+                            &project_id,
+                            NativeCreate {
+                                developer: false,
+                                selection: Some(selection),
+                            },
+                        )
+                        .await
+                        .map_err(|error| error.to_string())
+                    } else {
+                        client
                             .create_session_with_backend(Some(&project_id), &backend)
                             .await
-                        {
-                            Ok(id) => Ok(client.get_session(&id).await.unwrap_or_else(|_| {
-                                SessionSummary {
-                                    session_id: id,
-                                    project_id: Some(project_id.clone()),
-                                    title: None,
-                                    status: "idle".into(),
-                                    created_at: 0,
-                                    updated_at: 0,
-                                    last_seq: 0,
-                                    error: None,
-                                    pending_resume: false,
-                                    latest_settlement: None,
-                                    archived: false,
-                                    pinned: false,
-                                }
-                            })),
-                            Err(error) => Err(error.to_string()),
-                        }
-                    };
+                            .map_err(|error| error.to_string())
+                    }
+                }
+                Some(Err(error)) if error.kind == NodeErrorKind::Unsupported => client
+                    .create_session_with_backend(Some(&project_id), &backend)
+                    .await
+                    .map_err(|error| error.to_string()),
+                Some(Err(error)) => Err(error.to_string()),
+                None => client
+                    .create_session_with_backend(Some(&project_id), &backend)
+                    .await
+                    .map_err(|error| error.to_string()),
+            };
+            let result = match create_result {
+                Ok(id) => Ok(client
+                    .get_session(&id)
+                    .await
+                    .unwrap_or_else(|_| SessionSummary {
+                        session_id: id,
+                        project_id: Some(project_id.clone()),
+                        title: None,
+                        status: "idle".into(),
+                        created_at: 0,
+                        updated_at: 0,
+                        last_seq: 0,
+                        error: None,
+                        pending_resume: false,
+                        latest_settlement: None,
+                        archived: false,
+                        pinned: false,
+                    })),
+                Err(error) => Err(error.to_string()),
+            };
 
-                if *node_connection.epoch.peek() != epoch {
-                    return;
-                }
-                let follow = *new_session_follow.peek()
-                    && active_page.peek().as_str() == "workspace"
-                    && active_view.peek().as_str() == "conversation";
-                new_session_follow.set(false);
-                match result {
-                    Ok(mut session) => {
-                        let id = session.session_id.clone();
-                        if *node_connection.epoch.peek() != epoch {
-                            return;
-                        }
-                        // Some HTTP nodes omit projectId from their session detail
-                        // response. Preserve the explicit creation context in that
-                        // case instead of turning a project session into a standalone one.
-                        if session.project_id.is_none() {
-                            session.project_id = Some(project_id.clone());
-                        }
-                        session.title = Some("新会话".into());
-                        {
-                            let mut items = sessions.write();
-                            items.retain(|item| item.session_id != id);
-                            items.insert(0, session);
-                        }
-                        auto_titles
-                            .write()
-                            .insert(session_scope_key(&origin, &id), String::new());
-                        if follow
-                            && *session_generation.peek() == generation
-                            && selected_project.peek().as_ref() == Some(&project_id)
-                        {
-                            focus_new_session.set(Some(id.clone()));
-                            pending_open.set(Some((false, id)));
-                            status.set("新会话已准备好，直接输入你的需求。".into());
-                        }
+            if *node_connection.epoch.peek() != epoch {
+                return;
+            }
+            let follow = *new_session_follow.peek()
+                && active_page.peek().as_str() == "workspace"
+                && active_view.peek().as_str() == "conversation";
+            new_session_follow.set(false);
+            match result {
+                Ok(mut session) => {
+                    let id = session.session_id.clone();
+                    if *node_connection.epoch.peek() != epoch {
+                        return;
                     }
-                    Err(error) => {
-                        if follow && *session_generation.peek() == generation {
-                            let message = format!("创建会话失败：{error}；可以重试。");
-                            new_session_error.set(Some(message.clone()));
-                            status.set(message);
-                        }
+                    // Some HTTP nodes omit projectId from their session detail
+                    // response. Preserve the explicit creation context in that
+                    // case instead of turning a project session into a standalone one.
+                    if session.project_id.is_none() {
+                        session.project_id = Some(project_id.clone());
+                    }
+                    session.title = Some("新会话".into());
+                    {
+                        let mut items = sessions.write();
+                        items.retain(|item| item.session_id != id);
+                        items.insert(0, session);
+                    }
+                    auto_titles
+                        .write()
+                        .insert(session_scope_key(&origin, &id), String::new());
+                    if follow
+                        && *session_generation.peek() == generation
+                        && selected_project.peek().as_ref() == Some(&project_id)
+                    {
+                        focus_new_session.set(Some(id.clone()));
+                        pending_open.set(Some((false, id)));
+                        status.set("新会话已准备好，直接输入你的需求。".into());
                     }
                 }
-                new_session_busy.set(false);
-            });
-        };
+                Err(error) => {
+                    if follow && *session_generation.peek() == generation {
+                        let message = format!("创建会话失败：{error}；可以重试。");
+                        new_session_error.set(Some(message.clone()));
+                        status.set(message);
+                    }
+                }
+            }
+            new_session_busy.set(false);
+        });
+    };
 
     // Shared by session settings and the resource panel. Changing an execution backend is
     // a creation preference plus an explicit independent-session creation, never
@@ -3970,16 +4019,17 @@ pub(super) fn App() -> Element {
             .find(|session| session.session_id == *id)
             .cloned()
     });
-    let current_session_failed = current_session_snapshot.as_ref().is_some_and(|session| {
-        session.error.is_some()
-            || matches!(session.status.as_str(), "error" | "failed")
-            || session
-                .latest_settlement
-                .as_ref()
-                .and_then(|settlement| settlement.get("outcome"))
-                .and_then(Value::as_str)
-                == Some("failed")
-    });
+    let current_session_failed = !interaction.is_active()
+        && current_session_snapshot.as_ref().is_some_and(|session| {
+            session.error.is_some()
+                || matches!(session.status.as_str(), "error" | "failed")
+                || session
+                    .latest_settlement
+                    .as_ref()
+                    .and_then(|settlement| settlement.get("outcome"))
+                    .and_then(Value::as_str)
+                    == Some("failed")
+        });
     let current_session_error = current_session_snapshot
         .as_ref()
         .and_then(session_failure_message);
@@ -4002,6 +4052,11 @@ pub(super) fn App() -> Element {
         .collect::<Vec<_>>();
     visible_sessions
         .sort_by_key(|session| (!session.pinned, std::cmp::Reverse(session.updated_at)));
+    let recent_sessions = visible_sessions
+        .iter()
+        .take(management::RECENT_SESSION_LIMIT)
+        .cloned()
+        .collect::<Vec<_>>();
     let visible_projects = projects
         .read()
         .iter()
@@ -4142,10 +4197,27 @@ pub(super) fn App() -> Element {
     });
     let session_display_mode = app_settings::session_display_mode(&app_settings_document);
     let session_display_key = session_display_mode.key().to_owned();
-    let node_display_label = if super::local_node::is_local(&node_url.read()) {
-        "本机节点".to_owned()
+    let mobile_device = device_mode.read().is_mobile();
+    let node_display_local = !mobile_device
+        && node_info::is_local_or_hosted(
+            shared_client.read().as_ref(),
+            &node_url.read(),
+            entry_address.read().as_deref(),
+        );
+    let node_display_label = if node_display_local {
+        "本地节点".to_owned()
+    } else if mobile_device {
+        "远程节点".to_owned()
     } else {
         node_info::safe_address(&node_url.read())
+    };
+    let (node_status_tone, node_status_label) =
+        node_info::status(&node_connection.phase.read(), &node_probe.read());
+    let node_status_online = node_status_tone == "online";
+    let node_status_short_label = if node_status_online {
+        "在线"
+    } else {
+        "离线"
     };
     let local_workspace = cfg!(not(any(target_arch = "wasm32", target_os = "android")))
         && (super::local_node::is_local(&node_url.read())
@@ -4211,11 +4283,28 @@ pub(super) fn App() -> Element {
             .filter(|(_, window)| *window > 0.0)
             .map(|(threshold, window)| threshold / window * 100.0)
     });
-    let (workspace_kind, workspace_label, workspace_icon) = node_info::workspace_location(
-        node_info::is_local(shared_client.read().as_ref(), &node_url.read()),
-        &node_url.read(),
-    );
+    let (workspace_kind, workspace_label, workspace_icon) =
+        node_info::workspace_location(node_display_local, &node_url.read());
     let workspace_address = node_info::safe_address(&node_url.read());
+    let resource_project = selected_project.read().clone();
+    let resource_project_name = resource_project
+        .as_ref()
+        .and_then(|project_id| {
+            projects
+                .read()
+                .iter()
+                .find(|project| &project.id == project_id)
+                .map(|project| {
+                    let scope =
+                        project_scope_key(&node_origin(node_url.read().as_str()), project_id);
+                    project_aliases
+                        .read()
+                        .get(&scope)
+                        .cloned()
+                        .unwrap_or_else(|| project.name.clone())
+                })
+        })
+        .or_else(|| selected_project_name.read().clone());
     let inspector_protocol = session_access.read().as_ref().map_or_else(
         || "会话协议尚未确认".into(),
         |access| access.descriptor.identity.protocol.clone(),
@@ -4241,11 +4330,24 @@ pub(super) fn App() -> Element {
         .unwrap_or_default();
     let transport_ready =
         transport_online(projection.read().as_ref(), &node_connection.phase.read());
-    let (task_tone, task_label) = task_status(
-        projection.read().as_ref(),
-        &node_connection.phase.read(),
-        local_workspace,
-    );
+    let (task_tone, task_label) = if interaction.is_active() {
+        match interaction {
+            InteractionState::AwaitingInput => ("awaiting-input", "等待确认"),
+            InteractionState::Cancelling => ("cancelling", "停止中"),
+            InteractionState::Sending | InteractionState::Running => ("running", "执行中"),
+            InteractionState::Disconnected | InteractionState::Ready => task_status(
+                projection.read().as_ref(),
+                &node_connection.phase.read(),
+                local_workspace,
+            ),
+        }
+    } else {
+        task_status(
+            projection.read().as_ref(),
+            &node_connection.phase.read(),
+            local_workspace,
+        )
+    };
     let (connection_tone, node_connection_label) = connection_status(
         projection.read().as_ref(),
         &node_connection.phase.read(),
@@ -4417,7 +4519,7 @@ pub(super) fn App() -> Element {
                         let project_name = project.as_ref().map(|project| project_aliases.read().get(&project_scope_key(&node_origin(&address), &project.id)).cloned().unwrap_or_else(|| project.name.clone())).unwrap_or_default();
                         rsx! {
                             node_info::NodeInfoDialog {
-                                project, project_name, local: node_info::is_local(shared_client.read().as_ref(), &address), address,
+                                project, project_name, local: node_display_local, address,
                                 phase: node_connection.phase.read().clone(), probe: node_probe.read().clone(),
                                 descriptor: transport_descriptor.read().clone(), capabilities: capabilities.read().clone(),
                                 session_connection: projection.read().as_ref().map(|run| match run.connection {
@@ -4434,10 +4536,13 @@ pub(super) fn App() -> Element {
                 }
             }
             main { class: format!("{}{}{}", match (active_page.read().as_str(), active_view.read().as_str(), *inspector_open.read()) {
+                ("settings", _, _) => "app-shell context-hidden",
                 ("workspace", "changes", _) => "app-shell review-mode",
                 ("workspace", _, false) => "app-shell context-hidden",
                 _ => "app-shell",
-            }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }), onkeydown: move |event| {
+            }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }),
+                "data-device-mode": if mobile_device { "mobile" } else { "desktop" },
+                onkeydown: move |event| {
                 if event.key() == Key::Escape && conversation_focus() {
                     conversation_focus.set(false);
                     let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toggle')?.focus(), 0);");
@@ -4455,11 +4560,10 @@ pub(super) fn App() -> Element {
                         span { class: "version", "MVP" }
                     }
                     node_info::WorkspaceLocation {
-                        local: node_info::is_local(shared_client.read().as_ref(), &node_url.read()),
+                        local: node_display_local,
                         address: node_url.read().clone(),
                         onsettings: move |()| { active_page.set("settings".into()); settings_section.set("devices".into()); sidebar_open.set(false); },
                     }
-                    button { class: "new-task", disabled: *new_session_busy.read(), onclick: move |_| new_session(None), Icon { name: "plus" } if *new_session_busy.read() { "正在创建…" } else { "新建任务" } }
                     button { class: "search-trigger", onclick: move |_| { global_search_open.set(true); },
                         Icon { name: "search" } span { "搜索项目与会话" } kbd { "⌘ K" }
                     }
@@ -4475,12 +4579,51 @@ pub(super) fn App() -> Element {
                         }
                     }
                     div { class: "sidebar-projects", role: "navigation", aria_label: "项目与会话", "data-session-display-mode": session_display_mode.key(),
-                    div { class: "section-label", "项目"
+                    if !recent_sessions.is_empty() {
+                        div { class: "sidebar-recent", aria_label: "最近的会话",
+                            div { class: "section-label sidebar-recent-label", "最近的会话" }
+                            div { class: "sidebar-sessions recent-sessions",
+                                for session in recent_sessions.iter() {
+                                    {
+                                        let id = session.session_id.clone();
+                                        let selected = selected_session.read().as_ref() == Some(&id);
+                                        rsx! {
+                                            management::SidebarSession {
+                                                key: "recent-sidebar-session-{id}", session: session.clone(), selected,
+                                                activity: sidebar_activity(session),
+                                                scope: session_scope_key(&node_url.read(), &id),
+                                                busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
+                                                now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
+                                                onnodeinfo: { let project_id=session.project_id.clone(); move |()| show_node_info(project_id.clone()) },
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    div { class: "section-label",
                         if session_display_mode == app_settings::SessionDisplayMode::GroupedByNode {
-                            span { class: "sidebar-node-group-label", title: "当前节点", Icon { name: "server" } "{node_display_label}" }
+                            div { class: "sidebar-node-tree-header",
+                                button {
+                                    class: if *node_tree_expanded.read() { "sidebar-node-tree-toggle expanded" } else { "sidebar-node-tree-toggle" },
+                                    r#type: "button", aria_label: format!("{}节点树", if *node_tree_expanded.read() { "收起" } else { "展开" }),
+                                    aria_expanded: node_tree_expanded.to_string(), title: "展开或收起节点树",
+                                    onclick: move |_| node_tree_expanded.toggle(),
+                                    Icon { name: "chevron-right" }
+                                }
+                                button {
+                                    class: if node_display_local { "sidebar-node-tree-info local" } else { "sidebar-node-tree-info remote" },
+                                    r#type: "button", aria_label: "查看节点详情", title: "查看节点详情",
+                                    onclick: move |_| show_node_info(None),
+                                    Icon { name: if node_display_local { "monitor" } else { "cloud" } }
+                                    span { "{node_display_label}" }
+                                    span { class: "sidebar-node-tree-status {node_status_tone}", title: node_status_short_label, aria_label: node_status_short_label }
+                                }
+                            }
                         }
                         if session_display_mode == app_settings::SessionDisplayMode::Flat {
-                            span { class: "sidebar-node-group-label flat", "平铺会话" }
+                            span { class: "sidebar-node-group-label flat", "项目 · 平铺会话" }
                         }
                         div { class: "sidebar-catalog-actions",
                             button { aria_label: "刷新会话", title: "从当前节点拉取最新会话", aria_busy: catalog_refresh.read().busy,
@@ -4501,11 +4644,6 @@ pub(super) fn App() -> Element {
                             }, Icon { name: "plus" } }
                         }
                     }
-                    if catalog_refresh.read().epoch == *node_connection.epoch.read() && (catalog_refresh.read().busy || !catalog_refresh.read().message.is_empty()) {
-                        p { class: "sidebar-catalog-status", role: "status", aria_live: "polite",
-                            if catalog_refresh.read().busy { "正在拉取最新会话…" } else { "{catalog_refresh.read().message}" }
-                        }
-                    }
                     if let Some(project_id) = selected_project.read().as_ref() {
                         if app_settings::menu_visible(
                             &app_settings_document,
@@ -4519,6 +4657,8 @@ pub(super) fn App() -> Element {
                             button { class: if active_page.read().as_str() == "meta-agent" { "nav-item active" } else { "nav-item" }, onclick: move |_| { meta_return_page.set("workspace".into()); active_page.set("meta-agent".into()); sidebar_open.set(false); }, Icon { name: "blocks" } "元Agent" }
                         }
                     }
+                    if session_display_mode == app_settings::SessionDisplayMode::Flat || *node_tree_expanded.read() {
+                        div { class: if session_display_mode == app_settings::SessionDisplayMode::GroupedByNode { "sidebar-node-tree-children" } else { "" },
                     if visible_projects.is_empty() && catalog_complete {
                         div { class: "sidebar-empty project-empty",
                             Icon { name: "folder" }
@@ -4560,13 +4700,15 @@ pub(super) fn App() -> Element {
                                         onclick: { let id=project_id.clone(); move |_| { let key=project_scope_key(&node_url.peek(), &id); if expanded_projects.peek().contains(&key) { expanded_projects.write().remove(&key); } else { expanded_projects.write().insert(key); } } },
                                         Icon { name: "chevron-right" }
                                     }
-                                    node_info::NodeBadge {
-                                        local: node_info::is_local(shared_client.read().as_ref(), &node_url.read()),
-                                        tone: node_info::status(&node_connection.phase.read(), &node_probe.read()).0.to_owned(),
-                                        label: node_info::status(&node_connection.phase.read(), &node_probe.read()).1.to_owned(),
-                                        project_name: display_name.clone(),
-                                        onopen: { let id=project_id.clone(); move |()| show_node_info(Some(id.clone())) },
-                                        oncontext: { let menu=format!("project-menu-{project_id}"); move |()| management::open_menu(&menu) },
+                                    if session_display_mode == app_settings::SessionDisplayMode::Flat {
+                                        node_info::NodeBadge {
+                                            local: node_display_local,
+                                            tone: node_status_tone.to_owned(),
+                                            label: node_status_label.to_owned(),
+                                            project_name: display_name.clone(),
+                                            onopen: { let id=project_id.clone(); move |()| show_node_info(Some(id.clone())) },
+                                            oncontext: { let menu=format!("project-menu-{project_id}"); move |()| management::open_menu(&menu) },
+                                        }
                                     }
                                     button {
                                         key: "sidebar-project-{project_id}",
@@ -4669,6 +4811,13 @@ pub(super) fn App() -> Element {
                             }
                         }
                     }
+                        }
+                    }
+                    }
+                    if catalog_refresh.read().epoch == *node_connection.epoch.read() && (catalog_refresh.read().busy || !catalog_refresh.read().message.is_empty()) {
+                        p { class: "sidebar-catalog-status", role: "status", aria_live: "polite",
+                            if catalog_refresh.read().busy { "正在拉取最新会话…" } else { "{catalog_refresh.read().message}" }
+                        }
                     }
                     button { class: "nav-item archive-entry", onclick: move |_| { archive_open.set(true); sidebar_open.set(false); }, Icon { name: "folder" } "已归档" }
                     button { class: "profile", aria_label: "打开设置", onclick: move |_| { active_page.set("settings".to_owned()); settings_section.set("settings".to_owned()); sidebar_open.set(false); },
@@ -4726,7 +4875,7 @@ pub(super) fn App() -> Element {
                                         conversation_focus.set(true);
                                         let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toolbar button')?.focus(), 0);");
                                     },
-                                    Icon { name: "panel" }
+                                    Icon { name: "fullscreen" }
                                 }
                             }
                             span { class: "status-badge {task_tone}", role: "img", aria_label: "{task_label}", title: "{task_label}",
@@ -4792,7 +4941,7 @@ pub(super) fn App() -> Element {
                     div { class: "page-view resource-center-page",
                         crate::features::resources::center::ResourceCenter {
                             key: "resource-center-{active_page}-{node_url}-{selected_project:?}-{node_connection.epoch}-{session_generation}-{selected_session:?}",
-                            kind: active_page.read().clone(), project: selected_project.read().clone(),
+                            kind: active_page.read().clone(), project: resource_project.clone(), project_name: resource_project_name.clone(),
                             session: selected_session.read().clone(), session_name: selected_session_title.read().clone(),
                             session_scope: selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)),
                             library: resource_library, shared_client, connection_epoch: node_connection.epoch,
@@ -4850,7 +4999,7 @@ pub(super) fn App() -> Element {
                                     conversation_focus.set(false);
                                     let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toggle')?.focus(), 0);");
                                 },
-                                    Icon { name: "close" }
+                                    Icon { name: "fullscreen-exit" }
                                 }
                             }
                         }

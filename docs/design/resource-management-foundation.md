@@ -56,7 +56,16 @@ flowchart TD
     H[重开会话] --> D
 ```
 
-安装链路管理“本机有哪些资源”；会话链路管理“这一会话实际使用哪些资源”。安装完成不自动改写全部活跃会话；卸载也不能被当成已经从运行中的进程卸载。
+安装链路管理“本机有哪些资源”；项目链路管理“这个项目新建会话默认组合哪些资源”；会话链路管理“这一会话实际使用哪些资源”。三者不能互相冒充：项目默认组合由节点按项目身份持久化，创建 Session 时复制为不可隐式联动的会话快照。项目组合修改只影响之后新建的 Session；已有 Session 保留自己的快照，需要时通过会话级 `native_apply` 显式重启/重新加载。安装完成不自动改写全部活跃会话；卸载也不能被当成已经从运行中的进程卸载。
+
+```text
+项目资源组合（Package / Skills / Tools / 指令）
+        │  创建时复制
+        ▼
+Session 资源快照（独立 revision / observation / host generation）
+```
+
+客户端不得从“当前选中的 Session”反推项目默认组合；节点项目资源配置接口才是新建会话的权威来源。没有项目配置时，节点继续使用 shipped/default 创建行为。
 
 记录至少区分：已获取、已安装、已加载/注册、对当前模型有效、本轮实际使用。未知应保留为未知；Skill 可见或被读取均不证明模型遵守了全部指令。
 
@@ -81,7 +90,7 @@ flowchart TD
 - pi-rust：`crates/rpi-cli/src/install.rs`（原生扩展安装及记录）；`resource_dirs.rs`、`session.rs`（来源合并、显式路径追加、指令合成）。
 - pi-rust：`crates/rpi-cli/src/rpc/protocol.rs`（公布工具命令，没有完整资源查询/应用命令）；`crates/rpi-harness/src/agent_harness.rs`（资源 setter、空工具数组及 Skills gate）。
 - rpi-package：`packages/rpi-extcore/src/{host,service,protocol}.rs`（SessionOptions、CreateSessionRequest、允许命令）。
-- Work：`crates/work-node/src/workspace.rs`、`crates/work-client/src/extensions.rs`、`apps/work-ui/src/features/resources/library.rs`、`apps/work-ui/src/app/workspace.rs`。
+- Work：`crates/node/work-node-runtime/src/workspace.rs`、`crates/client/work-client/src/extensions.rs`、`apps/work-ui/src/features/resources/library.rs`、`apps/work-ui/src/app/workspace.rs`。
 
 ## 5. 各层负责什么
 
@@ -89,8 +98,8 @@ flowchart TD
 | --- | --- |
 | rpi 原生宿主/原生安装组件 | 资源格式和解析、实际安装机制、发现/精确选择、指令合成、扩展加载与 ABI、模型有效集合、实际资源快照 |
 | rpi-extcore | 中立会话资源契约、启动参数透传、native 请求、宿主生命周期、配置应用与执行互斥、资源配置保存及恢复协调 |
-| work-node | 当前 workspace owner 对接中立服务；节点/项目归属、本机资源管理入口及操作协调；复用原生安装机制 |
-| work-client / work-server | 现有本机与 HTTP/SSE 访问适配、能力协商及错误映射，传递同一套事实 |
+| work-node-runtime | 当前 workspace owner 对接中立服务；节点/项目归属、本机资源管理入口及操作协调；复用原生安装机制 |
+| work-client / work-node-service | 现有本机与 HTTP/SSE 访问适配、能力协商及错误映射，传递同一套事实 |
 | Work UI | 资源管理、会话选择、来源及状态展示；根据回读显示成功或失败 |
 
 源文件和 native transcript 继续由其原有 owner 管理。通用资源恢复/执行语义优先在 extcore 形成，避免每个 HTTP/ACP/UI adapter 各做一套。

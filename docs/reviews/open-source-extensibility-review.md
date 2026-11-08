@@ -23,7 +23,7 @@
 
 ### 1. P0：先补项目许可证与分发许可
 
-**证据**：受版本控制的文件中仅见第三方 vendor 许可证，未见项目级 LICENSE/COPYING；根 `Cargo.toml:1–3`、`crates/work-core/Cargo.toml:1–6` 等没有项目许可证元数据。`scripts/ci/package-build.ps1:45–106` 桌面包未明确带入第三方许可正文。
+**证据**：受版本控制的文件中仅见第三方 vendor 许可证，未见项目级 LICENSE/COPYING；根 `Cargo.toml:1–3`、`crates/foundation/work-core/Cargo.toml:1–6` 等没有项目许可证元数据。`scripts/ci/package-build.ps1:45–106` 桌面包未明确带入第三方许可正文。
 
 **调整**：由权利人选定开源许可证，明确代码、文档、图片和示例范围；各 crate 补 license/license-file；安装包随附第三方许可与清单。增加 CONTRIBUTING 和 SECURITY，入口复用现有开发规范。许可证选择不能由工具擅自决定。
 
@@ -31,7 +31,7 @@
 
 ### 2. P1：正式扩展管理仍未接通，优先做运行闭环
 
-**证据**：`crates/work-client/src/extensions.rs:9–21` 的 capability 全为 false，catalog 返回 Unsupported；`crates/work-core/src/extensions.rs:135–181` 目前仅有能力和 observed/applied 类型。`docs/guides/extension-demo.md` 明确真实安装/加载与 live UI 仅在隔离 Demo 中验证。
+**证据**：`crates/client/work-client/src/extensions.rs:9–21` 的 capability 全为 false，catalog 返回 Unsupported；`crates/foundation/work-core/src/extensions.rs:135–181` 目前仅有能力和 observed/applied 类型。`docs/guides/extension-demo.md` 明确真实安装/加载与 live UI 仅在隔离 Demo 中验证。
 
 **调整**：先核实上游真实 API，按“只读目录和观测 → 显式授权的安装/卸载 → 加载/重启要求 → 会话配置应用确认”逐项接入。安装、启用、运行中、applied 必须独立；具备幂等操作身份、revision 冲突、失败诊断、回读及恢复语义。不要求或承诺原生动态库热卸载；宿主不支持时明确需要重启。
 
@@ -72,7 +72,7 @@
 
 ### 6. P1（目标关键路径）：UI slot 是静态标签，不是真实扩展点
 
-**证据**：`crates/work-core/src/extensions.rs:60–88` 定义 4 个 slot 和 3 种 widget；`apps/work-ui/src/features/extensions/mod.rs:85–122` 全部在预览面板渲染，未挂载到对应业务位置。`features/conversation/timeline.rs:430–450` 的计划富展示按固定工具名识别。
+**证据**：`crates/foundation/work-core/src/extensions.rs:60–88` 定义 4 个 slot 和 3 种 widget；`apps/work-ui/src/features/extensions/mod.rs:85–122` 全部在预览面板渲染，未挂载到对应业务位置。`features/conversation/timeline.rs:430–450` 的计划富展示按固定工具名识别。
 
 **调整**：先正式落地 conversation-card 与 session-inspector 的只读 contribution，再考虑 composer-action/settings-section 的受控交互。用宿主贡献注册/分派表承载挂载位置、数据契约和显示策略，减少在 workspace/timeline 不断增加插件专属 match。不能仅因为当前 enum 封闭就否定它：widget 类型仍由宿主批准，扩展作者只组合受控组件。
 
@@ -92,7 +92,7 @@ live 数据需带 node/session/run/tool-call/extension/contribution 关联、sch
 
 ### 8. P2：信任模型必须先于开放安装
 
-**证据**：`work-core/src/extensions.rs:27–35` 权限仅为请求；`docs/guides/extension-demo.md` 明确 cdylib 使用当前用户权限运行，不是 OS 沙箱。`features/extensions/mod.rs:15–34` 兼容旧惰性设计，并没有对全部 sources 路径做统一解包验证。
+**证据**：`crates/foundation/work-core/src/extensions.rs:27–35` 权限仅为请求；`docs/guides/extension-demo.md` 明确 cdylib 使用当前用户权限运行，不是 OS 沙箱。`features/extensions/mod.rs:15–34` 兼容旧惰性设计，并没有对全部 sources 路径做统一解包验证。
 
 **调整**：区分源码设计包、已构建原生包和声明式 UI 的信任级别；原生包要求明确授权与来源/摘要校验，构建脚本同样视作任意代码。权限声明不等于有效限制；若承诺细粒度隔离，需要节点侧真实代理/OS 沙箱等技术，不能靠 manifest 字符串。优先复用上游签名/安装能力，不复制另一套包管理器。
 
@@ -133,7 +133,7 @@ live 数据需带 node/session/run/tool-call/extension/contribution 关联、sch
 | 自定义 Agent/transport | AgentTransport + CLI RPC/ACP/HTTP | 若要桌面可选择，先定义 workspace 与 agent 的能力组合和连接配置 | work-client + app/connections |
 | 项目文件预览器、审阅面板、其他 UI 扩展 | 当前属于内置 feature | 确有用例后新增受控 contribution；不承诺加载任意前端组件 | work-ui |
 
-`WorkspaceClient` 当前是 Local/Remote 的封闭 enum（`crates/work-client/src/workspace.rs:15–21`），而 `AgentClient::from_transport` 已可注入实现（`transport.rs:223–230`）。这不是现有功能错误；若开源定位包含自定义 workspace 后端，应再提取所需的 workspace 扩展接口，而不是立即把所有本机文件/Git 服务都改成通用插件。
+`WorkspaceClient` 当前是 Local/Remote 的封闭 enum（`crates/client/work-client/src/workspace.rs:15–21`），而 `AgentClient::from_transport` 已可注入实现（`transport.rs:223–230`）。这不是现有功能错误；若开源定位包含自定义 workspace 后端，应再提取所需的 workspace 扩展接口，而不是立即把所有本机文件/Git 服务都改成通用插件。
 
 ## 三、实施顺序和发布门槛
 

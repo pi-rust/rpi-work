@@ -49,9 +49,9 @@ sequenceDiagram
 
 原生和 WASM 客户端使用同一帧契约，分别适配 socket API；UI 不按 WebSocket/SSE 复制一套业务状态机。完整实现和测试分别位于：
 
-- [协议类型](../../crates/work-node-api/src/api/realtime.rs)
-- [服务端通道](../../crates/work-node-service/src/realtime.rs)
-- [owner 回执](../../crates/work-node-runtime/src/workspace/operations.rs)
-- [原生客户端](../../crates/work-client/src/realtime_client.rs)、[Web 客户端](../../crates/work-client/src/wasm_realtime_client.rs)
+- [协议类型](../../crates/foundation/work-node-api/src/api/realtime.rs)
+- [服务端通道](../../crates/transport/work-node-service/src/realtime.rs)
+- [owner 回执](../../crates/node/work-node-runtime/src/workspace/operations.rs)
+- [原生客户端](../../crates/client/work-client/src/realtime_client.rs)、[Web 客户端](../../crates/client/work-client/src/wasm_realtime_client.rs)
 
 隔离测试可以验证权限、绑定、重放和背压边界；它们不证明真实代理、安装版本或所有网络环境均已通过。
