@@ -7,6 +7,7 @@ use work_node_runtime::workspace::LocalWorkspace;
 use work_node_service::{HttpServer, ServerConfig};
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn native_timeline_http_contract() {
     tokio::task::LocalSet::new().run_until(async {
         let root = tempfile::tempdir().unwrap();

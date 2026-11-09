@@ -1,4 +1,4 @@
-// Formal, already-built Web UI + isolated HTTP/SSE fixture. No model/credentials.
+// Formal, already-built Web UI + isolated HTTP/WebSocket fixture. No model/credentials.
 // Run only after the main agent's build: node tests/e2e/verify-native-timeline.cjs
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -36,7 +36,6 @@ async function setup(browser, prepare = () => {}) {
     const isApp = url.origin === new URL(WEB).origin;
     if (!isNode && !isApp) { blocked.push(request.url()); return route.abort('blockedbyclient'); }
     if (!url.pathname.startsWith('/api/v1/')) return route.continue();
-    if (url.pathname.endsWith('/events') && isNode) return route.continue();
     if (!['GET', 'OPTIONS'].includes(request.method())) {
       const body = request.postDataJSON();
       if (!(url.pathname.endsWith('/open') || (url.pathname.endsWith('/commands') && /^get_/.test(body?.type || '')))) {

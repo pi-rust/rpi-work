@@ -182,7 +182,7 @@ fn reservation_and_result_expiry_cannot_reauthorize_an_old_id() {
             .entries
             .get_mut(&reference.operation_id)
             .unwrap()
-            .expires_at = Some(Instant::now() - Duration::from_secs(1));
+            .expires_at = Some(Instant::now().checked_sub(Duration::from_secs(1)).unwrap());
         assert_eq!(
             registry.status("principal", &reference).unwrap(),
             OperationStatus::OutcomeUnknown
@@ -348,7 +348,7 @@ fn principal_reservation_and_payload_budgets_do_not_allocate_execution() {
         OperationStatus::Reserved
     );
     for principal in [
-        "".to_owned(),
+        String::new(),
         "bad\nprincipal".into(),
         "x".repeat(MAX_ID_BYTES + 1),
     ] {

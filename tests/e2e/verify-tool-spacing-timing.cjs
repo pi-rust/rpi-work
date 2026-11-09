@@ -1,4 +1,4 @@
-// Formal prebuilt WASM + isolated HTTP/SSE fixture. Commands below are inert data.
+// Formal prebuilt WASM + isolated HTTP/WebSocket fixture. Commands below are inert data.
 // Run: node tests/support/run-static-ui.cjs tests/e2e/verify-tool-spacing-timing.cjs
 // No build, saved profile, real credentials, model sends or actual tools.
 const assert = require('node:assert/strict');
@@ -42,7 +42,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 (async () => {
   fs.mkdirSync('artifacts', { recursive: true });
-  const report = { scope: 'formal prebuilt WASM + isolated HTTP/SSE fixture only', results: [], initialEvidence: null, geometry: [], screenshots: [], errors: [], blockedRequests: [] };
+  const report = { scope: 'formal prebuilt WASM + isolated HTTP/WebSocket fixture only', results: [], initialEvidence: null, geometry: [], screenshots: [], errors: [], blockedRequests: [] };
   let fixture, browser, page;
   const card = id => page.locator(`.inline-call[data-tool-id="${prefix}${id}"]`);
   const badge = id => card(id).locator(':scope > summary .tool-elapsed');
@@ -116,7 +116,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const session = async id => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator(`[data-session-id="${id}"] .session-item`).click();
-    await until(`${id} SSE subscription`, async () => fixture.requests.some(r => r.path === `/api/v1/sessions/${id}/events`));
+    await until(`${id} WebSocket subscription`, async () => fixture.requests.some(r => r.path === '/api/v1/realtime' && r.sessionId === id));
   };
   try {
     fixture = await startFixture(0, { pagedHistory: true });

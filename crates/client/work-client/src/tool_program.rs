@@ -29,19 +29,6 @@ fn children_query(query: ToolProgramChildrenQuery) -> ToolProgramChildrenQuery {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn query_defaults_match_web_bounded_windows() {
-        let query = children_query(ToolProgramChildrenQuery::default());
-        assert_eq!(query.direction, "newestFirst");
-        assert_eq!(query.limit, DEFAULT_CHILD_LIMIT);
-        assert_eq!(query.max_bytes, DEFAULT_PAGE_BYTES);
-    }
-}
-
 impl WorkClient {
     pub async fn tool_program_children(
         &self,
@@ -109,5 +96,18 @@ impl WorkClient {
             serde_json::to_value(request)?,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_defaults_match_web_bounded_windows() {
+        let query = children_query(ToolProgramChildrenQuery::default());
+        assert_eq!(query.direction, "newestFirst");
+        assert_eq!(query.limit, DEFAULT_CHILD_LIMIT);
+        assert_eq!(query.max_bytes, DEFAULT_PAGE_BYTES);
     }
 }

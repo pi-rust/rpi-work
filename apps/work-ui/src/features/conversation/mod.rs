@@ -18,5 +18,6 @@ pub(crate) mod scroll_follow;
 pub(crate) mod timeline;
 pub(crate) mod tool_display;
 pub(crate) mod tool_program;
+pub(crate) mod tool_program_i18n;
 pub(crate) mod turn_timing;
 pub(crate) mod user_timeline;

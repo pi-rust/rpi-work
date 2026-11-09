@@ -8,7 +8,7 @@ use work_client::{LocalWorkspace, WorkClient, WorkspaceClient};
 use work_node_service::{HttpServer, ServerConfig};
 
 #[test]
-fn production_acp_access_dialogs_and_unified_sse() {
+fn production_acp_access_dialogs_and_unified_websocket() {
     if std::env::var_os("WORK_ACCESS_HTTP_WORKER").is_none() {
         let executable = std::env::current_exe().unwrap();
         let fixture = std::env::var_os("WORK_SESSION_ACCESS_ACP_FIXTURE").map_or_else(
@@ -31,7 +31,7 @@ fn production_acp_access_dialogs_and_unified_sse() {
             std::process::Command::new(executable)
                 .args([
                     "--exact",
-                    "production_acp_access_dialogs_and_unified_sse",
+                    "production_acp_access_dialogs_and_unified_websocket",
                     "--nocapture"
                 ])
                 .env("WORK_ACCESS_HTTP_WORKER", "1")

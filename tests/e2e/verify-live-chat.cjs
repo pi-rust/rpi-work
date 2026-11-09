@@ -28,8 +28,7 @@ async function api(route, body) {
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 (async () => {
-  let browser, page, streamTask, originalTools;
-  const abort = new AbortController();
+  let browser, page, originalTools;
   const pass = name => { report.checks.push(name); console.log('PASS', name); };
   try {
     const auth = await api('auth');
@@ -67,33 +66,25 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     report.model = { id: model.id, provider: model.provider };
 
     report.initialSeq = (await api(prefix + '/snapshot')).lastSeq;
-    streamTask = (async () => {
-      try {
-        const response = await fetch(`${base}/api/v1/${prefix}/events?after=${report.initialSeq}`, { headers: { cookie, accept: 'text/event-stream' }, signal: abort.signal });
-        assert(response.ok, `SSE: HTTP ${response.status}`);
-        const decoder = new TextDecoder(); let pending = '';
-        for await (const chunk of response.body) {
-          pending += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, '\n');
-          let boundary;
-          while ((boundary = pending.indexOf('\n\n')) !== -1) {
-            const block = pending.slice(0, boundary); pending = pending.slice(boundary + 2);
-            const data = block.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-            if (!data) continue;
-            let value; try { value = JSON.parse(data); } catch { continue; }
-            const event = value.event || value;
-            const type = event.type || block.match(/^event:\s*(.+)$/m)?.[1] || 'unknown';
-            report.events[type] = (report.events[type] || 0) + 1;
-            if (event.eventType === 'text_delta' || event.assistantMessageEvent?.type === 'text_delta') report.textDeltas = (report.textDeltas || 0) + 1;
-          }
-        }
-      } catch (error) { if (!abort.signal.aborted) throw error; }
-    })();
-    // Attach rejection handling immediately while UI setup is in progress.
-    streamTask.catch(() => {});
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     page = await context.newPage();
     page.setDefaultTimeout(15000);
+    page.on('websocket', socket => {
+      if (!socket.url().includes('/api/v1/realtime')) return;
+      socket.on('framereceived', raw => {
+        let frame;
+        try { frame = JSON.parse(typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')); } catch { return; }
+        if (frame.type !== 'events' || !Array.isArray(frame.events)) return;
+        for (const wireEvent of frame.events) {
+          const event = wireEvent.data && typeof wireEvent.data === 'object' ? wireEvent.data : wireEvent;
+          const type = event.type || wireEvent.eventType || 'unknown';
+          report.events[type] = (report.events[type] || 0) + 1;
+          if (wireEvent.eventType === 'text_delta' || event.eventType === 'text_delta' || event.assistantMessageEvent?.type === 'text_delta') report.textDeltas = (report.textDeltas || 0) + 1;
+        }
+      });
+      socket.on('socketerror', error => { report.streamError = String(error); });
+    });
     page.on('pageerror', error => report.errors.push(error.message));
     await page.goto(ui);
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
@@ -165,7 +156,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     };
     await send('你好。请只回复“你好，真实聊天已连接。”，不要执行任何工具。', '你好，真实聊天已连接');
     assert((report.events.message_update || 0) > 0, 'No real streaming message events received.');
-    pass('a message sent from the UI receives the actual provider reply over SSE and completes');
+    pass('a message sent from the UI receives the actual provider reply over WebSocket and completes');
 
     await command('set_active_tools', { tools: ['read'] });
     await send('请调用 read 工具读取 README.md 的前 3 行，确认后只回复“项目基于 Rust + Dioxus。”。必须实际调用工具，只读取文件，不执行命令、不修改文件。', '项目基于 Rust + Dioxus', true);
@@ -218,7 +209,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     if (page) await page.screenshot({ path: 'artifacts/live-chat-failure.png' }).catch(() => {});
     throw error;
   } finally {
-    abort.abort(); if (streamTask) await streamTask.catch(error => { report.streamError = error.message; });
+
     if (originalTools && report.sessionId) await api(`sessions/${report.sessionId}/commands`, { type: 'set_active_tools', tools: originalTools }).catch(() => {});
     if (browser) await browser.close();
     report.finishedAt = new Date().toISOString();

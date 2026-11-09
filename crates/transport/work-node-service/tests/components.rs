@@ -35,6 +35,7 @@ impl work_http_component::RemoteAccessOwner for SharingOwner {
     }
 }
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn components_share_the_owner_and_do_not_start_an_agent() {
     tokio::task::LocalSet::new()
         .run_until(async {

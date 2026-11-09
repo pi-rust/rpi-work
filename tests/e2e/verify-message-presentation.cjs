@@ -1,4 +1,4 @@
-// Formal prebuilt Web/WASM + isolated HTTP/SSE fixture; no models, tools or builds.
+// Formal prebuilt Web/WASM + isolated HTTP/WebSocket fixture; no models, tools or builds.
 // After the parent candidate build (never point this at a live/dev service):
 // WORK_UI_BUNDLE=target/message-alignment-candidate/parity-web node tests/support/run-static-ui.cjs tests/e2e/verify-message-presentation.cjs
 const assert = require('node:assert/strict');
@@ -189,7 +189,6 @@ function isWrite(record) {
       if (!isNode && !(isApp && target.pathname === '/api/v1/agent-backends' && record.method === 'GET')) {
         blocked.push({ origin: target.origin, ...record }); return route.abort('blockedbyclient');
       }
-      if (isNode && target.pathname.endsWith('/events')) return route.continue(); // Never buffer SSE via fetch.
       const response = await route.fetch({ url: new URL(target.pathname + target.search, fixture.url).href });
       if (target.pathname.endsWith('/snapshot')) {
         const json = await response.json();
@@ -278,7 +277,7 @@ function isWrite(record) {
     await success(codeButton(main), codeText(CODE), 'restored clipboard');
     pass('code-block clipboard denial never reports success; visible status and copy icon recover after writeText restoration');
 
-    // Start and update one unfinished fence through real fixture SSE, not DOM injection.
+    // Start and update one unfinished fence through real fixture WebSocket events, not DOM injection.
     const entryId = 'presentation-stream';
     const live = page.locator('.transcript .agent-message').filter({ hasText: 'streamValue' });
     const first = '```js\nconst streamValue = "<script>window.__messagePresentationExecuted = true';

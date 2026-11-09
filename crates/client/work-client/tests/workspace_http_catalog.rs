@@ -215,6 +215,7 @@ async fn assert_catalog(client: &WorkspaceClient, expected: &Catalog) {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn independent_http_facades_share_only_their_owners_catalog() {
     let mut expected = Catalog::seed("owner-a");
     let mut other_expected = Catalog::seed("owner-b");

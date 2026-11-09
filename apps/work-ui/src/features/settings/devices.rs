@@ -236,6 +236,8 @@ pub fn DevicesPage(
     let mut qr_open = use_signal(|| false);
     let mut pairing = use_context::<PairingControl>();
     let mut remote_open = use_signal(|| false);
+    let mut plugin_help_open = use_signal(|| false);
+    let mut plugin_check_busy = use_signal(|| false);
     let mut manual_open = use_signal(|| true);
     let mut manual_address = use_signal(String::new);
     let mut phone_address = use_signal(String::new);
@@ -505,9 +507,125 @@ pub fn DevicesPage(
     rsx! {
         style { {include_str!("devices.css")} }
         div { class: "devices-page",
-            // A hosted/remote entry uses the same screen at every width.
-            // Only an actual owner (or standalone management host) gets owner controls.
-            if owned_local || (!mobile_client && !scoped_entry) {
+            if owned_local {
+                section { class: "collaboration-hub", aria_label: "工作协同",
+                    div { class: "page-heading collaboration-page-heading",
+                        div {
+                            div { class: "overline", "DEVICES & COLLABORATION" }
+                            h1 { "工作协同" }
+                            p { "连接其他设备，或允许可信设备访问这台电脑上的工作空间。" }
+                        }
+                        span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "本机节点在线" } else if busy { "节点准备中" } else { "本机节点未就绪" } }
+                    }
+                    div { class: "collaboration-actions",
+                        section { class: "collaboration-action-card connect-card", aria_label: "连接其他设备",
+                            div { class: "collaboration-action-heading",
+                                span { class: "collaboration-action-icon", Icon { name: "cloud" } }
+                                div { h2 { "连接其他设备" } p { "连接另一台电脑或工作节点，继续项目、会话和 Agent 任务。" } }
+                            }
+                            div { class: "collaboration-action-footer",
+                                button { class: "button primary", disabled: busy, onclick: move |_| { error.set(String::new()); remote_open.toggle(); }, "连接设备" }
+                                span { class: "collaboration-action-hint", "扫码或输入地址" }
+                            }
+                            if *remote_open.read() {
+                                div { class: "collaboration-connect-form",
+                                    div { class: "form-field", label { r#for: "node-url", "节点地址" }
+                                        input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:13031/", oninput: move |event| { base_url.set(event.value()); password.set(NodePassword::default()); } }
+                                    }
+                                    div { class: "form-field", label { r#for: "node-password", "节点密码" }
+                                        input { id: "node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "连接时输入，不会保存", oninput: move |event| { password.set(NodePassword::new(event.value(), &base_url.read())) } }
+                                    }
+                                    div { class: "collaboration-connect-actions",
+                                        button { class: "button", onclick: move |_| remote_open.set(false), "取消" }
+                                        button { class: "button primary", disabled: busy, onclick: move |_| {
+                                            let address_input = base_url.read().clone();
+                                            match normalize_address(&address_input, false) {
+                                                Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(()); }
+                                                Err(message) => error.set(message),
+                                            }
+                                        }, if busy { "正在连接…" } else { "连接设备" } }
+                                    }
+                                    if !error.read().is_empty() { p { class: "connection-form-error", role: "alert", "{error}" } }
+                                }
+                            }
+                        }
+                        section { class: "collaboration-action-card assist-card", aria_label: "允许远程协助",
+                            div { class: "collaboration-action-heading",
+                                span { class: "collaboration-action-icon assist", Icon { name: "shield" } }
+                                div { h2 { "允许远程协助" } p { "开启后，可信设备可以访问当前电脑上的项目、会话和运行任务。" } }
+                                button {
+                                    class: if sharing.enabled { "sharing-switch enabled" } else { "sharing-switch" },
+                                    role: "switch", aria_checked: sharing.enabled, disabled: !sharing.listening || !online,
+                                    onclick: move |_| {
+                                        let next = !sharing_state.peek().enabled;
+                                        spawn(async move {
+                                            if set_desktop_sharing(next).await.is_ok() {
+                                                sharing_state.with_mut(|state| state.enabled = next);
+                                            }
+                                        });
+                                    },
+                                    span { class: "sharing-switch-track", span {} }
+                                    span { if sharing.enabled { "已开启" } else { "未开启" } }
+                                }
+                            }
+                            if !sharing.listening {
+                                div { class: "plugin-guide", role: "status",
+                                    Icon { name: "info" }
+                                    div { strong { "需要先安装协同插件" } p { "安装 rpi-http-extension 后，才能开启远程协助。" } }
+                                    button { class: "button", onclick: move |_| plugin_help_open.toggle(), if *plugin_help_open.read() { "收起指引" } else { "查看安装指引" } }
+                                }
+                                if *plugin_help_open.read() {
+                                    div { class: "plugin-guide-steps",
+                                        div { b { "1" } span { strong { "安装 rpi-http-extension" } small { "为当前节点提供 HTTP / WebSocket 远程入口。" } } }
+                                        div { b { "2" } span { strong { "重启 Work 或节点" } small { "让宿主重新加载插件能力。" } } }
+                                        div { b { "3" } span { strong { "重新检查插件" } small { "确认后即可使用远程协助开关。" } } }
+                                        button { class: "button primary", disabled: *plugin_check_busy.read(), onclick: move |_| {
+                                            plugin_check_busy.set(true);
+                                            spawn(async move {
+                                                sharing_state.set(desktop_sharing().await);
+                                                plugin_check_busy.set(false);
+                                            });
+                                        }, if *plugin_check_busy.read() { "正在检查…" } else { "重新检查插件" } }
+                                    }
+                                }
+                            } else {
+                                div { class: if sharing.enabled { "sharing-ready" } else { "sharing-ready disabled" },
+                                    Icon { name: if sharing.enabled { "check" } else { "info" } }
+                                    span { if sharing.enabled { "远程协助已开启，可以分享连接信息。" } else { "插件已安装，开启开关后允许其他设备访问。" } }
+                                }
+                                if sharing.enabled {
+                                    button { class: "button", disabled: !online, onclick: move |_| { pairing.request.with_mut(authorization_offer::Request::show); }, "分享连接信息" }
+                                }
+                            }
+                        }
+                    }
+                    div { class: "collaboration-lists",
+                        section { class: "collaboration-list-panel", aria_label: "最近连接",
+                            div { class: "collaboration-list-heading", div { h2 { "最近连接" } p { "本设备主动连接过的工作节点" } }
+                                if !connection.history.read().recent.is_empty() { button { class: "button ghost", onclick: move |_| connection.history.set(NodeHistory::default()), "清除记录" } }
+                            }
+                            if connection.history.read().recent.is_empty() {
+                                div { class: "collaboration-empty", Icon { name: "clock" } strong { "还没有最近连接" } span { "连接其他设备后，会显示在这里。" } }
+                            } else {
+                                for address in connection.history.read().recent.clone() {
+                                    div { class: "collaboration-list-row",
+                                        span { class: "collaboration-device-icon", Icon { name: "monitor" } }
+                                        div { class: "collaboration-device-copy", strong { "{address}" } small { "远程工作节点" } }
+                                        button { class: "button", disabled: busy, aria_label: "连接 {address}", onclick: { let address = address.clone(); move |_| { base_url.set(format!("{address}/")); password.set(NodePassword::default()); error.set(String::new()); onconnect.call(()); } }, "连接" }
+                                    }
+                                }
+                            }
+                        }
+                        section { class: "collaboration-list-panel visited-panel", aria_label: "被访问的设备",
+                            div { class: "collaboration-list-heading", div { h2 { "被访问的设备" } p { "曾经访问过这台电脑的设备" } } }
+                            div { class: "collaboration-empty", Icon { name: "shield" } strong { "暂时没有访问记录" } span { "开启远程协助并完成设备授权后，\n这里会显示访问过你的设备。" } }
+                        }
+                    }
+                    if mobile_client { p { class: "collaboration-mobile-note" , "手机端只能连接其他设备，不能作为工作节点被远程访问。" } }
+                }
+            }
+            // A hosted/remote desktop entry keeps the connected-node details below.
+            if !owned_local && !mobile_client && !scoped_entry {
                 div { class: "overline", "YOUR COMPUTER. YOUR AGENT. EVERYWHERE." }
                 div { class: "page-heading connection-page-heading",
                     div {
@@ -515,6 +633,9 @@ pub fn DevicesPage(
                         p { if owned_local { "Agent 在这台电脑上运行，通过本机 RPC 使用模型、工具和项目文件。" } else { "PC 提供 Agent 服务，手机作为客户端查看、发送和确认。" } }
                     }
                     if owned_local {
+                        if !sharing.listening {
+                            p { class: "connection-form-error", role: "alert", "未检测到 rpi-http-extension，暂时无法开启远程协作。请先安装或启用宿主扩展。" }
+                        }
                         button {
                             class: "sharing-switch",
                             role: "switch",

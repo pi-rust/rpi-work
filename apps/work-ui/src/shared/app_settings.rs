@@ -26,6 +26,7 @@ pub mod ids {
         pub const APPEARANCE: &str = "appearance";
         pub const FOOTER: &str = "footer";
         pub const SESSION_DISPLAY: &str = "sessionDisplay";
+        pub const DEFAULT_PROVIDER: &str = "defaultProvider";
     }
 }
 
@@ -67,6 +68,35 @@ pub fn update_session_display_mode(
         json!({ "mode": mode.key() }),
     )
     .is_some()
+}
+
+/// Return the provider/model pair used when creating a new session.
+#[must_use]
+pub fn default_provider_model(document: &Value) -> Option<(String, String)> {
+    let value = document
+        .get(ids::storage::DEFAULT_PROVIDER)
+        .and_then(Value::as_object)?;
+    Some((
+        value.get("provider")?.as_str()?.to_owned(),
+        value.get("model")?.as_str()?.to_owned(),
+    ))
+}
+
+pub fn update_default_provider(
+    store: Signal<AppSettingsState>,
+    provider: &str,
+    model: &str,
+) -> bool {
+    update_namespace(
+        store,
+        ids::storage::DEFAULT_PROVIDER,
+        json!({ "provider": provider, "model": model }),
+    )
+    .is_some()
+}
+
+pub fn clear_default_provider(store: Signal<AppSettingsState>) -> bool {
+    update_namespace(store, ids::storage::DEFAULT_PROVIDER, Value::Null).is_some()
 }
 
 #[cfg(any(target_arch = "wasm32", target_os = "android"))]
@@ -497,6 +527,22 @@ mod tests {
     fn unknown_fields_are_retained() {
         let value = parse(r#"{"version":1,"menus":{},"future":{"keep":true}}"#).unwrap();
         assert_eq!(value["future"]["keep"], true);
+    }
+
+    #[test]
+    fn provider_default_is_optional_and_reads_provider_model_pair() {
+        assert_eq!(default_provider_model(&default_value()), None);
+        let value = parse(
+            r#"{"version":1,"defaultProvider":{"provider":"openai","model":"gpt-4o"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            default_provider_model(&value),
+            Some(("openai".into(), "gpt-4o".into()))
+        );
+        let incomplete = parse(r#"{"version":1,"defaultProvider":{"provider":"openai"}}"#)
+            .unwrap();
+        assert_eq!(default_provider_model(&incomplete), None);
     }
 
     #[test]

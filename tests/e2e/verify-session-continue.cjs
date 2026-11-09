@@ -1,4 +1,4 @@
-// Real integrated WASM (build/serve separately) + isolated HTTP/SSE fixture per case.
+// Real integrated WASM (build/serve separately) + isolated HTTP/WebSocket fixture per case.
 // Fixture-only commands: no provider/model calls, credentials, builds or fixture edits.
 // node --check validates syntax ONLY; run this file separately for browser evidence.
 const assert = require('node:assert/strict');
@@ -41,6 +41,11 @@ async function test(name, configure, verify) {
     context = await browser.newContext({ viewport: { width: 1280, height: 950 } });
     page = await context.newPage(); page.setDefaultTimeout(10000);
     page.on('pageerror', error => pageErrors.push(error.message));
+    page.on('websocket', socket => {
+      const socketUrl = new URL(socket.url());
+      const nodeUrl = new URL(fixture.url);
+      if (nodeUrl.hostname === socketUrl.hostname && nodeUrl.port === socketUrl.port && policy.offline) socket.close();
+    });
     const h = {
       page, fixture, policy, commands, gate,
       field: () => page.getByRole('textbox', { name: '发送给 agent 的消息', exact: true }),
@@ -60,7 +65,7 @@ async function test(name, configure, verify) {
       },
       async select(id) { await h.session(id).click(); await h.ready(); },
       async idle() {
-        // Wait for the actual primary button, not merely the SSE write completing.
+        // Wait for the actual primary button, not merely the WebSocket write completing.
         await h.send().waitFor(); await until(async () => await h.button().getAttribute('aria-busy') !== 'true', 'settled composer rendered');
       },
       async noContinue() {
@@ -202,7 +207,7 @@ async function test(name, configure, verify) {
     if (fixture) await fixture.close();
     proof.durationMs = Date.now() - started; results.push(proof);
     fs.writeFileSync('artifacts/session-continue-validation.json', JSON.stringify({ results, errors, geometry,
-      scope: 'Separately built real WASM UI; isolated HTTP/SSE only, no live model/provider or credential writes.',
+      scope: 'Separately built real WASM UI; isolated HTTP/WebSocket only, no live model/provider or credential writes.',
       limitations: 'node --check is syntax-only, not browser evidence. Screenshots cover light/dark at 1280/390/320; no physical-device claim.' }, null, 2));
   }
 }

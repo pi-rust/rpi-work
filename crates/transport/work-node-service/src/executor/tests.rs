@@ -14,7 +14,7 @@ struct Fixture {
     pending: mpsc::Receiver<ExecutorRequest>,
     auth: AuthLease,
     headers: HeaderMap,
-    _shutdown: watch::Sender<bool>,
+    shutdown: watch::Sender<bool>,
     _root: tempfile::TempDir,
 }
 impl Fixture {
@@ -73,7 +73,7 @@ impl Fixture {
             pending,
             auth,
             headers,
-            _shutdown: shutdown,
+            shutdown,
             _root: root,
         }
     }
@@ -279,13 +279,12 @@ async fn network_request_is_send_and_shares_the_existing_admission_budget() {
     });
     let message = fixture.pending.recv().await.unwrap();
     execute(fixture.state.clone(), message).await;
-    let reference = match task
+    let RealtimeReply::Reserved(reference) = task
         .await
         .unwrap()
         .unwrap_or_else(|_| panic!("reserve failed"))
-    {
-        RealtimeReply::Reserved(reference) => reference,
-        _ => panic!("wrong response"),
+    else {
+        panic!("wrong response");
     };
     let (message, result) = fixture
         .message(RealtimeAction::Status {
@@ -324,7 +323,7 @@ async fn shutdown_before_dispatch_leaves_the_reservation_unexecuted() {
             payload: Value::Null,
         })
         .await;
-    fixture._shutdown.send_replace(true);
+    fixture.shutdown.send_replace(true);
     execute(fixture.state.clone(), message).await;
     assert!(
         matches!(result.await.unwrap(), Err(err) if err.code == RealtimeErrorCode::Unavailable)

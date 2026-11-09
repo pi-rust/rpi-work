@@ -137,6 +137,7 @@ impl SidebarActivity {
         }
     }
 
+    #[allow(dead_code)]
     pub fn spinning(self) -> bool {
         matches!(
             self,

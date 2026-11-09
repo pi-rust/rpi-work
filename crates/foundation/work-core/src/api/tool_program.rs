@@ -12,7 +12,7 @@ pub struct ToolProgramCursor {
     pub lane: String,
     pub leaf_id: String,
     pub direction: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_id: Option<String>,
     pub after_entry_id: String,
     pub after_seq: u64,
@@ -30,7 +30,7 @@ pub struct ToolProgramChildSummary {
     pub root_tool_name: String,
     pub tool_name: String,
     pub ordinal: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_child_id: Option<String>,
     pub state: String,
 }
@@ -60,15 +60,15 @@ pub struct ToolProgramPhase {
     pub child_id: String,
     pub index: u64,
     pub phase: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptor: Option<ToolProgramBodyDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancelled: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interrupted: Option<bool>,
 }
 
@@ -78,7 +78,7 @@ pub struct ToolProgramPhasePage {
     pub leaf_id: String,
     pub child_id: String,
     pub phases: Vec<ToolProgramPhase>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<ToolProgramCursor>,
     pub scanned: u64,
     pub scan_exhausted: bool,
@@ -89,11 +89,11 @@ pub struct ToolProgramPhasePage {
 #[serde(rename_all = "camelCase")]
 pub struct ToolProgramObservation {
     pub child_id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_phase: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_phase: Option<ToolProgramPhase>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closed_phase: Option<ToolProgramPhase>,
     pub outcome: String,
 }
@@ -101,10 +101,10 @@ pub struct ToolProgramObservation {
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolProgramChildPage {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leaf_id: Option<String>,
     pub children: Vec<ToolProgramChildSummary>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<ToolProgramCursor>,
     pub scan_exhausted: bool,
 }
@@ -142,7 +142,7 @@ pub struct ToolProgramBodyPage {
     pub byte_length: u64,
     pub total_bytes: u64,
     pub chunks: Vec<ToolProgramBodyChunk>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<ToolProgramBodyPageCursor>,
 }
 
@@ -173,16 +173,16 @@ pub struct ToolProgramBodyResponse {
     pub child_id: String,
     pub phase_entry_id: String,
     pub body: ToolProgramBodyPage,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<ToolProgramBodyCursor>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolProgramChildrenQuery {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leaf_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<ToolProgramCursor>,
     pub direction: String,
     pub limit: u64,
@@ -203,9 +203,9 @@ pub struct ToolProgramBodyQuery {
     pub child_id: String,
     pub phase_entry_id: String,
     pub descriptor_id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leaf_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<ToolProgramBodyCursor>,
     pub limit: u64,
     pub max_bytes: u64,
@@ -233,13 +233,13 @@ pub struct ToolProgramStreamItem {
     #[serde(rename = "type")]
     pub item_type: String,
     pub seq: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event: Option<ToolProgramChildEvent>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observation: Option<ToolProgramObservation>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disposition: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
 

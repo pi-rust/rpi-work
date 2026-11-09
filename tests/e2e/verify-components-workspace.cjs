@@ -25,7 +25,7 @@ const timeout=(p,ms=30000)=>Promise.race([p,new Promise((_,reject)=>{const t=set
         const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
         await page.goto(node.address,{waitUntil:'domcontentloaded',timeout:90000});
         await page.getByRole('button',{name:'打开设置',exact:true}).click({timeout:90000});
-        await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点与组件',exact:true}).click();
+        await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'工作协同',exact:true}).click();
         await page.getByRole('button',{name:'打开远程访问',exact:true}).waitFor();
         assert.equal(await page.locator('.component-frame').count(),0);
         await page.getByRole('button',{name:'打开远程访问',exact:true}).click();

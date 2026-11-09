@@ -23,10 +23,10 @@ async function check(name,fn){try{await fn();results.push({name,passed:true});co
     await page.locator('.project-row').filter({hasText:'rpi-work'}).click();
     await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).click();
     await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).waitFor();
-    await check('connected UI restores real HTTP/SSE fixture history and tool cards',async()=>{
+    await check('connected UI restores real HTTP/WebSocket fixture history and tool cards',async()=>{
       assert.equal(await page.locator('.transcript details.tool-call').count(),2);
       assert(fixture.requests.some(r=>r.path.endsWith('/snapshot')));
-      assert(fixture.requests.some(r=>r.path.endsWith('/events')));
+      assert(fixture.requests.some(r=>r.path === '/api/v1/realtime'));
     });
     await check('node configuration is located in settings',async()=>{
       assert.equal(await page.locator('.sidebar input[aria-label="节点地址"]').count(),0);
@@ -95,7 +95,7 @@ async function check(name,fn){try{await fn();results.push({name,passed:true});co
     await check('no browser runtime errors',async()=>assert.deepEqual(errors,[]));
     const buildPath='target/parity-web/build.json';
     const build=fs.existsSync(buildPath)?JSON.parse(fs.readFileSync(buildPath,'utf8').replace(/^\uFEFF/,'')):null;
-    fs.writeFileSync('artifacts/ui-parity-validation.json',JSON.stringify({fixture:'test-only HTTP/SSE; no real model',build,results,errors,requests:fixture.requests},null,2));
+    fs.writeFileSync('artifacts/ui-parity-validation.json',JSON.stringify({fixture:'test-only HTTP/WebSocket; no real model',build,results,errors,requests:fixture.requests},null,2));
     if(results.some(r=>!r.passed))process.exitCode=1;
   }catch(error){
     await page.screenshot({path:'artifacts/ui-parity-failure.png'});

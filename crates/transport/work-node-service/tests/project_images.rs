@@ -13,6 +13,7 @@ fn status(error: ClientError) -> u16 {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn project_images_preserve_auth_scope_and_binary_text_separation() {
     let root = tempfile::tempdir().unwrap();
     let local = Arc::new(

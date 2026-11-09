@@ -1,3 +1,4 @@
+use super::tool_program_i18n::{self, Key as CopyKey};
 use base64::Engine;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -230,6 +231,7 @@ pub fn ToolProgramWorkbench(
     let mut resync_loading = use_signal(|| false);
     let mut live_epoch = use_signal(|| 0_u64);
     let mut last_synced_at = use_signal(|| None::<String>);
+    let copy = tool_program_i18n::Copy::zh_cn();
     use_effect(use_reactive(
         (&session_id, &live_epoch),
         move |(session, _)| {
@@ -278,13 +280,14 @@ pub fn ToolProgramWorkbench(
                             loop {
                                 if !page_is_visible().await {
                                     live_connected.set(false);
-                                    live_error.set(Some("页面不可见，自动重连已暂停".into()));
+                                    live_error.set(Some(copy.text(CopyKey::PageHidden).into()));
                                     realtime_retry_delay(1).await;
                                     continue;
                                 }
                                 if !*live_auto_reconnect.read() {
                                     live_connected.set(false);
-                                    live_error.set(Some("自动重连已暂停".into()));
+                                    live_error
+                                        .set(Some(copy.text(CopyKey::AutoReconnectPaused).into()));
                                     return;
                                 }
                                 match live_client.subscribe(&live_session, after).await {
@@ -298,7 +301,7 @@ pub fn ToolProgramWorkbench(
                                                 live_connected.set(false);
                                                 retry_started_at.get_or_insert_with(Instant::now);
                                                 live_error.set(Some(
-                                                    "实时 WebSocket 连接中断，准备重连".into(),
+                                                    copy.text(CopyKey::SocketInterrupted).into(),
                                                 ));
                                                 break;
                                             };
@@ -324,21 +327,24 @@ pub fn ToolProgramWorkbench(
                                         }
                                         live_connected.set(false);
                                         retry_started_at.get_or_insert_with(Instant::now);
-                                        live_error
-                                            .set(Some("实时 WebSocket 已断开，准备重连".into()));
+                                        live_error.set(Some(
+                                            copy.text(CopyKey::SocketDisconnected).into(),
+                                        ));
                                     }
                                     Err(_) => {
                                         retry_started_at.get_or_insert_with(Instant::now);
                                         live_connected.set(false);
-                                        live_error
-                                            .set(Some("实时 WebSocket 未连接，准备重连".into()));
+                                        live_error.set(Some(
+                                            copy.text(CopyKey::SocketUnavailable).into(),
+                                        ));
                                     }
                                 }
                                 if retry_started_at.is_some_and(|started| {
                                     started.elapsed().as_millis() >= MAX_REALTIME_RETRY_WINDOW_MS
                                 }) {
                                     live_auto_reconnect.set(false);
-                                    live_error.set(Some("自动重连总时长已达上限".into()));
+                                    live_error
+                                        .set(Some(copy.text(CopyKey::RetryWindowLimit).into()));
                                     return;
                                 }
                                 let delay_attempt = attempt;
@@ -346,7 +352,7 @@ pub fn ToolProgramWorkbench(
                                 if attempt > MAX_REALTIME_RETRIES {
                                     live_auto_reconnect.set(false);
                                     live_retry_attempt.set(attempt);
-                                    live_error.set(Some("自动重连次数已达上限".into()));
+                                    live_error.set(Some(copy.text(CopyKey::RetryLimit).into()));
                                     return;
                                 }
                                 live_retry_attempt.set(attempt);
@@ -382,14 +388,14 @@ pub fn ToolProgramWorkbench(
     let current = snapshot.read();
     let Some(current) = current.as_ref() else {
         return if *loading.read() {
-            rsx! { div { class: "tool-program-workbench tool-program-loading", role: "status", "正在读取 Tool Program…" } }
+            rsx! { div { class: "tool-program-workbench tool-program-loading", role: "status", "{copy.text(CopyKey::ReadingToolProgram)}" } }
         } else if let Some(message) = error.read().as_ref() {
             // Unsupported is intentionally quiet; older nodes should not show a
             // broken workbench merely because they predate Tool Program support.
             if message.contains("unsupported") || message.contains("Unsupported") {
                 rsx! {}
             } else {
-                rsx! { div { class: "tool-program-workbench tool-program-error", role: "alert", "Tool Program 读取失败：{message}" } }
+                rsx! { div { class: "tool-program-workbench tool-program-error", role: "alert", "{copy.text(CopyKey::ReadFailed)}：{message}" } }
             }
         } else {
             rsx! {}
@@ -408,34 +414,34 @@ pub fn ToolProgramWorkbench(
     let phase_filter_value = phase_filter.read().clone();
 
     rsx! {
-        section { id: "tool-program-workbench", class: "tool-program-workbench", aria_label: "Tool Program 工作台",
+        section { id: "tool-program-workbench", class: "tool-program-workbench", aria_label: copy.text(CopyKey::Workbench),
             header { class: "tool-program-workbench-header",
-                strong { "Tool Program" }
+                strong { "{copy.text(CopyKey::ToolProgram)}" }
                 span { class: "tool-program-workbench-meta",
                     "{current.page.children.len()} 个子任务 · lane {current.lane} · seq {current.start_seq}–{current.last_seq}"
                     if let Some(timestamp) = last_synced_at.read().as_ref() {
-                        span { class: "tool-program-status", "最后同步 {timestamp}" }
+                        span { class: "tool-program-status", "{copy.text(CopyKey::LastSynced)} {timestamp}" }
                     }
                 }
                 if !expanded.read().is_empty() {
-                    button { class: "tool-program-body-button", r#type: "button", onclick: move |_| expanded.set(Vec::new()), "全部收起" }
+                    button { class: "tool-program-body-button", r#type: "button", onclick: move |_| expanded.set(Vec::new()), "{copy.text(CopyKey::CollapseAll)}" }
                 }
-                label { class: "tool-program-filter", "工具名"
-                    input { value: "{child_query}", placeholder: "筛选 tool", oninput: move |event| child_query.set(event.value()) }
+                label { class: "tool-program-filter", "{copy.text(CopyKey::ToolName)}"
+                    input { value: "{child_query}", placeholder: copy.text(CopyKey::ToolNamePlaceholder), oninput: move |event| child_query.set(event.value()) }
                 }
-                label { class: "tool-program-filter", "Child 筛选"
+                label { class: "tool-program-filter", "{copy.text(CopyKey::ChildFilter)}"
                     select { value: "{child_filter}", onchange: move |event| child_filter.set(event.value()),
-                        option { value: "all", "全部" }
-                        option { value: "active", "运行中" }
-                        option { value: "error", "失败" }
-                        option { value: "done", "已完成" }
+                        option { value: "all", "{copy.text(CopyKey::All)}" }
+                        option { value: "active", "{copy.text(CopyKey::Running)}" }
+                        option { value: "error", "{copy.text(CopyKey::Failed)}" }
+                        option { value: "done", "{copy.text(CopyKey::Completed)}" }
                     }
                 }
-                label { class: "tool-program-filter", "Phase 筛选"
+                label { class: "tool-program-filter", "{copy.text(CopyKey::PhaseFilter)}"
                     select { value: "{phase_filter}", onchange: move |event| phase_filter.set(event.value()),
-                        option { value: "all", "全部" }
-                        option { value: "attention", "异常/中断" }
-                        option { value: "body", "包含 body" }
+                        option { value: "all", "{copy.text(CopyKey::All)}" }
+                        option { value: "attention", "{copy.text(CopyKey::Attention)}" }
+                        option { value: "body", "{copy.text(CopyKey::ContainsBody)}" }
                     }
                 }
                 if let Some(cursor) = current.page.next_cursor.clone() {
@@ -458,14 +464,14 @@ pub fn ToolProgramWorkbench(
                                 children_loading.set(false);
                             });
                         },
-                        if *children_loading.read() { "读取中…" } else { "加载更多子任务" }
+                        if *children_loading.read() { "{copy.text(CopyKey::Loading)}" } else { "{copy.text(CopyKey::LoadMoreChildren)}" }
                     }
                 }
                 if let Some(message) = children_error.read().as_ref() {
-                    p { class: "tool-program-error", role: "alert", "子任务分页失败：{message}" }
+                    p { class: "tool-program-error", role: "alert", "{copy.text(CopyKey::ChildrenPageFailed)}：{message}" }
                 }
                 if current.resync_required {
-                    span { class: "tool-program-status is-warning", role: "status", "需要重新同步" }
+                    span { class: "tool-program-status is-warning", role: "status", "{copy.text(CopyKey::ResyncRequired)}" }
                     button {
                         class: "tool-program-body-button", r#type: "button",
                         disabled: *resync_loading.read(),
@@ -486,21 +492,21 @@ pub fn ToolProgramWorkbench(
                                 resync_loading.set(false);
                             });
                         },
-                        if *resync_loading.read() { "同步中…" } else { "重新同步" }
+                        if *resync_loading.read() { "{copy.text(CopyKey::Resyncing)}" } else { "{copy.text(CopyKey::Resync)}" }
                     }
                 }
-                span { class: "tool-program-status", "通道：WorkspaceClient realtime subscribe" }
+                span { class: "tool-program-status", "{copy.text(CopyKey::Transport)}" }
                 if let Some(message) = live_error.read().as_ref() {
                     span { class: "tool-program-status is-warning", role: "status", "{message}" }
-                    if retry_attempt > 0 { span { class: "tool-program-status", "第 {retry_attempt} 次重连" } }
+                    if retry_attempt > 0 { span { class: "tool-program-status", "{retry_attempt} {copy.text(CopyKey::RetryCount)}" } }
                     if retry_attempt > 0 {
-                        button { class: "tool-program-body-button", r#type: "button", onclick: move |_| { live_auto_reconnect.set(false); if let Some(task) = live_task.write().take() { task.cancel(); } }, "停止重连" }
+                        button { class: "tool-program-body-button", r#type: "button", onclick: move |_| { live_auto_reconnect.set(false); if let Some(task) = live_task.write().take() { task.cancel(); } }, "{copy.text(CopyKey::StopReconnect)}" }
                     }
-                    button { class: "tool-program-body-button", r#type: "button", onclick: move |_| { live_auto_reconnect.set(true); live_epoch += 1; }, if retry_attempt > 0 { "重新连接" } else { "重试实时连接" } }
+                    button { class: "tool-program-body-button", r#type: "button", onclick: move |_| { live_auto_reconnect.set(true); live_epoch += 1; }, if retry_attempt > 0 { "{copy.text(CopyKey::Reconnect)}" } else { "{copy.text(CopyKey::RetryRealtime)}" } }
                 } else if *live_connected.read() {
-                    span { class: "tool-program-status is-success", role: "status", "实时已连接" }
+                    span { class: "tool-program-status is-success", role: "status", "{copy.text(CopyKey::Connected)}" }
                 } else {
-                    span { class: "tool-program-status", role: "status", "实时连接中…" }
+                    span { class: "tool-program-status", role: "status", "{copy.text(CopyKey::Connecting)}" }
                 }
             }
             div { class: "tool-program-children",
@@ -547,15 +553,15 @@ pub fn ToolProgramWorkbench(
                                     },
                                     span { class: "tool-program-child-heading", strong { "{child.tool_name}" } span { class: "tool-program-status", "{phase}" } }
                                     span { class: "tool-program-child-details",
-                                        span { "子任务 {child.ordinal}" } span { class: "tool-program-status {child_state_class}", "状态：{child.state}" } span { "结果：{outcome}" }
-                                        span { class: "tool-program-status", "Trace：未提供关联" }
-                                        if let Some(parent) = &child.parent_child_id { span { "父任务：{parent}" } }
-                                        span { class: "tool-program-expand-hint", if is_expanded { "收起" } else { "查看 phases" } }
+                                        span { "{copy.text(CopyKey::Child)} {child.ordinal}" } span { class: "tool-program-status {child_state_class}", "{copy.text(CopyKey::State)}：{child.state}" } span { "{copy.text(CopyKey::Outcome)}：{outcome}" }
+                                        span { class: "tool-program-status", "{copy.text(CopyKey::TraceUnavailable)}" }
+                                        if let Some(parent) = &child.parent_child_id { span { "{copy.text(CopyKey::Parent)}：{parent}" } }
+                                        span { class: "tool-program-expand-hint", if is_expanded { "{copy.text(CopyKey::Collapse)}" } else { "{copy.text(CopyKey::ViewPhases)}" } }
                                     }
                                 }
                                 if is_expanded {
                                     div { id: "{phases_id}", class: "tool-program-phases",
-                                        if is_loading { p { class: "tool-program-loading", "正在读取 phases…" } }
+                                        if is_loading { p { class: "tool-program-loading", "{copy.text(CopyKey::LoadingPhases)}" } }
                                         if let Some(error) = phase_errors.read().iter().find(|(id, _)| id == &child_id).map(|(_, message)| message.clone()) { p { class: "tool-program-error", role: "alert", "{error}" } }
                                         for item in page_phases { {
                                             let phase_id = item.entry_id.clone();
@@ -575,10 +581,10 @@ pub fn ToolProgramWorkbench(
                                                     onclick: move |_| selected_phase.set(Some(phase_select_id.clone())),
                                                     span { class: "tool-program-phase-kind", "{item.phase}" }
                                                     span { "seq {item.seq}" }
-                                                    if item.is_error == Some(true) { span { class: "tool-program-status is-warning", "错误" } }
-                                                    if item.cancelled == Some(true) { span { class: "tool-program-status", "已取消" } }
-                                                    if item.failed == Some(true) { span { class: "tool-program-status is-warning", "失败" } }
-                                                    if item.interrupted == Some(true) { span { class: "tool-program-status is-warning", "中断" } }
+                                                    if item.is_error == Some(true) { span { class: "tool-program-status is-warning", "{copy.text(CopyKey::Error)}" } }
+                                                    if item.cancelled == Some(true) { span { class: "tool-program-status", "{copy.text(CopyKey::Cancelled)}" } }
+                                                    if item.failed == Some(true) { span { class: "tool-program-status is-warning", "{copy.text(CopyKey::Failed)}" } }
+                                                    if item.interrupted == Some(true) { span { class: "tool-program-status is-warning", "{copy.text(CopyKey::Interrupted)}" } }
                                                     if descriptor.is_some() && (body.is_none() || body.as_ref().is_some_and(|value| value.next_cursor.is_some())) {
                                                         button { class: "tool-program-body-button", r#type: "button",
                                                             onclick: move |_| {
@@ -594,7 +600,7 @@ pub fn ToolProgramWorkbench(
                                                                     body_loading.set(None);
                                                                 });
                                                             },
-                                                            if body_loading_now { "读取中…" } else if body.is_some() { "加载更多" } else { "查看 body" }
+                                                            if body_loading_now { "{copy.text(CopyKey::Loading)}" } else if body.is_some() { "{copy.text(CopyKey::LoadMore)}" } else { "{copy.text(CopyKey::ViewBody)}" }
                                                         }
                                                     }
                                                 }
@@ -614,7 +620,7 @@ pub fn ToolProgramWorkbench(
                                                     let copy_status_id = copy_phase_id.clone();
                                                     rsx! { div { class: "tool-program-body",
                                                         span { "{body.body.total_bytes} bytes · {body.body.chunks.len()} chunks · sha256 {body.body.descriptor.sha256}" }
-                                                        span { class: "tool-program-body-meta", "查看器：{view_kind} · {body.body.descriptor.kind} · {body.body.descriptor.codec} · {body.body.descriptor.encoding} · 已加载 {body.body.byte_length} bytes" }
+                                                        span { class: "tool-program-body-meta", "{copy.text(CopyKey::Viewer)}：{view_kind} · {body.body.descriptor.kind} · {body.body.descriptor.codec} · {body.body.descriptor.encoding} · {copy.text(CopyKey::LoadedBytes)} {body.body.byte_length} bytes" }
                                                         if let Some(data) = download_data {
                                                             {
                                                                 let name = download_name.clone();
@@ -626,7 +632,7 @@ pub fn ToolProgramWorkbench(
                                                                     let script = format!("try {{ const raw=atob({data:?}); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([bytes])); a.download={name}; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); dioxus.send(true); }} catch (_) {{ dioxus.send(false); }}");
                                                                     let _ = document::eval(&script).recv::<bool>().await;
                                                                 });
-                                                                }, "下载已加载 body" } }
+                                                                }, "{copy.text(CopyKey::DownloadLoadedBody)}" } }
                                                             }
                                                         }
                                                         if let Some(text) = body_text.clone() {
@@ -639,7 +645,7 @@ pub fn ToolProgramWorkbench(
                                                                     let ok = document::eval(&script).recv::<bool>().await.unwrap_or(false);
                                                                     body_copy_status.set(Some(if ok { success_id } else { format!("error:{failure_id}") }));
                                                                 });
-                                                            }, if body_copy_status.read().as_deref() == Some(copy_status_id.as_str()) { "已复制" } else if body_copy_status.read().as_deref() == Some(format!("error:{copy_status_id}").as_str()) { "复制失败" } else { "复制完整文本" } }
+                                                            }, if body_copy_status.read().as_deref() == Some(copy_status_id.as_str()) { "{copy.text(CopyKey::Copied)}" } else if body_copy_status.read().as_deref() == Some(format!("error:{copy_status_id}").as_str()) { "{copy.text(CopyKey::CopyFailed)}" } else { "{copy.text(CopyKey::CopyCompleteText)}" } }
                                                         }
                                                         if view_kind == "JSON" || view_kind == "Text" {
                                                             if let Some(text) = body_text.as_ref() {
@@ -657,16 +663,16 @@ pub fn ToolProgramWorkbench(
                                                             }
                                                         }
                                                         if body.next_cursor.is_some() {
-                                                            span { class: "tool-program-status is-warning", "内容未完整加载" }
+                                                            span { class: "tool-program-status is-warning", "{copy.text(CopyKey::BodyIncomplete)}" }
                                                         } else if body.body.byte_length != body.body.total_bytes {
-                                                            span { class: "tool-program-status is-warning", "返回内容长度与 descriptor 不一致" }
+                                                            span { class: "tool-program-status is-warning", "{copy.text(CopyKey::BodyLengthMismatch)}" }
                                                         } else if body_hash.as_deref().is_some_and(|hash| hash.eq_ignore_ascii_case(&body.body.descriptor.sha256)) {
-                                                            span { class: "tool-program-status is-success", "内容完整 · SHA-256 通过" }
+                                                            span { class: "tool-program-status is-success", "{copy.text(CopyKey::BodyCompleteHash)}" }
                                                         } else {
-                                                            span { class: "tool-program-status is-warning", "整体 SHA-256 不匹配" }
+                                                            span { class: "tool-program-status is-warning", "{copy.text(CopyKey::BodyHashMismatch)}" }
                                                         }
                                                         details { class: "tool-program-body-chunks", open: true,
-                                                            summary { "查看 {body.body.chunks.len()} 个 chunks" }
+                                                            summary { "{copy.text(CopyKey::ViewChunks)} {body.body.chunks.len()}" }
                                                             for chunk in &body.body.chunks {
                                                                 {
                                                                 let chunk_hash = body_chunk_sha256(&chunk.data);
@@ -678,12 +684,12 @@ pub fn ToolProgramWorkbench(
                                                                         if let Ok(text) = String::from_utf8(bytes.clone()) {
                                                                             pre { class: "{chunk_class}", key: "{chunk.index}", "{text}" }
                                                                         } else {
-                                                                            pre { class: "tool-program-body-chunk is-binary", key: "{chunk.index}", "二进制 chunk · {bytes.len()} bytes" }
+                                                                            pre { class: "tool-program-body-chunk is-binary", key: "{chunk.index}", "{copy.text(CopyKey::BinaryChunk)} · {bytes.len()} bytes" }
                                                                         }
                                                                     } else {
-                                                                        pre { class: "tool-program-body-chunk is-binary", key: "{chunk.index}", "无法解码 chunk" }
+                                                                        pre { class: "tool-program-body-chunk is-binary", key: "{chunk.index}", "{copy.text(CopyKey::UndecodableChunk)}" }
                                                                     }
-                                                                    if chunk_valid { span { class: "tool-program-status is-success", "chunk {chunk.index} 校验通过" } } else { span { class: "tool-program-status is-warning", "chunk {chunk.index} 校验失败" } }
+                                                                    if chunk_valid { span { class: "tool-program-status is-success", "chunk {chunk.index} {copy.text(CopyKey::ChunkVerified)}" } } else { span { class: "tool-program-status is-warning", "chunk {chunk.index} {copy.text(CopyKey::ChunkInvalid)}" } }
                                                                 }
                                                                 }
                                                             }
@@ -716,7 +722,7 @@ pub fn ToolProgramWorkbench(
                                                         phase_loading.set(None);
                                                     });
                                                 },
-                                                if is_loading { "读取中…" } else { "加载更多 phases" }
+                                                if is_loading { "{copy.text(CopyKey::Loading)}" } else { "{copy.text(CopyKey::LoadMorePhases)}" }
                                             }
                                         }
                                         if !is_loading && !has_phases && phase_errors.read().iter().all(|(id, _)| id != &child_id) { p { class: "tool-program-loading", "暂无 phase 记录" } }

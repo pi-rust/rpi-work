@@ -2452,6 +2452,8 @@ pub(super) fn App() -> Element {
         // Capture the creation preference before detaching the old session. Neither
         // its persisted binding nor its scope-keyed draft is changed by this path.
         let backend = selected_backend.peek().clone();
+        let default_model = app_settings::default_provider_model(&app_settings_store.peek().value)
+            .map(|(_, model)| model);
         select_project(project_id.clone(), false);
         new_session_busy.set(true);
         new_session_follow.set(true);
@@ -2497,7 +2499,11 @@ pub(super) fn App() -> Element {
                     .map_err(|error| error.to_string()),
             };
             let result = match create_result {
-                Ok(id) => Ok(client
+                Ok(id) => {
+                    if let Some(model) = default_model.as_deref() {
+                        let _ = client.set_model(&id, model).await;
+                    }
+                    Ok(client
                     .get_session(&id)
                     .await
                     .unwrap_or_else(|_| SessionSummary {
@@ -2513,7 +2519,8 @@ pub(super) fn App() -> Element {
                         latest_settlement: None,
                         archived: false,
                         pinned: false,
-                    })),
+                    }))
+                }
                 Err(error) => Err(error.to_string()),
             };
 

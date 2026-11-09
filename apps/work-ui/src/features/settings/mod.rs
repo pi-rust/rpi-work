@@ -45,7 +45,7 @@ pub fn SettingsPage(
                     button { class: if section == "app-settings" { "active" } else { "" }, aria_current: if section == "app-settings" { "page" } else { "" },
                         onclick: move |_| settings_section.set("app-settings".to_owned()), Icon { name: "code" } "全局设置文件" }
                     button { class: if section == "devices" || section == "components" { "active" } else { "" }, aria_current: if section == "devices" || section == "components" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("devices".to_owned()), Icon { name: "monitor" } if mobile_client { "电脑连接与组件" } else { "执行节点与组件" } }
+                        onclick: move |_| settings_section.set("devices".to_owned()), Icon { name: "monitor" } "工作协同" }
                     button { class: if section == "providers" { "active" } else { "" }, aria_current: if section == "providers" { "page" } else { "" },
                         onclick: move |_| settings_section.set("providers".to_owned()), Icon { name: "server" } "供应商" }
                     button { class: if section == "footer" { "active" } else { "" }, aria_current: if section == "footer" { "page" } else { "" },
@@ -70,7 +70,7 @@ pub fn SettingsPage(
                     }
                     button { class: "settings-card", onclick: move |_| settings_section.set("devices".to_owned()),
                         span { class: "settings-card-icon", Icon { name: "monitor" } }
-                        strong { if mobile_client { "电脑连接与组件" } else { "执行节点与组件" } } p { if mobile_client { "连接电脑，并管理当前节点组件。" } else { "管理执行节点、连接方式与节点组件。" } } small { if mobile_client { "连接与组件" } else { "本机与其他节点" } } Icon { name: "chevron-right" }
+                        strong { "工作协同" } p { if mobile_client { "连接电脑，并管理远程协作与节点组件。" } else { "管理执行节点、远程协作与节点组件。" } } small { if mobile_client { "电脑连接与协作" } else { "节点与协作" } } Icon { name: "chevron-right" }
                     }
                     button { class: "settings-card", onclick: move |_| settings_section.set("providers".to_owned()),
                         span { class: "settings-card-icon", Icon { name: "server" } }
@@ -104,8 +104,7 @@ pub fn SettingsPage(
                 }
             } else if section == "providers" {
                 ProviderSettings {
-                    shared_client, connection_epoch, online, selected_session, session_generation,
-                    onreturn: move |_| active_page.set("workspace".to_owned()),
+                    shared_client, connection_epoch, online, selected_session, session_generation, runtime_state,
                     oncomponents: move |_| settings_section.set("devices".to_owned()),
                 }
             } else {

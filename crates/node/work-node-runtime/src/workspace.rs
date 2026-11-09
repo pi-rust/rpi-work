@@ -950,9 +950,9 @@ impl LocalWorkspace {
         let request: rpi_extcore::service::tool_program_queries::ChildPageQuery =
             serde_json::from_value(payload).map_err(LocalError::from)?;
         let service = self.session_service(session_id)?;
-        Ok(decode_tool_program(
+        decode_tool_program(
             service::child_summaries(&service, session_id.into(), request).await,
-        )?)
+        )
     }
 
     pub async fn tool_program_phases(
@@ -966,9 +966,9 @@ impl LocalWorkspace {
         let request: rpi_extcore::service::tool_program_queries::ChildPhaseQuery =
             serde_json::from_value(payload).map_err(LocalError::from)?;
         let service = self.session_service(session_id)?;
-        Ok(decode_tool_program(
+        decode_tool_program(
             service::child_phases(&service, session_id.into(), request).await,
-        )?)
+        )
     }
 
     pub async fn tool_program_body(
@@ -982,9 +982,9 @@ impl LocalWorkspace {
         let request: rpi_extcore::service::tool_program_queries::ChildBodyQuery =
             serde_json::from_value(payload).map_err(LocalError::from)?;
         let service = self.session_service(session_id)?;
-        Ok(decode_tool_program(
+        decode_tool_program(
             service::child_body(&service, session_id.into(), request).await,
-        )?)
+        )
     }
 
     pub async fn tool_program_snapshot(
@@ -998,9 +998,9 @@ impl LocalWorkspace {
         let request: rpi_extcore::service::ChildSnapshotQuery =
             serde_json::from_value(payload).map_err(LocalError::from)?;
         let service = self.session_service(session_id)?;
-        Ok(decode_tool_program(
+        decode_tool_program(
             service::child_snapshot(&service, session_id.into(), request).await,
-        )?)
+        )
     }
 
     pub async fn snapshot_with_limit(

@@ -1,5 +1,5 @@
 //! Node-wide saved-file management. No control host, remote probe or raw commands.
-use crate::shared::components::{Icon, Modal};
+use crate::shared::{app_settings, components::{Icon, Modal}};
 use dioxus::prelude::*;
 use work_client::WorkspaceClient;
 use work_core::api::{
@@ -180,7 +180,6 @@ enum ExpectedChange {
     Removed(String),
     KeyPresent(String),
     Cleared(String, CredentialLocation),
-    HostRelease,
 }
 impl ExpectedChange {
     fn from_action(action: &ProviderAction) -> Self {
@@ -197,7 +196,6 @@ impl ExpectedChange {
         let id = match self {
             Self::Definition(d) => &d.id,
             Self::Removed(id) | Self::KeyPresent(id) | Self::Cleared(id, _) => id,
-            Self::HostRelease => return false,
         };
         let entry = catalog.providers.iter().find(|p| p.id == *id);
         match self {
@@ -212,7 +210,6 @@ impl ExpectedChange {
             Self::Cleared(_, CredentialLocation::Config) => {
                 entry.is_none_or(|p| !p.config_key_present)
             }
-            Self::HostRelease => false,
         }
     }
 }
@@ -233,29 +230,18 @@ enum Editor {
 #[derive(Clone, PartialEq)]
 enum Confirmation {
     Remove(String),
-    ClearStored(String),
-    ClearConfig(String),
     ReplaceKey(String),
 }
 impl Confirmation {
     fn id(&self) -> &str {
         match self {
-            Self::Remove(id)
-            | Self::ClearStored(id)
-            | Self::ClearConfig(id)
-            | Self::ReplaceKey(id) => id,
+            Self::Remove(id) | Self::ReplaceKey(id) => id,
         }
     }
     fn message(&self) -> &'static str {
         match self {
             Self::Remove(_) => {
                 "仅删除 models.json 中的自定义配置（含其中的配置凭据）；auth.json 已保存的凭据会保留并继续显示。不会卸载内置供应商。"
-            }
-            Self::ClearStored(_) => {
-                "仅删除 auth.json 保存记录（API Key / OAuth / 其他）。环境变量、CLI 或 models.json 仍可能提供凭据。删除 OAuth 本地记录不撤销远端授权；如需撤销，请到供应商管理授权。"
-            }
-            Self::ClearConfig(_) => {
-                "仅删除 models.json 的 apiKey 配置来源，不删除 auth.json 凭据。环境变量或 CLI 仍可能作为回退来源。"
             }
             Self::ReplaceKey(_) => {
                 "将替换 auth.json 中已有凭据（包括 OAuth 记录）。不会撤销远端 OAuth 授权。提交后清空输入；不会验证远端认证。"
@@ -292,8 +278,8 @@ pub fn ProviderSettings(
     connection_epoch: Signal<u64>,
     session_generation: Signal<u64>,
     selected_session: Signal<Option<String>>,
+    runtime_state: Signal<Option<work_client::RuntimeState>>,
     online: bool,
-    onreturn: EventHandler<MouseEvent>,
     oncomponents: EventHandler<MouseEvent>,
 ) -> Element {
     let mut live_online = use_signal(|| online);
@@ -311,9 +297,10 @@ pub fn ProviderSettings(
         context.generation,
         &context.session,
         context.online,
+        runtime_state.read().as_ref().and_then(|state| state.provider.clone()),
     ))
     .unwrap_or_default();
-    rsx! { ProviderSettingsState { key: "{key}", context, shared_client, connection_epoch, session_generation, selected_session, live_online, onreturn, oncomponents } }
+    rsx! { ProviderSettingsState { key: "{key}", context, shared_client, connection_epoch, session_generation, selected_session, runtime_state, live_online, oncomponents } }
 }
 #[component]
 fn ProviderSettingsState(
@@ -322,8 +309,8 @@ fn ProviderSettingsState(
     connection_epoch: Signal<u64>,
     session_generation: Signal<u64>,
     selected_session: Signal<Option<String>>,
+    runtime_state: Signal<Option<work_client::RuntimeState>>,
     live_online: Signal<bool>,
-    onreturn: EventHandler<MouseEvent>,
     oncomponents: EventHandler<MouseEvent>,
 ) -> Element {
     let mounted = use_signal(|| context.clone());
@@ -331,7 +318,6 @@ fn ProviderSettingsState(
     let mut busy = use_signal(|| false);
     let mut pending = use_signal(|| None::<ExpectedChange>);
     let mut ticket = use_signal(|| 0u64);
-    let mut query = use_signal(String::new);
     let mut notice = use_signal(String::new);
     let mut error = use_signal(String::new);
     let mut editor = use_signal(|| Editor::Closed);
@@ -341,6 +327,7 @@ fn ProviderSettingsState(
     let mut confirmation = use_signal(|| None::<Confirmation>);
     let mut discovered_models =
         use_signal(|| std::collections::BTreeMap::<String, Vec<ModelDescriptor>>::new());
+    let settings_store = use_context::<Signal<app_settings::AppSettingsState>>();
     let mut discovery_busy = use_signal(|| None::<String>);
     let mut discovery_error = use_signal(String::new);
     let is_fresh = move |expected: &ProviderContext, request: u64| {
@@ -389,7 +376,7 @@ fn ProviderSettingsState(
                     if let Some(change) = pending.peek().as_ref() {
                         notice.set(if change.matches(&value) {
                             "已重新读取保存文件，目标字段与期望一致；此前结果仍未确认为成功。凭据仅可核对来源存在，不能核对内容。请检查后再操作。".into()
-                        } else { "已重新读取保存文件，但与此前意图不一致或宿主释放状态不可核对；未宣称成功。请检查后重新操作，不会自动重试。".into() });
+                        } else { "已重新读取保存文件，但与此前意图不一致；未宣称成功。请检查后重新操作，不会自动重试。".into() });
                     }
                     pending.set(None);
                     catalog.set(Some(value));
@@ -564,6 +551,15 @@ fn ProviderSettingsState(
                 {
                     catalog.set(Some(value));
                     pending.set(None);
+                    if let ExpectedChange::Removed(id) = &change {
+                        if app_settings::default_provider_model(&settings_store.read().value)
+                            .is_some_and(|(provider, _)| provider == *id)
+                        {
+                            if app_settings::clear_default_provider(settings_store) {
+                                app_settings::request_write(settings_store);
+                            }
+                        }
+                    }
                     if matches!(change, ExpectedChange::Definition(_)) {
                         retained_definition.set(None);
                     }
@@ -630,14 +626,6 @@ fn ProviderSettingsState(
         };
         match c {
             Confirmation::Remove(id) => mutate.call(ProviderAction::RemoveConfig { id }),
-            Confirmation::ClearStored(id) => mutate.call(ProviderAction::ClearCredential {
-                id,
-                location: CredentialLocation::Stored,
-            }),
-            Confirmation::ClearConfig(id) => mutate.call(ProviderAction::ClearCredential {
-                id,
-                location: CredentialLocation::Config,
-            }),
             Confirmation::ReplaceKey(id) => {
                 confirmation.set(None);
                 editor.set(Editor::Key(id));
@@ -782,65 +770,23 @@ fn ProviderSettingsState(
             }
         });
     });
-    let release = Callback::new(move |()| {
-        secret.set(String::new());
-        if !can_write() {
-            return;
-        }
-        let Some(client) = shared_client.peek().clone() else {
-            return;
-        };
-        let expected = mounted.peek().clone();
-        let next = ticket.peek().wrapping_add(1);
-        ticket.set(next);
-        busy.set(true);
-        error.set(String::new());
-        notice.set(String::new());
-        editor.set(Editor::Closed);
-        confirmation.set(None);
-        spawn(async move {
-            let result = bounded(NodeApi::provider_release_hosts(&client)).await;
-            if !is_fresh(&expected, next) {
-                return;
+    let set_provider_default = {
+        let use_discovered_model = use_discovered_model.clone();
+        Callback::new(move |(provider, model): (String, String)| {
+            if app_settings::update_default_provider(settings_store, &provider, &model) {
+                app_settings::request_write(settings_store);
             }
-            busy.set(false);
-            match result {
-                Ok(report) => notice.set(format!("已释放 {} 个空闲宿主；{} 个受阻。未强制停止活动宿主，也不表示全部重启。新宿主将读取保存配置。", report.released.len(), report.blocked.len())),
-                Err(_) => { pending.set(Some(ExpectedChange::HostRelease)); error.set("释放宿主失败或结果未知；不会自动重试。请刷新核对后再操作，未宣称已停止或重启。".into()); }
-            }
-        });
-    });
+            use_discovered_model.call(model);
+        })
+    };
     let enabled = can_write();
-    let filter = query().trim().to_lowercase();
     let selected_session_id = selected_session.read().clone();
+    let default_provider = app_settings::default_provider_model(&settings_store.read().value)
+        .map(|(provider, _)| provider);
     let entries = catalog
         .read()
         .as_ref()
-        .map(|c| {
-            c.providers
-                .iter()
-                .filter(|p| {
-                    let name = p
-                        .definition
-                        .as_ref()
-                        .map(|d| {
-                            format!(
-                                "{} {} {}",
-                                d.name,
-                                d.base_url,
-                                d.models
-                                    .iter()
-                                    .map(|m| format!("{} {}", m.id, m.name))
-                                    .collect::<Vec<_>>()
-                                    .join(" ")
-                            )
-                        })
-                        .unwrap_or_default();
-                    format!("{} {name}", p.id).to_lowercase().contains(&filter)
-                })
-                .cloned()
-                .collect::<Vec<_>>()
-        })
+        .map(|c| c.providers.clone())
         .unwrap_or_default();
     let host_definitions = catalog
         .read()
@@ -883,17 +829,10 @@ fn ProviderSettingsState(
             if retained_definition.read().is_some() && editor_value == Editor::Closed {
                 button { class: "button", disabled: !enabled, onclick: move |_| edit.call(Edit::ResumeDefinition), "恢复未保存定义草稿" }
             }
-            div { class: "provider-toolbar",
-                label { class: "provider-search", r#for: "provider-search", "搜索供应商或模型"
-                    input { id: "provider-search", r#type: "search", value: "{query}", placeholder: "ID、名称、地址、模型", oninput: move |event| { if is_fresh(&mounted.peek(), *ticket.peek()) { secret.set(String::new()); query.set(event.value()); } } }
-                }
-                button { class: "button", disabled: !enabled, onclick: move |_| release.call(()), "释放空闲原生宿主" }
-                button { class: "button", onclick: move |event| { secret.set(String::new()); if is_fresh(&mounted.peek(), *ticket.peek()) { onreturn.call(event); } }, "返回会话选择模型" }
-            }
             p { class: "provider-meta provider-list-caption", "已保存的供应商可在会话的模型选择器中使用。凭据只显示保存来源，不会回读密钥内容。" }
             div { class: "provider-section-heading", h2 { "已添加" } span { "· {entries.len()}" } }
             div { class: "provider-catalog",
-                if entries.is_empty() && catalog.read().is_some() { p { "没有匹配的保存记录。可添加供应商，或调整搜索条件。" } }
+                if entries.is_empty() && catalog.read().is_some() { p { "没有保存的供应商配置。可添加供应商。" } }
                 for entry in entries {
                     { let id = entry.id.clone();
                       let edit_def = entry.definition.clone();
@@ -901,28 +840,33 @@ fn ProviderSettingsState(
                       let display_name = entry.definition.as_ref().map(|d| if d.name.is_empty() { id.clone() } else { d.name.clone() }).unwrap_or_else(|| id.clone());
                       let mark = display_name.chars().next().map(|c| c.to_uppercase().collect::<String>()).unwrap_or_else(|| "P".into());
                       let credential_ready = stored != StoredCredential::None || entry.config_key_present;
+                      let is_active = default_provider.as_deref() == Some(id.as_str());
+                      let entry_class = if is_active { "provider-entry active" } else if entry.configured { "provider-entry configured" } else { "provider-entry needs-credential" };
                       rsx! {
-                        article { class: if entry.configured { "provider-entry configured" } else { "provider-entry needs-credential" }, key: "{id}",
+                        article { class: entry_class, key: "{id}",
                             div { class: "provider-row",
                                 span { class: "provider-avatar", aria_hidden: "true", "{mark}" }
                                 div { class: "provider-row-identity",
-                                    div { class: "provider-row-title", h2 { "{display_name}" } span { class: if credential_ready { "provider-row-badge ready" } else { "provider-row-badge" }, if credential_ready { "已配置" } else { "待配置" } } }
+                                    div { class: "provider-row-title", h2 { "{display_name}" } if is_active { span { class: "provider-row-badge active", "当前默认" } } span { class: if credential_ready { "provider-row-badge ready" } else { "provider-row-badge" }, if credential_ready { "已配置" } else { "待配置" } } }
                                     if let Some(d) = &entry.definition { div { class: "provider-row-url", span { "{api_label(d.api)}" } code { "{d.base_url}" } } }
                                     else { div { class: "provider-row-url provider-row-muted", "尚未保存供应商定义" } }
                                 }
                                 div { class: "provider-row-actions",
                                     button { class: "icon-button provider-row-fetch", aria_label: "获取模型列表", title: "获取模型列表", disabled: discovery_busy.read().is_some() || !context.online || selected_session_id.is_none(), onclick: { let id = id.clone(); move |_| discover_models.call(id.clone()) }, Icon { name: "refresh" } }
+                                    if !is_active {
+                                        if let Some(definition) = &entry.definition {
+                                            if let Some(model) = definition.models.first() {
+                                                button { class: "button provider-default-button", disabled: !enabled, onclick: {
+                                                    let provider = id.clone(); let model = model.id.clone(); let set_provider_default = set_provider_default.clone();
+                                                    move |_| set_provider_default.call((provider.clone(), model.clone()))
+                                                }, "设为当前" }
+                                            }
+                                        }
+                                    } else { span { class: "provider-selected-state", "已选中" } }
                                     if let Some(d) = edit_def { button { class: "icon-button", aria_label: "编辑定义", title: "编辑定义", disabled: !enabled, onclick: move |_| edit.call(Edit::OpenDefinition(d.clone())), Icon { name: "edit" } } }
                                     if !entry.configured { button { class: "icon-button", aria_label: "添加自定义定义", title: "添加自定义定义", disabled: !enabled, onclick: { let id = id.clone(); move |_| { edit.call(Edit::OpenNew); edit.call(Edit::Id(id.clone())); } }, Icon { name: "plus" } } }
                                     button { class: "icon-button provider-row-key", aria_label: if stored == StoredCredential::None { "保存独立密钥" } else { "替换已存凭据为密钥" }, title: if stored == StoredCredential::None { "配置 API Key" } else { "替换 API Key" }, disabled: !enabled, onclick: { let id = id.clone(); move |_| { if stored == StoredCredential::None { edit.call(Edit::OpenKey(id.clone())); } else { edit.call(Edit::Confirm(Confirmation::ReplaceKey(id.clone()))); } } }, Icon { name: "shield" } }
-                                    details { class: "provider-more-actions",
-                                        summary { aria_label: "更多操作", title: "更多操作", Icon { name: "more" } }
-                                        div { class: "provider-more-menu",
-                                            button { class: "button", aria_label: "{clear_label(stored)}", disabled: !enabled || stored == StoredCredential::None, onclick: { let id = id.clone(); move |_| edit.call(Edit::Confirm(Confirmation::ClearStored(id.clone()))) }, "清除凭据" }
-                                            button { class: "button", aria_label: "清除配置凭据", disabled: !enabled || !entry.config_key_present, onclick: { let id = id.clone(); move |_| edit.call(Edit::Confirm(Confirmation::ClearConfig(id.clone()))) }, "清除配置" }
-                                            button { class: "button danger", aria_label: "删除自定义配置", disabled: !enabled || !entry.configured, onclick: { let id = id.clone(); move |_| edit.call(Edit::Confirm(Confirmation::Remove(id.clone()))) }, "删除定义" }
-                                        }
-                                    }
+                                    button { class: "button danger provider-delete-button", aria_label: "删除供应商", disabled: !enabled || !entry.configured, onclick: { let id = id.clone(); move |_| edit.call(Edit::Confirm(Confirmation::Remove(id.clone()))) }, "删除" }
                                 }
                             }
                             if let Some(d) = &entry.definition {
@@ -1047,13 +991,6 @@ fn api_label(api: ProviderApi) -> &'static str {
 }
 fn token_label(n: Option<u64>) -> String {
     n.map_or_else(|| "未指定".into(), |n| n.to_string())
-}
-fn clear_label(c: StoredCredential) -> &'static str {
-    match c {
-        StoredCredential::OAuth => "清除已存 OAuth",
-        StoredCredential::ApiKey => "清除已存 API Key",
-        _ => "清除已存凭据",
-    }
 }
 // A local deadline never cancels a node-side write. Keep pending until an
 // explicit fresh read after any uncertain result; do not automatically retry.

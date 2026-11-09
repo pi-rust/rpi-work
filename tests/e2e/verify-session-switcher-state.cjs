@@ -1,4 +1,4 @@
-// Published WASM regression; fixture HTTP/SSE only, no real-node/model traffic.
+// Published WASM regression; fixture HTTP/WebSocket only, no real-node/model traffic.
 // Run: node tests/e2e/verify-session-switcher-state.cjs
 const assert = require('node:assert/strict');
 const { chromium } = require('../support/browser.cjs');
@@ -13,7 +13,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   let catalogReads = 0;
   page.on('pageerror', error => errors.push(error.message));
   await page.route('https://api.github.com/**', route => route.fulfill({ status: 404, body: '{}' }));
-  // Change metadata only: never forge lastSeq, snapshot events, or SSE cursors.
+  // Change metadata only: never forge lastSeq, snapshot events, or WebSocket cursors.
   await page.route(`${fixture.url}api/v1/sessions`, async route => {
     if (route.request().method() !== 'GET') return route.continue();
     const response = await route.fetch(), body = await response.json();
@@ -59,7 +59,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await modal.waitFor({ state: 'hidden' });
     await page.locator(`[data-history-id="user-${id}"]`).waitFor();
     await page.locator('.composer textarea:not(:disabled)').waitFor();
-    await wait(() => fixture.requests.some(request => request.path === `/api/v1/sessions/${id}/events`), `${id}: SSE subscription not established`);
+    await wait(() => fixture.requests.some(request => request.path === '/api/v1/realtime' && request.sessionId === id), `${id}: WebSocket subscription not established`);
   };
   const check = async (name, test) => {
     try { await test(); console.log('PASS', name); }
@@ -113,7 +113,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     fixture.emit({ type: 'agent_start' });
     await select('dark'); await open(); await search.fill('dark');
     await check('newer running snapshot beats stale terminal fields', () => expectState('dark', '运行中'));
-    // The terminal snapshot, not an SSE event delivered to the selected UI, must win.
+    // The terminal snapshot, not an event delivered to the selected UI, must win.
     await select('architecture');
     fixture.emit({ type: 'agent_settled', outcome: 'interrupted', pendingResume: false });
     catalog.set('dark', { ...stale, status: 'completed', latestSettlement: { outcome: 'completed' } });

@@ -1,4 +1,4 @@
-// Formal regression: real WASM preview + isolated HTTP/SSE fixture, never a model.
+// Formal regression: real WASM preview + isolated HTTP/WebSocket fixture, never a model.
 // Run ONLY after the timing WASM build is ready:
 //   node tests/e2e/verify-turn-timing.cjs
 // WORK_UI_URL defaults to the actual preview on :14180; CHROME_PATH is optional.
@@ -12,7 +12,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   const results = [], samples = [], geometry = [], errors = [], screenshots = [];
   let fixture, browser, page, fatal;
   const draft = 'Timing regression draft — must never be submitted';
-  const historyId = 'timing-history-only'; // Deliberately NOT read-1/shell-1 from seeded SSE.
+  const historyId = 'timing-history-only'; // Deliberately NOT read-1/shell-1 from seeded event replay.
   const historyName = 'timing_history_unknown';
   const messages = [{ entryId: 'timing-user', role: 'user', content: 'Fixture-only timing history' }];
   const historyPair = (id, name, output) => [

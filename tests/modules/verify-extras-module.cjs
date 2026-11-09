@@ -23,7 +23,7 @@ async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;awa
   pass('attachment scope isolation, oversize rejection and removal preserve other files');
   await page.getByRole('button',{name:'Open BTW',exact:true}).click();const btw=page.getByRole('complementary',{name:'BTW 独立旁问会话',exact:true});
   await btw.getByLabel('旁问消息').fill('这是独立旁问');await btw.getByRole('button',{name:'发送旁问',exact:true}).click();
-  await until(()=>fixture.requests.some(r=>r.path.endsWith('/events')));
+  await until(()=>fixture.requests.some(r=>r.path === '/api/v1/realtime'));
   const created=fixture.requests.find(r=>r.method==='POST'&&r.path==='/api/v1/sessions');assert.equal(created.body.projectId,'rpi-work');
   const sent=fixture.requests.find(r=>r.body.type==='prompt');assert(sent);assert.equal(sent.body.message,'这是独立旁问');assert(!sent.path.includes('/dark/'));
   const id=sent.path.split('/')[4];

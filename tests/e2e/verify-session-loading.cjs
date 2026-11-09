@@ -21,7 +21,6 @@ const dense=prefix=>Array.from({length:20},(_,i)=>[
   if(url.hostname==='api.github.com')return route.fulfill({status:404,body:'{}'});
   if(![new URL(WEB).origin,new URL(fixture.url).origin].includes(url.origin)){blocked.push(url.origin+url.pathname);return route.abort();}
   if(!url.pathname.startsWith('/api/'))return route.continue();
-  if(url.pathname.endsWith('/events')&&url.origin===new URL(fixture.url).origin)return route.continue();
   const body=request.method()==='POST'?(request.postDataJSON()||{}):{};
   if(!['GET','OPTIONS'].includes(request.method())&&!url.pathname.endsWith('/open')&&!(url.pathname.endsWith('/commands')&&body.type?.startsWith('get_'))){blocked.push(request.method()+' '+url.pathname);return route.abort();}
   const key=url.pathname.endsWith('/files')?'files':url.pathname.endsWith('/git/status')?'git':url.pathname.includes('/sessions/dark/')&&['get_queue','get_state'].includes(body.type)?body.type:null;

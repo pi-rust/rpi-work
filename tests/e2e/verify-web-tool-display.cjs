@@ -1,4 +1,4 @@
-// Formal WASM + isolated HTTP/SSE fixture; presentation only, no model/tool execution.
+// Formal WASM + isolated HTTP/WebSocket fixture; presentation only, no model/tool execution.
 // Run ONLY after the main agent has built the web UI:
 //   node tests/e2e/verify-web-tool-display.cjs
 // WORK_UI_URL defaults to the same preview as verify-tool-rendering.cjs.
@@ -65,7 +65,7 @@ const messages = [
     console.log(`TEST ${results.length + 1}: ${name}`);
     await body(); results.push(name); console.log(`PASS ${results.length}: ${name}`);
   };
-  // IDs are intentionally disjoint from the fixture's seeded read-1/shell-1 SSE.
+  // IDs are intentionally disjoint from the fixture's seeded read-1/shell-1 event replay.
   const card = id => page.locator(`.inline-call[data-tool-id="${id}"]`);
   const summary = id => card(id).locator(':scope > summary');
   const isOpen = id => card(id).evaluate(element => element.open);
@@ -160,7 +160,7 @@ const messages = [
     await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
     await page.locator('[data-session-id="dark"] .session-item').click();
     await card(history[0].id).waitFor();
-    await until('fixture SSE subscription', async () => fixture.requests.some(request => request.path === '/api/v1/sessions/dark/events'));
+    await until('fixture WebSocket subscription', async () => fixture.requests.some(request => request.path === '/api/v1/realtime' && request.sessionId === 'dark'));
     await page.locator('.composer textarea').fill(draft);
 
     await test('completed tools retain type icons with a separate success mark, unchanged failure status, raw names and full targets', async () => {

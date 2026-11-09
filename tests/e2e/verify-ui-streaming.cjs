@@ -44,14 +44,14 @@ async function until(fn,timeout=6000){const end=Date.now()+timeout;while(Date.no
     });
     fixture.disconnect();
     await check('EOF reconnects using the latest snapshot cursor without sending prompt again',async()=>{
-      await until(()=>fixture.requests.filter(r=>r.path.endsWith('/events')&&r.query===`?after=${settledSeq}`).length>0);
+      await until(()=>fixture.requests.filter(r=>r.path === '/api/v1/realtime'&&r.query===`?after=${settledSeq}`).length>0);
       assert.equal(fixture.requests.filter(r=>r.body.type==='prompt').length,0);
       assert.equal(await page.locator('.transcript').getByText('流式片段已保留',{exact:true}).count(),1);
     });
     fixture.disconnect('dark',true);
-    await check('broken SSE also reconnects with bounded retries',async()=>{
-      await until(()=>fixture.requests.filter(r=>r.path.endsWith('/events')&&r.query===`?after=${settledSeq}`).length>=2);
-      assert(fixture.requests.filter(r=>r.path.endsWith('/events')).length<10);
+    await check('broken WebSocket also reconnects with bounded retries',async()=>{
+      await until(()=>fixture.requests.filter(r=>r.path === '/api/v1/realtime'&&r.query===`?after=${settledSeq}`).length>=2);
+      assert(fixture.requests.filter(r=>r.path === '/api/v1/realtime').length<10);
     });
     fixture.emit({type:'message_end',message:{entryId:'user-live',role:'user',content:[{type:'text',text:'用户补充消息不能变成助手'}]}});
     await check('live user messages retain their role and appear in conversation',async()=>{

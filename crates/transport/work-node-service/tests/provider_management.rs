@@ -21,6 +21,7 @@ fn config() -> ServerConfig {
 fn data(value: impl serde::Serialize) -> Value {
     serde_json::to_value(value).unwrap()
 }
+#[allow(clippy::needless_pass_by_value)]
 fn mutation(revision: &str, action: Value) -> ProviderMutation {
     serde_json::from_value(json!({"expectedRevision":revision,"action":action})).unwrap()
 }
@@ -48,6 +49,7 @@ fn provider_management_in_isolated_worker() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn isolated_provider_worker() {
     let Some(root) = std::env::var_os("RPI_PROVIDER_TEST_ROOT") else {
         return;

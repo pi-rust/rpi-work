@@ -232,6 +232,7 @@ pub(crate) fn extension_config_locked(
         })
 }
 
+#[allow(dead_code)]
 pub(crate) fn phase_tone(phase: &RunPhase) -> &'static str {
     match phase {
         RunPhase::Ready => "ready",
@@ -260,6 +261,7 @@ pub(crate) fn transport_online(
         && projection.is_none_or(|run| run.connection == ConnectionState::Online)
 }
 
+#[allow(dead_code)]
 pub(crate) fn task_status(
     projection: Option<&RunProjection>,
     connection: &super::connections::Phase,

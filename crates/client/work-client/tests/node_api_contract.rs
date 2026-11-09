@@ -33,6 +33,7 @@ impl Drop for TestDirectory {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn node_port_delegates_to_the_same_workspace_without_a_second_owner() {
     let directory = TestDirectory::new();
     let workspace = LocalWorkspace::with_session_dir(

@@ -1,7 +1,7 @@
 // Integrated WASM must be built/served separately. Run: node tests/e2e/verify-project-node-info.cjs
 // Fixture-only diagnostics: no prompts, queue writes, model/thinking changes or credentials.
 // Deliberately uses real time for the one 30s periodic case: advancing all browser
-// timers also advances unrelated SSE/snapshot machinery and would confound it.
+// timers also advances unrelated WebSocket/snapshot machinery and would confound it.
 // First browser run: artifacts/project-node-info-browser.log and
 // artifacts/project-node-info-validation.json recorded 9/14 passes. Corrected
 // assumptions below need a rebuilt integrated UI and caller-run browser rerun.
@@ -31,13 +31,13 @@ function save() {
       'An integrated WASM build is already served at WORK_UI_URL (default http://127.0.0.1:14180/); this script never builds it.',
       'Main mounts one Workspace probe; project-entry data-project-id, sibling badge, menu actions and scoped panel follow node_info.rs.',
       'Actual fixture routes are /api/v1/health and /api/v1/auth; handshake is left healthy until the connected workspace probe completes.',
-      'HTTP localhost is remote. Health/auth probes are independent of selected-session SSE projection.',
+      'HTTP localhost is remote. Health/auth probes are independent of selected-session WebSocket projection.',
       'A reconnect increments connection epoch even when the HTTP client/address is reused; URL plus epoch scopes panels and probe results.',
       'Only fixture metadata rename is written directly; an orphan session is synthesized in the session-list response without editing shared fixtures.',
       'Probe refresh reads health then auth only when health.ok; failures use sanitized UI messages. Tests do not require auth after failed health.',
       'Badge accessible names include node kind; capability rows show counts from the recorded fixture capabilities response.',
       'Sidebar geometry waits for the whole sidebar and matching viewport; dialog geometry waits for its animations.',
-      'Failed session SSE can project reconnecting (连接中), independently of a healthy node probe.',
+      'Failed session WebSocket can project reconnecting (连接中), independently of a healthy node probe.',
     ], limitations: [
       results.length
         ? `Browser execution recorded ${results.filter(r => r.status === 'PASS').length}/${results.length} passing cases; failures remain in results/errors. Acceptance requires all 14 cases on the separately rebuilt integrated UI.`
@@ -71,6 +71,14 @@ async function test(name, verify, options = {}) {
     context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
     page = await context.newPage(); page.setDefaultTimeout(8000);
     page.on('pageerror', error => localErrors.push(error.message));
+    page.on('websocket', socket => {
+      const socketUrl = new URL(socket.url());
+      const node = fixtures.find(candidate => {
+        const nodeUrl = new URL(candidate.url);
+        return nodeUrl.hostname === socketUrl.hostname && nodeUrl.port === socketUrl.port;
+      });
+      if (node && policyFor(node).blockEvents) socket.close();
+    });
     function gate(label, budget = 14000) {
       let release, timer;
       const promise = new Promise(resolve => { release = resolve; });
@@ -190,7 +198,6 @@ async function test(name, verify, options = {}) {
         record.capabilities = await response.json();
         return route.fulfill({ response, json: record.capabilities });
       }
-      if (p.blockEvents && /\/sessions\/[^/]+\/events$/.test(url.pathname)) return route.abort('failed');
       if (method === 'GET' && url.pathname === '/api/v1/sessions' && p.orphan) {
         const response = await route.fetch(), json = await response.json();
         json.sessions.find(s => s.sessionId === 'architecture').projectId = null;
@@ -372,10 +379,10 @@ async function test(name, verify, options = {}) {
       await h.open(); assert.equal(await h.dialog().locator('.node-info-summary').getAttribute('data-state'), 'offline');
       h.policy.health = 'healthy'; await h.refreshTo('online');
     });
-    await test('12 SSE disconnection leaves node online and reports session connection separately', async h => {
+    await test('12 WebSocket disconnection leaves node online and reports session connection separately', async h => {
       await h.select(); const before = await h.snapshot();
       h.policy.blockEvents = true; h.fixture.disconnect('dark', true); await h.open();
-      // Failed stream retries project Reconnecting, not necessarily Offline.
+      // Failed WebSocket retries project Reconnecting, not necessarily Offline.
       await until(async () => /会话连接：\s*(?:连接中|未连接)/.test(await h.dialog().locator('.node-info-session').innerText()), 'session projection reconnecting or disconnected');
       await h.state('online'); await h.refreshTo('online');
       assert.match(await h.dialog().locator('.node-info-session').innerText(), /独立于节点健康检查/);

@@ -173,6 +173,9 @@ dialog.app-dialog.provider-dialog>.modal-header>.icon-button{width:44px;height:4
 .provider-management .provider-row-title h2{font-size:var(--font-body);font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .provider-management .provider-row-badge{display:inline-flex;color:var(--warning);font-size:var(--font-assist)}
 .provider-management .provider-row-badge.ready{color:var(--success)}
+.provider-row-badge.active{color:var(--accent);font-weight:600}
+.provider-entry.active{border-color:var(--accent-line);background:var(--selected-bg)}
+.provider-selected-state{display:inline-flex;align-items:center;color:var(--accent);font-size:var(--font-assist);font-weight:600}.provider-default-button{min-height:32px!important;padding:var(--space-5) var(--space-8)!important;font-size:var(--font-assist)!important;white-space:nowrap!important}.provider-delete-button{min-height:32px!important;padding:var(--space-5) var(--space-8)!important;font-size:var(--font-assist)!important;white-space:nowrap!important}
 .provider-management .provider-row-url{display:flex;align-items:center;gap:var(--space-8);min-width:0;color:var(--muted);font-size:var(--font-assist)}
 .provider-management .provider-row-url span{flex:none;color:var(--muted)}
 .provider-management .provider-row-url code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--font-assist) var(--mono)}

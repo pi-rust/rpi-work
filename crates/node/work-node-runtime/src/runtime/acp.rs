@@ -77,6 +77,7 @@ pub struct AcpClient {
 }
 
 impl AcpClient {
+    #[allow(clippy::too_many_lines)]
     pub async fn spawn(
         executable: impl AsRef<Path>,
         args: &[String],

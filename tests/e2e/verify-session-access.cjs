@@ -1,4 +1,4 @@
-// Formal prebuilt WASM + isolated HTTP/SSE fixture. No build, live agent or user profile.
+// Formal prebuilt WASM + isolated HTTP/WebSocket fixture. No build, live agent or user profile.
 // Run: node tests/support/run-static-ui.cjs tests/e2e/verify-session-access.cjs
 const assert = require('node:assert/strict');
 const { chromium } = require('../support/browser.cjs');
@@ -105,7 +105,7 @@ async function test(name, configure, verify) {
         const fields = await h.field().count();
         h.proof.failedOpening = { fields, text: await h.page.locator('body').innerText() };
         if (fields) assert(await h.field().isDisabled(), 'failed initial selection cannot expose an enabled composer');
-        assert.equal(h.requests.filter(item => /\/dark\/(agent-binding|events|configuration|commands)$/.test(item.path)).length, 0, 'no global-capability fallback / session reads after access failure');
+        assert.equal(h.requests.filter(item => item.path === '/api/v1/realtime' || /\/dark\/(agent-binding|configuration|commands)$/.test(item.path)).length, 0, 'no global-capability fallback / session reads after access failure');
         await h.noWrites();
         h.fixture.controls.accessStatus = 0;
         const reads = h.access().length;

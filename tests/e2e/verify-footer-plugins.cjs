@@ -34,9 +34,9 @@ function report() {
       'Preferences have plugin order and hidden_items, not item ordering. Reorder coverage moves plugins; item coverage hides/shows declared items.',
       'Only corrupt/quota cases install storage init scripts. All ordinary preferences use physical checkbox/button interactions. Drafts use textarea.fill; no sends or setters.',
       'Session and node scope use per-origin/per-session get_state HTTP overrides, not set_model. Same-address late-readback/connection-epoch races belong to verify-composer-model-picker.cjs cases 12/16 and are not claimed here.',
-      'Disconnect closes real fixture SSE and blocks subsequent SSE/reconnect get_state reads; it does not synthesize new stats. Existing global 30-second health checks are not treated as footer polling.',
+      'Disconnect closes the real fixture WebSocket and blocks subsequent reconnect get_state reads; it does not synthesize new stats. Existing global 30-second health checks are not treated as footer polling.',
       'Plugin provider panic/error/descriptor isolation is covered by registry.rs pure Rust unit tests, not a browser-import/plugin execution API. Escaping is checked through actual runtime identity HTTP text.',
-    ], limitations: 'Formal WASM with isolated HTTP/SSE fixtures, simulated insets and typography; not a native Android or real-device acceptance test. Each isolated case has a 45-second wall bound; the six screenshot/layout combinations have a 75-second bound. Passed/failed entries and screenshots describe only this run.'
+    ], limitations: 'Formal WASM with isolated HTTP/WebSocket fixtures, simulated insets and typography; not a native Android or real-device acceptance test. Each isolated case has a 45-second wall bound; the six screenshot/layout combinations have a 75-second bound. Passed/failed entries and screenshots describe only this run.'
   }, null, 2));
 }
 async function test(name, configure, verify, boundMs = 45000) {
@@ -50,6 +50,14 @@ async function test(name, configure, verify, boundMs = 45000) {
     context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     page = await context.newPage(); page.setDefaultTimeout(7000);
     page.on('pageerror', e => failures.push(e.message));
+    page.on('websocket', socket => {
+      const socketUrl = new URL(socket.url());
+      const node = fixtures.find(candidate => {
+        const nodeUrl = new URL(candidate.url);
+        return nodeUrl.hostname === socketUrl.hostname && nodeUrl.port === socketUrl.port;
+      });
+      if (node && policy.disconnected) socket.close();
+    });
     const h = {
       page, context, fixture, fixtures, policy, commands, snapshots, states,
       footer: () => page.locator('footer.runtime-footer.plugin-footer[aria-label="Agent 运行统计"]'),
@@ -346,8 +354,7 @@ async function test(name, configure, verify, boundMs = 45000) {
       const node = fixtures.find(n => new URL(n.url).origin === url.origin);
       if (!node && url.origin !== uiOrigin) { external.push(req.url()); return route.abort('blockedbyclient'); }
       if (!node) return route.continue();
-      const session = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/(snapshot|commands|events)$/);
-      if (policy.disconnected && session && session[2] === 'events') return route.abort('connectionfailed');
+      const session = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/(snapshot|commands)$/);
       if (req.method() === 'GET' && session?.[2] === 'snapshot') {
         const response = await route.fetch(), data = await response.json();
         assert.equal(data.sessionId, session[1]); assert(Array.isArray(data.events)); assert(Array.isArray(data.messages));
@@ -371,7 +378,7 @@ async function test(name, configure, verify, boundMs = 45000) {
         }
         return route.continue();
       }
-      // Session open is read-like navigation. Auth/metadata/projects/etc writes are forbidden.
+      // Session open is read-like navigation; realtime uses the WebSocket listener above. Auth/metadata/projects/etc writes are forbidden.
       if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method()) && !url.pathname.endsWith('/open')) {
         failures.push(`Forbidden HTTP write ${req.method()} ${url.pathname}`); return route.abort('blockedbyclient');
       }
@@ -535,7 +542,7 @@ async function test(name, configure, verify, boundMs = 45000) {
       assert.doesNotMatch(await h.footer().innerText(), /scope-b|deepseek|32k/);
       assert(h.states.some(s => s.origin === new URL(h.second.url).origin && s.data.provider === null));
     });
-    await test('08 genuine SSE loss shows unconfirmed placeholders without synthetic stats or footer actions', null, async h => {
+    await test('08 genuine WebSocket loss shows unconfirmed placeholders without synthetic stats or footer actions', null, async h => {
       await h.enableIdentity(); await h.text('identity', `deepseek / ${MODEL} · high`);
       await h.text('input-output', '会话累计 ↑32k ↓4.8k');
       h.policy.disconnected = true; h.fixture.disconnect('dark', true);

@@ -105,6 +105,7 @@ async fn next(stream: &mut NodeEventStream) -> WireEvent {
         .expect("event error")
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run() {
     let root = PathBuf::from(std::env::var_os("WORK_NODE_PORT_OPERATIONS_WORKER").unwrap());
     let local = Arc::new(LocalWorkspace::new(root.join("unused-rpi"), root.join("data")).unwrap());

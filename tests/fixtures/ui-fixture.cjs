@@ -196,7 +196,7 @@ async function startFixture(port=0,options={}){
       }
       if(type==='subscribe') {
         const id=frame.sessionId, after=Number(frame.afterSeq||0), subscription=frame.subscriptionId;
-        requests.push({method:'GET',path:`/api/v1/sessions/${id}/events`,query:`?after=${after}`,body:{},authenticated:true});
+        requests.push({method:'GET',path:'/api/v1/realtime',query:`?after=${after}`,sessionId:id,subscriptionId:subscription,body:{},authenticated:true});
         connection.subscriptions.set(subscription,id);
         wsSend(connection,{type:'subscribed',version:1,requestId,sessionId:id,subscriptionId:subscription});
         wsSend(connection,{type:'events',version:1,sessionId:id,subscriptionId:subscription,events:[{id:null,seq:null,eventType:'ready',data:{type:'ready',sessionId:id}}]});

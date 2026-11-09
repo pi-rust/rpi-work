@@ -1,4 +1,4 @@
-// Formal Web UI + isolated HTTP/SSE. No real node or model calls.
+// Formal Web UI + isolated HTTP/WebSocket. No real node or model calls.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
@@ -56,7 +56,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await page.locator('[data-session-id="dark"] .session-item').click();
     await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。', { exact: true }).waitFor();
     await page.waitForFunction(() => !document.querySelector('.composer-main textarea')?.disabled);
-    assert(fixture.requests.some(request => request.path.endsWith('/dark/events')));
+    assert(fixture.requests.some(request => request.path === '/api/v1/realtime' && request.sessionId === 'dark'));
 
     message({ entryId: 'order-user', role: 'user', content: '工具调用消息顺序回归。' });
     fixture.emit({ type: 'agent_start', runId: 'order-run' });

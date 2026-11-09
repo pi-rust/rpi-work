@@ -1,4 +1,4 @@
-// Formal Web + isolated HTTP/SSE only. Never reads/writes a real conversation.
+// Formal Web + isolated HTTP/WebSocket only. Never reads/writes a real conversation.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
@@ -138,7 +138,7 @@ const SECOND = '先流式、后完整的第二条回复。';
     await select('dark'); await text(FIRST).waitFor();
     await before(OLD, FIRST); await before(FIRST, SECOND);
     const restored = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname.endsWith('/sessions/dark/snapshot'));
-    const subscribed = page.waitForRequest(r => r.method() === 'GET' && new URL(r.url()).pathname.endsWith('/sessions/dark/events'));
+    const subscribed = page.waitForEvent('websocket', socket => socket.url().includes('/api/v1/realtime'));
     fixture.disconnect('dark');
     await (await restored).finished(); await subscribed;
     await page.locator('.connection-badge.online').waitFor();
@@ -225,7 +225,7 @@ const SECOND = '先流式、后完整的第二条回复。';
     await assertSnapshotReplay('switch back');
     assert.equal(await text(liveUserText).count(), 2, 'canonical user echoes remain unique on switch back');
     const mobileRestored = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname.endsWith('/sessions/mobile/snapshot'));
-    const mobileSubscribed = page.waitForRequest(r => r.method() === 'GET' && new URL(r.url()).pathname.endsWith('/sessions/mobile/events'));
+    const mobileSubscribed = page.waitForEvent('websocket', socket => socket.url().includes('/api/v1/realtime'));
     fixture.disconnect('mobile');
     await (await mobileRestored).finished(); await mobileSubscribed;
     await page.locator('.connection-badge.online').waitFor();

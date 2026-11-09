@@ -3,6 +3,7 @@ use std::io::{self, BufRead, Write};
 
 use serde_json::{Value, json};
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout());
