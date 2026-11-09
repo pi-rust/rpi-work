@@ -5,10 +5,10 @@ use std::{
 use work_client::{WorkClient, WorkspaceClient};
 use work_core::components::{Action, Bundle, Call, InstallRequest, Manifest, Panel};
 use work_node_runtime::workspace::LocalWorkspace;
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 struct SharingOwner {
-    control: work_server::SharingControl,
+    control: work_node_service::SharingControl,
     address: String,
 }
 impl work_http_component::RemoteAccessOwner for SharingOwner {

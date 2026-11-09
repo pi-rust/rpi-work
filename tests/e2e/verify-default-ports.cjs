@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '../..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-const node = read('crates/node/work-node/src/lib.rs');
+const node = read('crates/node/work-node-runtime/src/lib.rs');
 assert.match(node, /port: 13030,/);
 assert.match(read('apps/work-cli/src/args.rs'), /const DEFAULT_URL: &str = "http:\/\/127\.0\.0\.1:13031\/"/);
 assert.match(read('crates/host/work-host/src/http.rs'), /env::var\("RPI_WORK_HTTP_PORT"\)\s*\.unwrap_or_else\(\|_\| "13031"/);

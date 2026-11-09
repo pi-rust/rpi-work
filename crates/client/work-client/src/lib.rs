@@ -1,4 +1,4 @@
-//! Native RPC workspace and HTTP/SSE clients for RPI Work.
+//! Native RPC workspace and HTTP/WebSocket clients for RPI Work.
 #![allow(clippy::missing_errors_doc)]
 //!
 //! `WorkspaceClient` selects the desktop's in-process native workspace or an
@@ -7,7 +7,6 @@
 //! the same `work-core` projection without turning request acceptance into run
 //! completion.
 
-use async_stream::try_stream;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use reqwest::{StatusCode, Url};
@@ -16,7 +15,7 @@ use serde_json::{Value, json};
 use std::pin::Pin;
 use std::sync::{
     Arc,
-    atomic::{AtomicU8, AtomicU64, Ordering},
+    atomic::{AtomicU64, Ordering},
 };
 use std::time::Duration;
 use thiserror::Error;
@@ -76,17 +75,6 @@ pub use rpc::RpiRpcClient;
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<WireEvent, ClientError>> + Send>>;
 #[cfg(target_arch = "wasm32")]
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<WireEvent, ClientError>>>>;
-
-fn is_legacy_realtime_error(error: &ClientError) -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        realtime_client::legacy(error)
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        wasm_realtime_client::legacy(error)
-    }
-}
 
 async fn realtime_command<T: for<'de> Deserialize<'de>>(
     client: &WorkClient,
@@ -156,8 +144,8 @@ pub enum ClientError {
     Api { status: StatusCode, message: String },
     #[error("invalid JSON: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("invalid SSE stream: {0}")]
-    Sse(String),
+    #[error("invalid protocol data: {0}")]
+    Protocol(String),
     #[error("remembered session is invalid or expired")]
     InvalidRememberedSession,
     #[error("node did not confirm authentication")]
@@ -196,7 +184,7 @@ impl From<work_core::api::AcpPermissionError> for ClientError {
 
 impl From<work_core::api::EventDecodeError> for ClientError {
     fn from(error: work_core::api::EventDecodeError) -> Self {
-        Self::Sse(error.to_string())
+        Self::Protocol(error.to_string())
     }
 }
 
@@ -212,31 +200,6 @@ fn qr_error(error: ClientError) -> ClientError {
         // Decode errors can quote a server-provided string too. Do not retain
         // their source chain (or a request URL) for these credential endpoints.
         _ => ClientError::QrAuthorizationFailed,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RemoteTransport {
-    HttpSseOnly,
-    WebSocketOnly,
-    #[default]
-    Auto,
-}
-
-impl RemoteTransport {
-    const fn code(self) -> u8 {
-        match self {
-            Self::HttpSseOnly => 0,
-            Self::WebSocketOnly => 1,
-            Self::Auto => 2,
-        }
-    }
-    const fn from_code(code: u8) -> Self {
-        match code {
-            1 => Self::WebSocketOnly,
-            2 => Self::Auto,
-            _ => Self::HttpSseOnly,
-        }
     }
 }
 
@@ -258,97 +221,6 @@ struct AuthAck {
 /// Convert wire events while preserving the existing client error category.
 pub fn normalize_event(event_type: &str, data: &Value) -> Result<EventKind, ClientError> {
     work_core::api::events::normalize_event(event_type, data).map_err(ClientError::from)
-}
-
-#[derive(Default)]
-pub struct SseDecoder {
-    buffer: Vec<u8>,
-    id: Option<String>,
-    event: Option<String>,
-    data: Vec<String>,
-}
-
-impl SseDecoder {
-    pub fn feed(&mut self, bytes: &[u8]) -> Result<Vec<WireEvent>, ClientError> {
-        self.buffer.extend_from_slice(bytes);
-        let mut events = Vec::new();
-        while let Some(index) = self.buffer.iter().position(|byte| *byte == b'\n') {
-            let mut line = self.buffer.drain(..=index).collect::<Vec<_>>();
-            line.pop();
-            if line.last() == Some(&b'\r') {
-                line.pop();
-            }
-            let line = String::from_utf8(line)
-                .map_err(|error| ClientError::Sse(format!("invalid UTF-8 line: {error}")))?;
-            self.line(&line, &mut events)?;
-        }
-        Ok(events)
-    }
-
-    pub fn finish(&mut self) -> Result<Vec<WireEvent>, ClientError> {
-        if !self.buffer.is_empty() {
-            let line = String::from_utf8(std::mem::take(&mut self.buffer))
-                .map_err(|error| ClientError::Sse(format!("invalid UTF-8 line: {error}")))?;
-            let mut events = Vec::new();
-            self.line(&line, &mut events)?;
-            if !self.data.is_empty() {
-                self.dispatch(&mut events)?;
-            }
-            return Ok(events);
-        }
-        let mut events = Vec::new();
-        if !self.data.is_empty() {
-            self.dispatch(&mut events)?;
-        }
-        Ok(events)
-    }
-
-    fn line(&mut self, line: &str, events: &mut Vec<WireEvent>) -> Result<(), ClientError> {
-        if line.is_empty() {
-            return self.dispatch(events);
-        }
-        if line.starts_with(':') {
-            return Ok(());
-        }
-        let (field, value) = line.split_once(':').map_or((line, ""), |(field, value)| {
-            (field, value.strip_prefix(' ').unwrap_or(value))
-        });
-        match field {
-            "id" => self.id = Some(value.to_owned()),
-            "event" => self.event = Some(value.to_owned()),
-            "data" => self.data.push(value.to_owned()),
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn dispatch(&mut self, events: &mut Vec<WireEvent>) -> Result<(), ClientError> {
-        if self.data.is_empty() {
-            self.reset();
-            return Ok(());
-        }
-        let data = serde_json::from_str::<Value>(&self.data.join("\n"))?;
-        let seq = self.id.as_deref().and_then(|id| id.parse::<u64>().ok());
-        let event_type = self
-            .event
-            .clone()
-            .or_else(|| data.get("type").and_then(Value::as_str).map(str::to_owned))
-            .unwrap_or_else(|| "message".into());
-        events.push(WireEvent {
-            id: self.id.take(),
-            seq,
-            event_type,
-            data,
-        });
-        self.reset();
-        Ok(())
-    }
-
-    fn reset(&mut self) {
-        self.id = None;
-        self.event = None;
-        self.data.clear();
-    }
 }
 
 use work_core::api::payload_with_type;
@@ -374,11 +246,11 @@ fn reported_active_tools(state: &Value) -> Result<Vec<String>, ClientError> {
     state
         .get("activeTools")
         .and_then(Value::as_array)
-        .ok_or_else(|| ClientError::Sse("get_state omitted activeTools".into()))?
+        .ok_or_else(|| ClientError::Protocol("get_state omitted activeTools".into()))?
         .iter()
         .map(|tool| {
             tool.as_str().map(str::to_owned).ok_or_else(|| {
-                ClientError::Sse("get_state returned an invalid activeTools entry".into())
+                ClientError::Protocol("get_state returned an invalid activeTools entry".into())
             })
         })
         .collect()
@@ -393,7 +265,6 @@ pub struct WorkClient {
     control_capability: Option<reqwest::header::HeaderValue>,
     #[cfg(not(target_arch = "wasm32"))]
     cookie_jar: std::sync::Arc<reqwest::cookie::Jar>,
-    realtime_mode: Arc<AtomicU8>,
     realtime_epoch: Arc<AtomicU64>,
     realtime_ids: Arc<AtomicU64>,
     realtime_client_id: Arc<String>,
@@ -450,9 +321,6 @@ impl WorkClient {
             control_capability: None,
             #[cfg(not(target_arch = "wasm32"))]
             cookie_jar,
-            // HTTP remains the authentication/resource plane; Auto uses the
-            // authenticated realtime channel for session requests and events.
-            realtime_mode: Arc::new(AtomicU8::new(RemoteTransport::Auto.code())),
             realtime_epoch: Arc::new(AtomicU64::new(0)),
             realtime_ids: Arc::new(AtomicU64::new(0)),
             realtime_client_id: Arc::new(format!(
@@ -1042,20 +910,6 @@ impl WorkClient {
         self.get_url(url).await
     }
 
-    #[must_use]
-    pub fn remote_transport(&self) -> RemoteTransport {
-        RemoteTransport::from_code(self.realtime_mode.load(Ordering::Acquire))
-    }
-
-    /// Selects remote session requests/events. Authentication, discovery and
-    /// resources retain HTTP. `Auto` uses realtime when advertised and falls
-    /// back only when authenticated discovery reports it is absent.
-    pub fn set_remote_transport(&self, transport: RemoteTransport) {
-        self.realtime_mode
-            .store(transport.code(), Ordering::Release);
-        self.fence_realtime();
-    }
-
     fn fence_realtime(&self) {
         let epoch = self.realtime_epoch.fetch_add(1, Ordering::AcqRel) + 1;
         self.realtime.invalidate(epoch);
@@ -1070,19 +924,7 @@ impl WorkClient {
         session_id: &str,
         payload: Value,
     ) -> Result<HostResponse<T>, ClientError> {
-        if self.remote_transport() != RemoteTransport::HttpSseOnly {
-            let epoch = self.realtime_epoch();
-            match realtime_command::<T>(self, session_id, payload.clone()).await {
-                Ok(value) => return Ok(value),
-                Err(error)
-                    if self.remote_transport() == RemoteTransport::Auto
-                        && self.realtime_epoch() == epoch
-                        && is_legacy_realtime_error(&error) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        self.post(&format!("api/v1/sessions/{session_id}/commands"), payload)
-            .await
+        realtime_command::<T>(self, session_id, payload).await
     }
 
     async fn try_realtime_mutation(
@@ -1091,18 +933,7 @@ impl WorkClient {
         kind: work_core::api::realtime::RealtimeOperationKind,
         payload: &Value,
     ) -> Result<Option<Value>, ClientError> {
-        if self.remote_transport() != RemoteTransport::HttpSseOnly {
-            let epoch = self.realtime_epoch();
-            match realtime_mutation(self, session_id, kind, payload.clone()).await {
-                Ok(value) => return Ok(Some(value)),
-                Err(error)
-                    if self.remote_transport() == RemoteTransport::Auto
-                        && self.realtime_epoch() == epoch
-                        && is_legacy_realtime_error(&error) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(None)
+        Ok(Some(realtime_mutation(self, session_id, kind, payload.clone()).await?))
     }
 
     /// Queries a receipt without reserving or executing another operation.
@@ -1145,7 +976,7 @@ impl WorkClient {
         }
         response
             .data
-            .ok_or_else(|| ClientError::Sse(format!("{command} returned no data")))
+            .ok_or_else(|| ClientError::Protocol(format!("{command} returned no data")))
     }
 
     pub async fn prompt(
@@ -1166,51 +997,7 @@ impl WorkClient {
         session_id: &str,
         after: u64,
     ) -> Result<EventStream, ClientError> {
-        if self.remote_transport() != RemoteTransport::HttpSseOnly {
-            let epoch = self.realtime_epoch();
-            match realtime_subscribe(self, session_id, after).await {
-                Ok(stream) => return Ok(stream),
-                Err(error)
-                    if self.remote_transport() == RemoteTransport::Auto
-                        && self.realtime_epoch() == epoch
-                        && is_legacy_realtime_error(&error) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        let url = self.url(&format!(
-            "api/v1/sessions/{session_id}/events?after={after}"
-        ))?;
-        let response = authenticated(
-            self.http
-                .get(url)
-                .header("x-rpi-web", "1")
-                .header("accept", "text/event-stream")
-                .header("last-event-id", after.to_string()),
-            self.bearer_token.as_deref(),
-        )
-        .send()
-        .await?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(ClientError::Api {
-                status,
-                message: response.text().await.unwrap_or_default(),
-            });
-        }
-        let mut body = response.bytes_stream();
-        let stream = try_stream! {
-            let mut decoder = SseDecoder::default();
-            while let Some(chunk) = futures_util::StreamExt::next(&mut body).await {
-                let bytes = chunk?;
-                for event in decoder.feed(&bytes)? {
-                    yield event;
-                }
-            }
-            for event in decoder.finish()? {
-                yield event;
-            }
-        };
-        Ok(Box::pin(stream))
+        realtime_subscribe(self, session_id, after).await
     }
 
     /// Open a session, restore its snapshot, then subscribe after the snapshot cursor.
@@ -1384,7 +1171,7 @@ impl MessageIdentity {
         }
         // Native RPC places the durable entry identity on the event envelope.
         // Its default compact delta omits `message` entirely. Normalize only an
-        // internal identity shell, never a synthetic body or an SSE event ID.
+        // internal identity shell, never a synthetic body or an event ID.
         let envelope_id = ["messageId", "entryId"]
             .iter()
             .find_map(|key| data.get(*key)?.as_str().filter(|id| !id.trim().is_empty()))
@@ -1572,7 +1359,7 @@ impl SessionConnection {
         {
             // Native RPC does not emit the user's persisted message as a live
             // message event. Read it at run start, then reconcile final entry IDs
-            // at settlement without resubscribing or advancing the SSE cursor.
+            // at settlement without resubscribing or advancing the event cursor.
             let snapshot = self
                 .client
                 .snapshot_with_limit(&self.session_id, MESSAGE_PAGE_SIZE);
@@ -3062,24 +2849,6 @@ mod tests {
             let annotated = identity.annotate(&data, Some(2));
             assert_eq!(annotated["message"]["entryId"], "host-id");
         }
-    }
-
-    #[test]
-    fn decoder_handles_split_frames_and_comments() {
-        let mut decoder = SseDecoder::default();
-        assert_eq!(
-            decoder
-                .feed(b": heartbeat\n\nid: 7\nevent: agent_settled\nda")
-                .unwrap()
-                .len(),
-            0
-        );
-        let events = decoder
-            .feed(b"ta: {\"type\":\"agent_settled\",\"outcome\":\"completed\"}\n\n")
-            .unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].seq, Some(7));
-        assert_eq!(events[0].event_type, "agent_settled");
     }
 
     #[test]

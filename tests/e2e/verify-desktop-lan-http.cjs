@@ -1,5 +1,5 @@
 // Actual Windows desktop owner HTTP acceptance, deliberately NOT a GUI/QR rendering test.
-// No CDP, prompts, queue/model APIs, real credentials, or standalone work-server.
+// No CDP, prompts, queue/model APIs, real credentials, or standalone HTTP service.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');

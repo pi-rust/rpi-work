@@ -60,9 +60,9 @@ pub fn ExtensionDemo() -> Element {
                         window.__workExtensionDemo?.close();
                         try {{
                             const url = new URL({address});
-                            if(url.protocol !== 'http:' || !['127.0.0.1','localhost'].includes(url.hostname) || !url.searchParams.has('token')) throw Error('Expected a token-protected loopback HTTP endpoint');
-                            url.pathname='/events';
-                            const source = new EventSource(url); window.__workExtensionDemo=source;
+                            if(!['http:','https:'].includes(url.protocol) || !['127.0.0.1','localhost'].includes(url.hostname) || !url.searchParams.has('token')) throw Error('Expected a token-protected loopback HTTP endpoint');
+                            url.protocol=url.protocol==='https:'?'wss:':'ws:'; url.pathname='/realtime';
+                            const source = new WebSocket(url, 'rpi-work.extension.v1'); window.__workExtensionDemo=source;
                             source.onmessage=event=>{{try{{dioxus.send({{snapshot:JSON.parse(event.data)}})}}catch(_){{source.close();dioxus.send({{error:'Invalid event JSON'}})}}}};
                             source.onerror=()=>{{source.close();dioxus.send({{error:'Demo stream disconnected'}})}};
                         }} catch(error) {{dioxus.send({{error:String(error)}})}}

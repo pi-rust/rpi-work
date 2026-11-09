@@ -549,8 +549,7 @@ async fn connect(client: &WorkClient) -> Result<(Socket, Hello), ClientError> {
     {
         return Err(unavailable());
     }
-    // Authentication is confirmed before discovery. Only an authenticated,
-    // explicitly absent discovery endpoint can select legacy HTTP/SSE.
+    // Authentication and discovery are confirmed before opening the WebSocket.
     let auth: crate::AuthState = bounded_get(client, "api/v1/auth").await?;
     if !auth.authenticated {
         return Err(denied());
@@ -795,8 +794,4 @@ async fn run(
         let _ = packet.reply.send(Err(unavailable()));
     }
     let _ = tokio::time::timeout(Duration::from_millis(100), socket.close(None)).await;
-}
-
-pub(crate) fn legacy(error: &ClientError) -> bool {
-    matches!(error, ClientError::RealtimeNotAdvertised)
 }

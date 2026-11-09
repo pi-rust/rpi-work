@@ -65,7 +65,7 @@ Android 原生 App 则必须扫描宿主桌面或已登录 Web 生成的 **手�
 
 项目及会话的 **…** 菜单提供重命名、归档、恢复和分支操作；会话支持置顶、Fork 与 Clone。项目归档只收纳本设备侧栏，会话归档保存到节点，均不删除文件或历史。等待回复显示 loading；在底部时跟随流式输出，上翻后暂停，点击“最新消息”恢复。详见[项目、会话与消息交互](docs/guides/codex-interactions.md)。
 
-源码当前新增桌面同 owner 的认证 HTTP/SSE：`rpi-work://local` 与内嵌 `work-server` 持有同一个工作空间，不再以桌面改连独立 HTTP 代替共享。默认监听 `0.0.0.0:13031`，仅首次缺少共享偏好时默认开启；已保存的关闭选择及无效偏好仍保持关闭。允许共享时，浏览器使用可达的同源 Web/代理地址及密码登录，Android 原生 App 使用专用一次性授权码。关闭共享不停止本机任务，也不影响桌面访问其他节点。右侧执行环境与会话导航明确区分本机/远程工作空间。已发布或正在运行的旧二进制不会因此动态增加 listener。详见[桌面 HTTP 入口](docs/guides/desktop-http.md)。
+源码当前新增桌面同 owner 的认证 HTTP/WebSocket：`rpi-work://local` 与内嵌 `work-node-service` 持有同一个工作空间，不再以桌面改连独立 HTTP 代替共享。默认监听 `0.0.0.0:13031`，仅首次缺少共享偏好时默认开启；已保存的关闭选择及无效偏好仍保持关闭。允许共享时，浏览器使用可达的同源 Web/代理地址及密码登录，Android 原生 App 使用专用一次性授权码。关闭共享不停止本机任务，也不影响桌面访问其他节点。右侧执行环境与会话导航明确区分本机/远程工作空间。已发布或正在运行的旧二进制不会因此动态增加 listener。详见[桌面 HTTP 入口](docs/guides/desktop-http.md)。
 
 桌面可显式连接其他节点，并保留历史选择；`task desktop` 默认明确选择本机。切换视图不停止节点或任务，退出才清理 children 和数据锁。独立 standalone `rpi-http` 与旧迁移副本保持原状，不自动倒回或合并。
 
@@ -96,7 +96,7 @@ Android 原生 App 则必须扫描宿主桌面或已登录 Web 生成的 **手�
 
 当前入口与能力边界见 [项目、会话与消息交互](docs/guides/codex-interactions.md)、[执行后端说明](docs/guides/acp-backends.md)及 [扩展架构](docs/architecture/extensions.md)。执行与资源能力由目标节点实际声明和回读；本机支持不能推定任意远程节点或 ACP 也支持原生资源配置。
 
-当前源码通过 `WorkspaceClient` 统一桌面本机原生工作空间与远程 HTTP/SSE/WebSocket：本机项目目录、目录索引、文件和 Git 由本地 Rust 服务提供，不虚构 RPC wire 方法；本机 RPI 执行与控制走 stdio RPC，所选本机 ACP 后端走隔离托管的 stdio ACP。Web、Android 与显式远程连接使用认证 HTTP 资源接口及协商后的 WebSocket/旧 SSE。本机目录索引为 `<data>/rpc/projects.json`，会话注册表为 `<data>/rpc/projects/<id>/sessions.json`；旧应用目录索引与匹配项目的注册项可导入，源文件保留，不改写 transcript，不承诺全局原生历史发现。ACP 原生资源定制、逐设备权限、直接向模型发送图片等能力仍有缺口；附件本地预览不等于模型多模态输入。HTML 原型中的演示状态不代表后端已实现。历史功能边界见 [上游功能审阅](docs/archive/upstream-functional-review.md)，当前传输边界见 [transport 架构](docs/architecture/transport.md)。
+当前源码通过 `WorkspaceClient` 统一桌面本机原生工作空间与远程 HTTP/WebSocket：本机项目目录、目录索引、文件和 Git 由本地 Rust 服务提供，不虚构 RPC wire 方法；本机 RPI 执行与控制走 stdio RPC，所选本机 ACP 后端走隔离托管的 stdio ACP。Web、Android 与显式远程连接使用认证 HTTP 资源接口及 WebSocket。本机目录索引为 `<data>/rpc/projects.json`，会话注册表为 `<data>/rpc/projects/<id>/sessions.json`；旧应用目录索引与匹配项目的注册项可导入，源文件保留，不改写 transcript，不承诺全局原生历史发现。ACP 原生资源定制、逐设备权限、直接向模型发送图片等能力仍有缺口；附件本地预览不等于模型多模态输入。HTML 原型中的演示状态不代表后端已实现。历史功能边界见 [上游功能审阅](docs/archive/upstream-functional-review.md)，当前传输边界见 [transport 架构](docs/architecture/transport.md)。
 
 ## 从源码运行
 
@@ -140,14 +140,12 @@ cargo run --locked -p work-cli -- watch SESSION_ID
 | apps/work-cli | 现有节点认证、typed 会话操作／订阅、无头宿主入口及显式原生诊断 |
 | crates/foundation/work-node-api | 共享 DTO、typed NodeApi、会话/资源/realtime 契约 |
 | crates/foundation/work-core | API 重导出、纯运行投影、事件规范化与惰性设计 |
-| crates/client/work-client | WorkspaceClient 本机/远程适配、HTTP/SSE/WebSocket、恢复与客户端投影 |
+| crates/client/work-client | WorkspaceClient 本机/远程适配、HTTP/WebSocket、恢复与客户端投影 |
 | crates/node/work-node-runtime | 实际唯一 workspace owner、RPC/ACP、会话绑定、资源与源码服务 |
-| crates/node/work-node | runtime 兼容导出 |
 | crates/components/work-component-api | 通用组件包契约、校验、目录/授权与隔离面板通信桥 |
 | crates/components/work-http-component | 远程访问专用面板与动作映射（监听 IP/端口、分享地址、新密码） |
 | crates/transport/work-http-runtime | HTTP 认证、Host/Origin、共享与一次性授权 |
-| crates/transport/work-node-service | 同 owner 的 HTTP/SSE/WebSocket 与可选 Web assets |
-| crates/transport/work-server | service 兼容导出，保留集成测试和 examples |
+| crates/transport/work-node-service | 同 owner 的 HTTP/WebSocket、集成测试和 examples |
 | crates/host/work-node-host | GUI/无头共用的实际宿主、HTTP 配置、组件绑定与协作退出 |
 | crates/host/work-host | 宿主应用门面及本机 client 包装；无 Dioxus/WebView 依赖 |
 | crates/update/work-update | 更新发现、签名验证、下载与安装助手 |

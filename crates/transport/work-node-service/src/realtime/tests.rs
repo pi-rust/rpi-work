@@ -167,7 +167,7 @@ async fn unsubscribe_abort_drops_source_and_late_subscribe_cannot_install_it() {
 #[tokio::test]
 async fn connection_drain_waits_for_last_permit() {
     let state = RealtimeState::new();
-    let permit = state.connections.clone().acquire_owned().await.unwrap();
+    let permit = state.accept_for_test().await.unwrap();
     let waiting = state.wait_closed();
     tokio::pin!(waiting);
     assert!(
@@ -180,8 +180,5 @@ async fn connection_drain_waits_for_last_permit() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(
-        state.connections.available_permits(),
-        MAX_CONNECTIONS as usize
-    );
+    assert!(state.accept_for_test().await.is_ok());
 }

@@ -14,8 +14,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use work_core::api::{
     ToolProgramBodyQuery, ToolProgramBodyResponse, ToolProgramChildPage, ToolProgramChildrenQuery,
-    ToolProgramPhasePage, ToolProgramPhasesQuery, ToolProgramSnapshot, ToolProgramSnapshotRequest,
+    ToolProgramPhasePage, ToolProgramPhasesQuery, ToolProgramSnapshot,
 };
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+use work_core::api::ToolProgramSnapshotRequest;
 
 /// HTTP everywhere; an in-process native workspace on desktop platforms only.
 #[derive(Clone)]

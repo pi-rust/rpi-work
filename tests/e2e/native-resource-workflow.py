@@ -1,5 +1,5 @@
 """Opt-in REAL native + Work typed HTTP acceptance. No PATH runtime/global data.
-Build: cargo build --locked -p work-server --example resource_workflow
+Build: cargo build --locked -p work-node-service --example resource_workflow
 Run with RPI_RESOURCE_NATIVE_BIN, WORK_CDE_HOST and optional WORK_CDE_ASSETS.
 All evidence/provider/session/resource/browser data lives under WORK_CDE_BUILD.
 """

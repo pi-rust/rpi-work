@@ -1,4 +1,4 @@
-//! Deadlines for short configuration RPCs only, never for generation or SSE.
+//! Deadlines for short configuration RPCs only, never for generation or WebSocket streams.
 //! Dropping a timed-out future stops waiting locally, not the remote operation.
 use std::future::{Future, poll_fn};
 use std::pin::pin;
@@ -148,8 +148,8 @@ mod tests {
             42
         );
         assert!(matches!(
-            poll_ready(race::<()>("test", ready(Err(ClientError::Sse("reject".into()))), pending())),
-            Err(ClientError::Sse(message)) if message == "reject"
+            poll_ready(race::<()>("test", ready(Err(ClientError::Protocol("reject".into()))), pending())),
+            Err(ClientError::Protocol(message)) if message == "reject"
         ));
     }
 

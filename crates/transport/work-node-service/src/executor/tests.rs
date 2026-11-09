@@ -49,7 +49,7 @@ impl Fixture {
             assets: None,
             web_proxy: false,
             requests,
-            admission: Arc::new(tokio::sync::Semaphore::new(64)),
+            admission: work_http_runtime::access::Admission::new(64).unwrap(),
             realtime: Arc::new(crate::realtime::RealtimeState::new()),
         });
         let response = security::login(
@@ -89,7 +89,7 @@ impl Fixture {
             )
             .unwrap()
     }
-    fn message(
+    async fn message(
         &self,
         action: RealtimeAction,
     ) -> (
@@ -97,7 +97,7 @@ impl Fixture {
         oneshot::Receiver<Result<RealtimeReply, RealtimeError>>,
     ) {
         let (reply, result) = oneshot::channel();
-        let permit = self.state.admission.clone().try_acquire_owned().unwrap();
+        let permit = self.state.admission.try_admit().await.unwrap();
         (
             ExecutorRequest::Realtime(RealtimeRequest {
                 action,
@@ -122,19 +122,23 @@ impl Fixture {
 async fn revoke_while_waiting_for_queue_capacity_prevents_publication() {
     let mut fixture = Fixture::new().await;
     let reference = fixture.reservation();
-    let (blocker, _) = fixture.message(RealtimeAction::Status {
-        operation: reference.clone(),
-    });
+    let (blocker, _) = fixture
+        .message(RealtimeAction::Status {
+            operation: reference.clone(),
+        })
+        .await;
     fixture
         .state
         .requests
         .send(blocker)
         .await
         .unwrap_or_else(|_| panic!("queue closed"));
-    let (message, _) = fixture.message(RealtimeAction::Execute {
-        operation: reference.clone(),
-        payload: Value::Null,
-    });
+    let (message, _) = fixture
+        .message(RealtimeAction::Execute {
+            operation: reference.clone(),
+            payload: Value::Null,
+        })
+        .await;
     let state = fixture.state.clone();
     let auth = fixture.auth.clone();
     let task = tokio::spawn(async move { publish_authenticated(&state, &auth, message).await });
@@ -160,17 +164,18 @@ async fn revoke_while_waiting_for_queue_capacity_prevents_publication() {
             .unwrap(),
         OperationStatus::Reserved
     );
-    assert_eq!(fixture.state.admission.available_permits(), 64);
 }
 
 #[tokio::test]
 async fn logout_after_publication_before_dequeue_cannot_claim_operation() {
     let mut fixture = Fixture::new().await;
     let reference = fixture.reservation();
-    let (message, result) = fixture.message(RealtimeAction::Execute {
-        operation: reference.clone(),
-        payload: Value::Null,
-    });
+    let (message, result) = fixture
+        .message(RealtimeAction::Execute {
+            operation: reference.clone(),
+            payload: Value::Null,
+        })
+        .await;
     publish_authenticated(&fixture.state, &fixture.auth, message)
         .await
         .unwrap();
@@ -194,10 +199,12 @@ async fn logout_after_publication_before_dequeue_cannot_claim_operation() {
 async fn off_on_fences_old_queued_authorization_even_when_enabled_again() {
     let mut fixture = Fixture::new().await;
     let reference = fixture.reservation();
-    let (message, result) = fixture.message(RealtimeAction::Execute {
-        operation: reference.clone(),
-        payload: Value::Null,
-    });
+    let (message, result) = fixture
+        .message(RealtimeAction::Execute {
+            operation: reference.clone(),
+            payload: Value::Null,
+        })
+        .await;
     publish_authenticated(&fixture.state, &fixture.auth, message)
         .await
         .unwrap();
@@ -224,10 +231,12 @@ async fn dropped_waiter_does_not_discard_known_result_or_rerun_it() {
     let reference = fixture.reservation();
     // Dialog validation rejects before any owner/Agent I/O. This is a known
     // result, retained even if the network peer dropped its response receiver.
-    let (message, result) = fixture.message(RealtimeAction::Execute {
-        operation: reference.clone(),
-        payload: json!({"responseId":"forged"}),
-    });
+    let (message, result) = fixture
+        .message(RealtimeAction::Execute {
+            operation: reference.clone(),
+            payload: json!({"responseId":"forged"}),
+        })
+        .await;
     drop(result);
     execute(fixture.state.clone(), message).await;
     let status = fixture
@@ -239,10 +248,12 @@ async fn dropped_waiter_does_not_discard_known_result_or_rerun_it() {
     assert!(
         matches!(&status, OperationStatus::KnownResult { outcome: OperationOutcome::Failed { error } } if error.code == RealtimeErrorCode::InvalidInput)
     );
-    let (duplicate, response) = fixture.message(RealtimeAction::Execute {
-        operation: reference,
-        payload: json!({"responseId":"forged"}),
-    });
+    let (duplicate, response) = fixture
+        .message(RealtimeAction::Execute {
+            operation: reference,
+            payload: json!({"responseId":"forged"}),
+        })
+        .await;
     execute(fixture.state.clone(), duplicate).await;
     assert!(
         matches!(response.await.unwrap(), Ok(RealtimeReply::Status(retained)) if retained == status)
@@ -267,7 +278,6 @@ async fn network_request_is_send_and_shares_the_existing_admission_budget() {
         .await
     });
     let message = fixture.pending.recv().await.unwrap();
-    assert_eq!(fixture.state.admission.available_permits(), 63);
     execute(fixture.state.clone(), message).await;
     let reference = match task
         .await
@@ -277,22 +287,20 @@ async fn network_request_is_send_and_shares_the_existing_admission_budget() {
         RealtimeReply::Reserved(reference) => reference,
         _ => panic!("wrong response"),
     };
-    assert_eq!(fixture.state.admission.available_permits(), 64);
-    let (message, result) = fixture.message(RealtimeAction::Status {
-        operation: reference,
-    });
+    let (message, result) = fixture
+        .message(RealtimeAction::Status {
+            operation: reference,
+        })
+        .await;
     execute(fixture.state.clone(), message).await;
     assert!(matches!(
         result.await.unwrap(),
         Ok(RealtimeReply::Status(OperationStatus::Reserved))
     ));
-    let all = fixture
-        .state
-        .admission
-        .clone()
-        .acquire_many_owned(64)
-        .await
-        .unwrap();
+    let mut all = Vec::with_capacity(64);
+    for _ in 0..64 {
+        all.push(fixture.state.admission.try_admit().await.unwrap());
+    }
     let rejected = request(
         fixture.state.clone(),
         fixture.auth.clone(),
@@ -310,10 +318,12 @@ async fn network_request_is_send_and_shares_the_existing_admission_budget() {
 async fn shutdown_before_dispatch_leaves_the_reservation_unexecuted() {
     let fixture = Fixture::new().await;
     let reference = fixture.reservation();
-    let (message, result) = fixture.message(RealtimeAction::Execute {
-        operation: reference.clone(),
-        payload: Value::Null,
-    });
+    let (message, result) = fixture
+        .message(RealtimeAction::Execute {
+            operation: reference.clone(),
+            payload: Value::Null,
+        })
+        .await;
     fixture._shutdown.send_replace(true);
     execute(fixture.state.clone(), message).await;
     assert!(

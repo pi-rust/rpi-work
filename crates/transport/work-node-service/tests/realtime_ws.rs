@@ -8,13 +8,13 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{Message, client::IntoClientRequest},
 };
-use work_client::{RemoteTransport, WorkClient};
+use work_client::WorkClient;
 use work_core::api::realtime::{
     ClientFrame, Discovery, OperationOutcome, OperationRef, OperationStatus, RealtimeOperationKind,
     SUBPROTOCOL, ServerFrame, VERSION,
 };
 use work_node_runtime::workspace::LocalWorkspace;
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 type Ws = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 struct Fixture {
@@ -821,9 +821,7 @@ async fn ws_status_rejects_another_login_principal_and_oversized_execute() {
 async fn work_client_can_explicitly_use_ws_events_with_http_auth_cookie_jar() {
     let f = Fixture::new().await;
     let client = WorkClient::new(&format!("http://{}", f.server.address())).unwrap();
-    assert_eq!(client.remote_transport(), RemoteTransport::Auto);
     client.login("isolated-ws-fixture").await.unwrap();
-    client.set_remote_transport(RemoteTransport::WebSocketOnly);
     let mut events = client.subscribe(&f.session, 0).await.unwrap();
     let response = f
         .owner
@@ -861,7 +859,6 @@ async fn work_client_websocket_only_routes_mutation_through_receipt_executor() {
     let f = Fixture::new().await;
     let client = WorkClient::new(&format!("http://{}", f.server.address())).unwrap();
     client.login("isolated-ws-fixture").await.unwrap();
-    client.set_remote_transport(RemoteTransport::WebSocketOnly);
     let response: work_client::HostResponse<Value> = client
         .command(
             &f.session,
@@ -882,7 +879,6 @@ async fn websocket_execute_disconnect_returns_receipt_reference_without_retry() 
     let mut f = Fixture::new().await;
     let client = WorkClient::new(&format!("http://{}", f.server.address())).unwrap();
     client.login("isolated-ws-fixture").await.unwrap();
-    client.set_remote_transport(RemoteTransport::WebSocketOnly);
     let release = f.root.path().join("release-client-unknown");
     let session = f.session.clone();
     let command_release = release.clone();
@@ -915,7 +911,6 @@ async fn websocket_execute_disconnect_returns_receipt_reference_without_retry() 
 async fn websocket_only_never_silently_downgrades_an_unauthenticated_client() {
     let f = Fixture::new().await;
     let client = WorkClient::new(&format!("http://{}", f.server.address())).unwrap();
-    client.set_remote_transport(RemoteTransport::WebSocketOnly);
     let Err(error) = client.subscribe(&f.session, 0).await else {
         panic!("unauthenticated WebSocketOnly must not downgrade")
     };
@@ -927,17 +922,16 @@ async fn websocket_only_never_silently_downgrades_an_unauthenticated_client() {
 }
 
 #[tokio::test]
-async fn auto_mode_keeps_http_control_plane_and_uses_ws_when_advertised() {
+async fn websocket_only_keeps_http_control_plane_and_uses_ws_for_events() {
     let f = Fixture::new().await;
     let client = WorkClient::new(&format!("http://{}", f.server.address())).unwrap();
     client.login("isolated-ws-fixture").await.unwrap();
-    client.set_remote_transport(RemoteTransport::Auto);
     let mut events = client.subscribe(&f.session, 0).await.unwrap();
     assert!(
         f.owner
             .command::<Value>(
                 &f.session,
-                json!({"type":"prompt","message":"auto-ws-event-fixture"})
+                json!({"type":"prompt","message":"websocket-event-fixture"})
             )
             .await
             .unwrap()

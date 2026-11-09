@@ -55,7 +55,7 @@
 - 请求等待 ACK 时只允许一次提交；接受后等待真实运行及 `agent_settled`，ACK／`agent_end` 不代表完成，等待期间重复空 Enter 不再发送「继续」。恢复拒绝可手动重试；每次恢复有独立 ticket，旧请求迟到的成功／失败不能消费较新的恢复请求，会话／generation／连接 epoch 变化也隔离旧结果。
 - 「继续」与普通发送／停止使用相同28px可见圆盘，播放图标12px；手机保持至少44×44px触控范围，不再使用72px文字胶囊。
 
-复验：`tests/e2e/verify-session-continue.cjs` 的 **19 项 fixture 浏览器用例**通过，报告 `artifacts/session-continue-validation.json`；浅深主题1280／390／320px截图为 `artifacts/session-continue-{light,dark}-{1280,390,320}.png`。覆盖恢复命令与文本 fallback、键盘／双击去重、ACK与结算先后、同作用域两次恢复的迟到响应、草稿／附件、问题阻塞、能力／配置保护和连接隔离。这里的恢复命令由隔离 HTTP/SSE fixture 控制，**不是原生 RPC/ACP 或真实模型恢复验收**。
+复验：`tests/e2e/verify-session-continue.cjs` 的 **19 项 fixture 浏览器用例**通过，报告 `artifacts/session-continue-validation.json`；浅深主题1280／390／320px截图为 `artifacts/session-continue-{light,dark}-{1280,390,320}.png`。覆盖恢复命令与文本 fallback、键盘／双击去重、ACK与结算先后、同作用域两次恢复的迟到响应、草稿／附件、问题阻塞、能力／配置保护和连接隔离。这里的恢复命令由隔离 HTTP/WebSocket fixture 控制，**不是原生 RPC/ACP 或真实模型恢复验收**。
 
 ## 项目所属节点
 
@@ -64,21 +64,21 @@
 - 悬浮可查看状态提示；点击／Enter／空格打开「节点信息」。项目与会话右键／省略号菜单也提供同一入口。查看信息不切换当前会话／项目、不改变展开状态或草稿；面板按被点击项目／会话的真实归属显示工作目录，独立会话明确标为未关联项目。
 - 信息包含脱敏地址、服务／版本／协议／传输、节点认证、已报告能力数量及最近检查时间；缺失字段显示「未报告」。不显示密码、token、URL 用户信息、查询串或原始凭据错误，不虚构主机资源或云厂商。
 - 每个当前工作空间共享一轮只读 `health`／`auth` 检查，初次及约每 30 秒检查一次；失败或超时不沿用绿色在线状态。可手动「刷新节点状态」，同一时间不重复检查；健康与认证读取合计预算 15 秒。时间显示使用设备本地时间，不是服务端时间或可用性保证。
-- 节点可达与会话 SSE 状态分开显示：会话重连不代表节点机器离线，健康通过也不代表模型或所有 agent 可用。刷新不会重连、登录、启动任务或清空会话。切换节点／同地址重连会关闭旧面板并隔离旧请求；「节点设置」只打开现有设置页。
+- 节点可达与会话 WebSocket 状态分开显示：会话重连不代表节点机器离线，健康通过也不代表模型或所有 agent 可用。刷新不会重连、登录、启动任务或清空会话。切换节点／同地址重连会关闭旧面板并隔离旧请求；「节点设置」只打开现有设置页。
 
-复验：`node tests/e2e/verify-project-node-info.cjs` 使用正式 WASM 和隔离 HTTP/SSE fixture，覆盖状态／错误恢复、周期检查、超时及迟到响应、刷新去重、节点切换／同地址重连、项目／会话菜单、独立会话、键盘焦点、草稿及明暗主题 1440／390／320px。报告为 `artifacts/project-node-info-validation.json`，不调用真实模型或写入凭据，不代替 Android 实机验收。
+复验：`node tests/e2e/verify-project-node-info.cjs` 使用正式 WASM 和隔离 HTTP/WebSocket fixture，覆盖状态／错误恢复、周期检查、超时及迟到响应、刷新去重、节点切换／同地址重连、项目／会话菜单、独立会话、键盘焦点、草稿及明暗主题 1440／390／320px。报告为 `artifacts/project-node-info-validation.json`，不调用真实模型或写入凭据，不代替 Android 实机验收。
 
 ## 供应商与模型选择
 
 - 主输入区入口优先显示当前供应商，完整供应商／模型保留在悬停说明与弹窗中。桌面与 Web 共用同一套主题化组件：点击后按「供应商 → 模型」展开原生折叠分组，统一箭头与选中图标；模型名称下保留节点报告的原始 ID，打开时优先聚焦可选的当前模型。Escape／关闭只退出浏览，不发送配置。
 - 思考等级不再使用操作系统原生下拉，改用与 Provider 相同的主题化弹层及选中标记；展示节点实际报告的级别，保留原始值，不补造默认选项。点击当前等级／Escape／关闭不提交，关闭后恢复入口焦点。等级选项触控高度至少 44px，浅深主题与窄屏均可滚动浏览。
 - 模型目录与思考等级分别加载，不因思考等级请求等待而让模型不可选。加载中、空目录、目录读取失败及能力缺失均明确提示；两个弹层均可手动刷新目录与权威运行状态。思考等级加载中／失败仍可打开查看原因并重试，不再静默吞错；真正的能力缺失／空等级仍禁用。列表不推断凭据是否有效，也不虚构供应商。
-- 每次短配置读取、setter 及后续权威回读分别以 **15 秒**为限，超时退出 loading 并保留草稿，不自动重发。setter 超时，或 setter 已接受但回读发生普通错误／超时／缺失字段／空状态／不匹配／`requiresRestart`，均显示「结果待核对」并保持保护，旧显示不冒充新配置；可关闭／重新浏览、手动刷新核对，但暂时阻止新配置写入和发送／Enter（包括继续）。只有一致的成功回读，或显式刷新真实 `get_state` 报告受影响的有效非空字段，才解除保护；明确拒绝的 setter 可直接手动重试。超时不代表节点操作已取消，迟到响应不得更新选择或关闭后来打开的弹层。此期限不用于模型生成／工具运行／SSE，也不伪造结算。
+- 每次短配置读取、setter 及后续权威回读分别以 **15 秒**为限，超时退出 loading 并保留草稿，不自动重发。setter 超时，或 setter 已接受但回读发生普通错误／超时／缺失字段／空状态／不匹配／`requiresRestart`，均显示「结果待核对」并保持保护，旧显示不冒充新配置；可关闭／重新浏览、手动刷新核对，但暂时阻止新配置写入和发送／Enter（包括继续）。只有一致的成功回读，或显式刷新真实 `get_state` 报告受影响的有效非空字段，才解除保护；明确拒绝的 setter 可直接手动重试。超时不代表节点操作已取消，迟到响应不得更新选择或关闭后来打开的弹层。此期限不用于模型生成／工具运行／WebSocket，也不伪造结算。
 - Provider 运行中允许浏览但禁止切换；思考入口在运行／能力缺失时保持禁用。模型和思考配置互斥，配置提交及回读期间禁止发送按钮／Enter，文字仍可编辑。两个 setter 均使用原始值，只有节点回读精确确认所选模型或思考等级后才更新并关闭弹窗；HTTP 接受不等于生效。明确拒绝保留重试入口；回读失败／不一致保留弹窗、草稿及核对入口；迟到的 Provider 刷新也不能覆盖更新的思考等级。
 - 当前 setter 不能区分跨供应商相同的原始 ID，因此这类项明确标为不可选，不拼接或猜测 ID。迟到目录、配置及回读响应均按会话／generation／连接 epoch 隔离，同地址重连也不覆盖新状态。ACP 继续使用原有协商配置与可见性策略。
 - 桌面与手机的发送／等待／停止可见圆统一为 **28px**，发送箭头 **12px**、loading **14px**、停止方块 **8px**；手机实际触控区域仍至少 **44×44px**，切换状态时不改变按钮布局尺寸。
 
-复验：`node tests/e2e/verify-composer-model-picker.cjs` 使用正式 WASM 与隔离 HTTP/SSE fixture，覆盖分组、错误／空目录重试、能力缺失、独立发现、失败与回读校验、双击、双向配置互斥、发送保护、迟到刷新／切会话／同地址重连、草稿和明暗主题 1280／390／320px；还用浏览器时钟推进真实 WASM timer，验证目录／两个 setter／两个回读挂起、手动核对再超时及空状态不解锁。报告为 `artifacts/composer-model-picker-validation.json`；发送圆与命中区域另由 `verify-mobile-composer.cjs`、`verify-sidebar-loading.cjs` 覆盖。无真实模型或凭据调用，不替代 Android 实机验收。
+复验：`node tests/e2e/verify-composer-model-picker.cjs` 使用正式 WASM 与隔离 HTTP/WebSocket fixture，覆盖分组、错误／空目录重试、能力缺失、独立发现、失败与回读校验、双击、双向配置互斥、发送保护、迟到刷新／切会话／同地址重连、草稿和明暗主题 1280／390／320px；还用浏览器时钟推进真实 WASM timer，验证目录／两个 setter／两个回读挂起、手动核对再超时及空状态不解锁。报告为 `artifacts/composer-model-picker-validation.json`；发送圆与命中区域另由 `verify-mobile-composer.cjs`、`verify-sidebar-loading.cjs` 覆盖。无真实模型或凭据调用，不替代 Android 实机验收。
 
 ## 底部状态栏插件
 
@@ -100,7 +100,7 @@
 - **压缩入口不变**：从 inspector「查看任务上下文」→ 管理上下文（按钮「管理当前上下文」）打开「上下文与压缩」modal，继续使用原生压缩能力；只读 footer 不触发压缩。
 - **插件边界**：仅支持随客户端编译的内置插件注册，不执行任意外部运行时代码或注入 manifest，不在节点安装插件，不承诺 rpi `setFooter` API。资源库 Extension 的设计预览仍不是可执行的运行时插件。
 
-复验：`node tests/e2e/verify-footer-plugins.cjs` 使用正式 WASM 与隔离 HTTP/SSE fixture。最新 `artifacts/footer-plugins-validation.json` 的 **13/13 个用例实际全部通过**，无错误；覆盖只读无弹窗/命令、默认及可选指标、配置/排序/重载/重置、全部关闭、损坏保护、配额失败、scope/断连、缺失/零值/异常值、已加载调用、安全转义、长 ID 单行完整保留，以及触达末项／方向键滚动。明暗主题 1280／390／320px 的六张截图为 `artifacts/footer-plugins-{light,dark}-{1280,390,320}.png`；本次实测桌面默认 27px、手机 25.5px，默认核心指标无需横向滚动。新增断言覆盖 diff 图标／圆环 12px、缓存仅数值绿色、mono 字体、旧窄屏显隐、可选身份启用与旧全开配置不被改写。测试同时约束单行、默认高度≤32px、大字号≤44px、内容不被内部截断、页面不溢出，并覆盖高级指标、短键盘视口／模拟安全区，额外截图为 `artifacts/footer-style-{width}-{height}-{scale}.png`。移动输入区约束另见 `verify-mobile-composer.cjs`。这些浏览器结果不是原生桌面或 Android 实机验收，真实手机软键盘与安全区仍待验证。
+复验：`node tests/e2e/verify-footer-plugins.cjs` 使用正式 WASM 与隔离 HTTP/WebSocket fixture。最新 `artifacts/footer-plugins-validation.json` 的 **13/13 个用例实际全部通过**，无错误；覆盖只读无弹窗/命令、默认及可选指标、配置/排序/重载/重置、全部关闭、损坏保护、配额失败、scope/断连、缺失/零值/异常值、已加载调用、安全转义、长 ID 单行完整保留，以及触达末项／方向键滚动。明暗主题 1280／390／320px 的六张截图为 `artifacts/footer-plugins-{light,dark}-{1280,390,320}.png`；本次实测桌面默认 27px、手机 25.5px，默认核心指标无需横向滚动。新增断言覆盖 diff 图标／圆环 12px、缓存仅数值绿色、mono 字体、旧窄屏显隐、可选身份启用与旧全开配置不被改写。测试同时约束单行、默认高度≤32px、大字号≤44px、内容不被内部截断、页面不溢出，并覆盖高级指标、短键盘视口／模拟安全区，额外截图为 `artifacts/footer-style-{width}-{height}-{scale}.png`。移动输入区约束另见 `verify-mobile-composer.cjs`。这些浏览器结果不是原生桌面或 Android 实机验收，真实手机软键盘与安全区仍待验证。
 
 ## 用户输入导航时间线
 
@@ -142,7 +142,7 @@
 - 工具参数中明确提供 `command` 字符串时，命令区默认预览 **四个实际渲染行**（包含窄屏软换行）。只有真实溢出才显示「展开完整命令／收起命令」，各卡片独立；窗口和字体变化会重新测量，测量不可用时保留全文而不是无法展开的截断。
 - 「复制命令」始终复制完整原始命令，包括换行和空白，不复制摘要或 JSON 转义文本。「完整调用参数」保留全部参数，工具结果和输出复制不变；预览、展开和复制不执行命令、不发送消息。
 - 侧栏显示当前会话的「加载中／发送中／等待回复／运行中／停止中」及紧凑 loading 标识；「等待确认／待恢复／执行失败」使用静态提示，减少动效偏好下 loading 不旋转但状态仍可见。状态优先取当前会话真实运行阶段和按节点／会话隔离的提交记录，未打开会话回退节点摘要或最后观测阶段；**没有新增所有后台会话的实时订阅**，切走不代表任务停止或完成。节点明确报告 `pendingResume` 才标为「待恢复」，失败和恢复提示不依赖猜测历史；不自动重发或恢复。
-- 复验：`node tests/e2e/verify-sidebar-loading.cjs`（设置 `WORK_UI_URL` 指向正式 WASM），使用隔离 HTTP/SSE fixture 测试浅深色与 1280／390／320px；报告 `artifacts/sidebar-loading-validation.json`，截图 `artifacts/sidebar-loading-{light,dark}-{1280,390,320}.png`，`-composer.png` 后缀为聊天框视图。它不调用真实模型，不替代原生手机软键盘或其他操作系统验收。
+- 复验：`node tests/e2e/verify-sidebar-loading.cjs`（设置 `WORK_UI_URL` 指向正式 WASM），使用隔离 HTTP/WebSocket fixture 测试浅深色与 1280／390／320px；报告 `artifacts/sidebar-loading-validation.json`，截图 `artifacts/sidebar-loading-{light,dark}-{1280,390,320}.png`，`-composer.png` 后缀为聊天框视图。它不调用真实模型，不替代原生手机软键盘或其他操作系统验收。
 - 输入框上方使用「待处理消息」内联面板，数量与折叠入口常显于非空面板；具体行为见「消息与队列宽度」，不再保留摘要到弹窗的二级入口。
 
 ## 历史消息分页
@@ -151,9 +151,9 @@
 - **真实游标**：旧页走 `get_messages { limit: 48, beforeId }`，而不是运行记录 `get_history`。返回值必须回显游标、提供一致的首尾 ID，并实际向前推进；按真实 `entryId` 去重，实时尾部内容优先。忽略游标的旧节点显示不支持并停止分页，不能把重复尾页伪装成旧历史。
 - **阅读与输入**：插入旧页前记录可见消息及其屏幕位置，后续异步图表／媒体尺寸变化继续保护位置。主动滚动、拖动、发送或跳到最新会让出控制；持续的指针手势优先，不强拉回锚点。分页不清空草稿，不发送提示词或触发模型。
 - **失败与隔离**：同一窗口只允许一个请求；普通失败保留已加载内容及游标，可显式重试，不自动循环重试。切会话／节点和重连都隔离迟到响应；离开会话标签会取消加载，返回后可以重试。重连故意回到新的有限快照，旧页需重新加载，不将旧连接窗口拼接到新的快照上。
-- **支持边界**：HTTP/SSE 和提供该服务契约的本机 RPI workspace 可以分页；直接 native agent／ACP 无快照时不启用。缺少能力或真实游标时不猜测、不发送 unsupported 请求。分页不是虚拟列表或持久化回放，已经手动加载的页会占用内存；不承诺旧节点遵守首次快照的 `limit`。
+- **支持边界**：HTTP/WebSocket 和提供该服务契约的本机 RPI workspace 可以分页；直接 native agent／ACP 无快照时不启用。缺少能力或真实游标时不猜测、不发送 unsupported 请求。分页不是虚拟列表或持久化回放，已经手动加载的页会占用内存；不承诺旧节点遵守首次快照的 `limit`。
 
-复验：`node tests/e2e/verify-history-pagination.cjs`（先按下文构建正式 WASM、启动 review server，并设置 `WORK_UI_URL`）。结果位于 `artifacts/history-pagination-validation.json`，含 390 / 320px 截图；这是隔离 HTTP/SSE fixture 验证，不等于真实桌面或 Android E2E。
+复验：`node tests/e2e/verify-history-pagination.cjs`（先按下文构建正式 WASM、启动 review server，并设置 `WORK_UI_URL`）。结果位于 `artifacts/history-pagination-validation.json`，含 390 / 320px 截图；这是隔离 HTTP/WebSocket fixture 验证，不等于真实桌面或 Android E2E。
 
 ## 消息图片
 
@@ -166,7 +166,7 @@
 
 **这不是附件发送功能。** 输入区现有附件仍是「仅本地预览，未上传」；选择图片不会把它随主消息发送。图片展示也不改变 HTTP/RPC/ACP 的选择或 workspace API。
 
-复验：`node tests/e2e/verify-message-images.cjs`（正式 WASM + 隔离 HTTP/SSE fixture，设置 `WORK_UI_URL`）。报告位于 `artifacts/message-images-validation.json`，窄屏截图为 `artifacts/message-images-{width}.png`。客户端还有 native 连接消息合并的合成事件单测，但这些均不替代真实桌面、Android 或 live backend 图片验收。
+复验：`node tests/e2e/verify-message-images.cjs`（正式 WASM + 隔离 HTTP/WebSocket fixture，设置 `WORK_UI_URL`）。报告位于 `artifacts/message-images-validation.json`，窄屏截图为 `artifacts/message-images-{width}.png`。客户端还有 native 连接消息合并的合成事件单测，但这些均不替代真实桌面、Android 或 live backend 图片验收。
 
 ## 本地附件发送前保护
 
@@ -179,7 +179,7 @@
 
 这仍**不是附件上传／发送**。本地文件不持久化为媒体资源，刷新后不能保证恢复；真实图片发送还需要后端输入契约、能力声明、接收确认及存储／权限／历史恢复配套，ACP 图片发送也未启用。
 
-复验：`node tests/e2e/verify-attachment-send-guard.cjs`，使用正式 WASM 与隔离 HTTP/SSE fixture（设置 `WORK_UI_URL`）。报告为 `artifacts/attachment-send-guard-validation.json`，窄屏截图为 `artifacts/attachment-send-guard-{width}.png`；不代表桌面／Android 或 live backend E2E。
+复验：`node tests/e2e/verify-attachment-send-guard.cjs`，使用正式 WASM 与隔离 HTTP/WebSocket fixture（设置 `WORK_UI_URL`）。报告为 `artifacts/attachment-send-guard-validation.json`，窄屏截图为 `artifacts/attachment-send-guard-{width}.png`；不代表桌面／Android 或 live backend E2E。
 
 ## Mermaid 图表
 
@@ -202,7 +202,7 @@ flowchart TD
 - **安全边界**：固定 `securityLevel: strict` 与 `htmlLabels: false`；渲染只在 `sandbox="allow-scripts"`、没有 `allow-same-origin` 的不透明源 iframe 内执行受信任的本地 Mermaid 库。iframe 的 CSP 禁止网络连接、图片和字体加载，只允许带 nonce 的脚本及内联样式；用户源码以 JSON 数据传递，**不执行用户 JavaScript**。生成的 SVG 仅作为 Blob URL 的 `<img>` 显示，不作为 HTML / SVG 节点插入主页面；图片内没有可点击链接，不能把 Mermaid 的 `click` 当成导航功能，也不支持加载外部图片。
 - **主题与窄屏**：颜色取自当前主题，浅深色和主题变化会重新绘制，保留源码展开状态与输入草稿。图片按容器宽度缩放，图区最多 640px 高并可滚动，源码区独立滚动；窄屏复制按钮和源码入口保留至少 44px 触控高度。异步图片尺寸变化沿用消息区的滚动跟随规则，不强行打断上翻阅读。
 
-正式 WASM 与本地 HTTP/SSE fixture 的复验命令（先构建正式 Web 客户端并启动 review server）：
+正式 WASM 与本地 HTTP/WebSocket fixture 的复验命令（先构建正式 Web 客户端并启动 review server）：
 
 ```powershell
 $env:WORK_UI_URL = 'http://127.0.0.1:14182/app/'
@@ -228,4 +228,4 @@ node tests/e2e/verify-ui-conversation.cjs
 node tests/e2e/verify-ui-btw-scroll.cjs
 ```
 
-这些脚本使用隔离测试节点，检查真实应用的接口请求、失败恢复、无删除副作用、等待状态、流式滚动、草稿保留和 390/320px 菜单边界，不向用户节点调用模型。`work-node` 的忽略集成测试可通过 `RPI_WORK_NODE_TEST_BIN` 指定当前兼容的 `rpi-http`，在临时目录验证本机启动、认证、项目重命名和进程回收。
+这些脚本使用隔离测试节点，检查真实应用的接口请求、失败恢复、无删除副作用、等待状态、流式滚动、草稿保留和 390/320px 菜单边界，不向用户节点调用模型。`work-node-runtime` 的忽略集成测试可通过 `RPI_WORK_NODE_TEST_BIN` 指定当前兼容的 `rpi-http`，在临时目录验证本机启动、认证、项目重命名和进程回收。

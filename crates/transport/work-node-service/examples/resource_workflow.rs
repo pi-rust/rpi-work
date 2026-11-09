@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 use work_node_runtime::workspace::LocalWorkspace;
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 fn isolated_inputs() -> (PathBuf, PathBuf) {
     let root = PathBuf::from(

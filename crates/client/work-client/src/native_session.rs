@@ -204,9 +204,6 @@ impl WorkClient {
             bearer_token: None,
             control_capability: None,
             cookie_jar,
-            realtime_mode: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
-                crate::RemoteTransport::Auto.code(),
-            )),
             realtime_epoch: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             realtime_ids: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             realtime_client_id: std::sync::Arc::new(format!(

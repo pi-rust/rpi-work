@@ -74,7 +74,7 @@ pub fn normalize_event(event_type: &str, data: &Value) -> Result<EventKind, Even
     }
 
     match event_type {
-        // SSE ready confirms the subscription, not a newly accepted agent run.
+        // Subscription readiness confirms the channel, not a newly accepted agent run.
         // Treating it as Accepted makes an idle/reopened chat show Stop and
         // sends the first user message to the queue instead of starting a run.
         "operation_accepted" | "agent_start" => Ok(EventKind::Accepted),

@@ -1,4 +1,4 @@
-// Windows native WebView2 + actual embedded work-server, no standalone service.
+// Windows native WebView2 + actual embedded work-node-service, no standalone service.
 // Isolated data/profile, random API/debug ports, credential-free RPC fixture.
 // Never print/save authorization payloads, DOM, traces or unmasked QR screenshots.
 const fs = require('node:fs');
@@ -182,7 +182,7 @@ const { chromium } = require('../support/browser.cjs');
   } finally {
     await stop();
     fs.writeFileSync(path.join(root, 'artifacts/desktop-lan-qr-native-validation.json'), JSON.stringify({
-      scope: 'Actual Windows desktop WebView2 + embedded work-server; isolated profile/data; credential-free RPC executable; no prompts/models; not Android-device acceptance',
+      scope: 'Actual Windows desktop WebView2 + embedded work-node-service; isolated profile/data; credential-free RPC executable; no prompts/models; not Android-device acceptance',
       results, failed, errorCount: errors.length, failedStage: failed ? stage : null, failure,
     }, null, 2));
   }

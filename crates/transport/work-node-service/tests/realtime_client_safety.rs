@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::oneshot;
-use work_client::{ClientError, RemoteTransport, WorkClient};
+use work_client::{ClientError, WorkClient};
 use work_core::api::realtime::{
     ClientFrame, Discovery, Hello, OperationOutcome, OperationRef, OperationStatus,
     RealtimeOperationKind, SUBPROTOCOL, ServerFrame, VERSION,
@@ -27,7 +27,6 @@ use work_core::api::realtime::{
 
 #[derive(Clone, Copy)]
 enum Mode {
-    Legacy,
     AuthDenied,
     UpgradeDenied,
     WrongNode,
@@ -52,7 +51,7 @@ struct Fixture {
     task: tokio::task::JoinHandle<()>,
 }
 impl Fixture {
-    async fn new(mode: Mode, transport: RemoteTransport) -> Self {
+    async fn new(mode: Mode) -> Self {
         let peer = Arc::new(Peer {
             mode,
             http_writes: AtomicUsize::new(0),
@@ -85,7 +84,6 @@ impl Fixture {
         if !matches!(mode, Mode::AuthDenied) {
             client.login("isolated-protocol-peer").await.unwrap();
         }
-        client.set_remote_transport(transport);
         Self {
             peer,
             client,
@@ -117,10 +115,7 @@ async fn auth(State(peer): State<Arc<Peer>>) -> Response {
     }
     Json(json!({"required":true,"authenticated":true})).into_response()
 }
-async fn discovery(State(peer): State<Arc<Peer>>) -> Response {
-    if matches!(peer.mode, Mode::Legacy) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
+async fn discovery(State(_peer): State<Arc<Peer>>) -> Response {
     Json(Discovery::new(
         "expected-node".into(),
         "expected-owner".into(),
@@ -247,19 +242,12 @@ async fn serve(mut socket: WebSocket, peer: Arc<Peer>) {
 }
 
 #[tokio::test]
-async fn auto_legacy_fallback_requires_authenticated_absent_discovery() {
-    let f = Fixture::new(Mode::Legacy, RemoteTransport::Auto).await;
-    assert!(f.client.prompt("s", "isolated").await.unwrap().success);
-    assert_eq!(f.peer.http_writes.load(Ordering::Relaxed), 1);
-    assert_eq!(f.peer.executes.load(Ordering::Relaxed), 0);
-    f.finish().await;
-
-    let f = Fixture::new(Mode::Legacy, RemoteTransport::WebSocketOnly).await;
-    assert!(matches!(
-        f.client.prompt("s", "isolated").await,
-        Err(ClientError::RealtimeNotAdvertised)
-    ));
+async fn websocket_only_never_falls_back_to_http() {
+    let f = Fixture::new(Mode::NegativeAck).await;
+    let response = f.client.prompt("s", "isolated").await.unwrap();
+    assert!(!response.success);
     assert_eq!(f.peer.http_writes.load(Ordering::Relaxed), 0);
+    assert_eq!(f.peer.executes.load(Ordering::Relaxed), 1);
     f.finish().await;
 }
 
@@ -272,7 +260,7 @@ async fn auth_upgrade_identity_and_receipt_failures_never_downgrade() {
         Mode::WrongOwner,
         Mode::WrongReceipt,
     ] {
-        let f = Fixture::new(mode, RemoteTransport::Auto).await;
+        let f = Fixture::new(mode).await;
         assert!(f.client.prompt("s", "isolated").await.is_err());
         assert_eq!(f.peer.http_writes.load(Ordering::Relaxed), 0);
         assert_eq!(f.peer.executes.load(Ordering::Relaxed), 0);
@@ -282,7 +270,7 @@ async fn auth_upgrade_identity_and_receipt_failures_never_downgrade() {
 
 #[tokio::test]
 async fn negative_host_ack_is_not_changed_into_success_by_the_receipt_wrapper() {
-    let f = Fixture::new(Mode::NegativeAck, RemoteTransport::WebSocketOnly).await;
+    let f = Fixture::new(Mode::NegativeAck).await;
     let response = f.client.prompt("s", "isolated").await.unwrap();
     assert!(!response.success);
     assert_eq!(response.data.unwrap()["accepted"], false);
@@ -294,7 +282,7 @@ async fn negative_host_ack_is_not_changed_into_success_by_the_receipt_wrapper() 
 #[tokio::test]
 async fn disconnect_or_malformed_result_preserves_receipt_without_auto_retry() {
     for mode in [Mode::CloseExecute, Mode::InvalidResult] {
-        let f = Fixture::new(mode, RemoteTransport::Auto).await;
+        let f = Fixture::new(mode).await;
         let error = f.client.prompt("s", "isolated").await.unwrap_err();
         let ClientError::OperationOutcomeUnknown { operation } = error else {
             panic!("receipt must survive: {error:?}")
@@ -310,7 +298,7 @@ async fn disconnect_or_malformed_result_preserves_receipt_without_auto_retry() {
 
 #[tokio::test]
 async fn configuration_and_dialog_keep_exact_kind_and_payload_on_the_same_hub() {
-    let f = Fixture::new(Mode::Echo, RemoteTransport::WebSocketOnly).await;
+    let f = Fixture::new(Mode::Echo).await;
     assert_eq!(
         f.client
             .set_session_config_option("s", "mode", json!("plan"))
@@ -344,7 +332,7 @@ async fn configuration_and_dialog_keep_exact_kind_and_payload_on_the_same_hub() 
 
 #[tokio::test]
 async fn oversized_execute_is_rejected_before_any_reservation() {
-    let f = Fixture::new(Mode::Echo, RemoteTransport::WebSocketOnly).await;
+    let f = Fixture::new(Mode::Echo).await;
     let error = f
         .client
         .prompt("s", &"x".repeat(2 * 1024 * 1024))

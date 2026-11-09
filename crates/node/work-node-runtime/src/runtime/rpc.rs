@@ -2,7 +2,7 @@
 
 //! Native JSONL transport for `rpi --mode rpc`.
 //!
-//! The child protocol is deliberately kept separate from HTTP/SSE. A single
+//! The child protocol is deliberately kept separate from HTTP/WebSocket. A single
 //! reader owns stdout, matches responses by id, and broadcasts notifications;
 //! stderr is drained independently so diagnostic output can never corrupt the
 //! JSONL channel.

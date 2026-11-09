@@ -1,6 +1,6 @@
 # 真实节点聊天
 
-桌面是节点宿主：本机 RPC 与内嵌 HTTP/SSE 共用同一份 `LocalWorkspace`，Web/手机是访问入口。独立 `rpi-http` 不等于桌面 owner。旧迁移副本不自动搬回或合并。
+桌面是节点宿主：本机 RPC 与内嵌 HTTP/WebSocket 共用同一份 `LocalWorkspace`，Web/手机是访问入口。独立 `rpi-http` 不等于桌面 owner。旧迁移副本不自动搬回或合并。
 
 ## 本机启动
 
@@ -37,9 +37,9 @@ node tools/dev/dev-web.mjs --watch-build --debug-build
 ## 对话生命周期
 
 - 项目/会话目录在可见窗口中每 3 秒刷新，focus 或恢复 visible 时立即刷新（在途请求完成后补刷），隐藏时暂停；失败保留目录并自动重试。节点与连接 epoch 隔离迟到结果，并检查本端并发目录修改，避免覆盖改名或归档。目录刷新不等于历史全量同步，当前会话使用协商后的实时通道及历史校准。
-- SSE `ready` 表示订阅在线，不能使空闲会话进入运行状态。
+- WebSocket `subscribed` 表示订阅在线，不能使空闲会话进入运行状态。
 - `prompt` 接受后由 `agent_start` / `operation_accepted` 驱动运行，文本增量和工具事件都在同一对话内显示。
-- rpi的用户消息可能只写入持久化历史，不另发消息事件。客户端在运行开始读取已落盘的用户消息，在 `agent_settled` 后对齐正式历史与流式消息ID；读取最多等待5秒，不推进SSE游标、不重发prompt。
+- rpi的用户消息可能只写入持久化历史，不另发消息事件。客户端在运行开始读取已落盘的用户消息，在 `agent_settled` 后对齐正式历史与流式消息ID；读取最多等待5秒，不推进事件游标、不重发prompt。
 - 同一次消息的临时ID和最终ID、工具结果的start/end事件不会变成重复记录。历史中的工具调用、实时执行状态和最终结果按 `toolCallId` 合并到一张卡片。
 - 仅 `agent_settled` 决定回合结果；`agent_end` 仍保持等待结算。结算后状态栏显示实际完成/失败状态。
 
@@ -63,6 +63,6 @@ $env:RPI_WORK_REVIEW_MODEL = 'provider/model'
 node tests/e2e/verify-live-chat.cjs --run-model
 ```
 
-脚本使用隔离浏览器，真实请求不做route拦截，核对节点认证、会话模型切换、SSE文本增量、实际工具完成事件、服务端结算、用户/助手/工具卡片与正式历史的数量，以及390像素布局。报告与截图输出到被Git忽略的 `artifacts/live-chat-*`，不包含节点密码、模型密钥或Cookie。当前脚本依赖项目审查环境中的Playwright/Chrome，可通过 `CHROME_PATH` 指定Chrome。
+脚本使用隔离浏览器，真实请求不做route拦截，核对节点认证、会话模型切换、WebSocket文本增量、实际工具完成事件、服务端结算、用户/助手/工具卡片与正式历史的数量，以及390像素布局。报告与截图输出到被Git忽略的 `artifacts/live-chat-*`，不包含节点密码、模型密钥或Cookie。当前脚本依赖项目审查环境中的Playwright/Chrome，可通过 `CHROME_PATH` 指定Chrome。
 
 此次实际验证模型为 `huoshan-copy/deepseek-v4-flash`。统计遵循节点返回；该节点在这次检查中报告token/费用为0，客户端不会用上下文估算值冒充实际计费数据。

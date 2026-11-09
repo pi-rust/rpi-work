@@ -14,7 +14,6 @@ pedantic = "warn"
 
 [dependencies]
 work-component-api = { path = "../../components/work-component-api" }
-async-stream = "0.3"
 async-trait = "0.1"
 futures-core = "0.3"
 futures-util = "0.3"

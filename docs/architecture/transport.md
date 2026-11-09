@@ -4,7 +4,7 @@
 
 `work-node-runtime::workspace::LocalWorkspace` is the authoritative workspace owner.
 `work-client::LocalWorkspace` is a local access adapter holding that same owner;
-`WorkspaceClient` selects local access or authenticated remote HTTP/SSE/WebSocket. The
+`WorkspaceClient` selects local access or authenticated remote HTTP/WebSocket. The
 HTTP server receives the existing node owner rather than creating a second one.
 
 Physical boundary: rpi capabilities live in `rpi/extcore`; the HTTP adaptation
@@ -18,13 +18,13 @@ explicitly. See [component boundaries](component-composition.md).
 
 ```text
 Desktop UI → WorkspaceClient::Local → local access adapter ────────────┐
-Hosted Web / Android / remote UI → WorkClient → work-node-service HTTP/SSE/WS ─┤
+Hosted Web / Android / remote UI → WorkClient → work-node-service HTTP/WebSocket ─┤
                                                                     ▼
                                    work-node-runtime::workspace::LocalWorkspace
                                    ├── projects/catalog/files/Git
                                    ├── RPI → rpi-extcore → rpi stdio RPC
                                    └── ACP → node-owned Agent processes
-CLI → WorkClient → existing owner's authenticated HTTP/SSE/WS
+CLI → WorkClient → existing owner's authenticated HTTP/WebSocket
 GUI / CLI serve → work-host → one local owner + optional HTTP entrance
 Explicit CLI rpc/acp diagnostics → AgentClient → separate native Agent
 ```
@@ -36,15 +36,14 @@ Explicit CLI rpc/acp diagnostics → AgentClient → separate native Agent
 - `work-core`: re-exports node contracts and adds client event normalization,
   run projection and inert extension designs.
 - `work-node-runtime`: actual workspace owner, native RPC/ACP runtimes, backend
-  bindings, persistence, native resources and source authoring. `work-node` is
-  its compatibility re-export; source edits belong in the implementation crate.
-- `work-client`: local/remote adapters, HTTP/SSE/WebSocket, snapshot recovery,
+  bindings, persistence, native resources and source authoring.
+- `work-client`: local/remote adapters, HTTP/WebSocket, snapshot recovery,
   pagination and client projection. Native RPC/ACP facades delegate to the node
   runtime rather than creating another execution implementation.
-- `work-node-service`: authenticated HTTP/SSE/WebSocket and optional Web assets
+- `work-node-service`: authenticated HTTP/WebSocket and optional Web assets
   over an existing owner; security helpers live in `work-http-runtime`.
-  `work-server` re-exports it and retains integration tests/examples. Neither
-  production server layer depends on `work-client`.
+  Integration tests and examples live beside the implementation. The production
+  server layer does not depend on `work-client`.
 - `work-node-host`: actual GUI-independent startup, data lock, component binding,
   HTTP configuration and ordered shutdown. `work-host` re-exports application
   entry points and wraps the same owner as a `WorkspaceClient::Local`.
@@ -68,7 +67,7 @@ upgrade. See [project structure](../guides/project-structure.md),
 
 - Default owning Desktop prepares its local owner through `work-host` and
   accesses it in-process without an HTTP login. `work-host::http` attaches
-  `work-server` to that same owner; `app/local_http.rs` is only a UI adapter.
+  `work-node-service` to that same owner; `app/local_http.rs` is only a UI adapter.
   Explicit `--connect`/remote environment startup does not create a local owner. With no
   explicit configuration it listens on `0.0.0.0:13031`; a missing sharing preference
   defaults to enabled. Saved disabled or invalid/unreadable preferences remain
@@ -117,19 +116,18 @@ negotiated surface; it must not fabricate a successful response.
 
 `WorkspaceClient::local_rpc` wraps the node workspace after
 `work-node-runtime::local::LocalRuntime` resolves `rpi` and holds the data lock.
-The public `work-node::local` path remains a compatibility re-export.
 `work-host::http` passes `workspace.node_owner()` to `HttpServer::start`.
 This opens the embedded listener when configuration permits, but never spawns
 or requires standalone `rpi-http`, and local UI access does not authenticate
 over loopback. Local workspace resources are Rust service operations, not
 invented project/file/Git commands on the RPI RPC wire.
 
-## Remote HTTP/SSE and WebSocket
+## Remote HTTP and WebSocket
 
-HTTP remains the authentication and resource plane. `WorkClient` defaults to
-`RemoteTransport::Auto`: authenticated transport discovery selects the realtime
-WebSocket for session requests/events. Only explicit `RealtimeNotAdvertised`
-permits HTTP/SSE fallback; network, auth and protocol errors remain errors.
+HTTP remains the authentication and resource plane. `WorkClient` uses
+the WebSocket-only client: authenticated transport discovery validates the
+WebSocket before session requests and events use it. There is no realtime HTTP
+fallback; network, auth and protocol errors remain errors.
 Mutations use owner-scoped bounded operation receipts. An unknown outcome must
 be queried using the original reference, never automatically replayed. Receipts
 are in-memory and owner-epoch-scoped, not durable exactly-once execution.
@@ -252,7 +250,7 @@ runtime, verifies a caller-specified `customTypes` query separately.
 only when the bound session's `SessionAccess::snapshot_limit` is true; otherwise
 they read a full snapshot, including ACP sessions that reject limited snapshots.
 The connection retains that policy for run-boundary recovery without advancing
-the SSE replay cursor to a later snapshot's `lastSeq`. The existing unrestricted
+the WebSocket event cursor to a later snapshot's `lastSeq`. The existing unrestricted
 `snapshot()` API remains available; old servers may ignore the requested limit.
 The published extcore snapshot options accept `limit`, not `beforeId`.
 
@@ -285,7 +283,7 @@ Older nested-ID-only fixtures did not exercise this real wire contract.
 
 `MessageIdentity` now resolves nonblank envelope `messageId`/`entryId` before
 legacy nested identity and supplies an internal assistant identity shell for
-compact updates. It does not synthesize content or use an SSE event/command `id`
+compact updates. It does not synthesize content or use a WebSocket event/command `id`
 as message identity. A first real ID may promote the current anonymous segment;
 changed authoritative IDs still delimit different messages. HTTP and direct
 native delivery share the same retained-body/projection owner-transfer routine,
@@ -342,7 +340,7 @@ released on update/disposal and stale callbacks cannot overwrite a newer entry.
 The viewer uses inert images inside a native dialog, never user SVG/HTML.
 
 ACP image chunks remain outside the current adapter contract. Native synthetic
-message tests and HTTP/SSE browser fixtures validate only their stated layers;
+message tests and HTTP/WebSocket browser fixtures validate only their stated layers;
 installed-runtime handshakes do not prove native image rendering, desktop E2E,
 Android E2E or live HTTP backend acceptance.
 
@@ -369,7 +367,7 @@ existing behavior. No new prompt fields, upload endpoint or ACP image capability
 is introduced. Explicit text quotation remains user-authored draft content.
 
 Rust metadata/consent tests and `verify-attachment-send-guard.cjs` cover this UI
-safety boundary using an isolated HTTP/SSE fixture; they do not demonstrate real
+safety boundary using an isolated HTTP/WebSocket fixture; they do not demonstrate real
 attachment transfer or native desktop/Android/live-backend E2E.
 
 ## Desktop native workspace
@@ -390,8 +388,8 @@ API restrictions; they do not gain access to the desktop filesystem.
 
 `rpi-work://local` is a device-local UI key, not a network endpoint or a
 cross-device node ID. Web,
-Android and explicit remote connections use a reachable authenticated HTTP/SSE
-entry, which may be the desktop's embedded `work-server` sharing that same
+Android and explicit remote connections use a reachable authenticated HTTP/WebSocket
+entry, which may be the desktop's embedded `work-node-service` sharing that same
 owner. A separately started standalone server is another owner; it does not
 synchronize by sharing a directory or copying session files. HTTP routes expose
 backend discovery, bound-session access/configuration and owner-side session
@@ -455,7 +453,7 @@ there is no remote shutdown API. System-service installation is not implemented.
 client. It never acquires the local data lock or silently creates an owner after
 connection failure. Default owning GUI mode still uses its in-process facade.
 
-`work-cli` now defaults to the existing node's authenticated HTTP/SSE entry at
+`work-cli` now defaults to the existing node's authenticated HTTP/WebSocket entry at
 `http://127.0.0.1:13031/`. `--url`/`--node` override `RPI_WORK_URL`; the client's
 `RPI_WORK_PASSWORD` or bounded `--password-stdin` authenticates each invocation.
 No plaintext credential store or cross-command login persistence is introduced.

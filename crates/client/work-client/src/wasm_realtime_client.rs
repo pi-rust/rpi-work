@@ -701,6 +701,3 @@ impl DeliveryClone for ClientError {
         }
     }
 }
-pub(crate) fn legacy(error: &ClientError) -> bool {
-    matches!(error, ClientError::RealtimeNotAdvertised)
-}

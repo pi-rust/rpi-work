@@ -151,7 +151,7 @@ def main():
                                          'command failed; see ' + log_name)
                 return returncode == 0
 
-            if run(['cargo', 'build', '--offline', '--locked', '-p', 'work-cli', '-p', 'work-server',
+            if run(['cargo', 'build', '--offline', '--locked', '-p', 'work-cli', '-p', 'work-node-service',
                     '--bin', 'work-cli', '--bin', 'work-server-rpc-fixture'], 'build.log', 650):
                 result['buildPassed'] = True
                 verifier = ROOT / 'tests/e2e/verify-unix-headless-owner.py'

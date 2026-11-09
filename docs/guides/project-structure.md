@@ -23,11 +23,9 @@ crates/
     work-core/           重导出 API、事件规范化与运行投影、惰性扩展设计
   node/
     work-node-runtime/   实际 workspace owner、RPC/ACP、资源及源码服务
-    work-node/           runtime 兼容导出
   transport/
     work-http-runtime/   认证、Host/Origin、共享与一次性授权
-    work-node-service/   同 owner 的 HTTP/SSE/WebSocket 和静态 Web 托管
-    work-server/         service 兼容导出、集成测试与 examples
+    work-node-service/   同 owner 的 HTTP/WebSocket、测试和静态 Web 托管
   client/
     work-client/         本机/远程 adapter、连接恢复、消息投影
   host/
@@ -44,7 +42,7 @@ tests/
   e2e/                   正式应用的集成回归
   design/                HTML 原型及设计对照测试
   modules/               独立 UI 模块的浏览器测试
-  fixtures/              隔离 HTTP/SSE 节点与源码审查基准
+  fixtures/              隔离 HTTP/WebSocket 节点与源码审查基准
   harness/ui-modules/    模块验证用 Rust 工程，不进入安装包
   support/               本仓库浏览器测试依赖解析
 tools/
@@ -58,7 +56,7 @@ target/                  忽略的编译、下载、日志与临时验证数据
 .rpi/                    忽略的本机 Agent 会话
 ```
 
-`work-node-api` 是共享契约实际位置；`work-core::api` 重导出契约并保留纯客户端投影。`work-node-runtime` 持有权威 `LocalWorkspace`，`work-node` 仅兼容导出；`work-client` 本机 facade 包装同一个 owner，远端使用 HTTP/SSE/WebSocket。`work-node-service` 适配已有 owner，`work-server` 兼容导出并保留集成测试；生产服务依赖不引用 `work-client`。`work-node-host` 实现无 GUI 宿主生命周期，`work-host` 提供应用门面。全部 15 个工作区成员均为私有包。`work-component-api` 是通用组件包契约、校验、授权与隔离面板桥；`work-http-component` 是 Work 内部的远程访问专用面板。桌面不启动 standalone `rpi-http`，也不把 rpi HTTP 扩展当作自己的宿主运行时；HTTP 入口只接在同一 owner 上。完整依赖见[架构总览](../architecture/overview.md)，具体传输见 [架构与传输边界](../architecture/transport.md) 和[组件组合](../architecture/component-composition.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
+`work-node-api` 是共享契约实际位置；`work-core::api` 重导出契约并保留纯客户端投影。`work-node-runtime` 持有权威 `LocalWorkspace`；`work-client` 本机 facade 包装同一个 owner，远端使用 HTTP/WebSocket。`work-node-service` 适配已有 owner，并在同一 crate 保留集成测试和 examples；生产服务依赖不引用 `work-client`。`work-node-host` 实现无 GUI 宿主生命周期，`work-host` 提供应用门面。当前工作区成员均为私有包。`work-component-api` 是通用组件包契约、校验、授权与隔离面板桥；`work-http-component` 是 Work 内部的远程访问专用面板。桌面不启动 standalone `rpi-http`，也不把 rpi HTTP 扩展当作自己的宿主运行时；HTTP 入口只接在同一 owner 上。完整依赖见[架构总览](../architecture/overview.md)，具体传输见 [架构与传输边界](../architecture/transport.md) 和[组件组合](../architecture/component-composition.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
 
 正式应用通过 `assets/vendor/` 编译二维码与 Mermaid 资源，不引用设计原型。原型自己的 vendor 快照和内容哈希独立保留，以便复现历史设计；整理文档不重新生成冻结原型。
 

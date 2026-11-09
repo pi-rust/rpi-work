@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn errors_omit_secrets_and_writes_warn_unknown() {
         for error in [
-            ClientError::Sse("secret-password".into()),
+            ClientError::Protocol("secret-password".into()),
             ClientError::Process("secret-password".into()),
         ] {
             assert!(!safe_error(&error, false).contains("secret-password"));

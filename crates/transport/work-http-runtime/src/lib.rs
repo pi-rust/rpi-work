@@ -10,6 +10,21 @@ pub mod access;
 pub mod pairing;
 pub mod security;
 pub mod sharing;
+
+/// Generic connection lifecycle primitives used by the Work protocol adapter.
+/// Work authentication and protocol frames remain outside this module.
+pub mod transport {
+    pub use rpi_httpcore::{
+        access::{
+            AccessState as ConnectionAccessState, AuthLease as ConnectionAuthLease, PrincipalId,
+        },
+        transport::{
+            ConnectionCloseReason, ConnectionConfigError, ConnectionError, ConnectionPermit,
+            ConnectionPolicy, ConnectionRegistry,
+        },
+    };
+}
+
 pub use access::{AuthLease, Generation, QrAuthorization, Security, SharingControl};
 
 pub struct AccessState {

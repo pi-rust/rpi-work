@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 use work_node_runtime::workspace::LocalWorkspace;
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 #[allow(clippy::needless_pass_by_value)]
 fn emit(value: Value) {
     println!("{value}");

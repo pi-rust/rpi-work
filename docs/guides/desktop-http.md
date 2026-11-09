@@ -4,7 +4,7 @@
 
 ## 同一个 owner
 
-桌面只创建一次 `LocalWorkspace`。本机 facade 和 Work HTTP/SSE/WebSocket adapter 持有同一个 `Arc`，共用项目、registry、会话、运行任务、历史和 ACP manager。独立 `rpi-http`（通常 13030）仍是另一个节点，不会被自动接管、关闭或合并。
+桌面只创建一次 `LocalWorkspace`。本机 facade 和 Work HTTP/WebSocket adapter 持有同一个 `Arc`，共用项目、registry、会话、运行任务、历史和 ACP manager。独立 `rpi-http`（通常 13030）仍是另一个节点，不会被自动接管、关闭或合并。
 
 - `task desktop`：启动桌面 owner，内嵌认证 API 默认 `0.0.0.0:13031`；首次没有共享偏好时启用局域网共享，仍需密码或一次性扫码授权。
 - `task dev`：构建 release Web 并启动无头 owner，在 `13031` 直接托管，不热刷新。
@@ -17,7 +17,7 @@
 
 ## 宿主 Web 登录与手机 App 授权
 
-Web 与桌面是平级客户端：默认使用当前节点，也可以主动连接其他节点。桌面直接提供 Web assets，或由同源代理提供 Web、桌面提供 API/SSE 时，Web 默认访问同一个桌面 owner，不是永久绑定。已有有效 Cookie 直接进入；首次或登录失效时显示 **登录宿主**。不要求为默认节点另填地址或点击连接，登录前不挂载工作台、不读取项目/session。认证后在连接设置点 **连接其他电脑**，可进入其他节点自己的 Web 页面独立登录，再用 **返回入口节点** 返回；不要求将当前 Web 改成 standalone。旧历史不得在启动失败时自动替代当前宿主。手机浏览器仍是 Web，移动原生客户端不托管本机节点、只连接外部节点。详见[客户端地位与默认节点](../design/node-session-ownership.md#11-客户端地位与默认节点产品约定)。
+Web 与桌面是平级客户端：默认使用当前节点，也可以主动连接其他节点。桌面直接提供 Web assets，或由同源代理提供 Web、桌面提供 API/WebSocket 时，Web 默认访问同一个桌面 owner，不是永久绑定。已有有效 Cookie 直接进入；首次或登录失效时显示 **登录宿主**。不要求为默认节点另填地址或点击连接，登录前不挂载工作台、不读取项目/session。认证后在连接设置点 **连接其他电脑**，可进入其他节点自己的 Web 页面独立登录，再用 **返回入口节点** 返回；不要求将当前 Web 改成 standalone。旧历史不得在启动失败时自动替代当前宿主。手机浏览器仍是 Web，移动原生客户端不托管本机节点、只连接外部节点。详见[客户端地位与默认节点](../design/node-session-ownership.md#11-客户端地位与默认节点产品约定)。
 
 Web 的跨节点适配是同源页面导航，不是跨源 API 直连或凭据代理。目标须有 hosted 声明及 Web assets／同源 Web 代理；仅 API 的节点需先配置 Web 入口。返回地址是经校验的手动导航提示，不是授权，不会自动跳转。当前节点认证失效可点 **重新登录当前节点** 回到自己的宿主门禁。限制、Cookie host 边界及隔离测试见[宿主 Web 切换节点](node-connection.md#宿主-web-切换节点)。
 
@@ -29,7 +29,7 @@ Web 的跨节点适配是同源页面导航，不是跨源 API 直连或凭据�
 
 首次缺失 `sharing.json` 时**默认开启局域网共享**；已保存的关闭选择始终保留，损坏或不可读的偏好仍按关闭处理并提示。在宿主桌面 **设置 → 执行节点 → 这台电脑的共享 → 允许共享这台电脑** 可关闭；选择会保存在当前 data 的 `sharing.json`，不含密码。桌面正在查看其他远程节点时仍能控制自己这台电脑的共享，二者互不影响；Web/手机没有该宿主控制权限。
 
-- 关闭时，HTTP 工作空间 API（包括登录）返回 `403 / sharing_disabled`，已有 SSE 立即断开，旧 Cookie 作废。重新开启后须重新登录。
+- 关闭时，HTTP 工作空间 API（包括登录）返回 `403 / sharing_disabled`，已有 WebSocket 立即断开，旧 Cookie 作废。重新开启后须重新登录。
 - **关闭共享不停止本机任务、不关闭 workspace、不影响桌面连接其他节点。** 已经接受的命令不自动撤回，已被客户端读取的内容也无法收回。
 - listener/executor 可以保持存活：health 只报告存活和共享状态，静态客户端资源不包含节点数据；不能把端口仍可连接误判为项目/会话仍可访问。
 - 保存失败不显示虚假成功；仅偏好缺失采用首次开启策略，显式关闭不会被启动逻辑覆盖。开关不会自动更改监听网卡、防火墙、Host 白名单或反向代理。
@@ -105,10 +105,10 @@ HTTP 页面的手机相机通常需要 HTTPS；局域网 HTTP 可使用相册。
 
 ## 生命周期与验证边界
 
-listener、SSE 断开或切换页面不停止会话。桌面退出依次停止 HTTP 接收并等待在途调用、shutdown 现有 workspace children、结束 HTTP executor、释放数据锁。
+listener、WebSocket 断开或切换页面不停止会话。桌面退出依次停止 HTTP 接收并等待在途调用、shutdown 现有 workspace children、结束 HTTP executor、释放数据锁。
 
-`cargo test -p work-server --locked` 使用临时目录、随机端口、协议 fixture。测试比较本机与 HTTP 的会话 ID、元数据、事件序号和宿主进程 PID，验证不是两份文件副本；也覆盖认证、Host/Origin、请求标记、限流、端口冲突及静态资源目录边界。它不代表当前旧 GUI 已升级或实体手机已验收。
+`cargo test -p work-node-service --locked` 使用临时目录、随机端口、协议 fixture。测试比较本机与 HTTP 的会话 ID、元数据、事件序号和宿主进程 PID，验证不是两份文件副本；也覆盖认证、Host/Origin、请求标记、限流、端口冲突及静态资源目录边界。它不代表当前旧 GUI 已升级或实体手机已验收。
 
 稳定 node ID 保存在桌面 data 的 `node-id`，HTTP health 返回 `nodeId`。客户端缓存/凭据目前仍按地址隔离；不据此自动合并不同地址的历史，也不移动已存在的迁移副本。
 
-默认 Web 入口专项复验：`tests/e2e/verify-desktop-owner-http.cjs` 分别在直接托管与 `WORK_OWNER_PROXY=1` 的 API-only owner + 真实 dev-web 代理模式运行；`verify-desktop-web-proxy.cjs` 验证故障不回退、精确 Host/Origin、Cookie/SSE及显式standalone。全部使用隔离 fixture／随机端口。报告见 `artifacts/desktop-web-entry/REPORT.md`；源码修复不等于当前线上服务已经更新。
+默认 Web 入口专项复验：`tests/e2e/verify-desktop-owner-http.cjs` 分别在直接托管与 `WORK_OWNER_PROXY=1` 的 API-only owner + 真实 dev-web 代理模式运行；`verify-desktop-web-proxy.cjs` 验证故障不回退、精确 Host/Origin、Cookie/WebSocket及显式standalone。全部使用隔离 fixture／随机端口。报告见 `artifacts/desktop-web-entry/REPORT.md`；源码修复不等于当前线上服务已经更新。

@@ -63,12 +63,12 @@
 
 ## 5. 当前实现与剩余边界
 
-1. 桌面本机 RPC 与内嵌 Work HTTP/SSE/WebSocket 持有同一 `Arc<LocalWorkspace>`；adapter 不再创建 owner、Service 或 registry。独立 standalone HTTP 仍是不同节点，旧副本不自动合并或迁移。
+1. 桌面本机 RPC 与内嵌 Work HTTP/WebSocket 持有同一 `Arc<LocalWorkspace>`；adapter 不再创建 owner、Service 或 registry。独立 standalone HTTP 仍是不同节点，旧副本不自动合并或迁移。
 2. 桌面保留显式远程选择与历史恢复；`task desktop` 默认明确选择 `rpi-work://local`，不再把连接 standalone HTTP 当作桌面共享。
 3. `task dev` 构建 release Web 并以前台无头 owner 在 `13031` 直接托管，不热刷新；`task dev:desktop` 才是桌面 owner + `14180` debug Web 代理/刷新。直接 dev-web 默认代理 `13031` 和 hosted 策略。`task node` 是独立 rpi HTTP 服务，不能推定支持 Work 全部协议。相同 data 不能同时启动第二个 owner。
 4. 项目/会话目录在窗口可见时按 3 秒刷新，focus/visible 补刷，按节点与连接 epoch 隔离；这是目录校准，不是文件复制或历史全量合并。
 5. 桌面退出先 drain HTTP，再 shutdown 同一 workspace 的 children，最后释放 executor 和数据锁。HTTP 断流及客户端切换不停止 owner。
-6. 桌面首次默认开启共享，保存关闭选择或偏好不可读/损坏时保持关闭；开关控制真实 HTTP/SSE 访问，关闭不停止本机运行。开启后本机页才显示地址分享、密码和独立的 Android App 一次性扫码授权入口；普通分享不授予权限，专用授权码是 120 秒单次 bearer 委托。可达地址与网络监听需明确配置；可在远程视图独立控制本机共享，仍无设备审批、设备权限列表或 ACL。
+6. 桌面首次默认开启共享，保存关闭选择或偏好不可读/损坏时保持关闭；开关控制真实 HTTP/WebSocket 访问，关闭不停止本机运行。开启后本机页才显示地址分享、密码和独立的 Android App 一次性扫码授权入口；普通分享不授予权限，专用授权码是 120 秒单次 bearer 委托。可达地址与网络监听需明确配置；可在远程视图独立控制本机共享，仍无设备审批、设备权限列表或 ACL。
 7. 默认 Web 的初始入口自动读取当前宿主 owner 的项目／会话，有效 Cookie 可直接进入；宿主声明失败不得静默改用其他节点。认证后可主动通过目标节点自己的 Web 入口切换，并手动返回原入口；目标独立认证，返回提示不选择节点、不授予权限。当前适配是页面导航，目标须提供 hosted 声明和 Web assets／同源代理，不支持任意 API-only 节点的浏览器跨源直连，也不是同页面多节点同时在线。已用隔离真实双 owner 的直接托管／代理、1440／390／320px 明暗展示、独立密码及认证失效恢复复验，见[报告](../../artifacts/web-node-navigation/REPORT.md)。手机浏览器走 Web 认证，Android 原生 App 仍使用自己的外部节点授权流程；未新增跨端选中项或草稿同步协议。
 8. 同 owner 由隔离测试比较相同宿主 PID、会话 ID、元数据及事件序号证明；不能通过两个服务共写 JSON 或只读到相同目录来替代。
 9. `work-host` 提供 GUI／无头共用生命周期；`work-cli serve` 与 `work-ui --headless` 不另建数据库。CLI 默认通过认证 HTTP 连接现有节点13031，typed 操作/订阅不拥有执行进程；原生 RPC/ACP 直连仅为显式诊断。桌面 `--connect` 或显式远程环境地址是纯客户端，不创建本机 owner、猜测端口身份或在连接失败时回退创建 owner。当前只有前台宿主和协作退出，系统服务安装/后台化仍未提供；范围及限制见[无头指南](../guides/headless-node.md)。
@@ -88,7 +88,7 @@
 依赖方向为 **客户端 → Node 应用服务 → runtime**，本地调用不必绕行 HTTP：
 
 - `work-node-api` 定义共享 DTO、typed `NodeApi`、`SessionAccess` 和 `SessionConfiguration`；`work-core::api` 重导出契约，`work-core` 保留纯状态/事件投影，不持有执行宿主。应用 future 与事件端口不强制 `Send`。
-- `work-node-runtime::workspace::LocalWorkspace` 是唯一 owner，持有 extcore Service、RPC/ACP 执行与会话绑定；`work-node` 仅保留兼容重导出。`work-client::LocalWorkspace` 仅包装同一 Arc；`work-server` 接收该 owner，不另建 Manager 或运行状态。
+- `work-node-runtime::workspace::LocalWorkspace` 是唯一 owner，持有 extcore Service、RPC/ACP 执行与会话绑定；`work-node-runtime` 仅保留兼容重导出。`work-client::LocalWorkspace` 仅包装同一 Arc；`work-node-service` 接收该 owner，不另建 Manager 或运行状态。
 - `WorkspaceClient` 与 `WorkClient` 转接会话、配置、执行、队列、对话和观测等 typed 方法。主工作台不按 native handle 是否存在选择执行路径；`AgentClient` / `prepare_agent_session` 保留为兼容和显式协议入口，不能用来新增 UI 旁路。
 - 操作能力来自绑定会话的精确观察；未知/失败不回退全局能力或本机执行。`SessionAccess` 决定执行命令、快照限量和对话回复；`SessionConfiguration` 提供配置面命令和协商选项。它们不是授权或已加载资源证明。
 - 本地保持 subscribe-before-snapshot，远端按 snapshot cursor 订阅；消息身份合并、快照恢复与客户端投影仍归 client。ACP snapshot 只恢复当前有效的 pending permissions，typed 回答由 node 核对 binding、generation 和 outstanding request。

@@ -62,7 +62,7 @@ impl AgentTransport for FixtureTransport {
             let mut calls = self.calls;
             calls.write().push(json!({"sessionId":session_id,"id":id,"value":value}));
             let _ = document::eval("await new Promise(r=>setTimeout(r,100));dioxus.send(true)").recv::<bool>().await;
-            if *self.fail.read() { return Err(ClientError::Sse("controlled fixture rejection".into())); }
+            if *self.fail.read() { return Err(ClientError::Protocol("controlled fixture rejection".into())); }
             let mut all = self.values.borrow_mut();
             let options = all.entry(session_id.into()).or_insert_with(config_options);
             if let Some(option) = options.iter_mut().find(|option| option["id"] == id) { option["currentValue"] = value; }
@@ -71,11 +71,11 @@ impl AgentTransport for FixtureTransport {
     }
     fn request<'a, 'b, 'c, 'f>(&'a self, _: &'b str, _: &'c str, _: Value) -> Reply<'f, Value>
     where 'a: 'f, 'b: 'f, 'c: 'f, Self: 'f {
-        Box::pin(async { Err(ClientError::Sse("fixture forbids commands/model calls".into())) })
+        Box::pin(async { Err(ClientError::Protocol("fixture forbids commands/model calls".into())) })
     }
     fn subscribe<'a, 'b, 'f>(&'a self, _: &'b str, _: u64) -> Reply<'f, EventStream>
     where 'a: 'f, 'b: 'f, Self: 'f {
-        Box::pin(async { Err(ClientError::Sse("fixture has no stream".into())) })
+        Box::pin(async { Err(ClientError::Protocol("fixture has no stream".into())) })
     }
 }
 

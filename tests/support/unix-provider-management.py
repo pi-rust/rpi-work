@@ -59,7 +59,7 @@ def main():
                    'CARGO_BUILD_JOBS': '4', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                    'XDG_CONFIG_HOME': str(home / 'config'), 'XDG_DATA_HOME': str(home / 'data')}
             result['rustc'] = subprocess.check_output([str(cache.TOOLCHAIN / 'rustc'), '--version'], env=env, text=True).strip()
-            command = ['cargo', 'test', '--offline', '--locked', '-p', 'work-node', '--lib', 'workspace::providers']
+            command = ['cargo', 'test', '--offline', '--locked', '-p', 'work-node-runtime', '--lib', 'workspace::providers']
             result['command'] = command
             with (REPORT / 'tests.log').open('wb') as log:
                 process = subprocess.Popen(command, cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)

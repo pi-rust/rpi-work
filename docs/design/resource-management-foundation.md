@@ -22,7 +22,7 @@
 
 | 对象 | 本次核对 | 结论范围 |
 | --- | --- | --- |
-| Work 工作区 | `work-node` 固定依赖 `rpi-extcore =0.1.5` | 正式访问链路仍缺资源创建参数与管理接入 |
+| Work 工作区 | `work-node-runtime` 固定依赖 `rpi-extcore =0.1.5` | 正式访问链路仍缺资源创建参数与管理接入 |
 | 相邻 rpi-package 源码 | extcore 0.2.6，commit `1800195` | 新源码的 `SessionOptions`、`CreateSessionRequest` 仍无完整 Package/Skills 资源选择；不能仅升级依赖解决 |
 | 相邻 pi-rust 源码 | workspace 0.16.0，commit `0b8e92f`，已有其他未提交改动 | 核查资源发现、安装、库层 setter 及 RPC 公布命令；未修改该仓库 |
 | PATH 中的宿主 | `rpi --version` 返回 0.16.0 | 仅确认版本输出，未证明与上述 commit 同源 |
@@ -99,7 +99,7 @@ Session 资源快照（独立 revision / observation / host generation）
 | rpi 原生宿主/原生安装组件 | 资源格式和解析、实际安装机制、发现/精确选择、指令合成、扩展加载与 ABI、模型有效集合、实际资源快照 |
 | rpi-extcore | 中立会话资源契约、启动参数透传、native 请求、宿主生命周期、配置应用与执行互斥、资源配置保存及恢复协调 |
 | work-node-runtime | 当前 workspace owner 对接中立服务；节点/项目归属、本机资源管理入口及操作协调；复用原生安装机制 |
-| work-client / work-node-service | 现有本机与 HTTP/SSE 访问适配、能力协商及错误映射，传递同一套事实 |
+| work-client / work-node-service | 现有本机与 HTTP/WebSocket 访问适配、能力协商及错误映射，传递同一套事实 |
 | Work UI | 资源管理、会话选择、来源及状态展示；根据回读显示成功或失败 |
 
 源文件和 native transcript 继续由其原有 owner 管理。通用资源恢复/执行语义优先在 extcore 形成，避免每个 HTTP/ACP/UI adapter 各做一套。

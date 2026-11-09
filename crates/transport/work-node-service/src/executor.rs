@@ -1,9 +1,13 @@
 //! Shared admission and `LocalSet` dispatch. Network handlers only send owned,
 //! Send messages; the supplied workspace remains the sole !Send RPC owner.
-use crate::{access::AuthLease, routes, ServerState};
+use crate::{
+    ServerState,
+    access::{AdmissionError, AdmissionPermit, AuthLease},
+    routes,
+};
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::{OwnedSemaphorePermit, oneshot};
+use tokio::sync::oneshot;
 use work_node_api::api::realtime::{
     OperationOutcome, OperationRef, OperationStatus, RealtimeError, RealtimeErrorCode,
     RealtimeOperationKind,
@@ -50,7 +54,7 @@ pub(crate) struct RealtimeRequest {
     action: RealtimeAction,
     auth: AuthLease,
     reply: oneshot::Sender<Result<RealtimeReply, RealtimeError>>,
-    _permit: OwnedSemaphorePermit,
+    _permit: AdmissionPermit,
 }
 
 pub(crate) fn error(code: RealtimeErrorCode) -> RealtimeError {
@@ -126,9 +130,14 @@ pub(crate) async fn request(
     let possibly_mutating = matches!(&action, RealtimeAction::Execute { .. });
     let permit = state
         .admission
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| error(RealtimeErrorCode::LimitExceeded))?;
+        .try_admit()
+        .await
+        .map_err(|admission_error| {
+            error(match admission_error {
+                AdmissionError::AtCapacity => RealtimeErrorCode::LimitExceeded,
+                AdmissionError::ShuttingDown => RealtimeErrorCode::Unavailable,
+            })
+        })?;
     let (reply, result) = oneshot::channel();
     let message = ExecutorRequest::Realtime(RealtimeRequest {
         action,

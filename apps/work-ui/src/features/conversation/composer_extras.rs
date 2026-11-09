@@ -1393,7 +1393,7 @@ fn BtwThreadPanel(
             thread.activity.operation = true;
             thread.error.clear();
         });
-        // Replace the previous SSE subscription and keep observing until real settlement.
+        // Replace the previous WebSocket subscription and keep observing until real settlement.
         runtime.stop_stream();
         let task_runtime = runtime.clone();
         runtime.task(async move {

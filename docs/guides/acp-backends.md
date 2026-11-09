@@ -14,7 +14,7 @@
 - 已有会话选择不同后端，会先确认，再在**同一项目创建独立会话**。不会改绑原会话、迁移上下文、复制权限或停止原任务；原会话和草稿保留。
 - 打开已有会话，以它持久保存的绑定为准，而非全局新会话偏好。绑定尚未确认时不拿偏好冒充当前后端；离线、未知绑定或创建中时禁用切换动作。会话/连接 scope 改变会销毁旧切换窗口和待确认操作。工作台会话 ID 与 Agent 返回的 opaque session ID 分开保存。
 - ACP 进程由工作空间持有。切走页面不会取消正在执行的提示；停止需要显式操作。删除会话会清理本地绑定及其托管进程，不等同于删除 Agent 自己保存的原生历史。
-- ACP 在**节点宿主**运行，不在 Web 或 Android 客户端设备上启动。桌面本机通过进程内 facade 使用同一 owner；内嵌 `work-server` 已提供后端发现、会话绑定、能力、配置、创建与交互答复入口，远程访问取决于目标节点实际公布的能力，不能把所有 HTTP 节点都视为支持 ACP。缺少接口或能力时明确失败，不退回客户端直启 Agent。
+- ACP 在**节点宿主**运行，不在 Web 或 Android 客户端设备上启动。桌面本机通过进程内 facade 使用同一 owner；`work-node-service` 已提供后端发现、会话绑定、能力、配置、创建与交互答复入口，远程访问取决于目标节点实际公布的能力，不能把所有 HTTP 节点都视为支持 ACP。缺少接口或能力时明确失败，不退回客户端直启 Agent。
 
 「可用」仅代表可定位启动程序和参数有效，**不代表已登录、模型可访问或提示一定完成**。恢复依赖 Agent 真正支持 load/resume；能力缺失或恢复失败会明确报错，不另造新会话冒充原上下文。ACP 会话暂不支持工作台 Fork/Clone，也不承诺与 RPI 相同的资源安装、队列、压缩、原生 BTW 工具限制或多模态能力。
 
@@ -81,7 +81,7 @@ Codex 本机登录检查成功；OpenCode 未发现已保存的 provider 凭据�
 
 ```powershell
 # 节点所有权、原生执行器及客户端适配的隔离测试，不调用真实模型。
-cargo test -p work-node -p work-client -p work-server --locked
+cargo test -p work-node-runtime -p work-client -p work-node-service --locked
 
 # 真实 Dioxus 菜单/configOptions 组件，内存 transport，不调用模型。
 ./tests/support/build-agent-backends.ps1
@@ -92,6 +92,6 @@ node tools/review/smoke-acp-agents.mjs --adapters target/acp-tools
 # 单后端可加 --backend claude；此处不默认运行 --prompt。
 ```
 
-此前浏览器证据：`artifacts/agent-backends-validation.json`、`artifacts/agent-backends-320.png`、`artifacts/agent-backends-390.png`，以及 `artifacts/agent-backends-resource-tab-desktop.png`、`artifacts/agent-backends-resource-tab-390.png`、`artifacts/agent-backends-resource-tab-320.png`。这些本机产物只说明各次测试的范围，不构成当前功能或远程能力的完整清单。当前会话能力和配置边界以 `SessionAccess` / `SessionConfiguration` 及节点的真实响应为准；HTTP 隔离测试见 `crates/transport/work-server/tests/session_access_acp.rs`、`session_configuration.rs` 和 `session_services.rs`。fixture 通过不等于真实桌面 WebView、Android 或模型端到端验收。
+此前浏览器证据：`artifacts/agent-backends-validation.json`、`artifacts/agent-backends-320.png`、`artifacts/agent-backends-390.png`，以及 `artifacts/agent-backends-resource-tab-desktop.png`、`artifacts/agent-backends-resource-tab-390.png`、`artifacts/agent-backends-resource-tab-320.png`。这些本机产物只说明各次测试的范围，不构成当前功能或远程能力的完整清单。当前会话能力和配置边界以 `SessionAccess` / `SessionConfiguration` 及节点的真实响应为准；HTTP 隔离测试见 `crates/transport/work-node-service/tests/session_access_acp.rs`、`session_configuration.rs` 和 `session_services.rs`。fixture 通过不等于真实桌面 WebView、Android 或模型端到端验收。
 
 完整回归入口与此前消息/主题行为见 [项目、会话与消息交互](codex-interactions.md)、[功能面审阅](../archive/codex-visual-review.md)。源码、隔离验证与发布状态分别判断；已安装应用不会自动获得本地源码改动。

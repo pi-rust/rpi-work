@@ -41,7 +41,7 @@ RPI 会话资源已通过 typed 原生服务实现主 Package、独立 Skills/�
 
 - [节点与会话归属](node-session-ownership.md)：数据归属、身份、多节点与共享边界。
 - [架构总览](../architecture/overview.md)：实际 crate、数据归属与生命周期。
-- [架构与传输](../architecture/transport.md)：RPC/ACP/HTTP/SSE/WebSocket 适配与能力边界。
+- [架构与传输](../architecture/transport.md)：RPC/ACP/HTTP/WebSocket 适配与能力边界。
 - [开发规范](../guides/development-standards.md)：会话一致性、权限、草稿、配置回读和生命周期的硬约束。
 - [项目结构](../guides/project-structure.md)：代码位置与常用命令。
 

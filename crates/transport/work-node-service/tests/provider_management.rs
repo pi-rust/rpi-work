@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use work_client::{LocalWorkspace, WorkClient, WorkspaceClient};
 use work_core::api::{NodeApi, NodeErrorKind, ProviderAction, ProviderMutation};
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 const KEY: &str = "provider-secret-!literal-$(never-execute)-\"quoted\"";
 

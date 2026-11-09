@@ -12,10 +12,10 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{Message, client::IntoClientRequest},
 };
-use work_client::{RemoteTransport, WorkClient};
+use work_client::WorkClient;
 use work_core::api::realtime::{SUBPROTOCOL, ServerFrame};
 use work_node_runtime::workspace::LocalWorkspace;
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 type Ws = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -139,7 +139,6 @@ async fn close_socket(mut ws: Ws) {
 async fn client(fixture: &Fixture) -> WorkClient {
     let client = WorkClient::new(&format!("http://{}", fixture.server.address())).unwrap();
     client.login("isolated-client-hub").await.unwrap();
-    client.set_remote_transport(RemoteTransport::WebSocketOnly);
     client
 }
 
@@ -174,7 +173,6 @@ async fn supervised_local_client_uses_the_same_owner_over_private_http_and_ws() 
             .iter()
             .any(|p| p.name == "client hub fixture")
     );
-    local.set_remote_transport(RemoteTransport::WebSocketOnly);
     let response = local
         .command::<Value>(&f.sessions[0], json!({"type":"get_state"}))
         .await
@@ -294,7 +292,6 @@ async fn logout_fences_cached_stream_and_relogin_can_subscribe() {
     );
 
     client.login("isolated-client-hub").await.unwrap();
-    client.set_remote_transport(RemoteTransport::WebSocketOnly);
     let mut fresh = client.subscribe(&f.sessions[0], 0).await.unwrap();
     assert_eq!(fresh.next().await.unwrap().unwrap().event_type, "ready");
 

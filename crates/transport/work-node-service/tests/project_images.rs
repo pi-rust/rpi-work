@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use work_client::{
     ClientError, LocalWorkspace, PROJECT_IMAGE_MAX_BYTES, WorkClient, WorkspaceClient,
 };
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 fn status(error: ClientError) -> u16 {
     match error {

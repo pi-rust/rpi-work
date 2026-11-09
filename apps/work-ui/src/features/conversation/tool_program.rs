@@ -16,13 +16,39 @@ fn body_view_kind(kind: &str) -> &'static str {
         "JSON"
     } else if kind.contains("markdown") || kind == "md" {
         "Markdown"
-    } else if kind.contains("code") || kind.contains("source") {
+    } else if kind.contains("code")
+        || kind.contains("source")
+        || body_code_language(&kind, "") != "text"
+    {
         "Code"
     } else if kind.contains("text") {
         "Text"
     } else {
         "Binary"
     }
+}
+
+fn body_code_language(kind: &str, codec: &str) -> &'static str {
+    for value in [kind, codec] {
+        let value = value.to_ascii_lowercase();
+        let tokens = value.split(|character: char| !character.is_ascii_alphanumeric());
+        for token in tokens {
+            let language = match token {
+                "rust" | "rs" => "rust",
+                "javascript" | "js" => "javascript",
+                "typescript" | "ts" => "typescript",
+                "python" | "py" => "python",
+                "json" => "json",
+                "shell" | "sh" | "bash" => "shell",
+                "html" => "html",
+                "css" => "css",
+                "sql" => "sql",
+                _ => continue,
+            };
+            return language;
+        }
+    }
+    "text"
 }
 
 fn body_display_text(kind: &str, text: String) -> String {
@@ -32,6 +58,10 @@ fn body_display_text(kind: &str, text: String) -> String {
         }
     }
     text
+}
+
+fn body_is_complete(has_next_cursor: bool, byte_length: u64, total_bytes: u64) -> bool {
+    !has_next_cursor && byte_length == total_bytes
 }
 
 fn body_chunk_bytes(data: &str) -> Option<Vec<u8>> {
@@ -90,8 +120,8 @@ fn is_tool_program_event(event_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        body_chunk_sha256, body_display_text, body_sha256, body_view_kind, is_tool_program_event,
-        realtime_retry_delay_ms,
+        body_chunk_sha256, body_code_language, body_display_text, body_is_complete, body_sha256,
+        body_view_kind, is_tool_program_event, realtime_retry_delay_ms,
     };
 
     #[test]
@@ -103,8 +133,26 @@ mod tests {
     }
 
     #[test]
+    fn body_is_complete_gates_text_actions() {
+        assert!(body_is_complete(false, 5, 5));
+        assert!(!body_is_complete(true, 5, 5));
+        assert!(!body_is_complete(false, 4, 5));
+    }
+
+    #[test]
+    fn body_code_language_uses_explicit_descriptor_tokens() {
+        assert_eq!(body_code_language("code/rust", "utf-8"), "rust");
+        assert_eq!(
+            body_code_language("source", "text/javascript"),
+            "javascript"
+        );
+        assert_eq!(body_code_language("code", "opaque"), "text");
+    }
+
+    #[test]
     fn body_view_kind_uses_descriptor_kind() {
         assert_eq!(body_view_kind("application/json"), "JSON");
+        assert_eq!(body_view_kind("application/javascript"), "Code");
         assert_eq!(body_view_kind("markdown"), "Markdown");
         assert_eq!(body_view_kind("source-code"), "Code");
         assert_eq!(body_view_kind("application/octet-stream"), "Binary");
@@ -353,6 +401,11 @@ pub fn ToolProgramWorkbench(
     let resync_session = session_id.clone();
     let child_page_session = session_id.clone();
     let retry_attempt = *live_retry_attempt.read();
+    // Precompute once per render: filtering runs per child, so avoid
+    // re-allocating a lowercased query and re-reading the filter each time.
+    let child_query_lower = child_query.read().trim().to_ascii_lowercase();
+    let child_filter_value = child_filter.read().clone();
+    let phase_filter_value = phase_filter.read().clone();
 
     rsx! {
         section { id: "tool-program-workbench", class: "tool-program-workbench", aria_label: "Tool Program 工作台",
@@ -452,8 +505,8 @@ pub fn ToolProgramWorkbench(
             }
             div { class: "tool-program-children",
                 for child in current.page.children.iter().filter(|child| {
-                    let query_matches = child_query.read().trim().is_empty() || child.tool_name.to_ascii_lowercase().contains(&child_query.read().trim().to_ascii_lowercase());
-                    query_matches && match child_filter.read().as_str() { "active" => matches!(child.state.as_str(), "running" | "active" | "started"), "error" => matches!(child.state.as_str(), "failed" | "error"), "done" => matches!(child.state.as_str(), "completed" | "closed" | "done"), _ => true }
+                    let query_matches = child_query_lower.is_empty() || child.tool_name.to_ascii_lowercase().contains(&child_query_lower);
+                    query_matches && match child_filter_value.as_str() { "active" => matches!(child.state.as_str(), "running" | "active" | "started"), "error" => matches!(child.state.as_str(), "failed" | "error"), "done" => matches!(child.state.as_str(), "completed" | "closed" | "done"), _ => true }
                 }) {
                     {
                         let child_id = child.child_id.clone();
@@ -462,7 +515,6 @@ pub fn ToolProgramWorkbench(
                         let outcome = observation.map(|item| item.outcome.as_str()).unwrap_or("unknown");
                         let child_state_class = match child.state.as_str() { "running" | "active" | "started" => "is-running", "failed" | "error" => "is-error", "cancelled" | "canceled" => "is-cancelled", "completed" | "closed" | "done" => "is-success", _ => "" };
                         let is_expanded = expanded.read().iter().any(|id| id == &child_id);
-                        let phase_filter_value = phase_filter.read().clone();
                         let page_phases: Vec<ToolProgramPhase> = phases.read().iter().find(|item| item.child_id == child_id).map(|item| item.phases.iter().filter(|item| match phase_filter_value.as_str() { "attention" => item.is_error == Some(true) || item.failed == Some(true) || item.interrupted == Some(true) || item.cancelled == Some(true), "body" => item.descriptor.is_some(), _ => true }).cloned().collect()).unwrap_or_default();
                         let is_loading = phase_loading.read().as_deref() == Some(child_id.as_str());
                         let has_phases = !page_phases.is_empty();
@@ -552,7 +604,9 @@ pub fn ToolProgramWorkbench(
                                                         bytes.extend(body_chunk_bytes(&chunk.data)?);
                                                         Some(bytes)
                                                     });
-                                                    let body_text = body_bytes.as_ref().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).map(|text| body_display_text(&body.body.descriptor.kind, text));
+                                                    let body_complete = body_is_complete(body.next_cursor.is_some(), body.body.byte_length, body.body.total_bytes);
+                                                    let view_kind = body_view_kind(&body.body.descriptor.kind);
+                                                    let body_text = body_complete.then(|| body_bytes.as_ref()).flatten().and_then(|bytes| String::from_utf8(bytes.clone()).ok()).map(|text| body_display_text(&body.body.descriptor.kind, text));
                                                     let download_data = body_bytes.as_ref().map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
                                                     let body_hash = body_bytes.as_ref().map(|bytes| body_sha256(bytes));
                                                     let download_name = format!("tool-program-{}.body", body.body.descriptor.body_id);
@@ -560,7 +614,7 @@ pub fn ToolProgramWorkbench(
                                                     let copy_status_id = copy_phase_id.clone();
                                                     rsx! { div { class: "tool-program-body",
                                                         span { "{body.body.total_bytes} bytes · {body.body.chunks.len()} chunks · sha256 {body.body.descriptor.sha256}" }
-                                                        span { class: "tool-program-body-meta", "查看器：{body_view_kind(&body.body.descriptor.kind)} · {body.body.descriptor.kind} · {body.body.descriptor.codec} · {body.body.descriptor.encoding} · 已加载 {body.body.byte_length} bytes" }
+                                                        span { class: "tool-program-body-meta", "查看器：{view_kind} · {body.body.descriptor.kind} · {body.body.descriptor.codec} · {body.body.descriptor.encoding} · 已加载 {body.body.byte_length} bytes" }
                                                         if let Some(data) = download_data {
                                                             {
                                                                 let name = download_name.clone();
@@ -585,11 +639,21 @@ pub fn ToolProgramWorkbench(
                                                                     let ok = document::eval(&script).recv::<bool>().await.unwrap_or(false);
                                                                     body_copy_status.set(Some(if ok { success_id } else { format!("error:{failure_id}") }));
                                                                 });
-                                                            }, if body_copy_status.read().as_deref() == Some(copy_status_id.as_str()) { "已复制" } else if body_copy_status.read().as_deref() == Some(format!("error:{copy_status_id}").as_str()) { "复制失败" } else { "复制已加载文本" } }
+                                                            }, if body_copy_status.read().as_deref() == Some(copy_status_id.as_str()) { "已复制" } else if body_copy_status.read().as_deref() == Some(format!("error:{copy_status_id}").as_str()) { "复制失败" } else { "复制完整文本" } }
                                                         }
-                                                        if body_view_kind(&body.body.descriptor.kind) == "Markdown" {
+                                                        if view_kind == "JSON" || view_kind == "Text" {
                                                             if let Some(text) = body_text.as_ref() {
-                                                                div { class: "tool-program-body-markdown", {super::timeline::markdown_view(text)} }
+                                                                pre { class: "tool-program-body-chunk", role: "region", aria_label: "Text body preview", "{text}" }
+                                                            }
+                                                        }
+                                                        if view_kind == "Markdown" {
+                                                            if let Some(text) = body_text.as_ref() {
+                                                                div { class: "tool-program-body-markdown", role: "region", aria_label: "Markdown body preview", {super::timeline::markdown_view(text)} }
+                                                            }
+                                                        }
+                                                        if view_kind == "Code" {
+                                                            if let Some(text) = body_text.as_ref() {
+                                                                div { class: "tool-program-body-code", role: "region", aria_label: "Code body preview", super::message_presentation::CodeBlock { source: text.clone(), language: body_code_language(&body.body.descriptor.kind, &body.body.descriptor.codec).to_owned() } }
                                                             }
                                                         }
                                                         if body.next_cursor.is_some() {
@@ -606,7 +670,7 @@ pub fn ToolProgramWorkbench(
                                                             for chunk in &body.body.chunks {
                                                                 {
                                                                 let chunk_hash = body_chunk_sha256(&chunk.data);
-                                                                let chunk_class = if body_view_kind(&body.body.descriptor.kind) == "Code" { "tool-program-body-chunk is-code" } else { "tool-program-body-chunk" };
+                                                                let chunk_class = if view_kind == "Code" { "tool-program-body-chunk is-code" } else { "tool-program-body-chunk" };
                                                                 let chunk_valid = chunk_hash.as_deref().is_some_and(|hash| hash.eq_ignore_ascii_case(&chunk.sha256));
                                                                 rsx! {
                                                                     span { class: "tool-program-body-meta", "chunk {chunk.index} · offset {chunk.byte_offset} · {chunk.byte_length} bytes" }

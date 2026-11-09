@@ -24,6 +24,16 @@ for (const key of Object.keys(env)) if (/^(ANTHROPIC_|OPENAI_|RPI_(SESSION_ID|EX
 const token = crypto.randomBytes(32).toString('hex');
 const state = { installed: false, loaded: false, busy: false, count: 0, completed: 0, steps: 4, sequence: 0, source: 'actual-rpi-tool-events', frames: [], checks: [], settlements: [], modelFixtureRequests: 0 };
 const clients = new Set();
+const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+function wsFrame(text) {
+  const payload = Buffer.from(text), header = [0x81];
+  if (payload.length < 126) header.push(payload.length);
+  else if (payload.length <= 0xffff) header.push(126, payload.length >> 8, payload.length & 0xff);
+  else throw new Error('extension demo websocket frame too large');
+  return Buffer.concat([Buffer.from(header), payload]);
+}
+function wsSend(client, value) { if (!client.socket.destroyed) client.socket.write(wsFrame(JSON.stringify(value))); }
+function wsAccept(key) { return crypto.createHash('sha1').update(key + WS_GUID).digest('base64'); }
 let rpc, base, input, closing = false, activeCall, startupInProgress = true, stopRequested = false;
 
 class DemoStopped extends Error {}
@@ -110,7 +120,7 @@ function manifest() {
   ] }] } };
 }
 function snapshot() { return { ...state, frames: undefined, checks: undefined, manifest: manifest() }; }
-function broadcast() { state.sequence++; const frame = snapshot(); for (const client of clients) client.write(`data: ${JSON.stringify(frame)}\n\n`); }
+function broadcast() { state.sequence++; const frame = snapshot(); for (const client of clients) wsSend(client, frame); }
 function observe(frame) {
   if (frame.type === 'tool_execution_start' && frame.toolName === tool) activeCall = frame.toolCallId;
   if (['tool_execution_update', 'tool_execution_end'].includes(frame.type) && frame.toolName === tool && frame.toolCallId === activeCall) {
@@ -166,10 +176,6 @@ const server = http.createServer(async (request, response) => {
     response.setHeader('Vary', 'Origin'); response.setHeader('Cache-Control', 'no-store');
     if (request.method === 'OPTIONS') { response.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type' }).end(); return; }
     if (url.searchParams.get('token') !== token) { response.writeHead(403).end(); return; }
-    if (request.method === 'GET' && url.pathname === '/events') {
-      response.writeHead(200, { 'Content-Type': 'text/event-stream' }); response.write(`data: ${JSON.stringify(snapshot())}\n\n`);
-      clients.add(response); request.on('close', () => clients.delete(response)); return;
-    }
     if (request.method === 'GET' && url.pathname === '/state') { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(snapshot())); return; }
     if (request.method === 'POST' && url.pathname === '/run') {
       if (state.busy) { response.writeHead(409).end('Run already active'); return; }
@@ -177,6 +183,19 @@ const server = http.createServer(async (request, response) => {
     }
     response.writeHead(404).end();
   } catch (error) { if (!response.headersSent) response.writeHead(500); response.end(String(error)); console.error(error); }
+});
+
+server.on('upgrade', (request, socket) => {
+  try {
+    const url = new URL(request.url, base || 'http://127.0.0.1');
+    if (url.pathname !== '/realtime' || url.searchParams.get('token') !== token || !request.headers['sec-websocket-key']) { socket.destroy(); return; }
+    const origin = request.headers.origin;
+    if (origin && !/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin)) { socket.destroy(); return; }
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Protocol: rpi-work.extension.v1\r\nSec-WebSocket-Accept: ${wsAccept(request.headers['sec-websocket-key'])}\r\n\r\n`);
+    const client = { socket };
+    clients.add(client); wsSend(client, snapshot());
+    socket.on('close', () => clients.delete(client));
+  } catch { socket.destroy(); }
 });
 
 async function cleanup() {
@@ -200,7 +219,7 @@ async function cleanup() {
     if (rpc) { rpc.child.kill(); await deadline(rpc.exited, 3000, 'RPC cleanup timeout').catch(() => {}); rpc = undefined; }
     throw error;
   } finally {
-    for (const client of clients) client.end();
+    for (const client of clients) client.socket.end();
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
     await fs.mkdir(path.join(repo, 'artifacts'), { recursive: true });
     await fs.writeFile(path.join(repo, 'artifacts/extension-demo-validation.json'), JSON.stringify({ ...state, root, model: 'loopback deterministic fixture, no external model', productionLiveUiProtocol: false }, null, 2));

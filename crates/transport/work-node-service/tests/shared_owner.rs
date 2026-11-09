@@ -4,7 +4,7 @@ use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use work_client::{LocalWorkspace, WorkClient};
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 fn config() -> ServerConfig {
     ServerConfig {
@@ -298,7 +298,7 @@ fn advertised_address_cannot_be_local_or_contain_secrets() {
         ("192.168.3.27:4180", "分享地址"),
         ("http://", "分享地址无效"),
     ] {
-        let error = work_server::public_address(value).unwrap_err();
+        let error = work_node_service::public_address(value).unwrap_err();
         assert!(error.contains(hint), "{error}");
         assert!(error.contains("HTTP(S)"), "{error}");
     }
@@ -314,12 +314,12 @@ fn advertised_address_cannot_be_local_or_contain_secrets() {
         "https://host/#secret",
     ] {
         assert!(
-            work_server::public_address(value).is_err(),
+            work_node_service::public_address(value).is_err(),
             "accepted {value}"
         );
     }
     assert_eq!(
-        work_server::public_address("http://192.168.3.27:4180/").unwrap(),
+        work_node_service::public_address("http://192.168.3.27:4180/").unwrap(),
         (
             "http://192.168.3.27:4180/".into(),
             "192.168.3.27:4180".into()

@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["crates/foundation/work-core", "crates/client/work-client", "crates/node/work-node", "crates/transport/work-server", "crates/host/work-host", "crates/update/work-update", "apps/work-cli", "apps/work-ui", "crates/components/work-component-api", "crates/components/work-http-component", "crates/transport/work-http-runtime", "crates/foundation/work-node-api", "crates/node/work-node-runtime", "crates/transport/work-node-service", "crates/host/work-node-host"]
+members = ["crates/foundation/work-core", "crates/client/work-client", "crates/host/work-host", "crates/update/work-update", "apps/work-cli", "apps/work-ui", "crates/components/work-component-api", "crates/components/work-http-component", "crates/transport/work-http-runtime", "crates/foundation/work-node-api", "crates/node/work-node-runtime", "crates/transport/work-node-service", "crates/host/work-node-host"]

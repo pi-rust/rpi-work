@@ -28,7 +28,7 @@
 
 ## Android APK
 
-Actions制品名称为 `rpi-work-android-arm64-apk`，包含 `rpi-work-<version>-aarch64-linux-android.apk` 与SHA-256；无固定签名密钥的本地/PR构建文件名带 `-dev`，不用于更新发布。包名 `com.pirust.rpiwork`，最低Android 7.0/API 24，compile/target SDK 35；面向ARM64手机。APK复用正式Rust/Dioxus界面与原生HTTP/SSE客户端。
+Actions制品名称为 `rpi-work-android-arm64-apk`，包含 `rpi-work-<version>-aarch64-linux-android.apk` 与SHA-256；无固定签名密钥的本地/PR构建文件名带 `-dev`，不用于更新发布。包名 `com.pirust.rpiwork`，最低Android 7.0/API 24，compile/target SDK 35；面向ARM64手机。APK复用正式Rust/Dioxus界面与原生HTTP/WebSocket客户端。
 
 工具链固定Dioxus CLI 0.7.10、JDK 17、Android SDK 35与NDK 28.2.13676358，CLI下载校验官方release SHA-256。`scripts/ci/build-android.ps1` 与直接 Cargo 检查共用 `scripts/ci/android-toolchain.ps1`：从显式 `-NdkPath`、`ANDROID_NDK_HOME`、`NDK_HOME` 或 SDK 中的固定版本解析 NDK，校验 host 工具并配置目标专属 CC/CXX/AR、API 24 flags 和 Cargo linker；PATH 与环境改动仅在本次执行中生效，成功/失败均恢复。已有显式 NDK 路径无效时明确失败，不偷偷回退另一份 NDK。只设置 `ANDROID_HOME` 不会让直接 Cargo 自动找到 `ring` 所需的交叉编译器。
 

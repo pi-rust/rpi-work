@@ -1698,7 +1698,7 @@ mod tests {
                 NodeErrorKind::Internal,
             ),
             (
-                ClientError::Sse("secret-path".into()),
+                ClientError::Protocol("secret-path".into()),
                 NodeErrorKind::Internal,
             ),
         ] {

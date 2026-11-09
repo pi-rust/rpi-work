@@ -4,7 +4,7 @@ mod legacy_fixture;
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::Arc};
 use work_node_runtime::workspace::LocalWorkspace;
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 #[tokio::test]
 async fn native_timeline_http_contract() {

@@ -905,6 +905,7 @@ mod tests {
                 },
                 capabilities: CapabilitySet::acp_default(),
             }),
+            prompt_content: std::sync::atomic::AtomicBool::new(false),
         });
         let (tx, rx) = oneshot::channel();
         inner.pending.lock().insert(

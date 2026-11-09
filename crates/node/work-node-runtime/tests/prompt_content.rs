@@ -2,7 +2,7 @@
 //! A freshly compiled std-only echo process, never a real agent/model runtime.
 use futures_util::StreamExt;
 use serde_json::{Value, json};
-use work_node::workspace::LocalWorkspace;
+use work_node_runtime::workspace::LocalWorkspace;
 
 fn profile() -> Value {
     json!({"contentBlocksVersion":1,"image":true,"imageMimeTypes":["image/png","image/jpeg"],

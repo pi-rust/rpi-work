@@ -106,7 +106,7 @@ impl WorkClient {
             v["sessionId"]
                 .as_str()
                 .map(str::to_owned)
-                .ok_or_else(|| ClientError::Sse("missing created session identity".into()))
+                .ok_or_else(|| ClientError::Protocol("missing created session identity".into()))
         })
     }
     pub async fn native_release(

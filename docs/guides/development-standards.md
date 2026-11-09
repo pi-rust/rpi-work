@@ -6,8 +6,8 @@
 
 - `work-node-api`：纯 DTO、typed `NodeApi`、会话能力/配置与资源/realtime 契约；`work-core::api` 重导出它，`work-core` 另负责客户端事件规范化、运行投影和惰性设计。两者不持有节点 owner。
 - `work-client`：客户端连接、认证、传输适配和消息投影。`WorkspaceClient` 统一本地门面与远程访问；本地可以进程内调用，不强制绕行 HTTP。保留的 `AgentClient` / `prepare_agent_session` 是兼容入口，不得作为新 UI 业务入口。
-- `work-node-runtime`：实际唯一 workspace owner、RPC/ACP、会话绑定、原生资源和源码服务；`work-node` 仅兼容导出。不得新建第二份 owner 或把桌面本机改成回环 HTTP。
-- `work-node-service`：同 owner 的 HTTP/SSE/WebSocket adapter，`work-http-runtime` 提供认证/共享辅助；`work-server` 仅兼容导出并保留集成测试/examples。不另建 owner 或第二套执行状态。
+- `work-node-runtime`：实际唯一 workspace owner、RPC/ACP、会话绑定、原生资源和源码服务。不得新建第二份 owner 或把桌面本机改成回环 HTTP。
+- `work-node-service`：同 owner 的 HTTP/WebSocket adapter，`work-http-runtime` 提供认证/共享辅助；集成测试和 examples 与 service 同 crate。不另建 owner 或第二套执行状态。
 - `work-node-host` 实现无 GUI 单 owner 初始化、组件注册、HTTP 配置、数据锁及协作退出；`work-host` 组合应用门面和本机 client。GUI 与 `work-cli serve` / `work-ui --headless` 共用，不另建会话库或执行系统。显式远程桌面是纯客户端，不能在连接失败后抢锁创建 owner。CLI 新业务走 typed 节点方法，直接 Agent 模式仅保留为显式兼容诊断。
 - `work-ui/features/*`：领域交互与宿主控制的渲染；跨功能协调放在 `app/`，可测试的状态判断优先抽为纯函数。
 - 正式应用不得依赖 `design/prototype/`、测试 fixture、邻接仓库或仅本机存在的开发资源。测试 harness 不进入正式安装包。

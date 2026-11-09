@@ -58,11 +58,11 @@
 ## 验证与复现
 
 ```powershell
-cargo test -p work-node --lib workspace::packages --locked --offline
-cargo test -p work-server --test package_distribution --locked --offline
+cargo test -p work-node-runtime --lib workspace::packages --locked --offline
+cargo test -p work-node-service --test package_distribution --locked --offline
 cargo test -p work-ui --bin work-ui features::resources::packages --locked --offline
 node --test tests/structure/curated-packages.test.cjs
-cargo build -p work-cli -p work-server --bin work-cli --bin work-server-rpc-fixture --locked --offline
+cargo build -p work-cli -p work-node-service --bin work-cli --bin work-server-rpc-fixture --locked --offline
 & tools/dev/build-ui-web.ps1 -DebugBuild -OutputRoot target/curated-package-build
 node tests/e2e/verify-curated-packages.cjs
 ```

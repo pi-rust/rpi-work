@@ -116,7 +116,7 @@ struct Inner {
     components: work_component_api::host::Host,
 }
 
-/// A cloneable native backend. No listener, HTTP client, or SSE transport is used.
+/// A cloneable native backend. No listener, HTTP client, or realtime transport is used.
 #[derive(Clone)]
 pub struct LocalWorkspace {
     inner: Arc<Inner>,

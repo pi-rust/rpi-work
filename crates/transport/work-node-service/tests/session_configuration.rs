@@ -4,7 +4,7 @@ mod legacy_fixture;
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::Arc};
 use work_client::{ClientError, LocalWorkspace, WorkClient, WorkspaceClient};
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 #[tokio::test]
 #[allow(clippy::too_many_lines)]
@@ -20,13 +20,10 @@ async fn configuration_routes_share_runtime_and_enforce_access() {
         }).unwrap();
         let url = format!("http://{}/", server.address());
         let http = WorkClient::new(&url).unwrap();
-        // This suite asserts HTTP status/Origin behavior. Realtime policy is
-        // covered by the authenticated WS integration and safety suites.
-        http.set_remote_transport(work_client::RemoteTransport::HttpSseOnly);
         let project = local.create_project("legacy fixture",None,false).await.unwrap();
         let session = legacy_fixture::seed_legacy(&root.path().join("data"),&project.id,"legacy-config-fixture");
         assert!(matches!(http.session_configuration(&session).await, Err(ClientError::Api { status, .. }) if status == 401));
-        assert!(matches!(http.set_session_config_option(&session, "model", json!("fixture")).await, Err(ClientError::Api { status, .. }) if status == 401));
+        assert!(matches!(http.set_session_config_option(&session, "model", json!("fixture")).await, Err(ClientError::WebSocket { status: Some(401) })));
         http.login("fixture-password").await.unwrap();
         let remote = WorkspaceClient::Remote(http.clone());
         let native = WorkspaceClient::Local(local.clone());

@@ -2,7 +2,7 @@
 //! The workspace owner can serve `NodeApi` without linking the client or a listener.
 use std::path::PathBuf;
 use work_core::api::{NodeApi, NodeErrorKind};
-use work_node::workspace::{LocalError, LocalWorkspace, WorkspaceError};
+use work_node_runtime::workspace::{LocalError, LocalWorkspace, WorkspaceError};
 
 #[tokio::test]
 async fn node_workspace_is_an_independent_lazy_service_owner() {

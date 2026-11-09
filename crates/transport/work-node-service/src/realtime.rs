@@ -2,7 +2,13 @@
 use crate::{
     access::AuthLease,
     executor::{self, RealtimeAction, RealtimeReply},
-    ServerState,
+    security, ServerState,
+};
+use work_http_runtime::{
+    transport::{
+        ConnectionAccessState, ConnectionAuthLease, ConnectionError, ConnectionPermit,
+        ConnectionPolicy, ConnectionRegistry, PrincipalId,
+    },
 };
 use axum::{
     Json,
@@ -20,7 +26,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch},
+    sync::{OnceCell, OwnedSemaphorePermit, Semaphore, mpsc, watch},
     task::{AbortHandle, JoinSet},
     time::{Instant, MissedTickBehavior},
 };
@@ -42,25 +48,53 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(45);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 type CloseReason = (u16, &'static str);
 
+/// Work authentication remains authoritative for each connection. The core
+/// registry lease below is an internal sentinel used only for generic slot and
+/// shutdown lifecycle; it is never exposed as a bearer credential.
 pub(crate) struct RealtimeState {
-    connections: Arc<Semaphore>,
+    registry: ConnectionRegistry,
+    transport_access: ConnectionAccessState,
+    transport_lease: Arc<OnceCell<ConnectionAuthLease>>,
     bytes: Arc<Semaphore>,
 }
 impl RealtimeState {
     pub(crate) fn new() -> Self {
+        let transport_access = ConnectionAccessState::new(true, 1);
+        let policy = ConnectionPolicy::new(MAX_CONNECTIONS as usize, MAX_MESSAGE_BYTES, 1)
+            .expect("realtime connection policy must be valid");
         Self {
-            connections: Arc::new(Semaphore::new(MAX_CONNECTIONS as usize)),
+            registry: ConnectionRegistry::new(transport_access.clone(), policy),
+            transport_access,
+            transport_lease: Arc::new(OnceCell::new()),
             bytes: Arc::new(Semaphore::new(NODE_OUTBOX_BYTES)),
         }
     }
-    pub(crate) async fn wait_closed(&self) -> Result<(), &'static str> {
-        let _all = self
-            .connections
-            .clone()
-            .acquire_many_owned(MAX_CONNECTIONS)
+    async fn accept(&self) -> Result<ConnectionPermit, ConnectionError> {
+        let lease = self
+            .transport_lease
+            .get_or_try_init(|| async {
+                self.transport_access
+                    .issue(
+                        PrincipalId::new("work-realtime")
+                            .expect("static transport principal must be valid"),
+                        Duration::from_secs(365 * 24 * 60 * 60),
+                    )
+                    .await
+            })
             .await
-            .map_err(|_| "WS limiter closed")?;
+            .map_err(ConnectionError::from)?;
+        self.registry.accept(lease).await
+    }
+    pub(crate) async fn begin_drain(&self) {
+        self.registry.begin_drain().await;
+    }
+    pub(crate) async fn wait_closed(&self) -> Result<(), &'static str> {
+        self.registry.wait_drained().await;
         Ok(())
+    }
+    #[cfg(test)]
+    async fn accept_for_test(&self) -> Result<ConnectionPermit, ConnectionError> {
+        self.accept().await
     }
 }
 
@@ -97,8 +131,14 @@ pub(crate) async fn upgrade(
     if !supported {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let Ok(permit) = state.realtime.connections.clone().try_acquire_owned() else {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    if !auth.is_valid(&state.sharing) {
+        return security::lease_failure(&state, &auth);
+    }
+    let permit = match state.realtime.accept().await {
+        Ok(permit) => permit,
+        Err(ConnectionError::AtCapacity) => return StatusCode::TOO_MANY_REQUESTS.into_response(),
+        Err(ConnectionError::ShuttingDown) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(_) => return security::lease_failure(&state, &auth),
     };
     let Ok(connection_id) = crate::random_secret() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -234,7 +274,7 @@ async fn connection(
     state: Arc<ServerState>,
     auth: AuthLease,
     hello: Hello,
-    _connection: OwnedSemaphorePermit,
+    connection_permit: ConnectionPermit,
 ) {
     let (sink, mut input) = socket.split();
     let (tx, rx) = mpsc::channel(OUTBOX_ITEMS);
@@ -272,6 +312,7 @@ async fn connection(
         tokio::select! {
             biased;
             () = auth.invalidated(&state.sharing, &state.shutdown) => break (1008, "authorization ended"),
+            () = connection_permit.wait_closed() => break (1001, "server shutting down"),
             _ = closed.changed() => break (*closed.borrow()).unwrap_or((1001, "connection closed")),
             _ = &mut writer => { writer_finished = true; break (1001, "writer stopped"); },
             Some(done) = jobs.join_next(), if !jobs.is_empty() => {

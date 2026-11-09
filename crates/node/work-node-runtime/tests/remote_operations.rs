@@ -2,7 +2,7 @@
 //! No Agent process is started: owner construction and receipt bookkeeping only.
 use serde_json::{Value, json};
 use work_core::api::realtime::{OperationOutcome, OperationStatus, RealtimeOperationKind};
-use work_node::workspace::{
+use work_node_runtime::workspace::{
     LocalWorkspace,
     operations::{OperationClaim, OperationError},
 };

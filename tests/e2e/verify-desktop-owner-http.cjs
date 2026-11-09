@@ -1,4 +1,4 @@
-// Formal Web bundle -> direct work-server OR real dev-web proxy -> the SAME native LocalWorkspace.
+// Formal Web bundle -> direct work-node-service OR real dev-web proxy -> the SAME native LocalWorkspace.
 // Only unexpected external HTTP is intercepted, never fixture API responses.
 // No installed desktop, fixed ports, user data or models.
 const http = require('node:http');
@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const { chromium, request } = require('../support/browser.cjs');
 const runDevWeb = require('../support/run-dev-web.cjs');
 (async () => {
-  assert(process.env.WORK_OWNER_FIXTURE, 'Build work-server example and set WORK_OWNER_FIXTURE');
+  assert(process.env.WORK_OWNER_FIXTURE, 'Build work-node-service example and set WORK_OWNER_FIXTURE');
   assert(process.env.WORK_RPC_FIXTURE, 'Set WORK_RPC_FIXTURE to work-server-rpc-fixture binary');
   const proxyMode = process.env.WORK_OWNER_PROXY === '1';
   const mode = proxyMode ? 'proxy' : 'direct';

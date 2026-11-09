@@ -1,6 +1,6 @@
 """Isolated headless/CLI acceptance: synthetic RPC only, random loopback ports.
 
-Build: cargo build -p work-cli -p work-ui -p work-server --bin work-cli
+Build: cargo build -p work-cli -p work-ui -p work-node-service --bin work-cli
        --bin work-ui --bin work-server-rpc-fixture --locked
 Run: python tests/e2e/verify-headless-node.py
 Optional: WORK_HEADLESS_CLI, WORK_HEADLESS_UI, WORK_HEADLESS_RPC, WORK_HEADLESS_REPORT.

@@ -16,7 +16,7 @@ task dev
 4. 为入口 HTML 和 `build.json` 保留重新校验；
 5. 通过 Brotli/gzip 压缩 HTTP 响应；
 6. 构建 release `work-cli`；
-7. 启动无头 owner，并由同一个 `work-server` 直接托管 Web 资源。
+7. 启动无头 owner，并由同一个 `work-node-service` 直接托管 Web 资源。
 
 默认访问地址：
 
@@ -42,7 +42,7 @@ RPI_WORK_HTTP_ASSETS=target/parity-web
 - `index.html`、`build.json`：`no-cache, must-revalidate`，用于发现新版本；
 - `releases/work-ui-<hash>/` 下的 JS/WASM/CSS：`public, max-age=31536000, immutable`；
 - 根目录兼容资源：短 TTL，避免固定文件名长期保存旧版本；
-- Web 响应根据客户端能力使用 Brotli 或 gzip；SSE 不压缩，避免影响实时事件刷新。
+- Web 响应根据客户端能力使用 Brotli 或 gzip；WebSocket 帧不经过 HTTP 内容压缩层。
 
 缓存只减少重复打开时的下载；首次打开仍需下载 WASM。release 构建比 debug WASM 小很多，版本化资源可以让浏览器安全长期缓存，不会因为旧缓存阻止新版本加载。
 

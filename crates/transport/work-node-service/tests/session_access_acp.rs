@@ -1,11 +1,11 @@
 #![cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
-//! Production HTTP/SSE + owner, using the existing credential-free ACP child.
+//! Production HTTP/WebSocket + owner, using the existing credential-free ACP child.
 //! Build once: cargo build -p work-client --bin acp-fixture --offline
 //! `WORK_SESSION_ACCESS_ACP_FIXTURE` may override the sibling binary location.
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use work_client::{LocalWorkspace, WorkClient, WorkspaceClient};
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 #[test]
 fn production_acp_access_dialogs_and_unified_sse() {

@@ -553,7 +553,7 @@ pub fn DevicesPage(
                     section { class: "server-overview",
                         div { class: "server-identity",
                             span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
-                            div { h2 { if owned_local { "这台电脑" } else { "当前执行节点" } } p { if owned_local { "本机工作空间 · RPC" } else { "远程执行节点 · HTTP/SSE" } } }
+                            div { h2 { if owned_local { "这台电脑" } else { "当前执行节点" } } p { if owned_local { "本机工作空间 · RPC" } else { "远程执行节点 · HTTP/WebSocket" } } }
                             span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if owned_local { if online { "运行中" } else if busy { "准备中" } else { "未就绪" } } else if online { "已连接" } else if busy { "连接中" } else { "未连接" } }
                         }
                         div { class: "connection-topology",
@@ -563,7 +563,7 @@ pub fn DevicesPage(
                                 span { Icon { name: "monitor".to_owned() } "本机工作空间" small { "模型 / 工具 / 项目文件" } }
                             } else {
                                 span { Icon { name: "monitor".to_owned() } "PC 服务端" small { "模型 / 工具 / 项目文件" } }
-                                i { "HTTP + SSE" }
+                                i { "HTTP + WebSocket" }
                                 span { Icon { name: "phone".to_owned() } "手机客户端" small { "对话 / 变更 / 回答确认" } }
                             }
                         }

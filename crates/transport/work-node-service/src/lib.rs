@@ -8,7 +8,7 @@ mod realtime;
 mod routes;
 pub(crate) use work_http_runtime::access;
 pub(crate) use work_http_runtime::security;
-pub use work_http_runtime::{public_address, random_secret, QrAuthorization, SharingControl};
+pub use work_http_runtime::{QrAuthorization, SharingControl, public_address, random_secret};
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -28,7 +28,7 @@ pub(crate) struct ServerState {
     pub assets: Option<PathBuf>,
     pub web_proxy: bool,
     pub requests: mpsc::Sender<executor::ExecutorRequest>,
-    pub admission: Arc<tokio::sync::Semaphore>,
+    pub admission: access::Admission,
     pub realtime: Arc<realtime::RealtimeState>,
 }
 impl std::ops::Deref for ServerState {
@@ -48,6 +48,7 @@ pub struct HttpServer {
     sharing: SharingControl,
     pairing: Arc<access::Pairing>,
     realtime: Arc<realtime::RealtimeState>,
+    admission: access::Admission,
 }
 impl HttpServer {
     /// # Errors
@@ -110,6 +111,9 @@ impl HttpServer {
         let pairing_state = pairing.clone();
         let realtime = Arc::new(realtime::RealtimeState::new());
         let realtime_state = realtime.clone();
+        let admission =
+            access::Admission::new(64).map_err(|_| "invalid HTTP admission limit".to_string())?;
+        let admission_state = admission.clone();
         let (shutdown, stopped) = watch::channel(false);
         let (drained_tx, drained) = watch::channel(false);
         let (finish, finished) = oneshot::channel();
@@ -132,7 +136,7 @@ impl HttpServer {
                 };
                 let security=match security{Ok(s)=>s,Err(e)=>{let _=ready.send(Err(e));return;}};
                 let (requests,mut pending)=mpsc::channel::<executor::ExecutorRequest>(128);
-                let state=Arc::new(ServerState{workspace,access:Arc::new(access::AccessState{security,shutdown:stopped.clone(),node_id:config.node_id,sharing:access,pairing:pairing_state}),assets:config.assets,web_proxy:config.web_proxy,requests,admission:Arc::new(tokio::sync::Semaphore::new(64)),realtime:realtime_state});
+                let state=Arc::new(ServerState{workspace,access:Arc::new(access::AccessState{security,shutdown:stopped.clone(),node_id:config.node_id,sharing:access,pairing:pairing_state}),assets:config.assets,web_proxy:config.web_proxy,requests,admission:admission_state,realtime:realtime_state});
                 let worker_state=state.clone();
                 let (listener_done,mut listener_closed)=watch::channel(false);
                 tokio::task::spawn_local(async move {
@@ -185,6 +189,7 @@ impl HttpServer {
                 sharing,
                 pairing,
                 realtime,
+                admission,
             }),
             Err(e) => {
                 let _ = thread.join();
@@ -233,6 +238,8 @@ impl HttpServer {
     /// cannot drain within five seconds.
     pub async fn drain(&mut self) -> Result<(), String> {
         self.begin_shutdown();
+        self.admission.begin_drain().await;
+        self.realtime.begin_drain().await;
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             while !*self.drained.borrow() {
                 self.drained
@@ -240,6 +247,7 @@ impl HttpServer {
                     .await
                     .map_err(|_| "HTTP executor exited")?;
             }
+            self.admission.wait_drained().await;
             self.realtime.wait_closed().await.map_err(str::to_owned)
         })
         .await

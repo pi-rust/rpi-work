@@ -60,7 +60,7 @@ Publish requires the exact current source revision/digest, immutable snapshot by
 
 ```text
 cargo build --locked -p work-client --bins
-cargo test --locked -p work-core -p work-node -p work-client -p work-server
+cargo test --locked -p work-core -p work-node-runtime -p work-client -p work-node-service
 ```
 
 For the existing server ACP test when Cargo's target/build directories differ, explicitly set `WORK_SESSION_ACCESS_ACP_FIXTURE` to the built owned `debug/acp-fixture.exe`. These are credential-free test fixtures, not installed external ACP agents.
@@ -68,7 +68,7 @@ For the existing server ACP test when Cargo's target/build directories differ, e
 Real opt-in native acceptance:
 
 ```text
-cargo build --locked -p work-server --example resource_workflow
+cargo build --locked -p work-node-service --example resource_workflow
 # Explicit absolute RPI_RESOURCE_NATIVE_BIN, WORK_CDE_HOST, WORK_CDE_BUILD required
 python tests/e2e/native-resource-workflow.py
 ```

@@ -11,7 +11,7 @@ rpi 提供 Agent 执行与原生资源能力。`rpi-http` 将这些能力暴露�
 ```mermaid
 flowchart TB
   Desktop[桌面 Dioxus UI] --> Client[work-client / WorkspaceClient]
-  Remote[Web / Android / 远程桌面 / CLI] --> Network[Work HTTP / SSE / WebSocket]
+  Remote[Web / Android / 远程桌面 / CLI] --> Network[Work HTTP / WebSocket]
   Client -->|本机进程内| Owner[work-node-runtime / LocalWorkspace]
   Client -->|远程| Network
   Network --> Owner
@@ -35,9 +35,8 @@ flowchart TB
 | `work-core` | 运行状态投影、事件规范化、惰性扩展设计；重导出节点契约 | 依赖 `work-node-api`、组件契约；不持有 owner |
 | `work-node-runtime` | 唯一 workspace owner、项目/文件/Git、Service、RPC/ACP、资源/源码服务和远程操作回执 | 不依赖 `work-client`、Dioxus 或 HTTP listener |
 | `work-http-runtime` | HTTP 认证、Host/Origin、共享代次、二维码授权 | Work 的网络安全辅助层 |
-| `work-node-service` | 将已有 owner 适配为 HTTP/SSE/WebSocket，按配置托管 Web assets | 依赖 runtime/API/HTTP 辅助层，不依赖客户端 |
+| `work-node-service` | 将已有 owner 适配为 HTTP/WebSocket，按配置托管 Web assets | 依赖 runtime/API/HTTP 辅助层，不依赖客户端 |
 | `work-node-host` | 数据锁、owner 初始化、HTTP 配置、内置组件绑定及协作退出 | 组合 runtime、service 和组件；无 GUI 依赖 |
-| `work-node` / `work-server` | 分别重导出 runtime / service 的兼容门面 | 修改实现应进入实际 crate |
 | `work-client` | `WorkspaceClient` 本地/远程适配，认证、传输、快照恢复与客户端投影 | 原生本地 adapter 直接依赖 `work-node-runtime`；Web/Android 不托管 owner |
 | `work-host` | 面向应用的宿主门面，将已有 owner 包装为本地客户端 | 组合 `work-node-host` 与 `work-client` |
 | `work-component-api` | Bundle、校验、目录、能力授权和隔离面板通信桥 | 独立于 rpi 原生插件 ABI |
@@ -45,7 +44,7 @@ flowchart TB
 | `work-update` | 签名更新发现、校验和平台安装 | 与 Agent/组件包分发分开 |
 | `apps/work-ui` / `apps/work-cli` | 共享 Dioxus 界面 / 节点命令与前台宿主 | UI 不直接持有或启动 Agent |
 
-`work-core::api` 和 `work-node::workspace` 等公开路径仍可使用，但源码分别在 `work-node-api` 和 `work-node-runtime`。`NodeApi` 是进程内 object-safe 应用端口，future/事件流不强制 `Send`；它不是网络协议或授权凭据。HTTP handler 适配已有 owner，不能因此假定所有操作均通过 trait 动态分发。
+`work-core::api` 重导出 `work-node-api` 契约；权威实现位于 `work-node-runtime`。`NodeApi` 是进程内 object-safe 应用端口，future/事件流不强制 `Send`；它不是网络协议或授权凭据。HTTP handler 适配已有 owner，不能因此假定所有操作均通过 trait 动态分发。
 
 当前 `rpi-extcore` 锁定 Git revision `1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd`，manifest 版本为 `=0.2.11`。该 revision 的内容不能用 crates.io 同版本号替换；构建不依赖相邻仓库或本机路径覆盖。依赖细节见[资源与源码服务](resources.md)。
 
@@ -87,7 +86,7 @@ UI 使用 `WorkspaceClient` / typed 应用方法；执行与配置能力来自�
 
 `prompt`/取消/配置请求受理与最终结果分别表达。运行以 `agent_settled` 结算，`agent_end` 只进入待结算。快照、订阅、消息分页和迟到响应按 node/session/generation/connection epoch 隔离，消息按稳定身份与序号合并，不按文本全局去重。
 
-远端 HTTP 是认证和资源平面；会话命令/事件默认协商 WebSocket，只有认证后的发现明确不提供 realtime 才回退 HTTP/SSE。断线或写超时不能自动重发有副作用操作。完整规则见[传输边界](transport.md)与[实时通道](realtime.md)。
+远端 HTTP 是认证和资源平面；会话命令和事件统一使用经认证发现的 WebSocket。断线或写超时不能自动重发有副作用操作。完整规则见[传输边界](transport.md)与[实时通道](realtime.md)。
 
 ## 开发、分发与验证
 

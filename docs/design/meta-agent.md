@@ -55,7 +55,7 @@
 | --- | --- |
 | work-core | ProjectProfile（kind 为 project / capability）、CapabilityProject、DraftRevision、TestSnapshot、PersonalRelease、ResourceIdentity 与状态约束 |
 | PC Agent 宿主 | 真实读取/写入源码、结构校验、构建和受控测试实例；分别记录开发回合与测试回合 |
-| rpi-web / work-server | 项目、草稿、快照、产物和个人目录接口；节点获取任务、鉴权和事件恢复 |
+| rpi-web / work-node-service | 项目、草稿、快照、产物和个人目录接口；节点获取任务、鉴权和事件恢复 |
 | Dioxus UI | 切换项目、源码/变更、测试会话、追踪、个人版本与获取状态 |
 
 发布接口应提交预期 revision、源码摘要和测试快照 ID，并由服务端核对，避免用旧结果发布新源码。测试绑定的是不可变 DraftRevision，正式会话绑定的是已安装 PersonalRelease；两者使用不同的资源引用类型。

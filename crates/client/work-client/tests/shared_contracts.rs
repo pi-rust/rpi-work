@@ -79,11 +79,11 @@ fn neutral_core_errors_preserve_the_client_boundary_categories() {
         event_type: "tool_execution_start".into(),
         data: json!({}),
     };
-    assert!(matches!(decode(wire), Err(ClientError::Sse(message))
+    assert!(matches!(decode(wire), Err(ClientError::Protocol(message))
         if message == "event is missing toolCallId"));
     assert!(
         matches!(work_client::normalize_event("tool_execution_end", &json!({})),
-        Err(ClientError::Sse(message)) if message == "event is missing toolCallId")
+        Err(ClientError::Protocol(message)) if message == "event is missing toolCallId")
     );
     let malformed = WireEvent {
         id: None,

@@ -37,7 +37,7 @@
     → 真实 DLL work_demo_counter
     → tool_execution_update / end（RPC JSONL）
     → Demo adapter（校验工具名、调用 ID 和计数边界）
-    → token 保护的 loopback SSE
+    → token 保护的 loopback WebSocket
     → 校验 ExtensionManifest
     → Dioxus UiWidgets 实时更新
 ```
@@ -126,7 +126,7 @@ node tests/modules/verify-extension-demo-failures.cjs
 
 - Demo 工具只修改宿主进程内计数，不读写业务文件、不访问网络、不启动子进程；原生 DLL 本身仍以当前用户权限运行，不是 OS 沙箱。
 - `__rpi` 宿主上下文允许存在，模型参数不使用 `deny_unknown_fields` 拒绝注入字段；`steps` 限定为 1–10 的整数。Demo fixture 固定请求 4 步。
-- SSE 适配器只消费已知工具、当前调用 ID、固定 Demo 标记及有界数值；UI 数据由适配器构造，不接受任意插件 HTML/JS/CSS 或 action。
+- WebSocket 适配器只消费已知工具、当前调用 ID、固定 Demo 标记及有界数值；UI 数据由适配器构造，不接受任意插件 HTML/JS/CSS 或 action。
 - 开发接口只绑定 loopback，使用每次生成的随机 token，并拒绝非 loopback 浏览器 Origin。token 不是节点登录或产品授权机制，不应分享、持久化或用于生产部署。
 - UI 页面只位于测试 harness。正式应用没有增加 Demo 端点、隐式连接或真实插件管理 capability。
 - 模型 fixture 只运行在 loopback；源码构建可能使用 Cargo 网络，`--offline` 是 rpi 启动网络检查开关，不能理解为整个操作系统断网。

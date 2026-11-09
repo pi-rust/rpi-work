@@ -77,7 +77,7 @@
 - `POST /api/v1/providers`：严格 typed mutation，要求 `expectedRevision`。
 - `POST /api/v1/providers/release-idle-hosts`：空对象请求，释放既有空闲资源。
 - core：`crates/foundation/work-core/src/api/providers.rs`。
-- 唯一 owner：`crates/node/work-node-runtime/src/workspace/providers.rs`；`work-node` 仅保留兼容导出。
+- 唯一 owner：`crates/node/work-node-runtime/src/workspace/providers.rs`。
 - typed 门面：`crates/client/work-client/src/providers.rs`。
 - 共享页面：`apps/work-ui/src/features/settings/providers.rs`。
 

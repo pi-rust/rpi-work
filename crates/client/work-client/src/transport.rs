@@ -10,7 +10,7 @@ use crate::{
     WorkClient,
 };
 
-/// Protocol-neutral request surface shared by HTTP/SSE, native RPI RPC and ACP.
+/// Protocol-neutral request surface shared by HTTP/WebSocket, native RPI RPC and ACP.
 #[async_trait(?Send)]
 pub trait AgentTransport {
     fn descriptor(&self) -> AgentDescriptor;

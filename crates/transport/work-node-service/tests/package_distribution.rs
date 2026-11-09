@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use work_client::{LocalWorkspace, WorkClient, WorkspaceClient};
 use work_core::api::{NativeKind, NativeScope, NodeApi, NodeErrorKind, PackageInstall, PackageRef};
-use work_server::{HttpServer, ServerConfig};
+use work_node_service::{HttpServer, ServerConfig};
 
 fn config() -> ServerConfig {
     ServerConfig {

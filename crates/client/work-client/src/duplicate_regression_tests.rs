@@ -333,7 +333,7 @@ fn duplicate_regression_bodyless_delta_after_promotion_keeps_one_projection_slot
     assert_eq!(messages[0]["content"], "new tail");
 }
 
-// Actual rpc/events.rs compact-deltas shape: identity lives on the envelope;
+// Actual realtime compact-deltas shape: identity lives on the envelope;
 // delta frames intentionally carry no message snapshot.
 fn compact_segment(id: Option<&str>, text: &str) -> Vec<Value> {
     let mut events = vec![
@@ -693,86 +693,6 @@ fn structured_snapshot_run_boundary_clears_anchor_and_new_start_resets_only_same
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-#[tokio::test]
-async fn structured_snapshot_http_restore_and_stale_frames_keep_one_live_slot() {
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-    let snapshot = fixture(
-        vec![],
-        vec![
-            json!({"type":"message_start","messageId":"m","message":{"role":"assistant","content":[]}}),
-            json!({"type":"message_update","messageId":"m","eventType":"text_delta","contentIndex":1,"delta":"Hello"}),
-            json!({"type":"message_update","messageId":"m","message":{"role":"assistant","content":[{"type":"thinking","text":"private"},{"type":"text","text":"Hello"}]}}),
-        ],
-    );
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let client = WorkClient::new(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
-    client.set_remote_transport(crate::RemoteTransport::HttpSseOnly);
-    let access = json!({"descriptor":client.descriptor(),"supportedCommands":[],"snapshotLimit":false,"dialogReply":false}).to_string();
-    let snapshot_body = serde_json::to_string(&snapshot).unwrap();
-    let stale = json!({"type":"message_start","messageId":"wrong","message":{"role":"assistant","content":[{"type":"text","text":"stale"}]}});
-    let tail =
-        json!({"type":"message_update","eventType":"text_delta","contentIndex":1,"delta":" tail"});
-    let event_body = format!(
-        "id: 3\nevent: message_start\ndata: {stale}\n\nid: 4\nevent: message_update\ndata: {tail}\n\n"
-    );
-    let server = std::thread::spawn(move || {
-        for _ in 0..2 {
-            for (expected, content_type, body) in [
-                ("/access", "application/json", access.as_str()),
-                ("/snapshot", "application/json", snapshot_body.as_str()),
-                ("/events?after=3", "text/event-stream", event_body.as_str()),
-            ] {
-                let (mut socket, _) = listener.accept().unwrap();
-                socket
-                    .set_read_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                let mut request = Vec::new();
-                let mut byte = [0];
-                while !request.ends_with(b"\r\n\r\n") {
-                    socket.read_exact(&mut byte).unwrap();
-                    request.push(byte[0]);
-                }
-                assert!(String::from_utf8_lossy(&request).contains(expected));
-                write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
-            }
-        }
-    });
-    let mut connection = SessionConnection {
-        client: WorkspaceClient::Remote(client),
-        session_id: "dedup-fixture".into(),
-        projection: RunProjection::new("dedup-fixture"),
-        stream: Box::pin(futures_util::stream::empty()),
-        snapshot_limit: false,
-        message_page_info: MessagePageInfo::default(),
-        history_len: 0,
-        messages: vec![],
-        pending_dialogs: vec![],
-        reconnect_attempt: 0,
-        reconnecting: false,
-        connection_epoch: 0,
-        identity: MessageIdentity::default(),
-    };
-    for _ in 0..2 {
-        connection.restore_snapshot().await.unwrap();
-        assert_eq!(
-            public_slots(&connection.projection),
-            vec![("m-text-1", "Hello")]
-        );
-        assert_eq!(
-            connection.next().await.unwrap().unwrap().applied,
-            ApplyResult::IgnoredStale
-        );
-        connection.next().await.unwrap().unwrap();
-        assert_eq!(
-            public_slots(&connection.projection),
-            vec![("m-text-1", "Hello tail")]
-        );
-        assert_eq!(connection.messages, [] as [serde_json::Value; 0]);
-    }
-    server.join().unwrap();
-}
-
 // This fixture was captured from the installed native runtime, not hand-written
 // message ID assumptions. Its provider was an isolated loopback canned server.
 #[test]

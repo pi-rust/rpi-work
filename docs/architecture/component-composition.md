@@ -4,14 +4,14 @@ Work 管理节点和宿主；HTTP 扩展只把 rpi 能力服务化。三层不�
 
 | 层 | 位置 | 职责 | 不承担 |
 | --- | --- | --- | --- |
-| rpi 能力 | rpi / rpi-package 的 rpi、extcore | Agent 执行、原生会话/资源能力、控制操作 | Work 的多项目 owner、Work HTTP/SSE 协议 |
-| HTTP 适配 | rpi-package 的 `rpi-http` / `rpi-http-extension` | 把 rpi 能力暴露为认证 HTTP/SSE | Work 组件目录、Work 专用面板、Work 远程 UI 协议 |
+| rpi 能力 | rpi / rpi-package 的 rpi、extcore | Agent 执行、原生会话/资源能力、控制操作 | Work 的多项目 owner、Work HTTP/WebSocket 协议 |
+| HTTP 适配 | rpi-package 的 `rpi-http` / `rpi-http-extension` | 把 rpi 能力暴露为认证 HTTP | Work 组件目录、Work 专用面板、Work 远程 UI 协议 |
 | Work 节点与界面 | 本仓库 `work-node-runtime`、`work-node-service`、`work-node-host` 与客户端 | 唯一 `LocalWorkspace` owner、节点 HTTP 入口、组件包与专用面板 | rpi 能力实现、rpi-http 的实现细节 |
 
 `rpi-http-extension` 是 rpi 侧插件 ABI 入口，不是 Work 的“节点宿主运行时”。
 Work 不下载、不安装、不选择、不监督启动这个 DLL 来充当自己的宿主，也不在
 桌面归档中打包它。Work 宿主使用本进程已有的 `LocalWorkspace` 同一 owner，
-HTTP 入口（`work-server`）只接在这个 owner 上。
+HTTP 入口（`work-node-service`）只接在这个 owner 上。
 
 Work 的多项目 owner 不是 `rpi-http` 的实现；不要把它描述成新 HTTP 插件，
 也不要声称 rpi 的新 HTTP 插件已经支持 Work 现有的远程工作空间协议。两个仓库
@@ -21,7 +21,7 @@ Work 的多项目 owner 不是 `rpi-http` 的实现；不要把它描述成新 H
 flowchart LR
   Work[Work UI 通用组合] --> Client[WorkspaceClient]
   Client --> Owner[work-node-runtime LocalWorkspace]
-  HTTP[work-node-service HTTP/SSE/WS] --> Owner
+  HTTP[work-node-service HTTP/WebSocket] --> Owner
   Panel[Work 组件包专用面板] --> Client
   Rpi[rpi 能力] --> RpiHttp[rpi-http 适配]
   RpiHttp --> RpiClients[rpi-http 自己的客户端]
@@ -87,7 +87,7 @@ node tests/e2e/verify-component-panels.cjs
 node tests/e2e/verify-components-workspace.cjs
 ```
 
-组件与 HTTP 的 Rust 集成测试以实际 crate 及 `work-server/tests` 为准；本页不再要求构建或加载
+组件与 HTTP 的 Rust 集成测试以 `work-node-service/tests` 为准；本页不再要求构建或加载
 `rpi_http_extension` 作为 Work 宿主。原生能力是否可用由 rpi/rpi-http 自己的
 验收决定，不能用 Work 的组件页或归档证明。
 

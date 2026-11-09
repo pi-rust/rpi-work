@@ -1215,7 +1215,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         let purpose = match intent.kind {
             project_picker::ProjectKind::Normal => "普通项目",
             project_picker::ProjectKind::MetaAgent => "元Agent",
@@ -1599,7 +1599,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         state::scoped_spawn(requests, async move {
             match client_result {
                 Ok(client) => match client.delete_session(&session_id).await {
@@ -1652,7 +1652,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         sidebar_open.set(false);
         active_page.set("workspace".to_owned());
         let generation = *session_generation.read() + 1;
@@ -2353,7 +2353,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         let generation = *file_generation.read() + 1;
         file_generation.set(generation);
         if let Some(project) = projects
@@ -2672,7 +2672,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         project_file_preview.set(true);
         if reset_view {
             project_file_lines.set(None);
@@ -2831,7 +2831,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         change_mobile_preview.set(true);
         change_staged.set(staged);
         let generation = *change_generation.read() + 1;
@@ -3774,7 +3774,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         if !session_supports("abort") {
             status.set("当前会话不支持 abort，或能力尚未确认。".into());
             return;
@@ -3832,7 +3832,7 @@ pub(super) fn App() -> Element {
         let client_result = shared_client
             .read()
             .clone()
-            .ok_or_else(|| work_client::ClientError::Sse("请先连接有效节点".into()));
+            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
         let context = model_context();
         state::scoped_spawn(requests, async move {
             // The owner resolves protocol permission IDs/results, including ACP.

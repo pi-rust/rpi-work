@@ -4,7 +4,7 @@
 
 这一版让主会话和 BTW 旁问都能逐段呈现回复。主会话按照「准备摘要 → 正文 → 工具 → 工具输出 → 正文 → 结算」排列，仍然只有「对话 / 变更」两个任务标签。
 
-当前是浏览器内的事件模拟器：没有连接模型、SSE 或真实工具。正常发送就会流式显示；标题旁「流式演示」、输入 `/stream` 或「常用能力 → 流式消息」可启动内置场景。
+当前是浏览器内的事件模拟器：没有连接模型、WebSocket 或真实工具。正常发送就会流式显示；标题旁「流式演示」、输入 `/stream` 或「常用能力 → 流式消息」可启动内置场景。
 
 ## 1. 呈现与交互
 
@@ -29,7 +29,7 @@ BTW 使用自己的片段更新、取消标记与队列。取消保留部分回�
 
 连接状态另存为 `online / reconnecting / resyncing`。断线不是执行失败，也不是停止；已经生成的正文和输出继续保留。
 
-- **结束与完成**：`message_end` 结束一个消息；`agent_end` 不能直接当作本轮成功。等待 `agent_settled` 并检查 outcome。HTTP/SSE 连接关闭也不是完成依据。
+- **结束与完成**：`message_end` 结束一个消息；`agent_end` 不能直接当作本轮成功。等待 `agent_settled` 并检查 outcome。HTTP/WebSocket 连接关闭也不是完成依据。
 - **停止**：先发取消请求、显示等待确认；当前 rpi 的原生停止结果为 `aborted`，客户端映射为 interrupted 展示，保留部分内容。还需识别 suspended、compacted、declined/skipped 与 pendingResume；不能把所有非 completed 结果归为失败。真实停止失败时继续同步实际运行状态。
 - **重连**：携带确认过的事件游标，补收断线期间事件。原型故意重放最后一个事件验证去重，不重发用户 prompt 或工具请求。
 - **恢复失效**：收到 `resync_required`、事件缺口或宿主重启时重新取快照，并重建当前投影，避免把快照拼到旧内容后面。原型的「模拟恢复失效」从本地事件源重建模拟快照；没有测试真实 HTTP 快照和服务重启。
@@ -40,12 +40,12 @@ BTW 使用自己的片段更新、取消标记与队列。取消保留部分回�
 
 ## 3. 对接现有 rpi-web
 
-本轮查阅了相邻仓库 `rpi-package/packages/rpi-web/frontend/src/App.tsx`、`transcript.ts` 和服务端事件处理，沿用已经确定的 HTTP/SSE 边界。
+本轮查阅了相邻仓库 `rpi-package/packages/rpi-web/frontend/src/App.tsx`、`transcript.ts` 和服务端事件处理，沿用当前确定的 HTTP/WebSocket 边界。
 
 | 现有接口或事件 | 客户端职责 |
 | --- | --- |
 | `POST /api/v1/sessions/{id}/commands` | 提交指令，accepted 不代表运行结束 |
-| `GET /api/v1/sessions/{id}/events?after=N` | 持续接收；重连按 `after` / Last-Event-ID 恢复 |
+| `WebSocket /api/v1/realtime` `Subscribe { afterSeq }` | 持续接收；重连按序号恢复 |
 | `message_start / message_update / message_end` | 投影消息与内容块；检查 message 的完整内容，不能一律当作文本 delta |
 | `tool_execution_start` | 按 toolCallId 创建或更新卡片 |
 | `tool_execution_update.partialResult` | 现有前端将它作为当前结果更新；适配时不能盲目追加完整快照 |
@@ -61,7 +61,7 @@ BTW 使用自己的片段更新、取消标记与队列。取消保留部分回�
 
 延续 `work-client / work-core / work-ui` 的既定分层：
 
-- `work-client`：接收原始 SSE、重连与游标管理、快照恢复；不自动重发业务指令。
+- `work-client`：接收原始 WebSocket 事件、重连与游标管理、快照恢复；不自动重发业务指令。
 - `work-core`：纯 reducer，把归一化事件投影到 `RunProjection`；维护运行状态、连接状态、稳定消息/块/工具 ID、可空用量与代际。
 - `work-ui`：`ConversationTimeline / AssistantMessage / TextBlock / ToolCallCard / RunStatusBar`；用稳定 key 更新单块，保留输入状态与滚动锚点。
 
@@ -81,4 +81,4 @@ BTW 使用自己的片段更新、取消标记与队列。取消保留部分回�
 
 `node tests/design/verify-streaming.cjs` 覆盖逐段正文、累计工具快照与日志追加、主草稿 DOM 保留、断线回放去重、快照重建、等待结算、停止确认、部分结果保留、失败、滚动保持、BTW 独立流式取消、重置清理、375–1440px 布局及无外部请求。结果记录于 `artifacts/streaming-validation.json`。
 
-此前四组浏览器回归仍需通过。真实 SSE、网络鉴权、服务重启、多设备同时操作、Dioxus/WASM 性能和手机后台恢复仍需在下一阶段验收。
+此前四组浏览器回归仍需通过。真实 WebSocket、网络鉴权、服务重启、多设备同时操作、Dioxus/WASM 性能和手机后台恢复仍需在下一阶段验收。

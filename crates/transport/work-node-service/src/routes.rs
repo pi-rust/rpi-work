@@ -4,16 +4,12 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{DefaultBodyLimit, Extension, Path, Query, State},
-    http::{HeaderMap, Method, StatusCode, Uri, header},
-    response::{
-        IntoResponse, Response, Sse,
-        sse::{Event, KeepAlive},
-    },
+    http::{Method, StatusCode, Uri, header},
+    response::{IntoResponse, Response},
     routing::{any, get},
 };
-use futures_util::StreamExt;
 use serde_json::{Value, json};
-use std::{collections::HashMap, convert::Infallible, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 use work_node_runtime::{
     runtime::RuntimeError,
     workspace::{LocalError, WorkspaceError},
@@ -160,10 +156,9 @@ pub(crate) struct ApiRequest {
     path: String,
     query: HashMap<String, String>,
     method: Method,
-    headers: HeaderMap,
     bytes: Bytes,
     reply: tokio::sync::oneshot::Sender<Response>,
-    permit: tokio::sync::OwnedSemaphorePermit,
+    permit: crate::access::AdmissionPermit,
     auth: Option<security::AuthLease>,
 }
 #[allow(clippy::too_many_arguments)] // Axum extracts request metadata before authenticated dispatch.
@@ -174,7 +169,6 @@ async fn dispatch(
     Query(query): Query<HashMap<String, String>>,
     uri: Uri,
     method: Method,
-    headers: HeaderMap,
     bytes: Bytes,
 ) -> Response {
     if matches!(method, Method::GET)
@@ -191,7 +185,7 @@ async fn dispatch(
     if path != "health" && auth.is_none() {
         return security::authentication_required();
     }
-    let Ok(permit) = state.admission.clone().try_acquire_owned() else {
+    let Ok(permit) = state.admission.try_admit().await else {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     };
     let (reply, result) = tokio::sync::oneshot::channel();
@@ -199,7 +193,6 @@ async fn dispatch(
         path,
         query,
         method,
-        headers,
         bytes,
         reply,
         permit,
@@ -227,7 +220,6 @@ pub(crate) async fn execute(state: Arc<ServerState>, request: ApiRequest) {
         path,
         query,
         method,
-        headers,
         bytes,
         reply,
         permit: _permit,
@@ -259,7 +251,6 @@ pub(crate) async fn execute(state: Arc<ServerState>, request: ApiRequest) {
         path,
         query,
         method,
-        headers,
         bytes,
         auth.clone(),
     )
@@ -288,7 +279,6 @@ async fn perform(
     path: String,
     query: HashMap<String, String>,
     method: Method,
-    headers: HeaderMap,
     bytes: Bytes,
     auth: Option<security::AuthLease>,
 ) -> Result<Response, ApiError> {
@@ -534,50 +524,6 @@ async fn perform(
             .await?
         }
         ("POST", ["auth", "refresh"]) => w.refresh_auth(text(&body, "provider")?).await?,
-        ("GET", ["sessions", id, "events"]) => {
-            let cursor = headers
-                .get("last-event-id")
-                .map_or_else(
-                    || Ok(query.get("after").map_or("0", String::as_str)),
-                    |v| v.to_str(),
-                )
-                .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "invalid Last-Event-ID".into()))?;
-            let after = cursor
-                .strip_prefix("seq-")
-                .unwrap_or(cursor)
-                .parse()
-                .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "invalid event cursor".into()))?;
-            let lease = auth.ok_or_else(|| {
-                ApiError(StatusCode::UNAUTHORIZED, "authentication required".into())
-            })?;
-            let mut source = w.subscribe(id, after).await?;
-            let stopped = state.shutdown.clone();
-            let policy = state.sharing.clone();
-            let stream = async_stream::stream! {
-                loop {
-                    if *stopped.borrow() || !lease.is_valid(&policy) { break; }
-                    let item = tokio::select! {
-                        biased;
-                        () = lease.invalidated(&policy, &stopped) => break,
-                        item = source.next() => item,
-                    };
-                    // A revoke can land after the select chose a ready event.
-                    if *stopped.borrow() || !lease.is_valid(&policy) { break; }
-                    match item {
-                        Some(Ok(wire)) => {
-                            let mut event = Event::default().event(wire.event_type).data(wire.data.to_string());
-                            if let Some(id) = wire.id.or_else(|| wire.seq.map(|s| s.to_string())) { event = event.id(id); }
-                            yield Ok::<_,Infallible>(event);
-                        },
-                        Some(Err(_)) => { yield Ok(Event::default().event("resync_required").data("{\"type\":\"resync_required\"}")); break; },
-                        None => break,
-                    }
-                }
-            };
-            return Ok(Sse::new(stream)
-                .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
-                .into_response());
-        }
         _ => {
             return Err(ApiError(
                 StatusCode::NOT_FOUND,

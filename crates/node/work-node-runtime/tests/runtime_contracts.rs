@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use std::{cell::Cell, rc::Rc};
 use work_core::{AgentDescriptor, CapabilitySet, TransportIdentity};
-use work_node::runtime::{RuntimeError, RuntimeEventStream, RuntimeTransport};
+use work_node_runtime::runtime::{RuntimeError, RuntimeEventStream, RuntimeTransport};
 
 struct LocalRuntime {
     calls: Rc<Cell<usize>>,
