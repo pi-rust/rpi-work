@@ -51,9 +51,9 @@ fn only_explicit_active_failed_or_waiting_states_get_status_dots() {
         ("running", ("running", "运行中")),
         ("streaming", ("running", "运行中")),
         ("busy", ("running", "运行中")),
-        ("loading", ("loading", "加载中")),
-        ("sending", ("sending", "发送中")),
-        ("cancelling", ("cancelling", "停止中")),
+        ("loading", ("waiting", "加载中")),
+        ("sending", ("running", "发送中")),
+        ("cancelling", ("running", "停止中")),
     ] {
         session.status = status.into();
         assert_eq!(sidebar_session_status(&session), Some(expected));
@@ -99,11 +99,11 @@ fn only_explicit_active_failed_or_waiting_states_get_status_dots() {
 #[test]
 fn live_activity_maps_labels_tones_and_busy_indicators() {
     for (activity, expected, spinning) in [
-        (SidebarActivity::Loading, Some(("loading", "加载中")), true),
-        (SidebarActivity::Sending, Some(("sending", "发送中")), true),
+        (SidebarActivity::Loading, Some(("waiting", "加载中")), true),
+        (SidebarActivity::Sending, Some(("running", "发送中")), true),
         (
             SidebarActivity::WaitingReply,
-            Some(("loading", "等待回复")),
+            Some(("waiting", "等待回复")),
             true,
         ),
         (SidebarActivity::Running, Some(("running", "运行中")), true),
@@ -114,12 +114,12 @@ fn live_activity_maps_labels_tones_and_busy_indicators() {
         ),
         (
             SidebarActivity::Cancelling,
-            Some(("cancelling", "停止中")),
+            Some(("running", "停止中")),
             true,
         ),
         (
             SidebarActivity::Disconnected,
-            Some(("offline", "已断开")),
+            Some(("failed", "已断开")),
             false,
         ),
         (SidebarActivity::Idle, None, false),
@@ -146,7 +146,7 @@ fn explicit_live_idle_clears_stale_summary_without_claiming_success() {
     );
     assert_eq!(
         sidebar_activity_status(&session, Some(SidebarActivity::Disconnected)),
-        Some(("offline", "已断开"))
+        Some(("failed", "已断开"))
     );
     session.pending_resume = true;
     assert_eq!(
@@ -155,7 +155,7 @@ fn explicit_live_idle_clears_stale_summary_without_claiming_success() {
     );
     assert_eq!(
         sidebar_activity_status(&session, Some(SidebarActivity::WaitingReply)),
-        Some(("loading", "等待回复"))
+        Some(("waiting", "等待回复"))
     );
     session.error = Some("transport failed".into());
     assert_eq!(
@@ -164,7 +164,7 @@ fn explicit_live_idle_clears_stale_summary_without_claiming_success() {
     );
     assert_eq!(
         sidebar_activity_status(&session, Some(SidebarActivity::Loading)),
-        Some(("loading", "加载中"))
+        Some(("waiting", "加载中"))
     );
     assert_eq!(
         sidebar_activity_status(&session, Some(SidebarActivity::Idle)),

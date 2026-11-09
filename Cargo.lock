@@ -4642,11 +4642,13 @@ dependencies = [
 [[package]]
 name = "rpi-extcore"
 version = "0.2.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98350bf59cda458497769c1106af4bde8bcbee41f3d53873d68c9db9dafca086"
 dependencies = [
  "base64 0.22.1",
  "fs2",
  "futures-util",
- "rpi-mcp-core 0.1.1",
+ "rpi-mcp-core 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "sha2",
@@ -4657,6 +4659,8 @@ dependencies = [
 [[package]]
 name = "rpi-httpcore"
 version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cf28f62cf700ae034d7c42c62d1586c020d843b04ac76c32473a162750d4347"
 dependencies = [
  "axum",
  "futures-util",
@@ -4673,6 +4677,8 @@ dependencies = [
 [[package]]
 name = "rpi-mcp-core"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ec2620168ad3cb45576fe95573ffb97da037363ed626113ee3eb01057584be9"
 dependencies = [
  "libc",
  "reqwest",
@@ -4700,6 +4706,8 @@ dependencies = [
 [[package]]
 name = "rpi-tts"
 version = "0.1.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2b3286a1ca707a97516dcf10add8e900ac54f823a6ebed45ecfe7c18554b9d6"
 dependencies = [
  "futures-util",
  "native-tls",

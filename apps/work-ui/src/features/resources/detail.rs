@@ -2,7 +2,7 @@
 use crate::shared::components::Modal;
 use dioxus::prelude::*;
 use serde_json::Value;
-use work_core::api::{NativeManagement, NativeScope};
+use work_core::api::{NativeKind, NativeManagement, NativeScope};
 
 pub(super) fn scope_label(scope: NativeScope) -> &'static str {
     match scope {
@@ -23,6 +23,7 @@ pub(super) fn installation_label(facts: &Value) -> &'static str {
 pub(super) fn ResourceDetail(
     reference: String,
     name: String,
+    kind: NativeKind,
     scope: NativeScope,
     facts: Value,
     busy: bool,
@@ -34,11 +35,14 @@ pub(super) fn ResourceDetail(
     onclose: EventHandler<()>,
 ) -> Element {
     let mut action = use_signal(|| "view".to_owned());
-    let mut source = use_signal(String::new);
-    let mut version = use_signal(String::new);
+    let initial_source = facts["source"].as_str().unwrap_or_default().to_owned();
+    let initial_version = facts["version"].as_str().unwrap_or_default().to_owned();
+    let mut source = use_signal(move || initial_source);
+    let mut version = use_signal(move || initial_version);
     let mut trusted = use_signal(|| false);
     let blocked = busy || loading || !online;
     let target = reference.clone();
+    let installable = facts["installed"] == false && !source.peek().trim().is_empty();
     let install_state = installation_label(&facts);
     let scope_text = scope_label(scope);
     rsx! {
@@ -57,6 +61,17 @@ pub(super) fn ResourceDetail(
                 dt { "记录版本" } dd { {facts["version"].as_str().unwrap_or("未记录")} }
                 dt { "节点来源" } dd { {facts["source"].as_str().unwrap_or("未记录")} }
                 dt { "实际加载" } dd { "未核实（需会话资源状态证据）" }
+            }
+            if installable {
+                fieldset { class: "native-detail-authorization", disabled: blocked,
+                    legend { "直接安装此资源" }
+                    label { "节点来源（已由目录提供）" input { aria_label: "资源安装来源", readonly: true, value: "{source}" } }
+                    label { class: "native-trust", input { r#type: "checkbox", checked: trusted(), onchange: move |e| trusted.set(e.checked()) } "我已检查来源并明确授权安装。安装不会自动选择或加载到会话。" }
+                    button { class: "button primary", disabled: blocked || !trusted(), onclick: { let name = name.clone(); let kind = kind; let scope = scope; move |_| {
+                        onmanage.call(NativeManagement::Install { scope, kind, name: name.clone(), source: source(), version: super::native::recorded_version(version()), trusted: true });
+                        trusted.set(false);
+                    } }, "确认下载安装" }
+                }
             }
             div { class: "native-actions native-detail-primary-actions",
                 button { class: "button primary", disabled: blocked, onclick: { let reference=target.clone(); move |_| onmanage.call(NativeManagement::Inspect { reference: reference.clone() }) }, "从节点检查" }

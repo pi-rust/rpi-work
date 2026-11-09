@@ -10,8 +10,7 @@ repository = "https://github.com/pi-rust/rpi-work"
 description = "Reusable authenticated HTTP node transport and lifecycle"
 
 [dependencies]
-# Local until the upstream HTTP-core commit is published to the shared git remote.
-rpi-httpcore = { version = "=0.1.20", path = "../../../../rpi-package/packages/rpi-httpcore" }
+rpi-httpcore = "=0.1.20"
 axum = "0.8.9"
 tokio = { version = "1", features = ["sync", "time", "net", "rt", "macros"] }
 serde = { version = "1", features = ["derive"] }

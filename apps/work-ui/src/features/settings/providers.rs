@@ -812,7 +812,6 @@ fn ProviderSettingsState(
             div { class: "page-heading provider-toolbar",
                 div { h1 { "模型供应商" } p { "管理当前节点的模型连接，配置后即可在会话中选择。" } }
                 div { class: "provider-actions",
-                    button { class: "button provider-extension-button", disabled: !context.online, onclick: move |event| { secret.set(String::new()); if is_fresh(&mounted.peek(), *ticket.peek()) { oncomponents.call(event); } }, Icon { name: "download" } "下载 Provider 扩展" }
                     button { class: "button primary", disabled: !enabled, onclick: move |_| edit.call(Edit::OpenNew), Icon { name: "plus" } "添加供应商" }
                 }
             }

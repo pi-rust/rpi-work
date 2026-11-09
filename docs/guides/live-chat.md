@@ -2,6 +2,17 @@
 
 桌面是节点宿主：本机 RPC 与内嵌 HTTP/WebSocket 共用同一份 `LocalWorkspace`，Web/手机是访问入口。独立 `rpi-http` 不等于桌面 owner。旧迁移副本不自动搬回或合并。
 
+## 传输边界
+
+Work 的远程实时协议只有 WebSocket，不再使用 `/api/v1/sessions/:id/events` 或 `EventSource` 作为 fallback：
+
+- `GET /api/v1/auth`、项目、文件、资源、配置、快照和 operation receipt 查询继续使用 HTTP。
+- `GET /api/v1/transports` 用于认证后的传输能力发现；客户端必须校验节点身份、owner epoch、路径、subprotocol 和能力。
+- `GET /api/v1/realtime` 使用 `rpi-work.realtime.v1` 升级 WebSocket。会话命令、可变操作、订阅和事件都通过 JSON 文本帧传输。
+- 断线按会话事件序号和快照校准；不把断线当作 Agent 失败，也不自动重发可能产生副作用的命令。未知写结果应查询原 operation receipt。
+
+协议细节、帧类型和认证/撤权边界见[实时通道架构](../architecture/realtime.md)。模型 provider 自己的流式协议不属于 Work realtime，不能据此增加 Work 的 SSE fallback。
+
 ## 本机启动
 
 配置 Git ignored `.env.local` 的 `RPI_WORK_HTTP_PASSWORD`（兼容 `RPI_HTTP_PASSWORD`，勿提交实际密码），安装兼容 rpi 后运行：

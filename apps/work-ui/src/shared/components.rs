@@ -31,7 +31,7 @@ mod icon_tests {
     fn every_semantic_icon_uses_the_pinned_web_catalog() {
         let map: std::collections::BTreeMap<String, String> =
             serde_json::from_str(include_str!("../../../../assets/icons/lucide-map.json")).unwrap();
-        assert_eq!(map.len(), 41);
+        assert_eq!(map.len(), 43);
         for (name, expected) in map {
             let icon = definition(&name);
             assert_eq!(

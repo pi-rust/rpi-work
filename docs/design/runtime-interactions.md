@@ -196,6 +196,6 @@ Footer 的 `↑ / ↓` 对应输入总量与输出；历史原型中的示例费
 
 `tests/design/verify-runtime.cjs` 覆盖统计口径、上下文互斥/压缩、工具失败与取消、队列操作、附件预览与文本转义、运行中排队、Provider 错误、新会话隔离，以及 375–1440px 布局。记录在 `artifacts/runtime-validation.json`。
 
-上述原型验证没有验证真实上传、模型视觉推理、网络 SSE、Dioxus 构建或原生手机；这些继续属于实现阶段的验收。
+上述原型验证没有验证真实上传、模型视觉推理、Work WebSocket 实时通道、Dioxus 构建或原生手机；这些继续属于实现阶段的验收。
 
 当前 footer 插件专项：`node tests/e2e/verify-footer-plugins.cjs` 使用正式 WASM 与隔离 HTTP/WebSocket fixture；最新 `artifacts/footer-plugins-validation.json` 记录 **13/13 个用例实际通过**、无错误，覆盖默认指标、可选上报、只读无弹窗/命令、偏好与重载/重置、全部关闭、损坏保护、配额失败、scope/断连、缺失与零值、异常数值、已加载调用口径、文本转义及长 ID 全文换行。明暗主题 1280／390／320px 的六张截图为 `artifacts/footer-plugins-{light,dark}-{1280,390,320}.png`，正常字体、默认指标下无横向溢出，手机 footer 高度不超过 80px。新增高级指标、大字体及短键盘视口／安全区模拟覆盖，额外截图为 `artifacts/footer-style-{width}-{height}-{scale}.png`；这些情况允许栏高增加，不把 80px 作为所有场景的硬上限。上述为已有实际浏览器产物，不代表完整回归或 Android 实机验收完成；Android 实机软键盘与安全区仍待验证。

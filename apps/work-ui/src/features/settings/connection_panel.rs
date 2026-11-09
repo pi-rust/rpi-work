@@ -17,6 +17,8 @@ pub(crate) fn ConnectionScreen(
     #[props(default = true)] show_form: bool,
     #[props(default = false)] fixed_address: bool,
     #[props(default = false)] fixed_target: bool,
+    #[props(default = true)] show_current_node: bool,
+    #[props(default = true)] show_connection_summary: bool,
     #[props(default = true)] show_password: bool,
     #[props(default)] home_address: String,
     #[props(default)] onhome: Option<EventHandler<()>>,
@@ -27,6 +29,9 @@ pub(crate) fn ConnectionScreen(
     #[props(default)] help: Option<String>,
     #[props(default = "电脑节点密码".to_owned())] password_label: String,
     #[props(default = "连接电脑".to_owned())] submit_label: String,
+    #[props(default = "DEVICES & COLLABORATION".to_owned())] eyebrow: String,
+    #[props(default = "连接其他设备".to_owned())] heading: String,
+    #[props(default = "连接电脑或其他工作节点，继续项目、会话和 Agent 任务。".to_owned())] description: String,
     #[props(default = false)] scanning: bool,
     #[props(default)] scan_status: String,
     #[props(default)] target: String,
@@ -45,18 +50,18 @@ pub(crate) fn ConnectionScreen(
     #[props(default)] children: Option<Element>,
 ) -> Element {
     rsx! {
-        ConnectionPanel { fixed_address: fixed_target,
-            if !current_address.is_empty() {
+        ConnectionPanel { fixed_address: fixed_target, eyebrow, heading, description,
+            if show_current_node && !current_address.is_empty() {
                 div { class: "phone-current-node",
-                    strong { "我的电脑" } code { "{current_address}" }
+                    strong { "当前连接的工作节点" } code { "{current_address}" }
                     p { class: "meta", role: "status", "{current_status}" }
-                    if authenticated { p { class: "meta", "电脑已连接并认证。" } }
-                    p { class: "connection-help", "重新连接或退出不会停止电脑上的任务；请先保留尚未提交的输入。" }
+                    if authenticated { p { class: "meta", "节点已连接并认证。" } }
+                    p { class: "connection-help", "切换连接不会停止节点上的任务；请先保留尚未提交的输入。" }
                     div { class: "phone-current-actions",
                         if let Some(action) = onswitch {
                             button { r#type: "button", class: "button", disabled: busy,
                                 onclick: move |_| action.call(()),
-                                if fixed_target { "重新连接" } else { "连接其他电脑" }
+                                if fixed_target { "重新连接" } else { "连接其他设备" }
                             }
                         }
                         if let Some(action) = onreauthenticate {
@@ -71,7 +76,7 @@ pub(crate) fn ConnectionScreen(
                         }
                         if let Some(action) = onshare {
                             button { r#type: "button", class: "button", disabled: busy,
-                                onclick: move |_| action.call(()), Icon { name: "phone" } "分享当前连接"
+                                onclick: move |_| action.call(()), Icon { name: "phone" } "分享连接信息"
                             }
                         }
                     }
@@ -85,7 +90,20 @@ pub(crate) fn ConnectionScreen(
                         }
                     }
                 }
-            } else if !current_status.is_empty() {
+            }
+            if show_connection_summary && !show_current_node && !current_address.is_empty() {
+                div { class: "phone-current-node collaboration-current-connection",
+                    strong { "当前连接的工作节点" }
+                    code { "{current_address}" }
+                    p { class: "meta", role: "status", "连接已建立，可继续连接其他设备。" }
+                    if let Some(action) = onswitch {
+                        button { r#type: "button", class: "button", disabled: busy,
+                            onclick: move |_| action.call(()), "连接其他设备"
+                        }
+                    }
+                }
+            }
+            if current_address.is_empty() && !current_status.is_empty() {
                 // Connection attempts can fail before any node is authorized.
                 p { class: "meta", role: "status", "{current_status}" }
             }
@@ -142,15 +160,20 @@ const CONNECTION_HELP: &str = "填写电脑可达的完整 HTTP(S) 地址，需�
 pub(crate) fn ConnectionPanel(
     children: Element,
     #[props(default = false)] fixed_address: bool,
+    #[props(default = "DEVICES & COLLABORATION".to_owned())] eyebrow: String,
+    #[props(default = "连接其他设备".to_owned())] heading: String,
+    #[props(default = "连接电脑或其他工作节点，继续项目、会话和 Agent 任务。".to_owned())] description: String,
 ) -> Element {
     rsx! {
         style { {include_str!("connection_panel.css")} }
         div { class: "connection-panel-shell",
-            div { class: "overline", "YOUR COMPUTER. YOUR AGENT. EVERYWHERE." }
-            div { class: "page-heading connection-panel-heading",
-                div {
-                    h1 { "连接我的电脑" }
-                    p { if fixed_address { "登录当前电脑，接续项目与会话。" } else { "电脑运行，手机接续。手动输入节点地址，或扫描电脑上的二维码。" } }
+            if !eyebrow.trim().is_empty() { div { class: "overline", "{eyebrow}" } }
+            if !heading.trim().is_empty() || !description.trim().is_empty() {
+                div { class: "page-heading connection-panel-heading",
+                    div {
+                        if !heading.trim().is_empty() { h1 { "{heading}" } }
+                        if !description.trim().is_empty() { p { if fixed_address { "登录当前电脑，接续项目与会话。" } else { "{description}" } } }
+                    }
                 }
             }
             section { class: "mobile-connect-form connection-panel", {children} }

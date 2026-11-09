@@ -17,7 +17,9 @@
 
 WebSocket 先通过普通 Host/Origin 和认证 middleware，浏览器使用同源 Cookie；URL query 不接受临时票据或另一套认证通道。共享撤权使既有授权 lease/连接失效。升级成功不扩大项目访问、组件本机权限或会话命令能力。当前原生 realtime 客户端使用认证 Cookie（保留的私有控制兼容路径另行处理），明确拒绝 bearer-token 模式。
 
-消息为受校验的 JSON 文本帧。连接、订阅、请求 ID、帧大小和输出队列均有上限；心跳、空闲检测与写超时用于清理失效连接。慢客户端不能无限占用内存，也不能阻止宿主 drain。节点操作仍提交给已有 current-thread / `LocalSet` executor，socket task 不成为新的 Agent owner。
+消息为受校验的 JSON 文本帧；二进制帧不支持。连接、订阅、请求 ID、帧大小和输出队列均有上限；心跳、空闲检测与写超时用于清理失效连接。慢客户端不能无限占用内存，也不能阻止宿主 drain。节点操作仍提交给已有 current-thread / `LocalSet` executor，socket task 不成为新的 Agent owner。
+
+协议版本 1 使用 subprotocol `rpi-work.realtime.v1`，固定入口为 `/api/v1/realtime`。连接建立后先交换 `hello`；客户端帧包括 `reserve`、`execute`、只读 `query`、`status`、`subscribe`、`unsubscribe` 和应用层 `ping`，服务端帧包括 `hello`、`reserved`、`status`、`result`、`subscribed`、`unsubscribed`、`events`、`error` 和 `pong`。事件帧携带 `sessionId`、`subscriptionId` 及该会话自己的 `seq`；重连使用 `afterSeq`，没有连接级全局游标。能力发现通过 `GET /api/v1/transports` 完成，发现结果中的 `nodeId`、`ownerEpoch`、路径、subprotocol 和能力必须与 hello 一致。
 
 ## 写操作与未知结果
 

@@ -278,3 +278,79 @@
     margin: 0;
   }
 }
+
+/* Desktop settings follow the prototype: a vertical category rail beside the content. */
+@media (min-width: 701px) {
+  .app-shell:has(.settings-page) .settings-page {
+    display: grid;
+    grid-template-columns: minmax(160px, 186px) minmax(0, 1fr);
+    align-content: start;
+    align-items: start;
+    gap: var(--space-32);
+  }
+  .app-shell:has(.settings-page) .settings-page > :not(.settings-navigation) {
+    grid-column: 2;
+    min-width: 0;
+  }
+  .app-shell:has(.settings-page) .settings-page > .page-heading {
+    margin-bottom: 0;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    align-self: start;
+    gap: var(--space-8);
+    min-width: 0;
+    margin: 0;
+    padding: 0 var(--space-16) 0 0;
+    overflow: visible;
+    border: 0;
+    border-right: 1px solid var(--line);
+    background: transparent;
+    backdrop-filter: none;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    width: 100%;
+    min-width: 0;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 42px;
+    padding: 0 var(--space-10);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button > .icon {
+    width: var(--icon-md);
+    height: var(--icon-md);
+    margin-right: var(--space-8);
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > nav > button.active {
+    border-color: transparent;
+    background: var(--selected, var(--accent-bg));
+    color: var(--text);
+    font-weight: 600;
+  }
+  .app-shell:has(.settings-page) .settings-page .settings-navigation > .settings-return {
+    align-self: stretch;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 42px;
+    margin: var(--space-16) 0 0;
+    padding: 0 var(--space-10);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+  }
+}

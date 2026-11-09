@@ -83,9 +83,10 @@ fn ComposerField(
                 }
             },
             onkeydown: move |event| {
-                // WebView installation crosses an asynchronous bridge. Never
-                // submit a candidate-confirmation key before that guard is ready.
-                if *ime_guard_ready.read() == Some(true) && event.key() == Key::Enter && !event.modifiers().shift() && !event.is_composing() {
+                // The JS capture handler protects IME candidate confirmation;
+                // normal Enter must remain usable even while that handler is
+                // being installed across the WebView bridge.
+                if event.key() == Key::Enter && !event.modifiers().shift() && !event.is_composing() {
                     event.prevent_default();
                     onenter.call(());
                 }

@@ -1,5 +1,4 @@
 //! Host-owned rendering of inert extension UI designs. No plugin code runs here.
-pub(crate) mod components;
 use dioxus::prelude::*;
 use serde_json::Value;
 use work_core::extensions::{

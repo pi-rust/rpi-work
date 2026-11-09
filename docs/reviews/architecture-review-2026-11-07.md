@@ -11,7 +11,7 @@
 | 发现 | 对阅读/开发的影响 | 更新 |
 | --- | --- | --- |
 | 把 `work-node` / `work-server` 写成实际实现目录，漏列私有拆分包 | 修改位置和依赖方向错误 | 总览列出 15 个成员，区分 API、runtime、service、host 与兼容门面 |
-| 只说明 HTTP/SSE | 默认 Auto/WebSocket、认证发现和未知写结果没有说明 | 增加 realtime 专题，写明有限回退与 owner 回执边界 |
+| 只说明 HTTP/SSE | WebSocket-only 实时通道、认证发现和未知写结果没有说明 | 增加 realtime 专题，写明无降级、无自动重发与 owner 回执边界 |
 | 扩展文档将全局能力描述为 false、禁止一切 HTML | 混淆旧惰性设计接口、已实现原生管理和动态组件 | 分开 native、Bundle、design 三条契约 |
 | 原生资源/元 Agent 仍被描述为未实现或只有静态测试 | 与 typed native/authoring 源码和正式指南冲突 | 增加资源架构并修正 README、产品范围、归属与规范 |
 | `task dev` 被描述为桌面 + 14180 热刷新 | 按文档启动得不到热更新，还可能重复抢 owner 锁 | 按 Taskfile 区分 release 无头 `task dev` 和 debug `task dev:desktop` |

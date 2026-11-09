@@ -1,5 +1,6 @@
 //! Formal native resource controls. All authority and observations come from `NodeApi`.
 use dioxus::prelude::*;
+use std::collections::BTreeMap;
 use work_client::WorkspaceClient;
 use work_core::api::{
     NativeApply, NativeCatalog, NativeConfiguration, NativeCreate, NativeDesired, NativeKind,
@@ -145,6 +146,34 @@ fn resource_matches(resource: &NativeResource, kind: &str, query: &str, scope: &
         )
         .to_lowercase()
         .contains(&query.trim().to_lowercase())
+}
+
+fn extension_identity(resource: &NativeResource) -> String {
+    format!("{:?}:{}", resource.kind, display_resource_name(&resource.name))
+}
+
+fn resource_preference(resource: &NativeResource) -> (u8, u8) {
+    let installation = match resource.facts["installed"].as_bool() {
+        Some(true) => 2,
+        Some(false) => 0,
+        None => 1,
+    };
+    let scope = u8::from(matches!(resource.scope, NativeScope::Project));
+    (installation, scope)
+}
+
+fn deduplicate_extensions(resources: Vec<NativeResource>) -> Vec<NativeResource> {
+    let mut unique = BTreeMap::<String, NativeResource>::new();
+    for resource in resources {
+        let key = extension_identity(&resource);
+        let replace = unique
+            .get(&key)
+            .is_none_or(|current| resource_preference(&resource) > resource_preference(current));
+        if replace {
+            unique.insert(key, resource);
+        }
+    }
+    unique.into_values().collect()
 }
 
 fn readiness_key(readiness: NativeReadiness) -> &'static str {
@@ -553,7 +582,7 @@ pub fn NativeResources(
                 if !catalog_error().is_empty() { p { role: "alert", class: "resource-error resource-state-block", "目录读取失败：{catalog_error}。请重试刷新目录。" } }
                 if !session_error().is_empty() { p { class: "native-list-count resource-state-block", role: "status", "会话选择未核实：{session_error}。可在会话资源设置中重试。" } }
                 if let Some(catalog) = catalog.read().as_ref() {
-                    { let resources = catalog.resources.iter().filter(|r| resource_matches(r, &kind, &query(), &scope_filter())).cloned().collect::<Vec<_>>(); rsx! {
+                    { let mut resources = catalog.resources.iter().filter(|r| resource_matches(r, &kind, &query(), &scope_filter())).cloned().collect::<Vec<_>>(); if kind == "extension" { resources = deduplicate_extensions(resources); } rsx! {
                         if !simple_resource {
                             p { class: "native-list-count", "{resources.len()} 项资源 · 安装、会话选择与实际加载分别核实" }
                         }
@@ -587,7 +616,7 @@ pub fn NativeResources(
                                             div { class: "native-resource-footer",
                                                 span { class: "native-selection-state {selection_class}", role: "status", aria_label: "{selection_text}", "{selection_text}" }
                                                 span { class: "native-load-state", role: "status", aria_label: "实际加载状态：未核实", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
-                                                button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, "查看详情" }
+                                                button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, if resource.facts["installed"] == false { "下载安装" } else { "查看详情" } }
                                             }
                                         }
                                     }
@@ -671,7 +700,7 @@ pub fn NativeResources(
             if let Some(resource) = detail.read().clone() {
                 { let owns_receipt = receipt_resource.read().as_ref() == Some(&resource.reference); rsx! {
                 super::detail::ResourceDetail {
-                    key: "{resource.reference}", reference: resource.reference, name: resource.name,
+                    key: "{resource.reference}", reference: resource.reference, name: resource.name, kind: resource.kind,
                     scope: resource.scope, facts: resource.facts, busy: busy(), loading: loading(), online,
                     error: if owns_receipt { error() } else { String::new() }, notice: if owns_receipt { notice() } else { String::new() }, onmanage: manage,
                     onclose: move |()| detail.set(None),
@@ -698,6 +727,28 @@ mod presentation_tests {
             display_resource_name("custom-vnext-not-a-digest"),
             "custom-vnext-not-a-digest"
         );
+    }
+
+    #[test]
+    fn extension_list_deduplicates_versions_and_prefers_installed_project_entry() {
+        let resources = deduplicate_extensions(vec![
+            NativeResource {
+                reference: "global-old".into(),
+                scope: NativeScope::Global,
+                kind: NativeKind::Extension,
+                name: "review-v1.0.0-aaaaaaaa".into(),
+                facts: json!({"installed": false}),
+            },
+            NativeResource {
+                reference: "project-installed".into(),
+                scope: NativeScope::Project,
+                kind: NativeKind::Extension,
+                name: "review-v1.1.0-bbbbbbbb".into(),
+                facts: json!({"installed": true}),
+            },
+        ]);
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].reference, "project-installed");
     }
 
     #[test]

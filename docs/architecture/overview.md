@@ -6,7 +6,7 @@
 
 Work 是节点宿主和多端工作台。节点拥有项目、会话和执行生命周期；客户端负责访问、交互与状态投影。桌面默认同时承担宿主与客户端角色，Web 和 Android 原生 App 访问已有节点，CLI 可以连接节点或以前台方式托管节点。
 
-rpi 提供 Agent 执行与原生资源能力。`rpi-http` 将这些能力暴露为自己的 HTTP/SSE 服务；`rpi-http-extension` 使用既有 rpi 插件 ABI 提供入口。Work 自己的多项目 owner、节点协议、共享策略和面板留在本仓库。安装 rpi HTTP 扩展不等于具备 Work 节点协议；Work 启动也不依赖该扩展。
+rpi 提供 Agent 执行与原生资源能力。`rpi-http` 仍是独立的兼容 HTTP/SSE 服务；`rpi-http-extension` 使用既有 rpi 插件 ABI 提供入口，但它不是 Work 的实时传输实现。Work 自己的多项目 owner、节点协议、共享策略和面板留在本仓库：HTTP 负责认证、资源与控制请求，`/api/v1/realtime` WebSocket 负责会话命令、mutation、订阅和事件。安装 rpi HTTP 扩展不等于具备 Work 节点协议；Work 启动也不依赖该扩展。
 
 ```mermaid
 flowchart TB
