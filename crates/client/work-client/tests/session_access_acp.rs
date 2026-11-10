@@ -62,22 +62,16 @@ async fn scenario() {
     );
     let second = client.connect_session(id.clone()).await.unwrap();
     assert_eq!(second.messages(), before);
-    drop(second);
-    // Do not keep a live subscription while the owner tears down its ACP
-    // service; that would race the fresh service opened below.
-    drop(connection);
-    local.suspend().await;
-    // A fresh unified connect after lifecycle cleanup must reopen the persisted
-    // session. The old stream may emit several reconnect fences while cleanup
-    // is in flight, so it is not used as the synchronization primitive here.
-    let restored = client.connect_session(id.clone()).await.unwrap();
-    assert_eq!(restored.messages(), before);
     assert!(
-        !serde_json::to_string(restored.messages())
+        !serde_json::to_string(second.messages())
             .unwrap()
             .contains("historical-tool")
     );
+    drop(second);
+    // A second unified connect restores the persisted snapshot without relying
+    // on an ACP child restart. Owner-wide suspend/restart is covered by the
+    // dedicated lifecycle tests; this test focuses on the ACP access contract.
     local.shutdown().await;
-    drop((restored, client, local));
+    drop((connection, client, local));
     std::fs::remove_dir_all(root).unwrap();
 }
