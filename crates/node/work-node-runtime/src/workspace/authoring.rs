@@ -470,10 +470,9 @@ impl LocalWorkspace {
 }
 #[cfg(test)]
 mod tests {
-    use super::{
-        BTreeMap, Duration, LocalWorkspace, NativeKind, check_sources, replace_metadata,
-        skill_name, templates,
-    };
+    use super::{BTreeMap, LocalWorkspace, NativeKind, check_sources, skill_name, templates};
+    #[cfg(windows)]
+    use super::{Duration, replace_metadata};
     #[test]
     fn skill_metadata_name_is_canonical_and_not_randomized_for_tests() {
         assert_eq!(
