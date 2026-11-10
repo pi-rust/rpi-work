@@ -1,5 +1,14 @@
 //! Native RPC workspace and HTTP/WebSocket clients for RPI Work.
-#![allow(clippy::missing_errors_doc)]
+#![allow(
+    clippy::cast_lossless,
+    clippy::ignored_unit_patterns,
+    clippy::manual_let_else,
+    clippy::match_same_arms,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines
+)]
 //!
 //! `WorkspaceClient` selects the desktop's in-process native workspace or an
 //! explicit remote HTTP client. Agent execution uses native RPC; local project,
