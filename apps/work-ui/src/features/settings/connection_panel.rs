@@ -31,7 +31,8 @@ pub(crate) fn ConnectionScreen(
     #[props(default = "连接电脑".to_owned())] submit_label: String,
     #[props(default = "DEVICES & COLLABORATION".to_owned())] eyebrow: String,
     #[props(default = "连接其他设备".to_owned())] heading: String,
-    #[props(default = "连接电脑或其他工作节点，继续项目、会话和 Agent 任务。".to_owned())] description: String,
+    #[props(default = "连接电脑或其他工作节点，继续项目、会话和 Agent 任务。".to_owned())]
+    description: String,
     #[props(default = false)] scanning: bool,
     #[props(default)] scan_status: String,
     #[props(default)] target: String,
@@ -162,7 +163,8 @@ pub(crate) fn ConnectionPanel(
     #[props(default = false)] fixed_address: bool,
     #[props(default = "DEVICES & COLLABORATION".to_owned())] eyebrow: String,
     #[props(default = "连接其他设备".to_owned())] heading: String,
-    #[props(default = "连接电脑或其他工作节点，继续项目、会话和 Agent 任务。".to_owned())] description: String,
+    #[props(default = "连接电脑或其他工作节点，继续项目、会话和 Agent 任务。".to_owned())]
+    description: String,
 ) -> Element {
     rsx! {
         style { {include_str!("connection_panel.css")} }

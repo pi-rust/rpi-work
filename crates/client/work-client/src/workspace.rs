@@ -12,12 +12,12 @@ use crate::{
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::Value;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+use work_core::api::ToolProgramSnapshotRequest;
 use work_core::api::{
     ToolProgramBodyQuery, ToolProgramBodyResponse, ToolProgramChildPage, ToolProgramChildrenQuery,
     ToolProgramPhasePage, ToolProgramPhasesQuery, ToolProgramSnapshot,
 };
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
-use work_core::api::ToolProgramSnapshotRequest;
 
 /// HTTP everywhere; an in-process native workspace on desktop platforms only.
 #[derive(Clone)]

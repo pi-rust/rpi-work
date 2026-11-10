@@ -532,16 +532,14 @@ mod tests {
     #[test]
     fn provider_default_is_optional_and_reads_provider_model_pair() {
         assert_eq!(default_provider_model(&default_value()), None);
-        let value = parse(
-            r#"{"version":1,"defaultProvider":{"provider":"openai","model":"gpt-4o"}}"#,
-        )
-        .unwrap();
+        let value =
+            parse(r#"{"version":1,"defaultProvider":{"provider":"openai","model":"gpt-4o"}}"#)
+                .unwrap();
         assert_eq!(
             default_provider_model(&value),
             Some(("openai".into(), "gpt-4o".into()))
         );
-        let incomplete = parse(r#"{"version":1,"defaultProvider":{"provider":"openai"}}"#)
-            .unwrap();
+        let incomplete = parse(r#"{"version":1,"defaultProvider":{"provider":"openai"}}"#).unwrap();
         assert_eq!(default_provider_model(&incomplete), None);
     }
 

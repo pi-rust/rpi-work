@@ -9,16 +9,16 @@ pub(super) fn native_prompt_profile() -> Value {
         "image": true,
         "imageMimeTypes": ["image/png", "image/jpeg"],
         "maxImages": 4,
-        "maxImageBytes": 262_144,
-        "maxTotalImageBytes": 524_288,
-        "maxImageBase64Bytes": 349_528,
-        "maxPromptBytes": 786_432,
+        "maxImageBytes": 1_048_576,
+        "maxTotalImageBytes": 2_097_152,
+        "maxImageBase64Bytes": 1_398_104,
+        "maxPromptBytes": 3_145_728,
         "maxTextBytes": 32_768,
         "maxContentBlocks": 64,
         "maxImageSide": 2_000,
         "maxImagePixels": 4_000_000,
-        "imageDecodeAllocBudgetBytes": 33_554_432,
-        "frameBytes": 1_048_576,
+        "imageDecodeAllocBudgetBytes": 67_108_864,
+        "frameBytes": 4_194_304,
     })
 }
 
@@ -137,10 +137,10 @@ mod prompt_tests {
     fn profile() -> Value {
         json!({
             "contentBlocksVersion":1,"image":true,"imageMimeTypes":["image/png","image/jpeg"],
-            "maxImages":4,"maxImageBytes":262_144,"maxTotalImageBytes":524_288,
-            "maxImageBase64Bytes":349_528,"maxPromptBytes":786_432,"maxTextBytes":32_768,
+            "maxImages":4,"maxImageBytes":1_048_576,"maxTotalImageBytes":2_097_152,
+            "maxImageBase64Bytes":1_398_104,"maxPromptBytes":3_145_728,"maxTextBytes":32_768,
             "maxContentBlocks":64,"maxImageSide":2_000,"maxImagePixels":4_000_000,
-            "imageDecodeAllocBudgetBytes":33_554_432,"frameBytes":1_048_576
+            "imageDecodeAllocBudgetBytes":67_108_864,"frameBytes":4_194_304
         })
     }
     #[allow(clippy::needless_pass_by_value)]
@@ -218,28 +218,15 @@ mod prompt_tests {
             json!(vec![image(); 5]),
             json!(vec![json!({"type":"text","text":""}); 65]),
             json!([{"type":"text","text":"x".repeat(32769)}]),
-            json!([{"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(87382)}]),
+            json!([{"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(349527)}]),
             json!(vec![
-                json!({"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(87381)});
+                json!({"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(233017)});
                 3
             ]),
         ] {
             assert!(validate_prompt_content(&command(blocks), &profile()).is_err());
         }
 
-        let large = json!({"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(87381)});
-        let mut payload =
-            command(json!([large.clone(), large, {"type":"text","text":"\0".repeat(14000)}]));
-        let slack =
-            rpi_extcore::prompt::MAX_PROMPT_BYTES - serde_json::to_vec(&payload).unwrap().len() - 1;
-        payload["contentBlocks"][2]["text"] =
-            json!(format!("{}{}", "\0".repeat(14000), "a".repeat(slack)));
-        // The id-less frame fits exactly; HostSession::send's UUID would not.
-        rpi_extcore::prompt::PromptProfile::from_ready(&profile())
-            .unwrap()
-            .validate_command(&payload)
-            .unwrap();
-        assert!(validate_prompt_content(&payload, &profile()).is_err());
         let mut huge_id = command(json!([image()]));
         huge_id["id"] = json!("x".repeat(rpi_extcore::prompt::MAX_PROMPT_BYTES));
         assert!(validate_prompt_content(&huge_id, &profile()).is_err());

@@ -147,7 +147,10 @@ async fn desktop_sharing() -> DesktopSharing {
 async fn set_desktop_sharing(enabled: bool) -> Result<(), String> {
     let client = crate::app::local_node::client().ok_or("本机节点尚未准备好".to_owned())?;
     client
-        .component_capability("node.sharing.write", serde_json::json!({"enabled": enabled}))
+        .component_capability(
+            "node.sharing.write",
+            serde_json::json!({"enabled": enabled}),
+        )
         .await
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -473,8 +476,9 @@ pub fn DevicesPage(
     let session_control =
         use_hook(try_consume_context::<crate::app::entry::ConnectionSessionControl>);
     let scoped_entry = session_control.is_some();
-    // Keep the desktop browser and native desktop on the same collaboration surface.
-    // Scoped/mobile entries still use the focused connection flow below.
+    // Desktop browser and native desktop share the collaboration surface. Mobile only
+    // exposes the connected-node list and the action for sharing the current node.
+    let mobile_collaboration = mobile_client && !scoped_entry;
     let collaboration_hub = !mobile_client && !scoped_entry;
     let navigation = use_hook(try_consume_context::<crate::app::node_navigation::NodeNavigation>);
     let home_address = navigation
@@ -510,19 +514,56 @@ pub fn DevicesPage(
     rsx! {
         style { {include_str!("devices.css")} }
         div { class: "devices-page",
-            if collaboration_hub {
+            if mobile_collaboration {
+                section { class: "collaboration-hub mobile-collaboration-hub", aria_label: "工作协同",
+                    div { class: "page-heading collaboration-page-heading",
+                        div {
+                            div { class: "overline", "DEVICES & COLLABORATION" }
+                            h1 { "工作协同" }
+                            p { "查看已连接的工作节点，并分享当前节点。" }
+                        }
+                        span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "当前节点已连接" } else if busy { "节点连接中" } else { "当前节点未连接" } }
+                    }
+                    div { class: "collaboration-actions",
+                        section { class: "collaboration-action-card connect-card", aria_label: "分享当前节点",
+                            div { class: "collaboration-action-heading",
+                                span { class: "collaboration-action-icon", Icon { name: "cloud" } }
+                                div { h2 { "分享当前节点" } p { "让其他设备连接当前工作节点，继续项目、会话和 Agent 任务。" } }
+                            }
+                            div { class: "collaboration-action-footer",
+                                AuthorizationQrButton {
+                                    owned_local: false, target: current_address.clone(), available: online && mobile_authorized,
+                                    onopen: move |()| { qr_open.set(false); pairing.request.with_mut(authorization_offer::Request::show); },
+                                }
+                            }
+                        }
+                    }
+                    section { class: "collaboration-list-panel", aria_label: "连接列表",
+                        div { class: "collaboration-list-heading", div { h2 { "连接列表" } p { "本设备连接过的工作节点" } }
+                            if !connection.history.read().recent.is_empty() { button { class: "button ghost", onclick: move |_| connection.history.set(NodeHistory::default()), "清除记录" } }
+                        }
+                        if connection.history.read().recent.is_empty() {
+                            div { class: "collaboration-empty", Icon { name: "clock" } strong { "还没有连接记录" } span { "连接工作节点后，会显示在这里。" } }
+                        } else {
+                            for address in connection.history.read().recent.clone() {
+                                div { class: "collaboration-list-row",
+                                    span { class: "collaboration-device-icon", Icon { name: "monitor" } }
+                                    div { class: "collaboration-device-copy", strong { "{address}" } small { "工作节点" } }
+                                    button { class: "button", disabled: busy, aria_label: "连接 {address}", onclick: { let address = address.clone(); move |_| { base_url.set(format!("{address}/")); password.set(NodePassword::default()); error.set(String::new()); onconnect.call(()); } }, "连接" }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if collaboration_hub {
                 section { class: "collaboration-hub", aria_label: "工作协同",
                     div { class: "page-heading collaboration-page-heading",
                         div {
                             div { class: "overline", "DEVICES & COLLABORATION" }
                             h1 { "工作协同" }
-                            p { if owned_local { "连接其他设备，或允许可信设备访问这台电脑上的工作空间。" } else { "连接其他设备，并管理当前工作节点的访问状态。" } }
+                            p { "连接其他设备，或允许可信设备访问这台电脑上的工作空间。" }
                         }
-                        span { class: if online { "status-badge completed" } else { "status-badge" }, i {},
-                            if owned_local {
-                                if online { "本机节点在线" } else if busy { "节点准备中" } else { "本机节点未就绪" }
-                            } else if online { "当前节点已连接" } else if busy { "节点连接中" } else { "当前节点未连接" }
-                        }
+                        span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "本机节点在线" } else if busy { "节点准备中" } else { "本机节点未就绪" } }
                     }
                     div { class: "collaboration-actions",
                         section { class: "collaboration-action-card connect-card", aria_label: "连接其他设备",
@@ -556,11 +597,10 @@ pub fn DevicesPage(
                                 }
                             }
                         }
-                        section { class: "collaboration-action-card assist-card", aria_label: if owned_local { "允许远程协助" } else { "当前工作节点" },
+                        section { class: "collaboration-action-card assist-card", aria_label: "允许远程协助",
                             div { class: "collaboration-action-heading",
-                                span { class: "collaboration-action-icon assist", Icon { name: if owned_local { "shield" } else { "monitor" } } }
-                                div { h2 { if owned_local { "允许远程协助" } else { "当前工作节点" } } p { if owned_local { "开启后，可信设备可以访问当前电脑上的项目、会话和运行任务。" } else { "当前页面连接的节点，Web 与桌面使用相同的工作协同入口。" } } }
-                                if owned_local {
+                                span { class: "collaboration-action-icon assist", Icon { name: "shield" } }
+                                div { h2 { "允许远程协助" } p { "开启后，可信设备可以访问当前电脑上的项目、会话和运行任务。" } }
                                 button {
                                     class: if sharing.enabled { "sharing-switch enabled" } else { "sharing-switch" },
                                     role: "switch", aria_checked: sharing.enabled, disabled: !sharing.listening || !online,
@@ -575,11 +615,8 @@ pub fn DevicesPage(
                                     span { class: "sharing-switch-track", span {} }
                                     span { if sharing.enabled { "已开启" } else { "未开启" } }
                                 }
-                                } else {
-                                    span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "已连接" } else if busy { "连接中" } else { "未连接" } }
-                                }
                             }
-                            if owned_local && !sharing.listening {
+                            if !sharing.listening {
                                 div { class: "plugin-guide", role: "status",
                                     Icon { name: "info" }
                                     div { strong { "需要先安装协同插件" } p { "安装 rpi-http-extension 后，才能开启远程协助。" } }
@@ -599,28 +636,19 @@ pub fn DevicesPage(
                                         }, if *plugin_check_busy.read() { "正在检查…" } else { "重新检查插件" } }
                                     }
                                 }
-                            } else if owned_local {
+                            } else {
+                                if !owned_local && auth_state.read().as_ref().is_some_and(|auth| auth.required && !auth.authenticated) {
+                                    div { class: "form-field", label { r#for: "current-node-password", "节点密码" }
+                                        input { id: "current-node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "输入节点密码", oninput: move |event| password.set(NodePassword::new(event.value(), &connection.address.read())) }
+                                    }
+                                    button { class: "button primary", disabled: busy || password.read().is_empty(), onclick: move |_| onlogin.call(()), if busy { "正在登录…" } else { "登录当前节点" } }
+                                }
                                 div { class: if sharing.enabled { "sharing-ready" } else { "sharing-ready disabled" },
                                     Icon { name: if sharing.enabled { "check" } else { "info" } }
                                     span { if sharing.enabled { "远程协助已开启，可以分享连接信息。" } else { "插件已安装，开启开关后允许其他设备访问。" } }
                                 }
                                 if sharing.enabled {
                                     button { class: "button", disabled: !online, onclick: move |_| { pairing.request.with_mut(authorization_offer::Request::show); }, "分享连接信息" }
-                                }
-                            } else {
-                                if auth_state.read().as_ref().is_some_and(|auth| auth.required && !auth.authenticated) {
-                                    div { class: "form-field", label { r#for: "current-node-password", "节点密码" }
-                                        input { id: "current-node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "输入节点密码", oninput: move |event| password.set(NodePassword::new(event.value(), &connection.address.read())) }
-                                    }
-                                    button { class: "button primary", disabled: busy || password.read().is_empty(), onclick: move |_| onlogin.call(()), if busy { "正在登录…" } else { "登录当前节点" } }
-                                } else if mobile_authorized {
-                                    div { class: "sharing-ready", Icon { name: "check" } span { "当前节点已认证，可以继续使用项目、会话和 Agent 任务。" } }
-                                }
-                                if mobile_authorized && matches!(shared_client.read().as_ref(), Some(WorkspaceClient::Remote(_))) {
-                                    AuthorizationQrButton {
-                                        owned_local: false, target: current_address.clone(), available: online,
-                                        onopen: move |()| { qr_open.set(false); pairing.request.with_mut(authorization_offer::Request::show); },
-                                    }
                                 }
                             }
                         }
@@ -798,7 +826,7 @@ pub fn DevicesPage(
                         }
                     }
                 }
-            } else if !collaboration_hub {
+            } else if !mobile_collaboration && !collaboration_hub {
                 ConnectionScreen {
                     current_address: if mobile_authorized || scoped_entry { current_address.clone() } else { String::new() },
                     current_status: connection_status,
@@ -1040,7 +1068,11 @@ fn AuthorizationQr(
     let node_epoch = *connection.epoch.read();
     let draft = address_draft.read().trim().to_owned();
     let target = if draft.is_empty() {
-        if owned_local { public_url.clone() } else { node.clone() }
+        if owned_local {
+            public_url.clone()
+        } else {
+            node.clone()
+        }
     } else {
         draft.clone()
     };

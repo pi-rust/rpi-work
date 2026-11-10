@@ -52,6 +52,8 @@ pub fn SettingsPage(
                         onclick: move |_| settings_section.set("footer".to_owned()), Icon { name: "settings" } "底部状态栏" }
                     button { class: if section == "session-display" { "active" } else { "" }, aria_current: if section == "session-display" { "page" } else { "" },
                         onclick: move |_| settings_section.set("session-display".to_owned()), Icon { name: "message" } "会话展示" }
+                    button { class: if section == "updates" { "active" } else { "" }, aria_current: if section == "updates" { "page" } else { "" },
+                        onclick: move |_| settings_section.set("updates".to_owned()), Icon { name: "download" } "应用更新" }
                 }
                 button { class: "settings-return", onclick: move |_| active_page.set("workspace".to_owned()), Icon { name: "chevron-right" } "返回会话" }
             }
@@ -81,6 +83,10 @@ pub fn SettingsPage(
                     button { class: "settings-card", onclick: move |_| settings_section.set("session-display".to_owned()),
                         span { class: "settings-card-icon", Icon { name: "message" } }
                         strong { "会话展示" } p { "选择会话切换器按节点分组，或将当前节点的会话平铺显示。" } small { "本设备 · 默认按节点分组" } Icon { name: "chevron-right" }
+                    }
+                    button { class: "settings-card", onclick: move |_| settings_section.set("updates".to_owned()),
+                        span { class: "settings-card-icon", Icon { name: "download" } }
+                        strong { "应用更新" } p { "检查新版本、下载更新与安装。" } small { "当前版本 " {env!("CARGO_PKG_VERSION")} } Icon { name: "chevron-right" }
                     }
                 }
             } else if section == "app-settings" {

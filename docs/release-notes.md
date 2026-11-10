@@ -1,4 +1,10 @@
-RPI Work 0.1.9
+RPI Work 0.1.10
+
+## 工作协同与设置体验
+
+- 移动端设备页聚焦当前节点的分享入口和已连接节点列表，桌面端继续保留连接与远程协助管理。
+- 项目上下文路径现在直接打开项目文件面板，减少进入文件浏览的步骤。
+- Provider 设置优先显示当前运行时实际使用的 Provider；新增应用更新设置入口并显示当前版本。
 
 ## Codex 默认主题与完整视觉规格
 
@@ -25,4 +31,4 @@ RPI Work 0.1.9
 
 Android ARM64 APK 沿用固定签名，versionCode 1009，可从此前固定签名版本覆盖升级。执行宿主仍由电脑节点提供；节点密码、模型密钥和本机配置不包含在安装包中。桌面包仍为便携发行，未增加 Windows MSI、Apple 签名/公证或应用商店发行支持。
 
-说明：[主题视觉规格](https://github.com/pi-rust/rpi-work/blob/v0.1.9/docs/guides/theme-design.md) · [扩展架构](https://github.com/pi-rust/rpi-work/blob/v0.1.9/docs/architecture/extensions.md) · [真实扩展 Demo](https://github.com/pi-rust/rpi-work/blob/v0.1.9/docs/guides/extension-demo.md)
+说明：[主题视觉规格](https://github.com/pi-rust/rpi-work/blob/v0.1.10/docs/guides/theme-design.md) · [扩展架构](https://github.com/pi-rust/rpi-work/blob/v0.1.10/docs/architecture/extensions.md) · [真实扩展 Demo](https://github.com/pi-rust/rpi-work/blob/v0.1.10/docs/guides/extension-demo.md)

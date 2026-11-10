@@ -36,19 +36,19 @@ impl SessionAccess {
             && [
                 ("contentBlocksVersion", 1),
                 ("maxImages", 4),
-                ("maxImageBytes", 262144),
-                ("maxTotalImageBytes", 524288),
-                ("maxImageBase64Bytes", 349528),
-                ("maxPromptBytes", 786432),
+                ("maxImageBytes", 1048576),
+                ("maxTotalImageBytes", 2097152),
+                ("maxImageBase64Bytes", 1398104),
+                ("maxPromptBytes", 3145728),
                 ("maxTextBytes", 32768),
                 ("maxContentBlocks", 64),
                 ("maxImageSide", 2000),
                 ("maxImagePixels", 4000000),
-                ("imageDecodeAllocBudgetBytes", 33554432),
+                ("imageDecodeAllocBudgetBytes", 67108864),
             ]
             .iter()
             .all(|(key, expected)| number(key) == Some(*expected))
-            && number("frameBytes").is_some_and(|n| n >= 786432)
+            && number("frameBytes").is_some_and(|n| n >= 3145728)
     }
 
     #[must_use]

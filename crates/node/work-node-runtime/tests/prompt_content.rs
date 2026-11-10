@@ -6,10 +6,10 @@ use work_node_runtime::workspace::LocalWorkspace;
 
 fn profile() -> Value {
     json!({"contentBlocksVersion":1,"image":true,"imageMimeTypes":["image/png","image/jpeg"],
-        "maxImages":4,"maxImageBytes":262_144,"maxTotalImageBytes":524_288,
-        "maxImageBase64Bytes":349_528,"maxPromptBytes":786_432,"maxTextBytes":32768,
+        "maxImages":4,"maxImageBytes":1_048_576,"maxTotalImageBytes":2_097_152,
+        "maxImageBase64Bytes":1_398_104,"maxPromptBytes":3_145_728,"maxTextBytes":32768,
         "maxContentBlocks":64,"maxImageSide":2000,"maxImagePixels":4_000_000,
-        "imageDecodeAllocBudgetBytes":33_554_432,"frameBytes":1_048_576})
+        "imageDecodeAllocBudgetBytes":67_108_864,"frameBytes":4_194_304})
 }
 
 #[tokio::test]

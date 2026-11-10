@@ -1,14 +1,9 @@
 //! Authenticated JSON-text WS adapter. Owner work stays on the existing `LocalSet`.
 use crate::{
+    ServerState,
     access::AuthLease,
     executor::{self, RealtimeAction, RealtimeReply},
-    security, ServerState,
-};
-use work_http_runtime::{
-    transport::{
-        ConnectionAccessState, ConnectionAuthLease, ConnectionError, ConnectionPermit,
-        ConnectionPolicy, ConnectionRegistry, PrincipalId,
-    },
+    security,
 };
 use axum::{
     Json,
@@ -29,6 +24,10 @@ use tokio::{
     sync::{OnceCell, OwnedSemaphorePermit, Semaphore, mpsc, watch},
     task::{AbortHandle, JoinSet},
     time::{Instant, MissedTickBehavior},
+};
+use work_http_runtime::transport::{
+    ConnectionAccessState, ConnectionAuthLease, ConnectionError, ConnectionPermit,
+    ConnectionPolicy, ConnectionRegistry, PrincipalId,
 };
 use work_node_api::api::realtime::{
     self as protocol, Capabilities, ClientFrame, Discovery, Hello, MAX_MESSAGE_BYTES, OperationRef,
@@ -137,7 +136,9 @@ pub(crate) async fn upgrade(
     let permit = match state.realtime.accept().await {
         Ok(permit) => permit,
         Err(ConnectionError::AtCapacity) => return StatusCode::TOO_MANY_REQUESTS.into_response(),
-        Err(ConnectionError::ShuttingDown) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(ConnectionError::ShuttingDown) => {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
         Err(_) => return security::lease_failure(&state, &auth),
     };
     let Ok(connection_id) = crate::random_secret() else {

@@ -149,7 +149,11 @@ fn resource_matches(resource: &NativeResource, kind: &str, query: &str, scope: &
 }
 
 fn extension_identity(resource: &NativeResource) -> String {
-    format!("{:?}:{}", resource.kind, display_resource_name(&resource.name))
+    format!(
+        "{:?}:{}",
+        resource.kind,
+        display_resource_name(&resource.name)
+    )
 }
 
 fn resource_preference(resource: &NativeResource) -> (u8, u8) {

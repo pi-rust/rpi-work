@@ -1,5 +1,8 @@
 //! Node-wide saved-file management. No control host, remote probe or raw commands.
-use crate::shared::{app_settings, components::{Icon, Modal}};
+use crate::shared::{
+    app_settings,
+    components::{Icon, Modal},
+};
 use dioxus::prelude::*;
 use work_client::WorkspaceClient;
 use work_core::api::{
@@ -297,7 +300,10 @@ pub fn ProviderSettings(
         context.generation,
         &context.session,
         context.online,
-        runtime_state.read().as_ref().and_then(|state| state.provider.clone()),
+        runtime_state
+            .read()
+            .as_ref()
+            .and_then(|state| state.provider.clone()),
     ))
     .unwrap_or_default();
     rsx! { ProviderSettingsState { key: "{key}", context, shared_client, connection_epoch, session_generation, selected_session, runtime_state, live_online, oncomponents } }
@@ -709,7 +715,10 @@ fn ProviderSettingsState(
                         })
                         .collect::<Vec<_>>();
                     if matching.is_empty() {
-                        discovery_error.set("当前会话没有返回该供应商的模型；请检查供应商 ID 或先启动对应会话。".into());
+                        discovery_error.set(
+                            "当前会话没有返回该供应商的模型；请检查供应商 ID 或先启动对应会话。"
+                                .into(),
+                        );
                         return;
                     }
                     let draft_models = matching
@@ -717,9 +726,16 @@ fn ProviderSettingsState(
                         .map(|model| ModelDraft {
                             original_id: None,
                             id: model.id.clone(),
-                            name: if model.name.is_empty() { model.id.clone() } else { model.name.clone() },
+                            name: if model.name.is_empty() {
+                                model.id.clone()
+                            } else {
+                                model.name.clone()
+                            },
                             reasoning: model.reasoning,
-                            context: model.context_window.map(|n| n.to_string()).unwrap_or_default(),
+                            context: model
+                                .context_window
+                                .map(|n| n.to_string())
+                                .unwrap_or_default(),
                             max: model.max_tokens.map(|n| n.to_string()).unwrap_or_default(),
                         })
                         .collect::<Vec<_>>();
@@ -783,6 +799,11 @@ fn ProviderSettingsState(
     let selected_session_id = selected_session.read().clone();
     let default_provider = app_settings::default_provider_model(&settings_store.read().value)
         .map(|(provider, _)| provider);
+    let current_provider = runtime_state
+        .read()
+        .as_ref()
+        .and_then(|state| state.provider.clone())
+        .or(default_provider);
     let entries = catalog
         .read()
         .as_ref()
@@ -839,7 +860,7 @@ fn ProviderSettingsState(
                       let display_name = entry.definition.as_ref().map(|d| if d.name.is_empty() { id.clone() } else { d.name.clone() }).unwrap_or_else(|| id.clone());
                       let mark = display_name.chars().next().map(|c| c.to_uppercase().collect::<String>()).unwrap_or_else(|| "P".into());
                       let credential_ready = stored != StoredCredential::None || entry.config_key_present;
-                      let is_active = default_provider.as_deref() == Some(id.as_str());
+                      let is_active = current_provider.as_deref() == Some(id.as_str());
                       let entry_class = if is_active { "provider-entry active" } else if entry.configured { "provider-entry configured" } else { "provider-entry needs-credential" };
                       rsx! {
                         article { class: entry_class, key: "{id}",

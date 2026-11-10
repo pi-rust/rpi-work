@@ -246,16 +246,9 @@ pub(crate) async fn execute(state: Arc<ServerState>, request: ApiRequest) {
             return;
         }
     }
-    let response = perform(
-        state.clone(),
-        path,
-        query,
-        method,
-        bytes,
-        auth.clone(),
-    )
-    .await
-    .unwrap_or_else(IntoResponse::into_response);
+    let response = perform(state.clone(), path, query, method, bytes, auth.clone())
+        .await
+        .unwrap_or_else(IntoResponse::into_response);
     if let Some(auth) = &auth {
         let mut outgoing = Some((reply, response));
         state

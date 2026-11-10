@@ -278,3 +278,16 @@ dialog.app-dialog.provider-dialog>.modal-header>.icon-button{width:44px;height:4
     min-height: var(--hit-size);
   }
 }
+
+/* Make the provider currently used by the runtime unmistakable. */
+.provider-management .provider-entry.active {
+  border-color: var(--accent-line);
+  background: var(--accent-bg);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+.provider-management .provider-entry.active .provider-row {
+  background: transparent;
+}
+.provider-management .provider-entry.active .provider-row-title h2 {
+  color: var(--accent);
+}

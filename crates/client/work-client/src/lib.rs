@@ -33,7 +33,6 @@ mod extensions;
 pub use components::download_component;
 mod message_page;
 mod message_queries;
-mod tool_program;
 mod node_api;
 mod prompt_content;
 mod providers;
@@ -42,6 +41,7 @@ mod realtime_client;
 mod resources;
 mod session_access;
 mod session_configuration;
+mod tool_program;
 #[cfg(target_arch = "wasm32")]
 mod wasm_realtime_client;
 pub use message_page::{MESSAGE_PAGE_SIZE, MessagePage, MessagePageInfo};
@@ -933,7 +933,9 @@ impl WorkClient {
         kind: work_core::api::realtime::RealtimeOperationKind,
         payload: &Value,
     ) -> Result<Option<Value>, ClientError> {
-        Ok(Some(realtime_mutation(self, session_id, kind, payload.clone()).await?))
+        Ok(Some(
+            realtime_mutation(self, session_id, kind, payload.clone()).await?,
+        ))
     }
 
     /// Queries a receipt without reserving or executing another operation.

@@ -750,11 +750,11 @@ pub(super) fn App() -> Element {
                 .or_else(|| selected_session.peek().clone());
             let automatic = requested.is_none();
             let requested = requested.or_else(|| {
-                connections::default_session_id(
-                    &workspace.sessions,
-                    &workspace.projects,
-                    |id| archived_projects.peek().contains(&project_scope_key(&url, id)),
-                )
+                connections::default_session_id(&workspace.sessions, &workspace.projects, |id| {
+                    archived_projects
+                        .peek()
+                        .contains(&project_scope_key(&url, id))
+                })
             });
             let can_open = requested.as_ref().is_some_and(|id| {
                 workspace
@@ -765,8 +765,7 @@ pub(super) fn App() -> Element {
             auth_state.set(Some(workspace.auth));
             let transport_label = format!(
                 "{} / {}",
-                workspace.transport.identity.protocol,
-                workspace.transport.identity.transport
+                workspace.transport.identity.protocol, workspace.transport.identity.transport
             );
             transport_descriptor.set(Some(workspace.transport));
             capabilities.set(Some(workspace.capabilities));
@@ -801,21 +800,19 @@ pub(super) fn App() -> Element {
             status.set(message);
         }),
     };
-    let finish_connection = move |client: WorkspaceClient,
-                                  secret: Option<String>,
-                                  attempt: u64,
-                                  url: String| {
-        workspace_connection::finish(
-            connection_requests,
-            node_connection,
-            shared_client,
-            client,
-            secret,
-            attempt,
-            url,
-            connection_handlers,
-        );
-    };
+    let finish_connection =
+        move |client: WorkspaceClient, secret: Option<String>, attempt: u64, url: String| {
+            workspace_connection::finish(
+                connection_requests,
+                node_connection,
+                shared_client,
+                client,
+                secret,
+                attempt,
+                url,
+                connection_handlers,
+            );
+        };
     let mut connect_node = move || {
         node_address_touched.set(true);
         if base_url.peek().as_str() == "about:blank" {
@@ -2377,22 +2374,22 @@ pub(super) fn App() -> Element {
                         let _ = client.set_model(&id, model).await;
                     }
                     Ok(client
-                    .get_session(&id)
-                    .await
-                    .unwrap_or_else(|_| SessionSummary {
-                        session_id: id,
-                        project_id: Some(project_id.clone()),
-                        title: None,
-                        status: "idle".into(),
-                        created_at: 0,
-                        updated_at: 0,
-                        last_seq: 0,
-                        error: None,
-                        pending_resume: false,
-                        latest_settlement: None,
-                        archived: false,
-                        pinned: false,
-                    }))
+                        .get_session(&id)
+                        .await
+                        .unwrap_or_else(|_| SessionSummary {
+                            session_id: id,
+                            project_id: Some(project_id.clone()),
+                            title: None,
+                            status: "idle".into(),
+                            created_at: 0,
+                            updated_at: 0,
+                            last_seq: 0,
+                            error: None,
+                            pending_resume: false,
+                            latest_settlement: None,
+                            archived: false,
+                            pinned: false,
+                        }))
                 }
                 Err(error) => Err(error.to_string()),
             };
@@ -4971,7 +4968,13 @@ pub(super) fn App() -> Element {
                             if let Some(path) = composer_project_path.as_deref().filter(|path| !path.trim().is_empty()) {
                                 div { class: "composer-workspace", aria_label: "项目上下文",
                                     div { class: "composer-context-line",
-                                        button { r#type: "button", class: "composer-workspace-path", title: "{path}", aria_label: "项目目录：{path}", onclick: move |event| { event.prevent_default(); event.stop_propagation(); sidebar_open.set(true); }, Icon { name: "folder" } span { "{path}" } }
+                                        button { r#type: "button", class: "composer-workspace-path", title: "{path}", aria_label: "项目目录：{path}", onclick: move |event| {
+                                            event.prevent_default();
+                                            event.stop_propagation();
+                                            project_file_tab.set("files".into());
+                                            project_file_preview.set(false);
+                                            project_files_open.set(true);
+                                        }, Icon { name: "folder" } span { "{path}" } }
                                         div { class: "composer-workspace-meta",
                                             if let Some(branch) = composer_branch.as_deref() {
                                                 span { class: "composer-workspace-branch", title: "Git 分支：{branch}", aria_label: "Git 分支：{branch}", Icon { name: "branch" } span { "{branch}" } }

@@ -259,12 +259,12 @@
     color: var(--accent);
   }
   .app-shell:has(.settings-page) .settings-page .settings-navigation > .settings-return {
-    order: initial;
+    order: -1;
     display: inline-flex;
-    flex: 0 0 var(--hit-size);
-    width: var(--hit-size);
-    min-width: var(--hit-size);
-    min-height: var(--hit-size);
+    flex: 0 0 40px;
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
     margin: 0;
     padding: 0;
     border: 1px solid var(--line);
@@ -314,6 +314,7 @@
   .app-shell:has(.settings-page) .settings-page .settings-navigation > nav {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    align-content: start;
     gap: var(--space-4);
     width: 100%;
     min-width: 0;
@@ -343,7 +344,7 @@
     font-weight: 600;
   }
   .app-shell:has(.settings-page) .settings-page .settings-navigation > .settings-return {
-    align-self: stretch;
+    align-self: flex-start;
     justify-content: flex-start;
     width: 100%;
     min-height: 42px;

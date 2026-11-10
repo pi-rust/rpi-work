@@ -1070,6 +1070,20 @@ small, .meta { font-size: var(--font-assist); }
   }
 }
 
+/* Keep the project context row visually aligned with the composer surface. */
+.composer-workspace {
+  background: var(--card);
+}
+.composer-main .composer .composer-workspace-path,
+.composer-workspace-branch {
+  background: var(--card);
+}
+.composer-main .composer .composer-workspace-path:hover,
+.composer-main .composer .composer-workspace-path:focus-visible,
+.composer-workspace-branch:hover {
+  background: var(--panel);
+}
+
 /* Project files and Git changes share one modal instead of competing with the conversation tab bar. */
 .project-files-tabs {
   display: flex;
