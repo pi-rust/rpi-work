@@ -230,6 +230,9 @@ async fn scenarios() {
     // here races the replacement child on slower CI runners.
     drop((a, b, direct, events));
     drop(host);
+    // Allow the old child cleanup task to finish before the replacement owner
+    // launches a process in the same persisted session directory.
+    tokio::time::sleep(Duration::from_millis(200)).await;
     // Replay spans cooperative polls and blocks load until permission cancellation.
     // Each restore must retain the very first live non-text notification as well.
     for _ in 0..2 {
