@@ -266,7 +266,10 @@ pub async fn guard(
     next: Next,
 ) -> Response {
     let no_store = request.uri().path().starts_with("/api/")
-        || request.uri().path() == "/.well-known/rpi-work-entry";
+        || matches!(
+            request.uri().path(),
+            "/.well-known/rpi-work-entry" | "/.well-known/rpi-node"
+        );
     let mut response = checked_guard(State(state), request, next).await;
     if no_store {
         response

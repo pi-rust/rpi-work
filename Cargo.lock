@@ -4704,6 +4704,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpi-node-core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "369af5a067643643da2b4ec17e23d6212b0349c01ab8bb8c4ddf30c2541c9451"
+dependencies = [
+ "futures-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rpi-tts"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6931,6 +6942,7 @@ dependencies = [
  "axum",
  "futures-util",
  "reqwest",
+ "rpi-node-core",
  "serde",
  "serde_json",
  "sha2",

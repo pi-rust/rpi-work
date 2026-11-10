@@ -4,6 +4,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tower_http::compression::CompressionLayer;
 use work_node_runtime::workspace::LocalWorkspace;
 mod executor;
+mod node_discovery;
 mod realtime;
 mod routes;
 pub(crate) use work_http_runtime::access;

@@ -290,6 +290,46 @@ async fn security_and_port_conflict_do_not_claim_another_node() {
     drop(server);
 }
 
+#[tokio::test]
+async fn public_node_discovery_matches_the_existing_owner_and_is_uncached() {
+    let root = tempfile::tempdir().unwrap();
+    let local = owner(&root);
+    let mut server = HttpServer::start(local.node_owner(), config()).unwrap();
+    let base = format!("http://{}", server.address());
+    let response = reqwest::Client::new()
+        .get(format!("{base}/.well-known/rpi-node"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let document: Value = response.json().await.unwrap();
+    assert_eq!(document["protocol"], "rpi-node");
+    assert_eq!(document["version"], 1);
+    assert_eq!(document["nodeId"], "isolated-owner");
+    assert!(
+        document["ownerEpoch"]
+            .as_str()
+            .is_some_and(|epoch| !epoch.is_empty())
+    );
+    assert_eq!(document["bindings"].as_array().unwrap().len(), 2);
+    assert!(
+        document["bindings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|binding| {
+                binding["transport"]["path"] == "/api/v1/realtime"
+                    && binding["transport"]["subprotocol"]
+                        == work_node_api::api::realtime::SUBPROTOCOL
+            })
+    );
+    assert!(document["extension"]["capabilities"].is_array());
+    server.drain().await.unwrap();
+    local.shutdown().await;
+    drop(server);
+}
+
 #[test]
 fn advertised_address_cannot_be_local_or_contain_secrets() {
     for (value, hint) in [

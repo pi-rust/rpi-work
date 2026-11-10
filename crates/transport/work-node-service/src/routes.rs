@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{DefaultBodyLimit, Extension, Path, Query, State},
-    http::{Method, StatusCode, Uri, header},
+    http::{HeaderMap, Method, StatusCode, Uri, header},
     response::{IntoResponse, Response},
     routing::{any, get},
 };
@@ -21,6 +21,7 @@ mod timeline;
 pub(crate) fn router(access: Arc<crate::access::AccessState>) -> Router<Arc<ServerState>> {
     Router::new()
         .route("/.well-known/rpi-work-entry", get(hosted_entry))
+        .route("/.well-known/rpi-node", get(node_discovery))
         .merge(crate::access::auth_router(access))
         .route("/api/v1/realtime", get(crate::realtime::upgrade))
         .route("/api/v1/transports", get(crate::realtime::discovery))
@@ -33,6 +34,30 @@ async fn hosted_entry(State(state): State<Arc<ServerState>>) -> Response {
         return StatusCode::NOT_FOUND.into_response();
     }
     Json(json!({"version":1,"mode":"hosted","nodeId":state.node_id})).into_response()
+}
+
+async fn node_discovery(State(state): State<Arc<ServerState>>, headers: HeaderMap) -> Response {
+    let Some(host) = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| matches!(*value, "http" | "https"))
+        .unwrap_or("http");
+    let origin = format!("{scheme}://{host}");
+    let capabilities = match state.workspace.capabilities().await {
+        Ok(capabilities) => capabilities,
+        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let epoch = state.workspace.remote_operations().owner_epoch().to_owned();
+    match crate::node_discovery::document(&state.node_id, &epoch, &origin, &capabilities) {
+        Ok(document) => Json(document).into_response(),
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
 }
 pub(crate) struct ApiError(StatusCode, String);
 impl IntoResponse for ApiError {
