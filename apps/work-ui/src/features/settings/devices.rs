@@ -678,7 +678,7 @@ pub fn DevicesPage(
                 }
             }
             // A hosted/remote desktop entry keeps the connected-node details below.
-            if !collaboration_hub && !owned_local && !mobile_client && !scoped_entry {
+            if owned_local || (!mobile_client && !scoped_entry) {
                 div { class: "overline", "DEVICES & COLLABORATION" }
                 div { class: "page-heading connection-page-heading",
                     div {
