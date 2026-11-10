@@ -47,7 +47,7 @@ async fn wait_file(path: PathBuf) {
     .unwrap();
 }
 async fn prompt(
-    client: &AgentClient,
+    client: AgentClient,
     id: &str,
     text: &str,
 ) -> Result<Value, work_client::ClientError> {
@@ -123,13 +123,13 @@ async fn scenarios() {
     // Abandon the caller while the child is still in a turn; manager keeps ownership.
     let _ = std::fs::remove_file(root.join("prompt.ready"));
     {
-        let turn = prompt(&a, &id, "hold");
+        let turn = prompt(a.clone(), &id, "hold");
         tokio::pin!(turn);
         tokio::select! { result = &mut turn => panic!("unexpected prompt {result:?}"), () = wait_file(root.join("prompt.ready")) => {} }
     }
     assert_eq!(host.get_session(&id).await.unwrap().status, "running");
-    assert!(prompt(&a, &id, "overlap").await.is_err());
-    prompt(&b, &other, "independent").await.unwrap();
+    assert!(prompt(a.clone(), &id, "overlap").await.is_err());
+    prompt(b.clone(), &other, "independent").await.unwrap();
     std::fs::write(root.join("release-prompt"), "").unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
         while host.get_session(&id).await.unwrap().status == "running" {
@@ -141,7 +141,7 @@ async fn scenarios() {
 
     // Equal-looking raw JSON-RPC IDs must remain distinct throughout UI scoping.
     let mut events = a.subscribe(&id, 0).await.unwrap();
-    let permission_turn = prompt(&a, &id, "typed-permissions");
+    let permission_turn = prompt(a.clone(), &id, "typed-permissions");
     tokio::pin!(permission_turn);
     let mut keys = std::collections::HashMap::new();
     while keys.len() < 2 {
@@ -225,6 +225,11 @@ async fn scenarios() {
             work_node_runtime::runtime::RuntimeError::ChildExited(_)
         ))
     ));
+    // Release every handle owned by the stopped workspace before opening the
+    // same persisted session in a new owner. Keeping an old ACP client alive
+    // here races the replacement child on slower CI runners.
+    drop((a, b, direct, events));
+    drop(host);
     // Replay spans cooperative polls and blocks load until permission cancellation.
     // Each restore must retain the very first live non-text notification as well.
     for _ in 0..2 {
@@ -249,7 +254,7 @@ async fn scenarios() {
         assert_eq!(post_load_commands(&saved, &id), command_count + 1);
         assert_eq!(messages(&saved, &id), before);
         assert_no_historical_replay(&saved, &id);
-        prompt(&agent, &id, "fresh").await.unwrap();
+        prompt(agent.clone(), &id, "fresh").await.unwrap();
         let saved = sidecar(&data);
         assert_no_historical_replay(&saved, &id);
         let after = messages(&saved, &id);
@@ -261,7 +266,7 @@ async fn scenarios() {
     }
     let restored = workspace(&data);
     let agent = restored.prepare_agent_session(&id).await.unwrap().unwrap();
-    prompt(&agent, &id, "fresh").await.unwrap();
+    prompt(agent.clone(), &id, "fresh").await.unwrap();
     let saved = sidecar(&data);
     assert_eq!(saved["schemaVersion"], 1);
     let journal = saved["records"][&id]["journal"].as_array().unwrap();
@@ -273,11 +278,11 @@ async fn scenarios() {
     assert_eq!(last_message["data"]["message"]["content"], "answer");
 
     // > broadcast capacity in one turn must not fail an unpolled private receiver.
-    prompt(&agent, &id, "flood").await.unwrap();
+    prompt(agent.clone(), &id, "flood").await.unwrap();
     assert_eq!(restored.get_session(&id).await.unwrap().status, "idle");
     let after = restored.get_session(&id).await.unwrap().last_seq;
     let mut terminal = agent.subscribe(&id, after).await.unwrap();
-    assert!(prompt(&agent, &id, "crash").await.is_err());
+    assert!(prompt(agent.clone(), &id, "crash").await.is_err());
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(event) = terminal.next().await {
             if event.is_err() {
@@ -289,8 +294,8 @@ async fn scenarios() {
     .unwrap();
     assert_eq!(restored.get_session(&id).await.unwrap().status, "offline");
     restored.shutdown().await;
-    assert!(prompt(&agent, &id, "after shutdown").await.is_err());
-    drop((agent, restored, host));
+    assert!(prompt(agent.clone(), &id, "after shutdown").await.is_err());
+    drop((agent, restored));
     std::fs::remove_dir_all(data).unwrap();
 }
 
