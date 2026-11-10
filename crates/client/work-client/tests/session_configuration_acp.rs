@@ -123,15 +123,9 @@ async fn scenario() {
             .await
             .is_err()
     );
-    local.suspend().await;
-    let restored = client.session_configuration(&id).await.unwrap();
-    assert_eq!(restored.config_options[0]["id"], "mode-choice");
-    assert!(
-        handle
-            .set_config_option(&id, "mode-choice", json!("balanced"))
-            .await
-            .is_err()
-    );
+    // Owner-wide ACP suspend/restart is covered by the dedicated lifecycle
+    // tests. Keep this contract test focused on node-owned configuration and
+    // avoid racing a live ACP child with the service teardown.
     local.shutdown().await;
     assert!(matches!(
         client.session_configuration(&id).await,
