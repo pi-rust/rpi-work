@@ -304,6 +304,13 @@ async fn public_node_discovery_matches_the_existing_owner_and_is_uncached() {
     assert_eq!(response.status(), 200);
     assert_eq!(response.headers()["cache-control"], "no-store");
     let document: Value = response.json().await.unwrap();
+    let probe = WorkClient::probe_node(&base).await.unwrap();
+    assert_eq!(probe.node_id(), "isolated-owner");
+    assert!(!probe.auth.authenticated);
+    assert_eq!(
+        probe.discovery.owner_epoch,
+        document["ownerEpoch"].as_str().unwrap()
+    );
     assert_eq!(document["protocol"], "rpi-node");
     assert_eq!(document["version"], 1);
     assert_eq!(document["nodeId"], "isolated-owner");

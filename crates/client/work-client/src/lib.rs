@@ -34,6 +34,7 @@ pub use components::download_component;
 mod message_page;
 mod message_queries;
 mod node_api;
+mod node_probe;
 mod prompt_content;
 mod providers;
 #[cfg(not(target_arch = "wasm32"))]
@@ -48,6 +49,7 @@ pub use message_page::{MESSAGE_PAGE_SIZE, MessagePage, MessagePageInfo};
 pub use message_queries::{
     MessageSummary, MessageSummaryPage, MessageSummaryQuery, MessageWindowPage, MessageWindowQuery,
 };
+pub use node_probe::NodeProbe;
 pub use work_core::api::{SessionAccess, SessionConfiguration};
 #[cfg(not(target_arch = "wasm32"))]
 mod native_runtime;

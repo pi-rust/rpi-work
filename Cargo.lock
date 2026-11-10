@@ -6815,6 +6815,7 @@ dependencies = [
  "gloo-timers",
  "js-sys",
  "reqwest",
+ "rpi-node-core",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
