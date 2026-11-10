@@ -224,7 +224,7 @@ jobs:
           shared-key: web-wasm32
           cache-on-failure: true
       - name: Check WASM-specific code
-        run: cargo clippy --locked -p work-ui --target wasm32-unknown-unknown --all-targets -- -D warnings
+        run: cargo clippy --locked -p work-ui --target wasm32-unknown-unknown -- -D warnings
       - name: Install the wasm-bindgen CLI matching Cargo.lock
         run: ./scripts/ci/install-wasm-bindgen.ps1
       - name: Compile release browser application

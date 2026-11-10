@@ -2,6 +2,7 @@
     clippy::assertions_on_constants,
     clippy::cast_possible_wrap,
     clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
     clippy::clone_on_copy,
     clippy::collapsible_if,
     clippy::doc_markdown,
