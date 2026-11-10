@@ -63,7 +63,9 @@ async fn scenario() {
     let second = client.connect_session(id.clone()).await.unwrap();
     assert_eq!(second.messages(), before);
     drop(second);
-
+    // Do not keep a live subscription while the owner tears down its ACP
+    // service; that would race the fresh service opened below.
+    drop(connection);
     local.suspend().await;
     // A fresh unified connect after lifecycle cleanup must reopen the persisted
     // session. The old stream may emit several reconnect fences while cleanup
@@ -75,10 +77,7 @@ async fn scenario() {
             .unwrap()
             .contains("historical-tool")
     );
-    // The old connection is deliberately retained until the end to exercise
-    // its cleanup path without making its intermediate reconnect timing part
-    // of this ACP persistence assertion.
     local.shutdown().await;
-    drop((connection, restored, client, local));
+    drop((restored, client, local));
     std::fs::remove_dir_all(root).unwrap();
 }
