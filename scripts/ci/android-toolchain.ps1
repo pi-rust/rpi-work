@@ -80,6 +80,12 @@ function Invoke-WithWorkAndroidToolchain {
         Write-Host "Android toolchain: NDK $($toolchain.Revision); target $Target; API 24; $($toolchain.Bin)"
         & $Action $toolchain
     } finally {
-        foreach ($name in $original.Keys) { [Environment]::SetEnvironmentVariable($name, $original[$name], 'Process') }
+        foreach ($name in $original.Keys) {
+            if ($null -eq $original[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            } else {
+                [Environment]::SetEnvironmentVariable($name, $original[$name], 'Process')
+            }
+        }
     }
 }
