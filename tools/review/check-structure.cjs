@@ -42,7 +42,14 @@ for (const file of [path.join(root, 'README.md'), ...files(path.join(root, 'docs
     if (value.includes('://') || /^[#<]|^codex:/.test(value)) continue;
     const target = value.split('#')[0];
     if (!target) continue;
-    assert(fs.existsSync(path.resolve(path.dirname(file), target)), `Missing documentation link in ${file}: ${target}`);
+    const resolved = path.resolve(path.dirname(file), target);
+    // Generated evidence is intentionally gitignored and is created only by
+    // the local validation that produced the design note. Documentation keeps
+    // these paths for reproducibility, but a clean CI checkout must not require
+    // screenshots or reports that are explicitly excluded from the repository.
+    const generatedRoots = [path.join(root, 'artifacts'), path.join(root, 'target')];
+    if (generatedRoots.some(directory => resolved === directory || resolved.startsWith(`${directory}${path.sep}`))) continue;
+    assert(fs.existsSync(resolved), `Missing documentation link in ${file}: ${target}`);
     links++;
   }
 }
