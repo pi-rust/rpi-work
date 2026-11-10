@@ -49,9 +49,8 @@ async fn node_discovery(State(state): State<Arc<ServerState>>, headers: HeaderMa
         .filter(|value| matches!(*value, "http" | "https"))
         .unwrap_or("http");
     let origin = format!("{scheme}://{host}");
-    let capabilities = match state.workspace.capabilities().await {
-        Ok(capabilities) => capabilities,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    let Ok(capabilities) = state.workspace.capabilities().await else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     let epoch = state.workspace.remote_operations().owner_epoch().to_owned();
     match crate::node_discovery::document(&state.node_id, &epoch, &origin, &capabilities) {

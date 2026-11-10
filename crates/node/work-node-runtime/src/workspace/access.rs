@@ -218,9 +218,9 @@ mod prompt_tests {
             json!(vec![image(); 5]),
             json!(vec![json!({"type":"text","text":""}); 65]),
             json!([{"type":"text","text":"x".repeat(32769)}]),
-            json!([{"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(349527)}]),
+            json!([{"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(349_527)}]),
             json!(vec![
-                json!({"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(233017)});
+                json!({"type":"image","mimeType":"image/jpeg","data":"/9j/".repeat(233_017)});
                 3
             ]),
         ] {

@@ -36,9 +36,8 @@ fn executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        return path
-            .metadata()
-            .is_ok_and(|m| m.permissions().mode() & 0o111 != 0);
+        path.metadata()
+            .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
     }
     #[cfg(windows)]
     {
@@ -54,6 +53,7 @@ fn executable(path: &Path) -> bool {
     }
 }
 
+#[allow(clippy::manual_find)]
 fn resolve(program: &str) -> Option<PathBuf> {
     let path = Path::new(program);
     let candidates = if path.is_absolute() {
