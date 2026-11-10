@@ -66,14 +66,17 @@ async fn scenario() {
 
     local.suspend().await;
     // Drain any already queued events until the old owner's stream closes.
+    // A reconnect can emit more than one intermediate fence while the local
+    // owner is being suspended; only the online transition is authoritative.
+    let mut saw_reconnecting = false;
     loop {
         let event = connection.next().await.unwrap().unwrap();
-        if event.wire.event_type == "connection_reconnecting" {
-            break;
+        match event.wire.event_type.as_str() {
+            "connection_reconnecting" => saw_reconnecting = true,
+            "connection_online" if saw_reconnecting => break,
+            _ => {}
         }
     }
-    let event = connection.next().await.unwrap().unwrap();
-    assert_eq!(event.wire.event_type, "connection_online");
     assert_eq!(connection.messages(), before);
     assert!(
         !serde_json::to_string(connection.messages())
