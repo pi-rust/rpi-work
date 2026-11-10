@@ -31,12 +31,12 @@ impl NodeProbe {
     /// Probe a root HTTP(S) origin without sending credentials.
     pub async fn probe(base_url: &str) -> Result<Self, ClientError> {
         let endpoint = normalize_endpoint(base_url)?;
-        let mut http = reqwest::Client::builder();
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            http = http.redirect(reqwest::redirect::Policy::none());
-        }
-        let http = http.build()?;
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        #[cfg(target_arch = "wasm32")]
+        let http = reqwest::Client::builder().build()?;
 
         let discovery: NodeDiscoveryDocument = get_json(
             &http,
