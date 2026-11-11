@@ -4,7 +4,7 @@
 @media(max-width:767px){.conversation-panel{--conversation-gutter:24px}.conversation-panel:has(.conversation-timeline:not([hidden])){--conversation-gutter-left:36px}}
 .transcript{padding:18px var(--conversation-gutter) 14px var(--conversation-gutter-left,var(--conversation-gutter))}
 .conversation-panel .transcript>:not(.empty-state){width:min(100%,var(--conversation-reading-max));margin-inline:auto}
-.composer-main>.composer,.composer-main>.composer-foot,.composer-main>.runtime-footer{width:100%;max-width:var(--conversation-content-max);margin-inline:auto}
+.composer-main>.composer,.composer-main>.composer-foot,.composer-main>.runtime-footer{width:100%;max-width:1512px;margin-inline:auto}
 /* Center within the same asymmetric gutters as the transcript/timeline. */
 .app-shell .conversation-panel>.message-queue.queue-shelf{width:calc(100% - var(--conversation-gutter-left,var(--conversation-gutter)) - var(--conversation-gutter));max-width:var(--conversation-reading-max);align-self:center;margin:0 0 0 calc(var(--conversation-gutter-left,var(--conversation-gutter)) - var(--conversation-gutter))}
 .conversation-widget,.conversation-markdown{box-sizing:border-box;min-width:0;max-width:100%;color:var(--text);overflow-wrap:anywhere}

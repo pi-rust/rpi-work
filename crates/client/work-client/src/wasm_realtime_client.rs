@@ -624,7 +624,11 @@ async fn run(mut socket: WsSocket, mut requests: mpsc::Receiver<Packet>, handle:
                         };
                         let Some(packet) = pending.remove(request_id) else { break; };
                         deadlines.remove(request_id);
-                        let owner = match &packet.expected { Expected::Status(operation) => operation.owner_epoch.as_str(), _ => "" };
+                        let owner = match &packet.expected {
+                            Expected::Reserved => handle.hello.owner_epoch.as_str(),
+                            Expected::Status(operation) => operation.owner_epoch.as_str(),
+                            _ => "",
+                        };
                         if !packet.expected.accepts(&frame, owner) { let _ = packet.reply.send(Err(unavailable())); break; }
                         let mut install = packet.install;
                         if let (Expected::Subscribed { session, subscription }, ServerFrame::Subscribed { .. }) = (&packet.expected, &frame) {

@@ -4966,18 +4966,18 @@ pub(super) fn App() -> Element {
                             }
                             div { class: if running { "composer is-running" } else { "composer" },
                             if let Some(path) = composer_project_path.as_deref().filter(|path| !path.trim().is_empty()) {
-                                div { class: "composer-workspace", aria_label: "项目上下文",
+                                div { class: "composer-workspace", role: "group", aria_label: "项目上下文",
                                     div { class: "composer-context-line",
-                                        button { r#type: "button", class: "composer-workspace-path", title: "{path}", aria_label: "项目目录：{path}", onclick: move |event| {
-                                            event.prevent_default();
-                                            event.stop_propagation();
-                                            project_file_tab.set("files".into());
-                                            project_file_preview.set(false);
-                                            project_files_open.set(true);
-                                        }, Icon { name: "folder" } span { "{path}" } }
+                                        div { class: "composer-workspace-path", title: "{path}", aria_label: "项目目录：{path}",
+                                            Icon { name: "folder" }
+                                            span { class: "composer-workspace-label", "{path}" }
+                                        }
                                         div { class: "composer-workspace-meta",
                                             if let Some(branch) = composer_branch.as_deref() {
-                                                span { class: "composer-workspace-branch", title: "Git 分支：{branch}", aria_label: "Git 分支：{branch}", Icon { name: "branch" } span { "{branch}" } }
+                                                div { class: "composer-workspace-branch", title: "Git 分支：{branch}", aria_label: "Git 分支：{branch}",
+                                                    Icon { name: "branch" }
+                                                    span { class: "composer-workspace-label", "{branch}" }
+                                                }
                                             }
                                         }
                                     }

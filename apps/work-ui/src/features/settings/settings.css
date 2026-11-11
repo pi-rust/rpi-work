@@ -292,8 +292,18 @@
     grid-column: 2;
     min-width: 0;
   }
-  .app-shell:has(.settings-page) .settings-page > .page-heading {
+  /* A page heading owns the first row on its own. Otherwise the tall category
+     rail sets that row's height and leaves a large gap above the content.
+     Its inline padding keeps the title aligned with the content column. */
+  .app-shell:has(.settings-page) .settings-page:has(> .page-heading) > .page-heading {
+    grid-column: 1 / -1;
+    grid-row: 1;
     margin-bottom: 0;
+    padding-inline-start: calc(186px + var(--space-32));
+  }
+  .app-shell:has(.settings-page) .settings-page:has(> .page-heading) > .settings-navigation {
+    grid-column: 1;
+    grid-row: 2;
   }
   .app-shell:has(.settings-page) .settings-page .settings-navigation {
     position: static;
