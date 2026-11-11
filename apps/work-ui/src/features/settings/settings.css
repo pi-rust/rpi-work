@@ -292,18 +292,18 @@
     grid-column: 2;
     min-width: 0;
   }
-  /* A page heading owns the first row on its own. Otherwise the tall category
-     rail sets that row's height and leaves a large gap above the content.
-     Its inline padding keeps the title aligned with the content column. */
+  /* Keep the category rail in the first row for every section. The previous
+     full-width heading layout moved the rail down when leaving the overview,
+     which made every menu click visibly jump the page. */
   .app-shell:has(.settings-page) .settings-page:has(> .page-heading) > .page-heading {
-    grid-column: 1 / -1;
+    grid-column: 2;
     grid-row: 1;
     margin-bottom: 0;
-    padding-inline-start: calc(186px + var(--space-32));
+    padding-inline-start: 0;
   }
-  .app-shell:has(.settings-page) .settings-page:has(> .page-heading) > .settings-navigation {
+  .app-shell:has(.settings-page) .settings-page .settings-navigation {
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 1;
   }
   .app-shell:has(.settings-page) .settings-page .settings-navigation {
     position: static;
