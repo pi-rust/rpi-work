@@ -25,12 +25,6 @@
   cursor: default;
   border-top: var(--border-width, 1px) solid var(--line);
 }
-/* The footer follows the composer width on wide screens; the outer page may
-   have a narrower reading measure, but the editor and its footer are one
-   surface. */
-:root .app-shell .composer-main .runtime-footer.plugin-footer {
-  max-width: none;
-}
 /* One compact row, even with long IDs/all plugins. Values scroll rather than
    wrapping into the conversation; the only focusable element is the viewport. */
 :root .app-shell .runtime-footer.plugin-footer::-webkit-scrollbar {

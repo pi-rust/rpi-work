@@ -864,22 +864,20 @@ small, .meta { font-size: var(--font-assist); }
 .app-shell:not(.conversation-focus) .section-tabs>.section-tab.active{background:var(--accent-bg);color:var(--accent)}
 .app-shell .transcript{padding-top:var(--space-32);padding-bottom:var(--space-28)}
 .app-shell .timeline-card{box-shadow:none}
-.app-shell .composer-main{padding:var(--space-12) var(--conversation-gutter) var(--space-12);border-top:0;background:var(--bg)}
-.app-shell .composer-main .composer{width:min(100%,1512px);margin:0 auto;padding:20px 20px 16px;border-color:var(--line-strong);border-radius:24px;box-shadow:0 4px 18px var(--shadow-color)}
-.app-shell .composer-main .composer textarea{min-height:120px;font-size:var(--font-body);line-height:1.7}
+.app-shell .composer-main{padding:var(--space-12) var(--conversation-gutter) var(--space-12) var(--conversation-gutter-left,var(--conversation-gutter));border-top:0;background:var(--bg)}
+.app-shell .composer-main .composer{width:min(100%,var(--conversation-content-max));margin:0 auto;padding:14px 16px 12px;border-color:var(--line-strong);border-radius:24px;box-shadow:0 4px 18px var(--shadow-color)}
+.app-shell .composer-main .composer textarea{min-height:84px;font-size:var(--font-body);line-height:1.7}
 .app-shell .composer-main .attachment-button-slot .extras-add{width:32px;height:32px}
-.app-shell .composer-main .attachment-button-slot .extras-add::before{width:32px;height:32px}
 .app-shell .composer-main .composer-actions .send-button{width:38px;height:38px}
-.app-shell .composer-main .composer-actions .send-button::before{width:38px;height:38px}
 @media(min-width:768px){
-  .app-shell .composer-main .composer{padding-bottom:19px}
-  :root .app-shell .composer-main .composer-bottom{padding-top:16px}
+  .app-shell .composer-main .composer{padding-bottom:14px}
+  :root .app-shell .composer-main .composer-bottom{padding-top:8px}
 }
 .app-shell .composer-main:focus-within .composer{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg),0 4px 18px var(--shadow-color)}
 .app-shell:has(.settings-page) .context-toggle{display:none}
 @media(max-width:767px){
   .app-shell .transcript{padding-top:var(--space-20);padding-bottom:var(--space-18)}
-  .app-shell .composer-main{padding:var(--space-8) var(--space-10) var(--space-10)}
+  .app-shell .composer-main{padding:var(--space-8) var(--conversation-gutter) var(--space-10) var(--conversation-gutter-left,var(--conversation-gutter))}
   .app-shell .composer-main .composer{padding:var(--space-11) var(--space-10) var(--space-9)}
   .app-shell .composer-main .composer textarea{min-height:76px}
 }
@@ -1053,7 +1051,7 @@ small, .meta { font-size: var(--font-assist); }
   padding: var(--space-20) var(--conversation-gutter) var(--space-18);
 }
 .app-shell[data-device-mode="mobile"] .composer-main {
-  padding: var(--space-8) var(--space-10) var(--space-10);
+  padding: var(--space-8) var(--conversation-gutter) var(--space-10);
 }
 .app-shell[data-device-mode="mobile"] .composer-main .composer {
   padding: var(--space-11) var(--space-10) var(--space-9);

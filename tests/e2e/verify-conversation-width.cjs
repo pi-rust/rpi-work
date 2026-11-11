@@ -27,6 +27,12 @@ const QUEUE_TEXT = '隔离队列宽度验证：' + 'Please retain this readable 
     page = await context.newPage();
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => errors.push(error.message));
+    page.on('websocket', socket => socket.on('framesent', ({ payload }) => {
+      const frame = JSON.parse(payload);
+      if (['reserve', 'execute'].includes(frame.type) || (frame.type === 'query' && !frame.payload.type?.startsWith('get_'))) {
+        errors.push(`Width test forbids mutating WebSocket frame: ${frame.type}`);
+      }
+    }));
     const webOrigin = new URL(WEB).origin, fixtureOrigin = new URL(fixture.url).origin;
     // Even formal-server bootstrap API requests go to the isolated fixture.
     // Fail closed on API writes and unknown origins; only formal static assets
@@ -38,7 +44,7 @@ const QUEUE_TEXT = '隔离队列宽度验证：' + 'Please retain this readable 
         let body = {};
         try { body = request.postDataJSON() || {}; } catch { /* rejected below */ }
         const read = ['GET', 'HEAD', 'OPTIONS'].includes(request.method()) ||
-          (request.method() === 'POST' && url.pathname.endsWith('/open')) ||
+          (request.method() === 'POST' && (url.pathname.endsWith('/open') || url.pathname.endsWith('/tool-program/snapshot'))) ||
           (request.method() === 'POST' && typeof body.type === 'string' && body.type.startsWith('get_'));
         if (![webOrigin, fixtureOrigin].includes(url.origin) || !read) {
           blockedRequests.push({ url: url.href, method: request.method(), type: body.type });
@@ -68,7 +74,7 @@ const QUEUE_TEXT = '隔离队列宽度验证：' + 'Please retain this readable 
     async function setInspector(open) {
       if (await inspector.isVisible() !== open) {
         if (open) await page.getByRole('button', { name: '查看任务上下文', exact: true }).click();
-        else await inspector.getByRole('button', { name: '关闭任务上下文', exact: true }).click();
+        else await page.locator('.context-toggle[aria-label="关闭任务上下文"]').click();
       }
       await inspector.waitFor({ state: open ? 'visible' : 'hidden' });
     }
@@ -203,17 +209,18 @@ const QUEUE_TEXT = '隔离队列宽度验证：' + 'Please retain this readable 
 
     await page.goto(WEB);
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
     await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     // Startup may already expand/open the default project and session.
-    if (!await page.locator('[data-session-id="dark"] .session-item').isVisible()) {
+    const session = page.getByLabel('会话列表', { exact: true }).locator('[data-session-id="dark"] .session-item');
+    if (!await session.isVisible()) {
       await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
     }
-    await page.locator('[data-session-id="dark"] .session-item').click();
+    await session.click();
     await page.locator('.transcript').getByText('正式 Markdown 水平分隔线。', { exact: true }).waitFor();
     fixture.emit({ type: 'ui_dialog_request', requestId: 'width-ask', toolCallId: 'width-ask-tool', ui: { purpose: 'question', kind: 'input', question: '请确认这张 Ask 卡与正文使用共同宽度。' } });
     await page.locator('[data-request-id="width-ask"]').waitFor({ state: 'attached' });
@@ -222,12 +229,14 @@ const QUEUE_TEXT = '隔离队列宽度验证：' + 'Please retain this readable 
     for (const theme of ['light', 'dark']) {
       await page.setViewportSize({ width: 1920, height: 1000 });
       await setInspector(false);
-      await page.getByRole('button', { name: '更多操作', exact: true }).click();
-      await page.getByRole('menuitem', { name: '外观与主题', exact: true }).click();
+      await page.getByRole('button', { name: '打开设置', exact: true }).click();
+      await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '通用', exact: true }).click();
+      await page.locator('.settings-card').filter({ hasText: '外观与主题' }).click();
       const appearance = page.getByRole('dialog', { name: '外观与主题', exact: true });
       await appearance.getByLabel('明暗模式', { exact: true }).selectOption(theme);
       await appearance.getByRole('button', { name: '保存', exact: true }).click();
       await appearance.waitFor({ state: 'hidden' });
+      await page.getByRole('button', { name: '返回会话', exact: true }).click();
       await page.waitForFunction(mode => document.documentElement.dataset.mode === mode, theme);
       for (const width of [1920, 1440, 1280, 1000, 390, 320]) {
         for (const state of width >= 1280 ? ['open', 'closed'] : ['closed']) await checkWidth(theme, width, state);
@@ -271,7 +280,7 @@ const QUEUE_TEXT = '隔离队列宽度验证：' + 'Please retain this readable 
     assert.equal(await queue.count(), 0, 'empty queue leaves no panel or placeholder');
     assert.equal(await page.locator('.composer textarea').inputValue(), DRAFT);
     assert.equal(fixture.requests.filter(r => ['prompt', 'queue_message', 'cancel_queued', 'clear_queue', 'ui_dialog_response', 'resume_pending', 'bash', 'exec', 'set_api_key'].includes(fixtureCommand(r))).length, 0);
-    assert.deepEqual(fixture.requests.filter(r => !['GET', 'HEAD', 'OPTIONS'].includes(r.method) && !r.path.endsWith('/open') && !String(r.body.type).startsWith('get_')), [], 'zero fixture mutation/credential writes beyond opening existing sessions');
+    assert.deepEqual(fixture.requests.filter(r => !['GET', 'HEAD', 'OPTIONS'].includes(r.method) && !r.path.endsWith('/open') && !r.path.endsWith('/tool-program/snapshot') && !String(r.body.type).startsWith('get_')), [], 'zero fixture mutation/credential writes beyond opening existing sessions');
     assert.deepEqual(blockedRequests, [], 'no attempted writes or calls outside the isolated boundary');
     assert.deepEqual(errors, []);
     pass('fixture-only read operations, preserved draft, zero model/execution/credential writes or JS errors');

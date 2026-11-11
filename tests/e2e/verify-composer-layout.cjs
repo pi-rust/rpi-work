@@ -23,7 +23,8 @@ async function sourceFixture(page) {
   const files = ['shared/theme/themes.css', 'shared/theme/codex.css', 'shared/theme/codex-components.css',
     'shared/theme/theme-design.css', 'shared/theme/tool-presentation.css', 'shared/theme/styles.css',
     'features/conversation/conversation.css', 'features/conversation/model_picker.css',
-    'features/conversation/composer_extras.css', 'features/conversation/activity.css'];
+    'features/conversation/composer_extras.css', 'features/conversation/activity.css',
+    'features/observability/footer_plugins/footer_plugins.css'];
   await page.setContent(`<!doctype html><html data-theme="codex" data-mode="light"><head>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     ${files.map(file => `<style>${css(file)}</style>`).join('')}</head><body>
@@ -32,6 +33,7 @@ async function sourceFixture(page) {
     <div class="transcript"><div class="message-turn" data-message-row><article class="conversation-widget message agent-message">
       <div class="message-heading">Agent</div><div class="message-content"><div class="conversation-markdown">可读正文保持行宽，工具工作区可利用宽屏。</div></div>
     </article></div></div><div class="composer-main"><div class="composer">
+      <div class="composer-workspace"><div class="composer-context-line"><div class="composer-workspace-path"><span class="composer-workspace-label">D:/Projects/rpi-work</span></div><div class="composer-workspace-meta"><div class="composer-workspace-branch">codex/ui-parity</div></div></div></div>
       <textarea aria-label="发送给 agent 的消息" rows="2" data-ime-ready="true"></textarea>
       <div class="composer-capabilities"><button>旧快捷栏</button></div>
       <div class="composer-bottom"><div class="composer-options">
@@ -41,7 +43,7 @@ async function sourceFixture(page) {
         <button class="composer-select composer-thinking-select" aria-label="思考等级"><span class="composer-thinking-label">高</span><span class="composer-model-chevron">${icon}</span></button></div>
       </div><div class="composer-actions"><button class="send-button" aria-label="发送消息">${icon}</button></div></div>
       </div><div class="composer-foot"><span>已连接</span><button class="session-trace-trigger">Trace</button></div>
-      <div class="runtime-footer"><span>↑32k ↓4.8k</span></div></div>
+      <footer class="runtime-footer plugin-footer"><div class="footer-plugin"><span class="footer-item"><span class="footer-value">↑32k ↓4.8k</span></span><span class="footer-item tool-metric"><span class="footer-value">2 tools</span></span></div></footer></div>
     </section></div></main><aside class="inspector"></aside></div></body></html>`);
 }
 async function integratedFixture(page, fixture) {
@@ -54,7 +56,7 @@ async function integratedFixture(page, fixture) {
     if (!allowed.includes(url.origin)) return route.abort('blockedbyclient');
     if (url.origin === allowed[1] && request.method() !== 'GET' && request.method() !== 'OPTIONS') {
       const body = request.postDataJSON();
-      if (!url.pathname.endsWith('/open') && (!url.pathname.endsWith('/commands') || !body.type?.startsWith('get_'))) {
+      if (!url.pathname.endsWith('/open') && !url.pathname.endsWith('/tool-program/snapshot') && (!url.pathname.endsWith('/commands') || !body.type?.startsWith('get_'))) {
         throw new Error(`Layout test forbids fixture mutation: ${request.method()} ${url.pathname}`);
       }
     }
@@ -63,14 +65,14 @@ async function integratedFixture(page, fixture) {
   await page.addInitScript(() => localStorage.setItem('rpi-work-appearance-v1', JSON.stringify({ theme: 'codex', mode: 'light', density: 'standard', toolRendering: 'simple', customThemes: [] })));
   await page.goto(UI);
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
-  await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+  await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
   await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
   await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
   await page.getByRole('button', { name: '连接节点', exact: true }).click();
   await page.getByRole('status').filter({ hasText: '在线' }).first().waitFor();
   await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
-  await page.locator('[data-session-id="dark"] .session-item').click();
+  await page.getByLabel('会话列表', { exact: true }).locator('[data-session-id="dark"] .session-item').click();
   await page.waitForFunction(() => {
     const field = document.querySelector('.composer-main textarea');
     return field && !field.disabled && field.dataset.imeReady === 'true';
@@ -83,35 +85,45 @@ async function geometry(page) {
       const el = panel.querySelector(selector), r = el.getBoundingClientRect(), s = getComputedStyle(el);
       return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height,
         scroll: el.scrollWidth, client: el.clientWidth, font: parseFloat(s.fontSize),
+        max: parseFloat(s.maxWidth),
         visible: !!el.getClientRects().length && s.visibility !== 'hidden' && s.display !== 'none' };
     };
-    const selectors = ['.composer-main', '.composer', 'textarea', '.composer-bottom', '.composer-model-picker',
+    const selectors = ['.composer-main', '.composer', '.composer-workspace', 'textarea', '.composer-bottom', '.composer-model-picker',
       '.composer-thinking-select', '.send-button', '.attachment-button-slot .extras-add', '.composer-capabilities',
-      '.transcript', '.transcript > [data-message-row]', '.composer-model-provider'];
+      '.transcript', '.transcript > [data-message-row]', '.composer-model-provider', '.composer-foot', '.runtime-footer'];
     return Object.fromEntries(selectors.map(selector => [selector, box(selector)]));
   });
 }
 (async () => {
-  let browser, fixture;
+  let browser, fixture, page;
   const errors = [], measurements = [];
   try {
     if (!SOURCE) fixture = await startFixture(0);
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+    page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
+    page.on('websocket', socket => socket.on('framesent', ({ payload }) => {
+      const frame = JSON.parse(payload);
+      if (['reserve', 'execute'].includes(frame.type) || (frame.type === 'query' && !frame.payload.type?.startsWith('get_'))) {
+        errors.push(`Layout test forbids mutating WebSocket frame: ${frame.type}`);
+      }
+    }));
     if (SOURCE) await sourceFixture(page); else await integratedFixture(page, fixture);
     const field = page.getByRole('textbox', { name: '发送给 agent 的消息', exact: true });
     const controls = ['.composer-model-picker', '.composer-thinking-select', '.send-button', '.attachment-button-slot .extras-add'];
     for (const mode of ['light', 'dark']) {
       if (SOURCE) await page.locator('html').evaluate((root, value) => root.dataset.mode = value, mode);
       else {
-        await page.getByRole('button', { name: '更多操作', exact: true }).click();
-        await page.getByRole('menuitem', { name: '外观与主题', exact: true }).click();
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.getByRole('button', { name: '打开设置', exact: true }).click();
+        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '通用', exact: true }).click();
+        await page.locator('.settings-card').filter({ hasText: '外观与主题' }).click();
         const theme = page.getByRole('dialog', { name: '外观与主题', exact: true });
         await theme.getByLabel('明暗模式', { exact: true }).selectOption(mode);
         await theme.getByRole('button', { name: '保存', exact: true }).click();
         await theme.waitFor({ state: 'hidden' });
+        await page.getByRole('button', { name: '返回会话', exact: true }).click();
       }
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 900 });
@@ -122,12 +134,13 @@ async function geometry(page) {
           const g = await geometry(page), label = `${mode}/${width}/${content ? content === SHORT ? 'short' : 'multiline' : 'empty'}`;
           measurements.push({ label, geometry: g });
           const check = (condition, reason) => assert(condition, `${label}: ${reason}\n${JSON.stringify(g)}`);
-          check(g.textarea.height >= 79.5, 'text entry retains at least 80px, not a squeezed one-line field');
+          check(g.textarea.height >= (width < 768 ? 75.5 : 83.5), 'text entry retains its 76px mobile / 84px desktop writing area');
+          if (!content) check(g.textarea.height <= (width < 768 ? 77 : 85), 'empty input stays compact instead of reserving 120px');
           check(g.textarea.height <= 226, 'long input is bounded at 25dvh');
           if (content === SHORT) shortHeight = g.textarea.height;
           if (content === MULTILINE && await field.evaluate(e => CSS.supports('field-sizing', 'content'))) check(g.textarea.height > shortHeight, 'multiline entry grows before scrolling');
           check(g['.composer-bottom'].height <= 53, 'one compact control row, not an inflated provider bar');
-          check(g['.composer'].height <= g.textarea.height + g['.composer-bottom'].height + 42, 'no spare chrome squeezing the transcript');
+          check(g['.composer'].height <= g.textarea.height + g['.composer-bottom'].height + g['.composer-workspace'].height + 42, 'no spare chrome beyond the project context, input and compact controls');
           check(g['.composer-capabilities'].height === 0, 'hidden capability row leaves no footprint');
           check(g['.composer-model-picker'].height <= (width < 768 ? 44 : 32) + 1, 'legacy select heights cannot override picker geometry');
           check(g['.composer-model-provider'].scroll > g['.composer-model-provider'].client, 'long model label truncates');
@@ -136,7 +149,14 @@ async function geometry(page) {
           check(g['.composer-bottom'].scroll <= g['.composer-bottom'].client + 1, 'toolbar does not overflow');
           check(g['.transcript'].height >= (content === MULTILINE ? 350 : 450), 'composer leaves a useful conversation viewport even when a long draft expands');
           check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no page-wide horizontal scroll');
+          check(g['.composer'].width <= g['.composer'].max + 1, 'editor respects the shared workspace cap, not the old 1512px cap');
           check(Math.abs(g['.composer'].width - g['.transcript > [data-message-row]'].width) <= 20, 'conversation and editor share a usable measure (scrollbar tolerance)');
+          for (const selector of ['.composer-foot', '.runtime-footer']) {
+            check(Math.abs(g[selector].width - g['.composer'].width) <= 1, `${selector} shares composer width`);
+            check(Math.abs(g[selector].x - g['.composer'].x) <= 1, `${selector} shares composer center`);
+          }
+          check(g['.runtime-footer'].height <= 32, 'default tools stay in one compact row');
+          check(g['.runtime-footer'].scroll <= g['.runtime-footer'].client + 1, 'default tools fit without horizontal clipping');
           if (width === 1920) check(g['.composer'].width > 1000 && g['.transcript > [data-message-row]'].width > 1000, 'wide view expands real content, not just empty margins');
           for (const selector of controls) {
             const r = g[selector];
@@ -148,6 +168,14 @@ async function geometry(page) {
           }
           if (width < 768) check(g.textarea.font >= 16, 'mobile entry avoids iOS zoom');
           assert.equal(await field.inputValue(), content, `${label}: draft unchanged`);
+          if (content === SHORT) {
+            for (const [selector, size] of [['.attachment-button-slot .extras-add', 24], ['.send-button', 28]]) {
+              const visual = await page.locator(selector).evaluate(el => {
+                const s = getComputedStyle(el, '::before'); return [parseFloat(s.width), parseFloat(s.height)];
+              });
+              assert.deepEqual(visual, [size, size], `${label}: ${selector} paints a compact control inside the hit area`);
+            }
+          }
           if (!SOURCE && content === SHORT && [1920, 1440, 390, 320].includes(width)) {
             fs.mkdirSync('artifacts', { recursive: true });
             await page.screenshot({ path: `artifacts/composer-layout-${mode}-${width}.png`, animations: 'disabled' });
@@ -161,6 +189,28 @@ async function geometry(page) {
           }
           assert.equal(await field.inputValue(), MULTILINE, 'browsing configuration preserves draft');
         }
+        // Check the same compact disk in busy/stop states without sending a
+        // prompt or clicking stop. Integrated mode uses real fixture events.
+        if (SOURCE) {
+          for (const state of ['is-loading', 'is-stop is-loading']) {
+            await page.locator('.send-button').evaluate((el, state) => { el.className = `send-button ${state}`; el.disabled = true; }, state);
+            assert.deepEqual(await page.locator('.send-button').evaluate(el => {
+              const s = getComputedStyle(el, '::before'); return [parseFloat(s.width), parseFloat(s.height)];
+            }), [28, 28], `${mode}/${width}: ${state} keeps the compact disk`);
+          }
+          await page.locator('.send-button').evaluate(el => { el.className = 'send-button'; el.disabled = false; });
+        } else {
+          fixture.emit({ type: 'agent_start', runId: 'layout-stop-check' });
+          const stop = page.getByRole('button', { name: '停止运行', exact: true });
+          await stop.waitFor();
+          assert.deepEqual(await stop.evaluate(el => {
+            const s = getComputedStyle(el, '::before'); return [parseFloat(s.width), parseFloat(s.height)];
+          }), [28, 28], `${mode}/${width}: stop keeps the compact disk`);
+          if (width < 768) { const r = await stop.boundingBox(); assert(r.width >= 44 && r.height >= 44, 'stop retains a 44px touch target'); }
+          fixture.emit({ type: 'agent_settled', runId: 'layout-stop-check', outcome: 'completed', pendingResume: false });
+          await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+          assert.equal(await field.inputValue(), MULTILINE, 'streaming and settlement preserve draft');
+        }
         console.log(`PASS ${SOURCE ? 'source CSS' : 'integrated WASM'} ${mode}/${width}: compact toolbar, input space, long label, targets, shared width`);
       }
       await page.setViewportSize({ width: 1440, height: 900 });
@@ -168,7 +218,17 @@ async function geometry(page) {
     assert.deepEqual(errors, []);
     if (fixture) assert.equal(fixture.requests.filter(r => !r.body.type?.startsWith('get_') && r.path.endsWith('/commands')).length, 0, 'no fixture mutations');
     console.log(`PASS ${measurements.length} layout samples; ${SOURCE ? 'CSS fixture only; integrated/IME behavior not exercised' : 'real fixture and draft preserved; no model writes'}`);
+  } catch (error) {
+    errors.push(error.message);
+    fs.mkdirSync('artifacts', { recursive: true });
+    if (page) {
+      await page.screenshot({ path: 'artifacts/composer-layout-failure.png', animations: 'disabled' }).catch(() => {});
+      console.error(await page.locator('.composer-main').innerText().catch(() => 'No composer'));
+    }
+    throw error;
   } finally {
+    fs.mkdirSync('artifacts', { recursive: true });
+    fs.writeFileSync(`artifacts/composer-layout-${SOURCE ? 'css' : 'wasm'}-validation.json`, JSON.stringify({ errors, measurements }, null, 2));
     if (browser) await browser.close();
     if (fixture) await fixture.close();
   }

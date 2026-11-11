@@ -104,7 +104,7 @@ async function startFixture(port=0,options={}){
     if (!connection.socket.destroyed) connection.socket.write(websocketFrame(JSON.stringify(frame)));
   }
   function wireEvent(entry) {
-    return {id:String(entry.seq),seq:entry.seq,eventType:entry.event.type,data:structuredClone(entry.event)};
+    return {id:String(entry.seq),seq:entry.seq,event_type:entry.event.type,data:structuredClone(entry.event)};
   }
   function hostResponse(command, data = {accepted:true}, success = true, error = 'Test fixture: command rejected') {
     return {type:'response',id:null,command,success,data,error:success?null:error};
@@ -199,7 +199,7 @@ async function startFixture(port=0,options={}){
         requests.push({method:'GET',path:'/api/v1/realtime',query:`?after=${after}`,sessionId:id,subscriptionId:subscription,body:{},authenticated:true});
         connection.subscriptions.set(subscription,id);
         wsSend(connection,{type:'subscribed',version:1,requestId,sessionId:id,subscriptionId:subscription});
-        wsSend(connection,{type:'events',version:1,sessionId:id,subscriptionId:subscription,events:[{id:null,seq:null,eventType:'ready',data:{type:'ready',sessionId:id}}]});
+        wsSend(connection,{type:'events',version:1,sessionId:id,subscriptionId:subscription,events:[{id:null,seq:null,event_type:'ready',data:{type:'ready',sessionId:id}}]});
         for(const entry of sessionEvents.get(id)||[]) if(entry.seq>after) wsSend(connection,{type:'events',version:1,sessionId:id,subscriptionId:subscription,events:[wireEvent(entry)]});
         return;
       }
@@ -420,7 +420,12 @@ async function startFixture(port=0,options={}){
     }
     return json({error:`Unknown fixture route: ${req.method} ${route}`},404);
   });
-  server.on('connection',s=>{sockets.add(s);s.on('close',()=>sockets.delete(s));});
+  server.on('connection',s=>{
+    sockets.add(s);
+    s.on('close',()=>sockets.delete(s));
+    // Browser teardown may reset an upgraded socket before the close event.
+    s.on('error',error=>{if(error.code!=='ECONNRESET')throw error;});
+  });
   server.on('upgrade',(req,socket)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/api/v1/realtime')installWebSocket(req,socket);else socket.destroy();});
   await new Promise(resolve=>server.listen(port,'127.0.0.1',resolve));
   return {
