@@ -63,6 +63,10 @@ pub(crate) fn startup_error() -> Option<&'static str> {
     }
 }
 
+pub(crate) fn needs_runtime_install() -> bool {
+    startup_error().is_some_and(|error| error.starts_with("未找到 rpi 执行宿主"))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

@@ -109,3 +109,6 @@
 .device-auth-dialog .modal-footer{gap:8px;flex-wrap:wrap}
 .device-auth-dialog .pairing-qr:empty{visibility:hidden}
 @media(max-width:700px){.device-auth-entry>.button{width:100%}.device-auth-dialog .modal-footer>.button{flex:1;min-height:44px}}
+
+.runtime-install-guide{display:grid;gap:10px;margin:20px 0;padding:16px;border:1px solid var(--accent-line);border-radius:var(--radius-md);background:var(--accent-bg);line-height:1.8;overflow-wrap:anywhere}.runtime-install-heading{display:flex;align-items:center;gap:8px;color:var(--accent)}.runtime-install-heading>.icon{width:18px;height:18px;flex:none}.runtime-install-guide p{margin:0;color:var(--text);font-size:calc(10px * var(--type-scale,1))}.runtime-install-guide ol{display:grid;gap:6px;margin:0;padding-left:22px;color:var(--muted);font-size:calc(10px * var(--type-scale,1))}.runtime-install-guide progress{width:100%;height:8px}.runtime-install-status{color:var(--muted)!important}.runtime-install-actions{display:flex;flex-wrap:wrap;gap:8px}.runtime-install-actions .button{justify-self:start;margin-top:2px}
+@media(max-width:700px){.runtime-install-guide{padding:14px}.runtime-install-actions{display:grid}.runtime-install-actions .button{width:100%;min-height:44px}}

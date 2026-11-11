@@ -296,7 +296,16 @@ pub(super) fn App() -> Element {
     });
     let mut inspector_open = use_signal(|| false);
     let mut inspector_preference_ready = use_signal(|| false);
+    let mut inspector_preference_loading = use_signal(|| false);
+    let mut inspector_preference_user_changed = use_signal(|| false);
     use_effect(move || {
+        if *inspector_preference_ready.peek() || *inspector_preference_loading.peek() {
+            return;
+        }
+        // Mark the async read as in flight before spawning it. Otherwise an
+        // unrelated render can start another read, and a late stale value can
+        // undo a user's click on the wide-screen drawer toggle.
+        inspector_preference_loading.set(true);
         spawn(async move {
             #[cfg(target_arch = "wasm32")]
             if let Ok(saved) = document::eval(
@@ -305,7 +314,9 @@ pub(super) fn App() -> Element {
             .recv::<bool>()
             .await
             {
-                inspector_open.set(saved);
+                if !*inspector_preference_user_changed.peek() {
+                    inspector_open.set(saved);
+                }
             }
             inspector_preference_ready.set(true);
         });
@@ -4729,7 +4740,8 @@ pub(super) fn App() -> Element {
                                 }, Icon { name: "file".to_owned() } }
                             }
                             button { class: "icon-button conversation-focus-toggle", r#type: "button", aria_label: "全屏查看", title: "全屏查看", onclick: move |_| conversation_focus.set(true), Icon { name: "fullscreen" } }
-                            button { class: "context-toggle", r#type: "button", aria_label: if *inspector_open.read() { "关闭右侧任务上下文" } else { "打开右侧任务上下文" }, title: if *inspector_open.read() { "关闭右侧侧边栏" } else { "打开右侧侧边栏" }, aria_expanded: inspector_open.to_string(), onclick: move |_| {
+                            button { class: "context-toggle", r#type: "button", aria_label: if *inspector_open.read() { "关闭任务上下文" } else { "查看任务上下文" }, title: if *inspector_open.read() { "关闭右侧侧边栏" } else { "打开右侧侧边栏" }, aria_expanded: inspector_open.to_string(), onclick: move |_| {
+                                inspector_preference_user_changed.set(true);
                                 let next = !*inspector_open.read();
                                 inspector_open.set(next);
                             }, Icon { name: "panel".to_owned() } }
@@ -5196,7 +5208,7 @@ pub(super) fn App() -> Element {
                 }
                 }
                 aside { class: if *inspector_open.read() { "inspector visible" } else { "inspector" },
-                        h3 { "任务上下文" button { class: "inspector-close", aria_label: "关闭任务上下文", onclick: move |_| inspector_open.set(false), Icon { name: "close".to_owned() } } }
+                        h3 { "任务上下文" button { class: "inspector-close", aria_label: "关闭任务上下文", onclick: move |_| { inspector_preference_user_changed.set(true); inspector_open.set(false); }, Icon { name: "close".to_owned() } } }
                         div { class: "inspector-content",
                         if let Some(session_id) = selected_session.read().as_ref() {
                             section { class: "inspector-card tool-program-inspector-card", aria_label: "Tool Program 工作台",

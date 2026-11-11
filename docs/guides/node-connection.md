@@ -42,7 +42,7 @@ Web 与桌面是平级客户端：默认使用当前节点，也都可以主动�
 
 `task desktop` 默认选择本机 owner；`task dev` 启动桌面与 Web（14180 同源代理到桌面 13031），不要再额外启动桌面。`task node` 是明确独立的 standalone 节点。显式远程设置仍可用于连接其他节点，之后用“使用这台电脑”返回本机。
 
-桌面按 `RPI_WORK_RPI_BIN`、应用同目录、PATH 查找 rpi，模型凭据仍在 rpi 中。`RPI_WORK_DATA_DIR` 控制数据目录并持有独占锁；同一 owner 的 HTTP 默认监听 `0.0.0.0:13031`，保留密码和 Host/Origin 校验，不自动修改防火墙。显式设置 `127.0.0.1` 时仍仅使用回环，不能无代理生成局域网二维码。切换视图不停止任务；只有退出桌面才依次清理 listener、workspace children 和锁。源码不会给当前运行的旧二进制热添加入口，重新启动时间由用户自行安排。
+桌面按 `RPI_WORK_RPI_BIN`、应用同目录、PATH、RPI Work 自动安装目录和 Cargo 用户目录（通常为 `~/.cargo/bin`，Windows 为 `%USERPROFILE%\.cargo\bin`）查找 rpi，模型凭据仍在 rpi 中。`RPI_WORK_DATA_DIR` 控制数据目录并持有独占锁；同一 owner 的 HTTP 默认监听 `0.0.0.0:13031`，保留密码和 Host/Origin 校验，不自动修改防火墙。显式设置 `127.0.0.1` 时仍仅使用回环，不能无代理生成局域网二维码。切换视图不停止任务；只有退出桌面才依次清理 listener、workspace children 和锁。源码不会给当前运行的旧二进制热添加入口，重新启动时间由用户自行安排。
 
 Android始终使用手机模式；原生桌面始终使用电脑模式。Web结合移动设备标识与窄屏断点选择入口，手机横屏仍保持手机模式；从窄屏恢复到桌面布局会关闭相机并释放轨道。
 

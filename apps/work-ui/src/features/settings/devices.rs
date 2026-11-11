@@ -222,6 +222,72 @@ fn album_script(native_picker: bool) -> String {
     )
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum RuntimeInstallPhase {
+    Idle,
+    Downloading,
+    Done,
+}
+
+#[component]
+#[allow(unused_mut)]
+fn RuntimeInstallActions() -> Element {
+    let mut phase = use_signal(|| RuntimeInstallPhase::Idle);
+    let mut progress = use_signal(|| 0u8);
+    let mut message = use_signal(String::new);
+    let install = move |_| {
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+        {
+            if *phase.read() == RuntimeInstallPhase::Downloading {
+                return;
+            }
+            phase.set(RuntimeInstallPhase::Downloading);
+            progress.set(0);
+            message.set("正在从 GitHub 下载并校验 rpi…".into());
+            spawn(async move {
+                let result =
+                    work_update::native::rpi_runtime::install_latest(move |received, total| {
+                        let next = u8::try_from(received.saturating_mul(100) / total.max(1))
+                            .unwrap_or(100);
+                        if *progress.peek() != next {
+                            progress.set(next);
+                        }
+                    })
+                    .await;
+                match result {
+                    Ok(_) => {
+                        phase.set(RuntimeInstallPhase::Done);
+                        progress.set(100);
+                        message.set("rpi 已安装并通过校验，请完全退出后重新启动 RPI Work。".into());
+                    }
+                    Err(error) => {
+                        phase.set(RuntimeInstallPhase::Idle);
+                        message.set(format!("下载或安装失败：{error}"));
+                    }
+                }
+            });
+        }
+    };
+    rsx! {
+        if *phase.read() == RuntimeInstallPhase::Downloading {
+            progress { max: "100", value: "{progress}", aria_label: "rpi 下载进度" }
+            small { "{progress}%" }
+        }
+        if !message.read().is_empty() {
+            p { class: "runtime-install-status", role: "status", aria_live: "polite", "{message}" }
+        }
+        div { class: "runtime-install-actions",
+            button {
+                class: "button primary",
+                disabled: *phase.read() == RuntimeInstallPhase::Downloading,
+                onclick: install,
+                if *phase.read() == RuntimeInstallPhase::Downloading { "正在下载…" } else if *phase.read() == RuntimeInstallPhase::Done { "重新下载 rpi" } else { "下载并安装 rpi" }
+            }
+            a { class: "button", href: "https://github.com/bigfish1913/pi-rust/releases/latest", target: "_blank", rel: "noopener noreferrer", "打开 GitHub Release" }
+        }
+    }
+}
+
 #[component]
 pub fn DevicesPage(
     shared_client: Signal<Option<WorkspaceClient>>,
@@ -729,6 +795,22 @@ pub fn DevicesPage(
                             span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
                             div { h2 { if owned_local { "这台电脑" } else { "当前执行节点" } } p { if owned_local { "本机工作空间 · RPC" } else { "远程执行节点 · HTTP/WebSocket" } } }
                             span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if owned_local { if online { "运行中" } else if busy { "准备中" } else { "未就绪" } } else if online { "已连接" } else if busy { "连接中" } else { "未连接" } }
+                        }
+                        if crate::app::local_node::needs_runtime_install() {
+                            div { class: "runtime-install-guide", role: "alert",
+                                div { class: "runtime-install-heading",
+                                    Icon { name: "download" }
+                                    strong { "需要安装 rpi 执行宿主" }
+                                }
+                                p { "RPI Work 只提供工作界面，不包含 rpi 执行程序。请先安装与系统匹配的 rpi，或将 rpi 放到 RPI Work 可执行文件旁。" }
+                                ol {
+                                    li { "从 GitHub Release 页面下载对应平台的 rpi；安装了 Rust 的用户也可以执行 ", code { "cargo install rpi-cli" }, "。" }
+                                    li { "将 rpi.exe（Windows）或 rpi（Linux/macOS）放到 RPI Work 可执行文件旁；也可以设置 RPI_WORK_RPI_BIN 指向完整路径。" }
+                                    li { "如果设置了 RPI_WORK_RPI_BIN，请修正或清除无效路径；显式配置优先级最高。" }
+                                    li { "完全退出并重新启动 RPI Work。" }
+                                }
+                                RuntimeInstallActions {}
+                            }
                         }
                         div { class: "connection-topology",
                             if owned_local {

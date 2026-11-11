@@ -1,4 +1,6 @@
 use crate::{MAX_DOWNLOAD, Release, http_client};
+
+pub mod rpi_runtime;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
