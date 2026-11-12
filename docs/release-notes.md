@@ -1,3 +1,19 @@
+RPI Work 0.1.15
+
+## 设置、会话与模型选择体验
+
+- 设置按工作目标整理为总览、界面与显示、工作协同、供应商、应用更新和高级设置；外观编辑嵌入设置页，离开未保存预览会回滚，并改善窄屏分类导航与键盘焦点。
+- 会话设置拆分为配置、只读运行信息和会话操作；设计引用单独打开，避免将本地设计选择误认为节点安装成功。
+- 模型切换随请求提交供应商标识，区分跨供应商重名的模型 ID；保持原有仅 ID 调用兼容。
+- 思考内容以默认折叠的独立区域展示，不混入公开回答；不展示被标记为 redacted 的内容或签名。
+- 分开显示连接状态与操作状态；草稿存储失败持续提示本地备份，专注阅读退出后保留草稿。
+
+## Rust 开发环境 Package
+
+- 新增可审查的 Windows x64 Rust 开发环境导出器、原生隔离验收脚本及离线回归测试；快照包含 18 个开发扩展和 27 个 Skills，不含凭据、全局设置、会话及工具链缓存。
+- ZIP 仅作传输，解压后的 canonical Package 目录才是原生资源安装来源。[S3 下载](https://origin-assets.bigfisharc.cn/rpi-package/releases/rust-development-v1.0.0/rust-development-1.0.0-windows-x64.zip)；[SHA256](https://origin-assets.bigfisharc.cn/rpi-package/releases/rust-development-v1.0.0/rust-development-1.0.0-windows-x64.zip.sha256)。
+- 独立 CLI/RPC 冒烟不替代 Work 节点/UI 资源工作流集成验收；后者仍受可信宿主固定摘要限制。跨平台 DLL、所有扩展行为及远端服务未作全面验证。
+
 RPI Work 0.1.14
 
 ## 设置布局稳定性与宽屏工作区修复

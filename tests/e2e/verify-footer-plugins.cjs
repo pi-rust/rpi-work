@@ -1,9 +1,11 @@
 // Real integrated WASM must be built/served separately. Authoring validation: node --check only.
-// No product/fixture edits, injected footer DOM, fake timers, provider calls or setter commands.
+// Synthetic realtime command bridge delegates to HTTP fault policies; no WebSocket query race coverage.
+// No injected footer DOM, fake timers, provider calls or setter commands.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
+const { bridgeRealtimePolicies } = require('../support/realtime-http-policy-bridge.cjs');
 const UI = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
 const FILTER = process.env.FILTER; // Optional isolated old-build layout proof, e.g. FILTER=12.
 const KEY = 'rpi-work-footer-v1';
@@ -29,7 +31,7 @@ function report() {
     assumptions: [
       'Runs against the separately built integrated App/use_footer_preferences provider, RuntimeFooter/FooterHost and SettingsPage footer section; result entries below record actual execution.',
       'FooterSettings and registry/preferences DOM, Chinese labels, IDs and schema are taken from footer_plugins/{mod.rs,registry.rs,preferences.rs,footer_plugins.css}.',
-      'Fixture snapshot contains sessionId/messages/events/latestSettlement, NOT runtime state. RuntimeState is read through POST get_state response.data. Tests inspect both actual HTTP responses and modify only the real get_state envelope.',
+      'Synthetic realtime command bridge delegates to HTTP fault policies; see results for actual execution. WebSocket query races are not covered. Fixture snapshot contains sessionId/messages/events/latestSettlement, NOT runtime state. RuntimeState is read through POST get_state response.data. Tests inspect both actual HTTP responses and modify only the real get_state envelope.',
       'Default cachedTokens 24000 + uncachedTokens 8000 = input 32000; output derives from totalTokens 36800 minus input. Context is 38000/100000. Loaded projection has read-1 and shell-1, not activeTools.length.',
       'Preferences have plugin order and hidden_items, not item ordering. Reorder coverage moves plugins; item coverage hides/shows declared items.',
       'Only corrupt/quota cases install storage init scripts. All ordinary preferences use physical checkbox/button interactions. Drafts use textarea.fill; no sends or setters.',
@@ -49,15 +51,9 @@ async function test(name, configure, verify, boundMs = 45000) {
     const fixture = await startFixture(0); fixtures.push(fixture);
     context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     page = await context.newPage(); page.setDefaultTimeout(7000);
+    await bridgeRealtimePolicies(page, () => fixtures.map(node => new URL(node.url).origin), () => policy.disconnected);
     page.on('pageerror', e => failures.push(e.message));
-    page.on('websocket', socket => {
-      const socketUrl = new URL(socket.url());
-      const node = fixtures.find(candidate => {
-        const nodeUrl = new URL(candidate.url);
-        return nodeUrl.hostname === socketUrl.hostname && nodeUrl.port === socketUrl.port;
-      });
-      if (node && policy.disconnected) socket.close();
-    });
+
     const h = {
       page, context, fixture, fixtures, policy, commands, snapshots, states,
       footer: () => page.locator('footer.runtime-footer.plugin-footer[aria-label="Agent 运行统计"]'),
@@ -66,7 +62,7 @@ async function test(name, configure, verify, boundMs = 45000) {
       field: () => page.locator('.composer-main textarea'),
       send: () => page.getByRole('button', { name: '发送消息', exact: true }),
       trigger: () => page.getByRole('button', { name: '选择供应商与模型', exact: true }),
-      session: id => page.locator(`[data-session-id="${id}"] .session-item`),
+      session: id => page.locator(`.sidebar-sessions:not(.recent-sessions) [data-session-id="${id}"] .session-item`),
       async addNode() { const node = await startFixture(0); fixtures.push(node); return node; },
       override(node, id, patch) { policy.overrides.set(`${new URL(node.url).origin}/${id}`, patch); },
       async ready() {
@@ -79,7 +75,7 @@ async function test(name, configure, verify, boundMs = 45000) {
       },
       async connect(node = fixture) {
         await page.getByRole('button', { name: '打开设置', exact: true }).click();
-        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
         if (!await page.getByLabel('节点地址', { exact: true }).isVisible()) await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
         await page.getByLabel('节点地址', { exact: true }).fill(node.url);
         await page.getByRole('button', { name: '连接节点', exact: true }).click();
@@ -89,7 +85,8 @@ async function test(name, configure, verify, boundMs = 45000) {
       async openSettings() {
         await page.getByRole('button', { name: '打开设置', exact: true }).click();
         // General card also says 底部状态栏: scope this selector to navigation.
-        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '底部状态栏', exact: true }).click();
+        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '界面与显示', exact: true }).click();
+        await page.getByRole('navigation', { name: '界面与显示分类' }).getByRole('button', { name: '底部状态栏', exact: true }).click();
         await h.settings().getByRole('heading', { name: '底部状态栏', exact: true }).waitFor();
         await until(async () => !await h.settings().getByRole('button', { name: '恢复默认状态栏', exact: true }).isDisabled(), 'local preferences loaded');
       },
@@ -378,8 +375,9 @@ async function test(name, configure, verify, boundMs = 45000) {
         }
         return route.continue();
       }
-      // Session open is read-like navigation; realtime uses the WebSocket listener above. Auth/metadata/projects/etc writes are forbidden.
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method()) && !url.pathname.endsWith('/open')) {
+      // Session open and the typed tool-program snapshot POST are read-only.
+      // Auth/metadata/projects/etc writes remain forbidden.
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method()) && !url.pathname.endsWith('/open') && !/^\/api\/v1\/sessions\/[^/]+\/tool-program\/snapshot$/.test(url.pathname)) {
         failures.push(`Forbidden HTTP write ${req.method()} ${url.pathname}`); return route.abort('blockedbyclient');
       }
       return route.continue();
@@ -448,8 +446,8 @@ async function test(name, configure, verify, boundMs = 45000) {
     });
     await test('03 general card/nav, native enable/item/reorder, persisted reload and reset', null, async h => {
       await h.page.getByRole('button', { name: '打开设置', exact: true }).click();
-      await h.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '通用', exact: true }).click();
-      await h.page.locator('.settings-cards .settings-card').filter({ has: h.page.locator('strong', { hasText: /^底部状态栏$/ }) }).click();
+      await h.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '界面与显示', exact: true }).click();
+      await h.page.getByRole('navigation', { name: '界面与显示分类' }).getByRole('button', { name: '底部状态栏', exact: true }).click();
       await h.settings().getByRole('heading', { name: '底部状态栏', exact: true }).waitFor();
       await until(async () => !await h.check('会话身份 插件').isDisabled(), 'settings ready');
       assert.equal(await h.check('会话身份 插件').isChecked(), false);
@@ -590,10 +588,13 @@ async function test(name, configure, verify, boundMs = 45000) {
       assert.equal(await h.item('identity').count(), 0, 'default screenshots must not include identity');
       for (const mode of ['dark', 'light']) {
         await h.page.setViewportSize({ width: 1280, height: 900 });
-        await h.page.getByRole('button', { name: '外观与主题', exact: true }).click();
-        const theme = h.page.getByRole('dialog', { name: '外观与主题', exact: true });
+        await h.page.getByRole('button', { name: '打开设置', exact: true }).click();
+        await h.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '界面与显示', exact: true }).click();
+        await h.page.getByRole('navigation', { name: '界面与显示分类' }).getByRole('button', { name: '外观与主题', exact: true }).click();
+        const theme = h.page.locator('section#appearance.appearance-inline');
         await theme.getByLabel('明暗模式', { exact: true }).selectOption(mode);
-        await theme.getByRole('button', { name: '保存', exact: true }).click(); await theme.waitFor({ state: 'hidden' });
+        await theme.getByRole('button', { name: '保存', exact: true }).click();
+        await h.back(); await theme.waitFor({ state: 'hidden' });
         for (const width of [1280, 390, 320]) {
           await h.page.setViewportSize({ width, height: 900 });
           await h.text('input-output', '会话累计 ↑32k ↓4.8k'); await h.text('cache', '缓存 75%');

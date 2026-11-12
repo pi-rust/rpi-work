@@ -112,7 +112,7 @@ async function startFixture(port=0,options={}){
   function runtimeState(id) {
     const config=sessionConfig(id);
     const queue=sessionQueues.get(id)||[];
-    return {modelId:config.model,provider:config.model.split('/')[0],thinkingLevel:config.thinking,...(controls.omitActiveTools?{}:{activeTools:config.activeTools}),context:controls.runtimeContext===undefined?{tokens:38000,window:100000,threshold:84000,percent:38,estimated:false}:controls.runtimeContext,stats:controls.runtimeStats===undefined?{cachedTokens:24000,uncachedTokens:8000,totalTokens:36800,costTotal:0.0184,cacheHitRatio:0.75}:controls.runtimeStats,queue:{count:queue.length}};
+    return {modelId:config.model,provider:config.provider??config.model.split('/')[0],thinkingLevel:config.thinking,...(controls.omitActiveTools?{}:{activeTools:config.activeTools}),context:controls.runtimeContext===undefined?{tokens:38000,window:100000,threshold:84000,percent:38,estimated:false}:controls.runtimeContext,stats:controls.runtimeStats===undefined?{cachedTokens:24000,uncachedTokens:8000,totalTokens:36800,costTotal:0.0184,cacheHitRatio:0.75}:controls.runtimeStats,queue:{count:queue.length}};
   }
   async function websocketCommand(id, payload) {
     const command=payload?.type, config=sessionConfig(id), queue=sessionQueues.get(id)||[];
@@ -140,7 +140,7 @@ async function startFixture(port=0,options={}){
     if(command==='get_auth_status') return controls.failAuthStatus?hostResponse(command,null,false):hostResponse(command,{providers:controls.authStatuses||[{provider:'deepseek',ready:true,source:'environment',status:'ready',oauth:false,oauthAvailable:false},{provider:'openai',ready:false,source:'missing',status:'missing',oauth:false,oauthAvailable:false}]});
     if(command==='get_available_thinking_levels') return hostResponse(command,{levels:['off','low','medium','high']});
     if(command==='get_available_tools') return hostResponse(command,{tools:['read','bash','edit','write','ask_user','todo'],activeTools:config.activeTools});
-    if(command==='set_model') { config.model=payload.modelId; return hostResponse(command,runtimeState(id)); }
+    if(command==='set_model') { config.model=payload.modelId; config.provider=payload.provider??null; return hostResponse(command,runtimeState(id)); }
     if(command==='set_thinking_level') { config.thinking=payload.level; return hostResponse(command,runtimeState(id)); }
     if(command==='set_active_tools') {
       if(controls.toolsDelayMs) await new Promise(resolve=>setTimeout(resolve,controls.toolsDelayMs));
@@ -350,7 +350,7 @@ async function startFixture(port=0,options={}){
         if(req.method!=='POST')return json({error:'Unsupported fixture method'},405);
         if(!Object.hasOwn(data,'value')||typeof data.configId!=='string'||typeof data.value!=='string')return json({error:'Invalid fixture configuration'},400);
         const config=sessionConfig(id);
-        if(data.configId==='model')config.model=data.value;
+        if(data.configId==='model'){config.model=data.value;config.provider=data.value.split('/')[0];}
         else if(data.configId==='thinking')config.thinking=data.value;
         else return json({error:'Unsupported fixture option'},501);
         return json({accepted:true});
@@ -369,7 +369,7 @@ async function startFixture(port=0,options={}){
         }
         if(command==='prompt'&&controls.promptDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.promptDelayMs));
         if(command==='prompt'&&controls.failPrompt)return json({type:'response',id:data.id??null,command,success:false,data:null,error:'Test fixture: prompt rejected'});
-        const runtime=()=>({modelId:config.model,provider:config.model.split('/')[0],thinkingLevel:config.thinking,...(controls.omitActiveTools?{}:{activeTools:config.activeTools}),context:controls.runtimeContext===undefined?{tokens:38000,window:100000,threshold:84000,percent:38,estimated:false}:controls.runtimeContext,stats:controls.runtimeStats===undefined?{cachedTokens:24000,uncachedTokens:8000,totalTokens:36800,costTotal:0.0184,cacheHitRatio:0.75}:controls.runtimeStats,queue:{count:queue.length}});
+        const runtime=()=>({modelId:config.model,provider:config.provider??config.model.split('/')[0],thinkingLevel:config.thinking,...(controls.omitActiveTools?{}:{activeTools:config.activeTools}),context:controls.runtimeContext===undefined?{tokens:38000,window:100000,threshold:84000,percent:38,estimated:false}:controls.runtimeContext,stats:controls.runtimeStats===undefined?{cachedTokens:24000,uncachedTokens:8000,totalTokens:36800,costTotal:0.0184,cacheHitRatio:0.75}:controls.runtimeStats,queue:{count:queue.length}});
         if(command==='get_state')return response(runtime());
         if(command==='get_session_branch'){
           const entries=structuredClone(controls.branchEntries||[]),failure=controls.branchError||(controls.failBranch?'unknown command type: get_session_branch':null);
@@ -390,7 +390,7 @@ async function startFixture(port=0,options={}){
         }
         if(command==='get_available_thinking_levels')return response({levels:['off','low','medium','high']});
         if(command==='get_available_tools')return response({tools:['read','bash','edit','write','ask_user','todo'],activeTools:config.activeTools});
-        if(command==='set_model'){config.model=data.modelId;return response(runtime());}
+        if(command==='set_model'){config.model=data.modelId;config.provider=data.provider??null;return response(runtime());}
         if(command==='set_thinking_level'){config.thinking=data.level;return response(runtime());}
         if(command==='set_active_tools'){if(controls.toolsDelayMs)await new Promise(resolve=>setTimeout(resolve,controls.toolsDelayMs));if(controls.failSetTools)return json({type:'response',id:data.id??null,command,success:false,error:'Test fixture: tool configuration rejected'});if(!controls.ignoreSetToolsMutation)config.activeTools=[...data.tools];return response(runtime());}
         if(command==='set_api_key'&&options.setApiKeySupported){

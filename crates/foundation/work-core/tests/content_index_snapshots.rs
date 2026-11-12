@@ -89,6 +89,7 @@ fn every_whole_message_event_uses_actual_slots_one_and_three() {
                     ("m-text-1".into(), "first".into()),
                     ("m-text-3".into(), "second".into()),
                 ],
+                thinking: Vec::new(),
                 authoritative: true,
             }
         );

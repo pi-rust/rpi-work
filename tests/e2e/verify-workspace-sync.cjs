@@ -35,7 +35,7 @@ async function bounded(promise, label) {
 
   async function openNodes(page) {
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
   }
   async function connect(page, node, requireLogin = false) {
     await openNodes(page);

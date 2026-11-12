@@ -118,7 +118,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     stage = 'login and initial QR';
     await page.goto(ui.href);
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.addScriptTag({ content: fs.readFileSync('assets/vendor/jsQR.js', 'utf8') });
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     const address = page.getByLabel('节点地址', { exact: true });
@@ -191,7 +191,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     // not normal pointer behavior (which the dialog intentionally traps).
     await page.locator('.settings-navigation nav button').filter({ hasText: /^通用$/ }).evaluate(button => button.click());
     await dialog().waitFor({ state: 'hidden' });
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     check(issues.length === 5, 'Reentering Devices does not automatically issue');
     await open(); await verify(issues.at(-1)); await privateUi();
     check(issues.length === 6 && await page.locator('#device-auth-qr').count() === 1, 'Settings remount reuses one workspace authorization instance');

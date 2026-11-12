@@ -1136,6 +1136,8 @@ impl TraceStore {
                 continue;
             }
             let (kind, name, input, output, status, error) = match block {
+                // Private reasoning is never persisted into traces or history snapshots.
+                MessageBlock::Thinking { .. } => continue,
                 MessageBlock::PublicSummary { text, .. } => (
                     "context",
                     "公开上下文摘要".into(),

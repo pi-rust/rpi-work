@@ -8,7 +8,7 @@ async function check(name,fn){try{await fn();results.push({name,passed:true});co
 async function connect(page,fixture,login=false){
   await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
   await page.getByRole('button',{name:'打开设置',exact:true}).click();
-  await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
+  await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'工作协同',exact:true}).click();
   await page.getByLabel('节点地址',{exact:true}).fill(fixture.url);
   await page.getByRole('button',{name:'连接节点',exact:true}).click();
   if(login){

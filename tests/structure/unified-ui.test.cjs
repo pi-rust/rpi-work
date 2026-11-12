@@ -16,7 +16,7 @@ test('all connection controllers mount the complete production screen', () => {
 
 test('workspace navigation and connection actions do not fork by platform', () => {
   const workspace=read('apps/work-ui/src/app/workspace.rs');
-  const defaults=workspace.slice(workspace.indexOf('let mut active_page ='),workspace.indexOf('let mut appearance_open ='));
+  const defaults=workspace.slice(workspace.indexOf('let mut active_page ='),workspace.indexOf('let mut session_details_open ='));
   assert.doesNotMatch(defaults,/target_os|target_arch|cfg!/);
   assert.match(defaults,/active_page = use_signal\(\|\| "workspace"/);
   assert.match(defaults,/settings_section = use_signal\(\|\| "settings"/);

@@ -119,7 +119,7 @@ async function test(name, verify, options = {}) {
       async nodes() {
         await h.sidebar();
         await page.getByRole('button', { name: '打开设置', exact: true }).click();
-        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
       },
       async connect(node = fixture) {
         if (!await page.getByLabel('节点地址', { exact: true }).isVisible())
@@ -226,7 +226,7 @@ async function test(name, verify, options = {}) {
     const run = async () => {
       await page.goto(APP);
       await page.getByRole('button', { name: '打开设置', exact: true }).click();
-      await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+      await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
       await h.connect();
       await verify(h);
       assert.equal(requests.filter(r => FORBIDDEN.has(r.command)).length, 0);
@@ -402,7 +402,7 @@ async function test(name, verify, options = {}) {
         // trigger to initiate an out-of-band reconnect while the scoped panel is
         // still open; do NOT use the dialog's settings action (which closes it).
         await h.page.getByRole('button', { name: '打开设置', exact: true, includeHidden: true }).evaluate(e => e.click());
-        await h.page.getByRole('navigation', { name: '设置分类', includeHidden: true }).getByRole('button', { name: '执行节点', exact: true, includeHidden: true }).evaluate(e => e.click());
+        await h.page.getByRole('navigation', { name: '设置分类', includeHidden: true }).getByRole('button', { name: '工作协同', exact: true, includeHidden: true }).evaluate(e => e.click());
         const address = h.page.getByLabel('节点地址', { exact: true });
         if (!await address.isVisible()) await h.page.getByRole('button', { name: '连接其他节点', exact: true, includeHidden: true }).evaluate(e => e.click());
         await address.evaluate((e, value) => {

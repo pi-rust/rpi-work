@@ -746,7 +746,7 @@ fn ProviderSettingsState(
             }
         });
     });
-    let use_discovered_model = Callback::new(move |model_id: String| {
+    let use_discovered_model = Callback::new(move |(model_id, provider): (String, String)| {
         discovery_error.set(String::new());
         notice.set(String::new());
         let Some(session_id) = selected_session.peek().clone() else {
@@ -765,7 +765,10 @@ fn ProviderSettingsState(
         ticket.set(request);
         discovery_busy.set(Some(model_id.clone()));
         spawn(async move {
-            let result = match client.set_model(&session_id, &model_id).await {
+            let result = match client
+                .set_model_with_provider(&session_id, &model_id, &provider)
+                .await
+            {
                 Ok(_) => client.runtime_state(&session_id).await,
                 Err(error) => Err(error),
             };
@@ -774,7 +777,11 @@ fn ProviderSettingsState(
             }
             discovery_busy.set(None);
             match result {
-                Ok(state) if state.model_id.as_deref() == Some(model_id.as_str()) => {
+                Ok(state)
+                    if state.model_id.as_deref() == Some(model_id.as_str())
+                        && (provider.is_empty()
+                            || state.provider.as_deref() == Some(provider.as_str())) =>
+                {
                     notice.set(format!(
                         "已将当前会话切换到模型「{model_id}」。API Key 仍只由节点按其凭据来源读取。"
                     ));
@@ -792,7 +799,7 @@ fn ProviderSettingsState(
             if app_settings::update_default_provider(settings_store, &provider, &model) {
                 app_settings::request_write(settings_store);
             }
-            use_discovered_model.call(model);
+            use_discovered_model.call((model, provider));
         })
     };
     let enabled = can_write();
@@ -897,7 +904,7 @@ fn ProviderSettingsState(
                             if let Some(diagnostic) = &entry.diagnostic { details { class: "provider-diagnostic", summary { "高级定义只读" } p { class: "provider-note", "{diagnostic}" } } }
                             if let Some(models) = discovered_models.read().get(&id) { details { class: "provider-discovered-models", open: !models.is_empty(), summary { "最近获取的模型 · {models.len()} 个" }
                                 if models.is_empty() { p { class: "provider-meta", "当前会话没有返回该供应商的模型。" } }
-                                for model in models { div { class: "provider-discovered-model-row", div { class: "provider-saved-model", strong { "{model.name}" } code { "{model.id}" } }, button { class: "button", disabled: discovery_busy.read().is_some(), onclick: { let model_id = model.id.clone(); move |_| use_discovered_model.call(model_id.clone()) }, "用于当前会话" } } }
+                                for model in models { div { class: "provider-discovered-model-row", div { class: "provider-saved-model", strong { "{model.name}" } code { "{model.id}" } }, button { class: "button", disabled: discovery_busy.read().is_some(), onclick: { let model_id = model.id.clone(); let provider = model.provider.clone(); move |_| use_discovered_model.call((model_id.clone(), provider.clone())) }, "用于当前会话" } } }
                             } }
                         }
                       }

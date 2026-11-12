@@ -48,7 +48,7 @@ use crate::{
         theme::appearance,
     },
 };
-use appearance::{AppearancePicker, use_appearance};
+use appearance::use_appearance;
 use components::{Icon, Modal};
 use management::SessionAction;
 use settings::SettingsPage;
@@ -380,6 +380,7 @@ pub(super) fn App() -> Element {
     let mut drafts_ready = use_signal(|| false);
     let mut drafts_persistence_enabled = use_signal(|| false);
     let mut draft_persist_task = use_signal(|| None::<Task>);
+    let mut draft_storage_error = use_signal(|| None::<String>);
     use_effect(move || {
         spawn(async move {
             match state::load_persisted_drafts().await {
@@ -399,7 +400,9 @@ pub(super) fn App() -> Element {
                 Err(error) => {
                     // Do not write an empty map after a read/parse failure: the
                     // damaged file remains available for recovery.
-                    status.set(format!("{error} 当前输入仍可编辑，但未能持久化。"));
+                    draft_storage_error.set(Some(format!(
+                        "草稿未保存到本设备：{error} 当前输入仍可编辑；请在离开前复制备份。"
+                    )));
                     drafts_ready.set(true);
                 }
             }
@@ -419,8 +422,11 @@ pub(super) fn App() -> Element {
         draft_persist_task.set(Some(spawn(async move {
             state::draft_persist_delay().await;
             let snapshot = drafts.peek().clone();
-            if let Err(error) = state::persist_drafts(&snapshot).await {
-                status.set(format!("{error} 当前草稿仍保留在内存中。"));
+            match state::persist_drafts(&snapshot).await {
+                Ok(()) => draft_storage_error.set(None),
+                Err(error) => draft_storage_error.set(Some(format!(
+                    "草稿未保存到本设备：{error} 当前草稿仅保留在内存中；请在离开前复制备份。"
+                ))),
             }
         })));
     });
@@ -636,7 +642,6 @@ pub(super) fn App() -> Element {
         }
     });
     let mut settings_section = use_signal(|| "settings".to_owned());
-    let mut appearance_open = use_signal(|| false);
     let mut session_details_open = use_signal(|| false);
     let mut session_settings_tab = use_signal(|| "details".to_owned());
     let mut timeline_visible = use_signal(|| false);
@@ -654,7 +659,28 @@ pub(super) fn App() -> Element {
     let mut rename_error = use_signal(|| None::<String>);
     let mut project_name_busy = use_signal(|| false);
     let mut notice = use_signal(|| None::<String>);
+    let mut operation_error = use_signal(|| None::<String>);
+    let mut notice_timer = use_signal(|| None::<Task>);
     let mut undo_archive = use_signal(|| None::<(bool, String)>);
+    use_effect(move || {
+        let message = notice.read().clone();
+        let has_undo = undo_archive.read().is_some();
+        if let Some(task) = notice_timer.write().take() {
+            task.cancel();
+        }
+        // Undo is an action, not an ephemeral acknowledgement: keep it available.
+        if let Some(message) = message.filter(|_| !has_undo) {
+            notice_timer.set(Some(spawn(async move {
+                #[cfg(target_arch = "wasm32")]
+                gloo_timers::future::TimeoutFuture::new(6000).await;
+                #[cfg(not(target_arch = "wasm32"))]
+                tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+                if notice.peek().as_ref() == Some(&message) {
+                    notice.set(None);
+                }
+            })));
+        }
+    });
     let mut pending_replies =
         use_signal(std::collections::HashMap::<String, activity::PendingReply>::new);
     let mut stopping = use_signal(std::collections::HashSet::<String>::new);
@@ -662,7 +688,7 @@ pub(super) fn App() -> Element {
     let mut resource_library = resources::use_resource_library();
     let mut meta_store = meta_agent::use_meta_store();
     let open_session_config = use_signal(|| false);
-    // SkillPicker requests enter the design tab of the same settings dialog.
+    // SkillPicker recovery requests open the independent design-reference dialog.
     // The embedded resource view consumes the request after it mounts.
     use_effect(move || {
         if *open_session_config.read() {
@@ -1295,6 +1321,7 @@ pub(super) fn App() -> Element {
             SessionAction::Rename(id)
             | SessionAction::Copy(id)
             | SessionAction::Details(id)
+            | SessionAction::Design(id)
             | SessionAction::Clone(id)
             | SessionAction::Archive(id, _)
             | SessionAction::Pin(id, _)
@@ -1314,11 +1341,18 @@ pub(super) fn App() -> Element {
                 rename_target.set(Some((id, source.title.unwrap_or_default())));
                 return;
             }
-            SessionAction::Details(_) => {
+            SessionAction::Details(_) | SessionAction::Design(_) => {
                 if selected_session.peek().as_ref() != Some(&id) {
                     pending_open.set(Some((false, id)));
                 }
-                session_settings_tab.set("details".into());
+                session_settings_tab.set(
+                    if matches!(&action, SessionAction::Design(_)) {
+                        "design"
+                    } else {
+                        "details"
+                    }
+                    .into(),
+                );
                 session_details_open.set(true);
                 return;
             }
@@ -1326,11 +1360,12 @@ pub(super) fn App() -> Element {
                 let literal = serde_json::to_string(&id).unwrap();
                 spawn(async move {
                     let result=document::eval(&format!("try{{await navigator.clipboard.writeText({literal});dioxus.send(true);}}catch(_){{dioxus.send(false);}}" )).recv::<bool>().await;
-                    notice.set(Some(if matches!(result, Ok(true)) {
-                        "已复制会话标识。".into()
+                    if matches!(result, Ok(true)) {
+                        notice.set(Some("已复制会话标识。".into()));
                     } else {
-                        format!("请手动复制会话标识：{id}")
-                    }));
+                        operation_error
+                            .set(Some(format!("无法自动复制，请手动复制会话标识：{id}")));
+                    }
                 });
                 return;
             }
@@ -1352,7 +1387,7 @@ pub(super) fn App() -> Element {
         if let (Some(caps), Some(capability)) = (capabilities.peek().as_ref(), required_capability)
             && let Some(message) = connections::capability_error(caps, capability)
         {
-            notice.set(Some(message));
+            operation_error.set(Some(message));
             return;
         }
         session_action_busy.write().insert(key.clone());
@@ -1403,7 +1438,9 @@ pub(super) fn App() -> Element {
                     undo_archive.set(archived_action.then_some((false, id)));
                     notice.set(Some(message));
                 }
-                Err(error) => notice.set(Some(format!("操作失败：{error}。原会话保留，可重试。"))),
+                Err(error) => {
+                    operation_error.set(Some(format!("操作失败：{error}。原会话保留，可重试。")))
+                }
             }
         });
     };
@@ -4341,6 +4378,11 @@ pub(super) fn App() -> Element {
         }
     };
 
+    let session_dialog_title = if session_settings_tab.read().as_str() == "design" {
+        "设计引用"
+    } else {
+        "会话设置"
+    };
     rsx! {
         document::Link { rel: "icon", r#type: "image/svg+xml", href: crate::shared::brand::icon_url() }
         if matches!(*node_connection.phase.read(), connections::Phase::Online) {
@@ -4383,7 +4425,7 @@ pub(super) fn App() -> Element {
                 runtime_state, projection, transcript, last_turn: last_turn_usage,
                 shared_client, selected_session, session_generation, compact_revision, compact_pending, node_compacting,
                 compact_result, pending_ask: !pending_dialogs.read().is_empty(), stats_open, context_open,
-                ontools: move |()| session_details_open.set(true),
+                ontools: move |()| { session_settings_tab.set("details".into()); session_details_open.set(true); },
             }
             if let Some((address, epoch, project_id)) = node_info_target.read().clone() {
                 if address == *node_url.read() && epoch == *node_connection.epoch.read() {
@@ -4739,7 +4781,7 @@ pub(super) fn App() -> Element {
                                     project_files_open.set(true);
                                 }, Icon { name: "file".to_owned() } }
                             }
-                            button { class: "icon-button conversation-focus-toggle", r#type: "button", aria_label: "全屏查看", title: "全屏查看", onclick: move |_| conversation_focus.set(true), Icon { name: "fullscreen" } }
+                            button { class: "icon-button conversation-focus-toggle", r#type: "button", aria_label: "专注阅读", title: "专注阅读（暂时隐藏输入区）", onclick: move |_| conversation_focus.set(true), Icon { name: "fullscreen" } }
                             button { class: "context-toggle", r#type: "button", aria_label: if *inspector_open.read() { "关闭任务上下文" } else { "查看任务上下文" }, title: if *inspector_open.read() { "关闭右侧侧边栏" } else { "打开右侧侧边栏" }, aria_expanded: inspector_open.to_string(), onclick: move |_| {
                                 inspector_preference_user_changed.set(true);
                                 let next = !*inspector_open.read();
@@ -4823,7 +4865,7 @@ pub(super) fn App() -> Element {
                         connection_epoch: node_connection.epoch, online: matches!(*node_connection.phase.read(), connections::Phase::Online),
                         mobile_client: device_mode.read().is_mobile(),
                         update_busy: !sending.read().is_empty() || projection.read().as_ref().is_some_and(|run| !matches!(run.phase, RunPhase::Ready | RunPhase::Settled(_))) || *has_pending_draft.read() || attachment_store.read().has_pending_content() || btw_store.read().has_pending_content(),
-                        onconnect: connect, onlogin: login, onappearance: move |()| appearance_open.set(true)
+                        onconnect: connect, onlogin: login, appearance
                     }
                 }
                 div { class: match (active_page.read().as_str(), *inspector_open.read()) {
@@ -4833,8 +4875,8 @@ pub(super) fn App() -> Element {
                 },
                     section { class: "conversation-panel",
                         if conversation_focus() {
-                            div { class: "conversation-focus-toolbar", role: "toolbar", aria_label: "消息专注模式",
-                                button { class: "icon-button", r#type: "button", aria_label: "退出全屏查看", title: "退出全屏查看（Esc）", onclick: move |_| {
+                            div { class: "conversation-focus-toolbar", role: "toolbar", aria_label: "专注阅读",
+                                button { class: "icon-button", r#type: "button", aria_label: "退出专注阅读", title: "退出专注阅读（Esc）", onclick: move |_| {
                                     conversation_focus.set(false);
                                     let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toggle')?.focus(), 0);");
                                 },
@@ -5028,7 +5070,7 @@ pub(super) fn App() -> Element {
                                 details { class: "capability-menu",
                                 summary { Icon { name: "blocks" } "常用能力" }
                                 div { class: "capability-menu-items",
-                                button { class: "button", onclick: move |_| session_details_open.set(true), "Tools" }
+                                button { class: "button", onclick: move |_| { session_settings_tab.set("details".into()); session_details_open.set(true); }, "Tools" }
                                 button { class: "button", onclick: move |_| status.set("当前为节点 Agent 会话；可在 Tools 中配置真实工具。节点未提供 Plan/Ask 模式切换协议。".into()), "Agent 模式" }
                                 button { class: "button", onclick: move |_| status.set("可用命令：/btw [问题]、/compact、/new、/help。".into()), "/ 命令" }
                                 button { class: "button", disabled: selected_session.read().is_none(), onclick: move |_| context_open.set(true), "压缩上下文" }
@@ -5072,7 +5114,11 @@ pub(super) fn App() -> Element {
                                             let (Some(session_id), Some(client)) = (selected_session.read().clone(), shared_client.read().clone()) else { return; };
                                             model_pending.set(Some(context.clone())); model_catalog_error.set(None);
                                             state::scoped_spawn(requests, async move {
-                                                let result = Box::pin(config_requests::bounded("切换模型", client.set_session_config_option(&session_id, "model", serde_json::json!(model.id)))).await;
+                                                // Submit the reported provider so a catalog id shared by
+                                                // several providers resolves to the chosen one.
+                                                let provider = model.provider.clone();
+                                                let model_id = model.id.clone();
+                                                let result = Box::pin(config_requests::bounded("切换模型", client.set_model_with_provider(&session_id, &model_id, &provider))).await;
                                                 if model_context() != context { return; }
                                                 match result {
                                                     Ok(response) if response.get("requiresRestart").and_then(Value::as_bool) != Some(true) => {
@@ -5190,8 +5236,12 @@ pub(super) fn App() -> Element {
                                 }
                             }
                             }
+                            if let Some(message) = draft_storage_error.read().as_ref() {
+                                p { class: "draft-storage-error", role: "alert", "{message}" }
+                            }
                             div { class: "composer-foot",
-                                span { role: "status", span { class: "status-dot" } "{status}" }
+                                span { role: "status", class: "connection-status", span { class: "status-dot" } "{node_connection.phase.read().label()}" }
+                                span { class: "operation-status", role: "status", "{status}" }
                                 if let Some(session_id) = selected_session.read().as_ref() {
                                     traces::TraceEntry { scope: session_scope_key(&node_url.read(), session_id), store: traces }
                                 }
@@ -5358,9 +5408,6 @@ pub(super) fn App() -> Element {
                         }
                         div { class: "inspector-footer", BrandMark { class: "tiny-logomark" } div { span { "你的工具。你的模型。" } span { "你的工作方式。" } } }
                 }
-                if *appearance_open.read() {
-                    AppearancePicker { settings: appearance, onclose: move |()| appearance_open.set(false) }
-                }
                 if let Some((id, name))=rename_target.read().clone() {
                     management::RenameDialog { key: "rename-{id}", name,
                         busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)), error: rename_error.read().clone(),
@@ -5387,6 +5434,12 @@ pub(super) fn App() -> Element {
                         }
                     }
                 }
+                if let Some(message) = operation_error.read().clone() {
+                    div { class: "workspace-operation-error", role: "alert",
+                        span { "{message}" }
+                        button { r#type: "button", aria_label: "关闭操作错误", onclick: move |_| operation_error.set(None), "关闭" }
+                    }
+                }
                 if let Some(message)=notice.read().clone() {
                     div { class: "workspace-notice", role: "status", span { "{message}" }
                         if let Some((project, id))=undo_archive.read().clone() {
@@ -5396,10 +5449,11 @@ pub(super) fn App() -> Element {
                     }
                 }
                 if *session_details_open.read() {
-                    Modal { id: "session-details", title: "会话设置", class: "session-details-modal resource-modal", onclose: move |()| { session_details_open.set(false); delete_confirmation.set(false); },
+                    Modal { id: "session-details", title: session_dialog_title, class: "session-details-modal resource-modal", onclose: move |()| { session_details_open.set(false); delete_confirmation.set(false); },
                         div { class: "modal-body",
+                            if session_settings_tab.read().as_str() != "design" {
                             div { class: "resource-segments session-settings-tabs", role: "tablist", aria_label: "会话设置分类",
-                                for (tab, label) in [("details", "会话详情"), ("design", "设计引用")] {
+                                for (tab, label) in [("details", "配置"), ("runtime", "运行信息"), ("actions", "会话操作")] {
                                     button { id: "session-settings-{tab}-tab", r#type: "button", role: "tab",
                                         class: if session_settings_tab.read().as_str() == tab { "active" } else { "" },
                                         aria_selected: session_settings_tab.read().as_str() == tab, aria_controls: "session-settings-{tab}-panel",
@@ -5407,9 +5461,15 @@ pub(super) fn App() -> Element {
                                     }
                                 }
                             }
+                            }
                             if session_settings_tab.read().as_str() == "details" {
                             section { id: "session-settings-details-panel", role: "tabpanel", aria_labelledby: "session-settings-details-tab",
                             p { {selected_session_title.read().as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(if selected_session.read().is_some() { "未命名会话" } else { "未选择会话" }).to_owned()} }
+                            session_config::SessionConfig { shared_client, selected_session, session_generation, requests, runtime_state, status, tools_only: false, config_idle: !extension_locked, oncompact: move |()| { session_details_open.set(false); context_open.set(true); } }
+                            }
+                            } else if session_settings_tab.read().as_str() == "runtime" {
+                            section { id: "session-settings-runtime-panel", role: "tabpanel", aria_labelledby: "session-settings-runtime-tab",
+                                p { class: "meta", "当前节点报告的只读运行摘要。模型和工具配置请前往配置页。" }
                             if let Some(runtime) = runtime_state.read().as_ref() {
                                 dl { class: "runtime-list",
                                     div { dt { "Provider" } dd { "{runtime.provider.as_deref().unwrap_or(\"节点未返回\")}" } }
@@ -5417,7 +5477,9 @@ pub(super) fn App() -> Element {
                                     div { dt { "工具" } dd { "{runtime.active_tools.join(\", \")}" } }
                                 }
                             }
-                            session_config::SessionConfig { shared_client, selected_session, session_generation, requests, runtime_state, status, tools_only: false, config_idle: !extension_locked, oncompact: move |()| { session_details_open.set(false); context_open.set(true); } }
+                            }
+                            } else if session_settings_tab.read().as_str() == "actions" {
+                            section { id: "session-settings-actions-panel", role: "tabpanel", aria_labelledby: "session-settings-actions-tab",
                             div { class: "session-actions",
                                 button { disabled: selected_session.read().is_none(), onclick: move |_| { let id=selected_session.peek().clone(); if let Some(id)=id { session_action(SessionAction::Rename(id)); } }, "重命名" }
                                 button { disabled: selected_session.read().is_none(), onclick: move |_| { let id=selected_session.peek().clone(); if let Some(id)=id { session_action(SessionAction::Fork(id, None)); } }, "新建分支（Fork）" }
@@ -5431,7 +5493,7 @@ pub(super) fn App() -> Element {
                             }
                             }
                             } else {
-                                section { id: "session-settings-design-panel", class: "session-resource-body", role: "tabpanel", aria_labelledby: "session-settings-design-tab",
+                                section { id: "session-settings-design-panel", class: "session-resource-body", aria_label: "设计引用",
                                     if let Some(session_id) = selected_session.read().clone() {
                                         for scope in [format!("resources-{}-{}-{}-{}", node_url, session_id, session_generation, node_connection.epoch)] {
                                         resources::SessionResources {

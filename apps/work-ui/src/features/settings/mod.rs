@@ -1,5 +1,9 @@
 pub(crate) mod updates;
-use crate::shared::{app_settings, components::Icon};
+use crate::shared::{
+    app_settings,
+    components::Icon,
+    theme::appearance::{AppearancePicker, AppearanceSettings},
+};
 use dioxus::core::Task;
 use dioxus::prelude::*;
 use work_client::{AuthState, Capabilities, RuntimeState, WorkspaceClient};
@@ -11,6 +15,33 @@ pub(crate) use connection_panel::ConnectionScreen;
 mod devices;
 use devices::DevicesPage;
 pub(crate) use devices::{DesktopPairing, use_pairing};
+
+// Persisted section keys and external shortcuts remain compatible with the old navigation.
+fn category(section: &str) -> &'static str {
+    match section {
+        "display" | "appearance" | "footer" | "session-display" => "display",
+        "devices" | "components" => "devices",
+        "providers" => "providers",
+        "updates" => "updates",
+        "app-settings" => "app-settings",
+        _ => "settings",
+    }
+}
+
+const CATEGORIES: [(&str, &str, &str); 6] = [
+    ("settings", "settings", "设置总览"),
+    ("display", "sparkles", "界面与显示"),
+    ("devices", "monitor", "工作协同"),
+    ("providers", "server", "供应商"),
+    ("updates", "download", "应用更新"),
+    ("app-settings", "code", "高级设置"),
+];
+
+const DISPLAY_SECTIONS: [(&str, &str); 3] = [
+    ("appearance", "外观与主题"),
+    ("session-display", "会话展示"),
+    ("footer", "底部状态栏"),
+];
 
 #[component]
 pub fn SettingsPage(
@@ -30,66 +61,80 @@ pub fn SettingsPage(
     online: bool,
     onconnect: EventHandler<()>,
     onlogin: EventHandler<()>,
-    onappearance: EventHandler<()>,
+    appearance: Signal<AppearanceSettings>,
     update_busy: bool,
     mobile_client: bool,
 ) -> Element {
     let section = settings_section.read().clone();
+    let current_category = category(&section);
+    // Scroll only the horizontal rails, never the document or the user's focus.
+    use_effect(move || {
+        let _section = settings_section.read().clone();
+        let _ = document::eval(include_str!("settings_navigation.js"));
+    });
     rsx! {
         style { {include_str!("settings.css")} }
         section { class: "page-view settings-page",
             div { class: "settings-navigation",
-                nav { aria_label: "设置分类",
-                    button { class: if section == "settings" { "active" } else { "" }, aria_current: if section == "settings" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("settings".to_owned()), Icon { name: "settings" } "通用" }
-                    button { class: if section == "app-settings" { "active" } else { "" }, aria_current: if section == "app-settings" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("app-settings".to_owned()), Icon { name: "code" } "全局设置文件" }
-                    button { class: if section == "devices" || section == "components" { "active" } else { "" }, aria_current: if section == "devices" || section == "components" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("devices".to_owned()), Icon { name: "monitor" } "工作协同" }
-                    button { class: if section == "providers" { "active" } else { "" }, aria_current: if section == "providers" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("providers".to_owned()), Icon { name: "server" } "供应商" }
-                    button { class: if section == "footer" { "active" } else { "" }, aria_current: if section == "footer" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("footer".to_owned()), Icon { name: "settings" } "底部状态栏" }
-                    button { class: if section == "session-display" { "active" } else { "" }, aria_current: if section == "session-display" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("session-display".to_owned()), Icon { name: "message" } "会话展示" }
-                    button { class: if section == "updates" { "active" } else { "" }, aria_current: if section == "updates" { "page" } else { "" },
-                        onclick: move |_| settings_section.set("updates".to_owned()), Icon { name: "download" } "应用更新" }
+                div { class: "settings-rail",
+                    nav { aria_label: "设置分类",
+                        for (key, icon, label) in CATEGORIES {
+                            button { r#type: "button", class: if current_category == key { "active" } else { "" },
+                                aria_current: if current_category == key { "page" } else { "false" },
+                                onclick: move |_| settings_section.set(key.to_owned()),
+                                Icon { name: icon } "{label}"
+                            }
+                        }
+                    }
                 }
-                button { class: "settings-return", onclick: move |_| active_page.set("workspace".to_owned()), Icon { name: "chevron-right" } "返回会话" }
+                button { class: "settings-return", r#type: "button", title: "返回会话", aria_label: "返回会话",
+                    onclick: move |_| active_page.set("workspace".to_owned()), Icon { name: "chevron-right" } "返回会话" }
             }
-            if section == "settings" {
-                div { class: "page-heading", div { h1 { "设置" } p { if mobile_client { "管理工作空间偏好与电脑连接。" } else { "管理工作空间偏好、执行节点与模型连接。" } } } }
-                div { class: "settings-cards",
-                    button { class: "settings-card", onclick: move |_| onappearance.call(()),
-                        span { class: "settings-card-icon", Icon { name: "sparkles" } }
-                        strong { "外观与主题" } p { "主题风格、明暗模式与界面密度。" } small { "本设备" } Icon { name: "chevron-right" }
-                    }
-                    button { class: "settings-card", onclick: move |_| settings_section.set("app-settings".to_owned()),
-                        span { class: "settings-card-icon", Icon { name: "code" } }
-                        strong { "全局设置文件" } p { "用 JSON 控制本设备的菜单、面板和 UI 插件显示偏好。" } small { "本设备 · JSON" } Icon { name: "chevron-right" }
-                    }
-                    button { class: "settings-card", onclick: move |_| settings_section.set("devices".to_owned()),
-                        span { class: "settings-card-icon", Icon { name: "monitor" } }
-                        strong { "工作协同" } p { if mobile_client { "连接电脑，并管理远程协作与节点组件。" } else { "管理执行节点、远程协作与节点组件。" } } small { if mobile_client { "电脑连接与协作" } else { "节点与协作" } } Icon { name: "chevron-right" }
-                    }
-                    button { class: "settings-card", onclick: move |_| settings_section.set("providers".to_owned()),
-                        span { class: "settings-card-icon", Icon { name: "server" } }
-                        strong { "模型供应商" } p { "管理节点保存的供应商定义、凭据与模型。" } small { "节点文件配置" } Icon { name: "chevron-right" }
-                    }
-                    button { class: "settings-card", onclick: move |_| settings_section.set("footer".to_owned()),
-                        span { class: "settings-card-icon", Icon { name: "settings" } }
-                        strong { "底部状态栏" } p { "直接显示会话用量、上下文与已加载工具；配置本设备 UI 插件。" } small { "本设备 · 无需节点插件" } Icon { name: "chevron-right" }
-                    }
-                    button { class: "settings-card", onclick: move |_| settings_section.set("session-display".to_owned()),
-                        span { class: "settings-card-icon", Icon { name: "message" } }
-                        strong { "会话展示" } p { "选择会话切换器按节点分组，或将当前节点的会话平铺显示。" } small { "本设备 · 默认按节点分组" } Icon { name: "chevron-right" }
-                    }
-                    button { class: "settings-card", onclick: move |_| settings_section.set("updates".to_owned()),
-                        span { class: "settings-card-icon", Icon { name: "download" } }
-                        strong { "应用更新" } p { "检查新版本、下载更新与安装。" } small { "当前版本 " {env!("CARGO_PKG_VERSION")} } Icon { name: "chevron-right" }
+            if current_category == "display" {
+                div { class: "settings-display-navigation settings-rail",
+                    nav { aria_label: "界面与显示分类",
+                        for (key, label) in DISPLAY_SECTIONS {
+                            button { r#type: "button", class: if section == key { "active" } else { "" },
+                                aria_current: if section == key { "page" } else { "false" },
+                                onclick: move |_| settings_section.set(key.to_owned()), "{label}"
+                            }
+                        }
                     }
                 }
+            }
+            if section == "settings" || category(&section) == "settings" {
+                div { class: "page-heading", div { h1 { "设置总览" } p { "按工作目标管理偏好。显示设置保存在本设备，模型配置由当前节点管理。" } } }
+                div { class: "settings-cards",
+                    for (key, icon, label, description, scope) in [
+                        ("display", "sparkles", "界面与显示", "调整主题、会话排列与底部状态栏。", "本设备"),
+                        ("devices", "monitor", "工作协同", "管理设备连接、远程协作与节点组件。", "设备与节点"),
+                        ("providers", "server", "供应商", "管理模型供应商、凭据和可用模型。", "当前节点"),
+                        ("updates", "download", "应用更新", "检查新版本、下载并安装更新。", "本设备"),
+                        ("app-settings", "code", "高级设置", "直接编辑全局 JSON；常用显示偏好请使用界面与显示。", "本设备 · 高级"),
+                    ] {
+                        button { class: "settings-card", r#type: "button", onclick: move |_| settings_section.set(key.to_owned()),
+                            span { class: "settings-card-icon", Icon { name: icon } }
+                            strong { "{label}" } p { "{description}" } small { "{scope}" } Icon { name: "chevron-right" }
+                        }
+                    }
+                }
+            } else if section == "display" {
+                div { class: "page-heading", div { h1 { "界面与显示" } p { "这些偏好仅影响本设备，不改变节点数据或会话内容。" } } }
+                div { class: "settings-cards",
+                    for (key, label, description) in [
+                        ("appearance", "外观与主题", "预览并保存主题、明暗模式与界面密度。"),
+                        ("session-display", "会话展示", "选择按节点分组或平铺会话。"),
+                        ("footer", "底部状态栏", "选择会话用量、上下文与工具信息的展示方式。"),
+                    ] {
+                        button { class: "settings-card", r#type: "button", onclick: move |_| settings_section.set(key.to_owned()),
+                            strong { "{label}" } p { "{description}" } Icon { name: "chevron-right" }
+                        }
+                    }
+                }
+            } else if section == "appearance" {
+                AppearancePicker { settings: appearance, embedded: true, onclose: move |()| settings_section.set("display".to_owned()) }
             } else if section == "app-settings" {
+                div { class: "page-heading", div { h1 { "高级设置" } p { "全局 JSON 配置仅作用于本设备。修改前建议保留副本；常用显示偏好可在界面与显示中调整。" } } }
                 crate::shared::app_settings::AppSettingsPage {}
             } else if section == "footer" {
                 crate::features::observability::footer_plugins::FooterSettings {}
@@ -144,5 +189,28 @@ fn SessionDisplaySettings() -> Element {
             if !state.ready { p { role: "status", "正在读取本设备设置…" } }
             if let Some(error) = state.error.as_deref() { p { class: "app-settings-error", role: "alert", "{error}" } }
         }
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::category;
+
+    #[test]
+    fn legacy_shortcuts_keep_their_category() {
+        for section in ["appearance", "footer", "session-display", "display"] {
+            assert_eq!(category(section), "display");
+        }
+        assert_eq!(category("components"), "devices");
+        for section in [
+            "devices",
+            "providers",
+            "updates",
+            "app-settings",
+            "settings",
+        ] {
+            assert_eq!(category(section), section);
+        }
+        assert_eq!(category("unknown"), "settings");
     }
 }

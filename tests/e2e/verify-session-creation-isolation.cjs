@@ -29,7 +29,7 @@ async function bounded(promise, label) {
   async function returnWorkspace() { await page.getByRole('button', { name: '返回会话', exact: true }).click(); await field().waitFor(); }
   async function connect(node) {
     if (!await settings().isVisible()) await openSettings();
-    await settings().getByRole('button', { name: '执行节点', exact: true }).click();
+    await settings().getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(node.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();

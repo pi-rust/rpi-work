@@ -1,10 +1,12 @@
-// Real WASM (build/serve separately at :14180) + isolated HTTP/SSE fixture per case.
+// Real WASM + isolated fixture per case: realtime commands use a synthetic HTTP-policy bridge.
+// HTTP response gates do not exercise WebSocket query races.
 // Run against an integrated build; syntax-only validation does not exercise WASM behavior.
-// No provider traffic, prompts, queue submissions, credential writes or fixture edits.
+// No provider traffic, prompts, queue submissions or credential writes.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
+const { bridgeRealtimePolicies } = require('../support/realtime-http-policy-bridge.cjs');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const INITIAL = 'deepseek/deepseek-v4-pro';
 const DRAFT = '模型配置期间保留草稿 😀';
@@ -49,6 +51,7 @@ async function test(name, configure, verify) {
     fixture.controls.models = catalog();
     context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     page = await context.newPage(); page.setDefaultTimeout(10000);
+    await bridgeRealtimePolicies(page, () => [new URL(fixture.url).origin]);
     page.on('pageerror', error => localErrors.push(error.message));
     page.on('request', request => {
       if (!request.url().startsWith(fixture.url)) return;
@@ -95,7 +98,7 @@ async function test(name, configure, verify) {
       send: () => page.getByRole('button', { name: '发送消息', exact: true }),
       group: provider => page.locator(`details.composer-provider-group[data-provider="${provider}"]`),
       leaf: (provider, id) => page.locator(`.composer-model-option[data-provider="${provider}"][data-model-id="${id}"]`),
-      session: id => page.locator(`[data-session-id="${id}"] .session-item`),
+      session: id => page.locator(`.sidebar-sessions:not(.recent-sessions) [data-session-id="${id}"] .session-item`),
       count: type => commands.filter(item => item.body.type === type).length,
       async open() { await h.trigger().click(); await h.dialog().waitFor(); },
       async expand(provider) {
@@ -134,7 +137,7 @@ async function test(name, configure, verify) {
       async choose(provider = 'alpha', id = 'alpha/a1') { await h.expand(provider); await h.leaf(provider, id).click(); },
       async title(provider, id) {
         await until(async () => await h.trigger().getAttribute('title') === `${provider} / ${id}`, 'authoritative trigger title');
-        const reported = catalog().find(model => model.provider === provider && model.id === id);
+        const reported = fixture.controls.models.find(model => model.provider === provider && model.id === id);
         assert([reported?.name, id].includes((await h.trigger().innerText()).trim()), 'trigger shows a catalog model name or raw runtime ID, never just a provider');
       },
       async ready() {
@@ -333,7 +336,7 @@ async function test(name, configure, verify) {
     });
     await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:14180/');
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
@@ -352,9 +355,15 @@ async function test(name, configure, verify) {
     assert.equal(fixture.requests.filter(r => ['prompt', 'queue_message', 'set_api_key'].includes(r.body.type)).length, 0);
     assert.deepEqual(external, []); assert.deepEqual(localErrors, []);
     for (const item of commands.filter(item => ['set_model', 'set_thinking_level'].includes(item.body.type))) {
-      assert(item.path.endsWith('/configuration'), 'composer writes use the typed workspace endpoint');
-      assert.deepEqual(Object.keys(item.wireBody).sort(), ['configId', 'value']);
-      assert.equal(item.wireBody.configId, item.body.type === 'set_model' ? 'model' : 'thinking');
+      if (item.body.type === 'set_model') {
+        assert(item.path.endsWith('/commands'), 'provider-aware model writes use commands');
+        assert.equal(item.wireBody.type, 'set_model');
+        assert(item.wireBody.provider, 'model write identifies its provider');
+      } else {
+        assert(item.path.endsWith('/configuration'), 'thinking writes use the typed workspace endpoint');
+        assert.deepEqual(Object.keys(item.wireBody).sort(), ['configId', 'value']);
+        assert.equal(item.wireBody.configId, 'thinking');
+      }
     }
     proof.status = 'PASS'; console.log('PASS', name);
   } catch (error) {
@@ -368,11 +377,11 @@ async function test(name, configure, verify) {
     fs.writeFileSync('artifacts/composer-model-picker-validation.json', JSON.stringify({ results, geometry, errors, assumptions: [
       'Real integrated WASM is already built and served at WORK_UI_URL or http://127.0.0.1:14180/.',
       'ModelPicker/ThinkingPicker DOM and Chinese labels match model_picker.rs; composer uses idle/write_supported and IME readiness.',
-      'Fixture controls.models supports original catalog IDs; set_model mutates per-session config and get_state derives provider from raw ID prefix.',
+      'Fixture models and runtime state preserve the selected provider; query gates run through a synthetic realtime-to-HTTP policy bridge, not a full realtime server. Consult results for actual execution.',
       'Main composer discovery/mutation/readback guards both generation and connection_epoch after every await; stale session replies must not affect current scope.',
       'Deadline cases require Playwright page.clock: install after readiness, settle unheld RPC siblings, then fastForward(15_100) while one actual HTTP response gate remains held.',
       'Any accepted setter followed by unconfirmed readback or requiresRestart requires explicit nonblank-field get_state recovery; neither late responses nor recovery may invent a commit revision, retry a setter, or close a reopened dialog.',
-    ], limitations: 'Browser execution requires a separately built/served integrated WASM UI; node --check validates syntax only. Model session and same-address reconnect late-readback races are covered by cases 12 and 16; thinking session isolation by case 20. Light/dark 1280/390/320 screenshots check both dialogs, with thinking selected/focused options, 44px option hit targets and draft retention. Physical mobile keyboard acceptance requires separate validation. Existing mobile composer tests own the 44px primary hit target/32px visible-circle contract.' }, null, 2));
+    ], limitations: 'Browser execution requires a separately built/served integrated WASM UI; node --check validates syntax only. Synthetic-bridge model session and same-address reconnect late-readback races are covered by cases 12 and 16; thinking session isolation by case 20. Light/dark 1280/390/320 screenshots check both dialogs, with thinking selected/focused options, 44px option hit targets and draft retention. Physical mobile keyboard acceptance requires separate validation. Existing mobile composer tests own the 44px primary hit target/32px visible-circle contract.' }, null, 2));
     if (context) await context.close().catch(() => {});
     if (fixture) await fixture.close();
   }
@@ -392,16 +401,20 @@ async function test(name, configure, verify) {
       assert.equal(await h.leaf('deepseek', INITIAL).getAttribute('aria-pressed'), 'true');
       await h.close(); await h.noWrites(); assert.equal(await h.field().inputValue(), DRAFT);
     });
-    await test('02 cross-provider duplicate raw IDs are disabled', h => {
+    await test('02 cross-provider duplicate raw IDs select by provider', h => {
       h.fixture.controls.models.push({ id: 'ambiguous', name: 'Duplicate A', provider: 'alpha' }, { id: 'ambiguous', name: 'Duplicate B', provider: 'beta' });
     }, async h => {
-      await h.open(); await h.expand('alpha'); await h.expand('beta');
       for (const provider of ['alpha', 'beta']) {
-        assert(await h.leaf(provider, 'ambiguous').isDisabled());
-        await h.leaf(provider, 'ambiguous').evaluate(button => button.click());
+        await h.open(); await h.choose(provider, 'ambiguous');
+        await h.title(provider, 'ambiguous');
+        const setters = h.commands.filter(item => item.body.type === 'set_model');
+        const wire = setters.at(-1).wireBody;
+        assert.equal(wire.modelId, 'ambiguous'); assert.equal(wire.provider, provider);
+        const state = await h.backendState();
+        assert.equal(state.modelId, 'ambiguous'); assert.equal(state.provider, provider);
       }
-      assert.equal(await h.leaf('alpha', 'alpha/a1').isDisabled(), false);
-      await h.dialog().getByText(/多个供应商报告了相同模型 ID/).waitFor(); await h.noWrites();
+      assert.equal(h.count('set_model'), 2);
+      assert.equal(await h.field().inputValue(), DRAFT);
     });
     await test('03 catalog failure, empty result and explicit retry recover', h => { h.policy.models = 'fail'; }, async h => {
       await h.open(); await h.dialog().getByRole('alert').waitFor();
@@ -705,7 +718,7 @@ async function test(name, configure, verify) {
       assert.equal(reset.success, true); assert.equal(reset.data.modelId, INITIAL);
       const catalogsBefore = h.count('get_available_models');
       await h.page.getByRole('button', { name: '打开设置', exact: true }).click();
-      await h.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+      await h.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
       // Reuse the existing connection form even while the node is online;
       // clicking Connect again deliberately creates a new connection epoch.
       if (!await h.page.getByLabel('节点地址', { exact: true }).isVisible()) {
@@ -716,7 +729,7 @@ async function test(name, configure, verify) {
       await h.page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
       await h.page.getByRole('button', { name: '返回会话', exact: true }).click();
       // Reconnection may retain dark or return to the workspace landing view.
-      if (!await h.page.locator('[data-session-id="dark"].selected .session-item').isVisible()) {
+      if (!await h.page.locator('.sidebar-sessions:not(.recent-sessions) [data-session-id="dark"].selected .session-item').isVisible()) {
         if (!await h.session('dark').isVisible()) await h.page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
         await h.session('dark').click();
       }
@@ -943,7 +956,8 @@ async function test(name, configure, verify) {
         if (field === 'model') await h.choose(); else await h.thinkingOption(target).click();
         await until(() => held.entered, 'actual fixture mutation completed before response hold');
         if (phase === 'readback') assert.equal(held.snapshot.data[field === 'model' ? 'modelId' : 'thinkingLevel'], field === 'model' ? 'alpha/a1' : target);
-        else assert.equal(held.snapshot.data.accepted, true, 'typed ACK intentionally omits runtime state; only true get_state may commit');
+        else if (field === 'thinking') assert.equal(held.snapshot.data.accepted, true, 'typed ACK intentionally omits runtime state; only true get_state may commit');
+        else assert.equal(held.snapshot.data.modelId, 'alpha/a1', 'provider-aware command ACK reflects the actual mutation; recovery still requires get_state');
         await oldDisplay(); await actualRuntime();
         await h.deadline(held);
         await dialog().getByRole('alert').filter({ hasText: /超时/ }).first().waitFor(); await notice().waitFor();
@@ -1180,13 +1194,13 @@ async function test(name, configure, verify) {
       h.policy.configurationGate = held; await h.refresh(); await until(() => held.entered, 'old epoch GET held'); await h.close();
       const catalogsBefore = h.count('get_available_models');
       await h.page.getByRole('button', { name: '打开设置', exact: true }).click();
-      await h.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+      await h.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
       if (!await h.page.getByLabel('节点地址', { exact: true }).isVisible()) await h.page.getByRole('button', { name: '连接其他节点', exact: true }).click();
       await h.page.getByLabel('节点地址', { exact: true }).fill(h.fixture.url);
       await h.page.getByRole('button', { name: '连接节点', exact: true }).click();
       await h.page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
       await h.page.getByRole('button', { name: '返回会话', exact: true }).click();
-      if (!await h.page.locator('[data-session-id="dark"].selected .session-item').isVisible()) {
+      if (!await h.page.locator('.sidebar-sessions:not(.recent-sessions) [data-session-id="dark"].selected .session-item').isVisible()) {
         if (!await h.session('dark').isVisible()) await h.page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
         await h.session('dark').click();
       }

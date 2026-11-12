@@ -99,8 +99,8 @@ const sessionResources = {
   let page;
   const pass = name => { results.push(name); console.log(`PASS ${name}`); };
   const cardFor = name => page.locator('.native-resource-card').filter({ hasText: name }).first();
-  const settingsEntry = () => page.getByRole('button', { name: /会话资源(设置|配置)/ }).first();
-  const settingsDialog = () => page.getByRole('dialog', { name: /会话设置|会话资源配置/ }).first();
+  const settingsEntry = () => page.locator('.app-header').getByRole('button', { name: '设计引用', exact: true });
+  const settingsDialog = () => page.getByRole('dialog', { name: '设计引用', exact: true });
 
   try {
     assert(bundleUrl, 'WORK_UI_URL must name a freshly built WASM web bundle; refusing the legacy preview/default');
@@ -321,15 +321,15 @@ const sessionResources = {
     await settingsEntry().click();
     const settings = settingsDialog();
     await settings.waitFor();
-    const designTab = settings.getByRole('tab', { name: /设计引用|本地设计/ }).first();
-    if (await designTab.count()) await designTab.click();
+    assert.equal(await settings.getByRole('tab').count(), 0, 'design references are no longer a session settings tab');
+    assert.equal(await page.locator('dialog:modal').count(), 1, 'one independent design dialog');
     assert.equal(await settings.locator('.package-discovery').count(), 0, 'session settings has no discovery catalog');
     assert.equal(await settings.locator('.native-resource-card').count(), 0, 'session settings has no node management list');
     assert.match(await settings.innerText(), /configuration_only|会话|设计|资源/);
     await page.keyboard.press('Escape');
     await settings.waitFor({ state: 'hidden' });
     assert.equal(await draft.inputValue(), draftText);
-    pass('session resource settings reuse the root session design tab and preserve the composer draft');
+    pass('independent session design references exclude node management and preserve the composer draft');
 
     // Capture both themes and all requested widths. The extension card is intentionally
     // long and must remain visible on the first screen without a horizontal strip.

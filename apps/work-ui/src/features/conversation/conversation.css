@@ -108,6 +108,11 @@
 .conversation-widget .tool-call,.conversation-widget .inline-plan{width:100%;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);overflow:clip;margin:0;box-shadow:none}
 .conversation-widget summary{list-style:none;cursor:pointer}
 .conversation-widget summary::-webkit-details-marker{display:none}
+/* Reasoning stays available on demand and visually subordinate to the answer. */
+.conversation-widget.message-thinking{width:100%;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);overflow:clip;margin:0}
+.conversation-widget.message-thinking>.message-thinking-summary{padding:var(--space-7) var(--space-11);font-size:calc(10px * var(--type-scale, 1));color:var(--muted)}
+.conversation-widget.message-thinking[open]>.message-thinking-summary{color:var(--text);border-bottom:1px solid var(--line)}
+.conversation-widget.message-thinking>.message-thinking-body{padding:var(--space-10) var(--space-12);color:var(--muted);font-size:calc(11px * var(--type-scale, 1));line-height:1.8;max-height:340px;overflow:auto}
 .conversation-widget svg{width:14px;height:14px;flex:0 0 14px}
 .conversation-widget .inline-call>summary{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-10);color:var(--text);text-align:left}
 .conversation-widget .call-icon{display:grid;place-items:center;width:22px;height:22px;flex:0 0 22px;background:transparent;color:var(--muted);border-radius:var(--radius-sm)}
@@ -180,6 +185,7 @@
 .conversation-widget .inline-plan summary>span:last-child{font-size:calc(10px * var(--type-scale, 1))}
 .conversation-widget .inline-plan li strong{font-size:calc(12px * var(--type-scale, 1))}.conversation-widget .inline-plan li small{font-size:calc(11px * var(--type-scale, 1))}
 .conversation-widget .inline-call>summary{min-height:44px;padding:var(--space-8);gap:var(--space-7)}
+.conversation-widget.message-thinking>.message-thinking-summary{min-height:44px;display:flex;align-items:center}
 .conversation-widget .call-name strong{font-size:calc(12px * var(--type-scale, 1))}.conversation-widget .call-icon{width:24px;height:24px;flex-basis:24px}
 .conversation-widget .call-body{padding:var(--space-10)}
 .conversation-widget .inline-call-warning{padding-left:var(--space-42)}

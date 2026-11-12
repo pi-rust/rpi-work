@@ -101,7 +101,7 @@ async function launch(address, name) {
   await page.getByRole('button', { name: '打开设置', exact: true }).waitFor();
   noDesktopData(); return gui;
 }
-async function settings(p) { await p.getByRole('button', { name: '打开设置', exact: true }).click(); await p.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click(); await p.locator('.devices-page').waitFor(); }
+async function settings(p) { await p.getByRole('button', { name: '打开设置', exact: true }).click(); await p.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click(); await p.locator('.devices-page').waitFor(); }
 async function screenshot(p, name) {
   const file = path.join(output, `${name}.png`);
   await p.screenshot({ path: file, mask: [p.locator('input'), p.locator('[id*="qr"], .pairing-qr, textarea')] });

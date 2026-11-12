@@ -145,7 +145,24 @@ pub fn normalize_event(event_type: &str, data: &Value) -> Result<EventKind, Even
                         .unwrap_or_default(),
                 });
             }
-            if matches!(event_kind, Some("thinking_delta" | "tool_call_delta")) {
+            if matches!(event_kind, Some("thinking_delta")) {
+                return Ok(EventKind::ThinkingDelta {
+                    block_id: format!(
+                        "{}-thinking-{}",
+                        message_id(),
+                        object
+                            .and_then(|map| map.get("contentIndex"))
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0)
+                    ),
+                    delta: object
+                        .and_then(|map| map.get("delta"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                });
+            }
+            if matches!(event_kind, Some("tool_call_delta")) {
                 return Ok(EventKind::Ignored);
             }
             Ok(message_text_snapshot(
@@ -178,6 +195,14 @@ fn message_text_snapshot(message_id: &str, content: Option<&Value>, complete: bo
                 .filter(|(_, item)| is_public_text_content(item))
                 .map(|(index, item)| (format!("{message_id}-text-{index}"), content_text(item)))
                 .collect(),
+            thinking: items
+                .iter()
+                .enumerate()
+                .filter_map(|(index, item)| {
+                    let text = thinking_text(item);
+                    (!text.is_empty()).then(|| (format!("{message_id}-thinking-{index}"), text))
+                })
+                .collect(),
             // An empty start/update is commonly a stream placeholder, not deletion.
             authoritative: !items.is_empty() || complete,
         }
@@ -188,6 +213,21 @@ fn message_text_snapshot(message_id: &str, content: Option<&Value>, complete: bo
             text: content.map(content_text).unwrap_or_default(),
         }
     }
+}
+
+/// Reasoning blocks carry their text in `thinking`; never surface redacted
+/// signatures or any other opaque reasoning payload.
+fn thinking_text(value: &Value) -> String {
+    if value.get("type").and_then(Value::as_str) != Some("thinking")
+        || value.get("redacted").and_then(Value::as_bool) == Some(true)
+    {
+        return String::new();
+    }
+    value
+        .get("thinking")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn required_string(

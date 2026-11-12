@@ -701,6 +701,28 @@ impl NodeApi for WorkspaceClient {
         })
     }
 
+    fn set_model_with_provider<'a>(
+        &'a self,
+        session_id: &'a str,
+        model_id: &'a str,
+        provider: &'a str,
+    ) -> NodeFuture<'a, Value> {
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        if let Self::Local(client) = self {
+            return NodeApi::set_model_with_provider(
+                client.as_ref(),
+                session_id,
+                model_id,
+                provider,
+            );
+        }
+        Box::pin(async move {
+            WorkspaceClient::set_model_with_provider(self, session_id, model_id, provider)
+                .await
+                .map_err(node_error)
+        })
+    }
+
     fn set_thinking_level<'a>(
         &'a self,
         session_id: &'a str,
@@ -1424,6 +1446,19 @@ impl NodeApi for WorkClient {
     fn set_model<'a>(&'a self, session_id: &'a str, model_id: &'a str) -> NodeFuture<'a, Value> {
         Box::pin(async move {
             WorkClient::set_model(self, session_id, model_id)
+                .await
+                .map_err(node_error)
+        })
+    }
+
+    fn set_model_with_provider<'a>(
+        &'a self,
+        session_id: &'a str,
+        model_id: &'a str,
+        provider: &'a str,
+    ) -> NodeFuture<'a, Value> {
+        Box::pin(async move {
+            WorkClient::set_model_with_provider(self, session_id, model_id, provider)
                 .await
                 .map_err(node_error)
         })

@@ -412,6 +412,20 @@ impl work_core::api::NodeApi for LocalWorkspace {
         work_core::api::NodeApi::set_model(self.owner.as_ref(), session_id, model_id)
     }
 
+    fn set_model_with_provider<'a>(
+        &'a self,
+        session_id: &'a str,
+        model_id: &'a str,
+        provider: &'a str,
+    ) -> work_core::api::NodeFuture<'a, serde_json::Value> {
+        work_core::api::NodeApi::set_model_with_provider(
+            self.owner.as_ref(),
+            session_id,
+            model_id,
+            provider,
+        )
+    }
+
     fn set_thinking_level<'a>(
         &'a self,
         session_id: &'a str,

@@ -542,6 +542,19 @@ impl NodeApi for LocalWorkspace {
         })
     }
 
+    fn set_model_with_provider<'a>(
+        &'a self,
+        session_id: &'a str,
+        model_id: &'a str,
+        provider: &'a str,
+    ) -> NodeFuture<'a, Value> {
+        Box::pin(async move {
+            LocalWorkspace::set_model_with_provider(self, session_id, model_id, provider)
+                .await
+                .map_err(node_error)
+        })
+    }
+
     fn set_thinking_level<'a>(
         &'a self,
         session_id: &'a str,

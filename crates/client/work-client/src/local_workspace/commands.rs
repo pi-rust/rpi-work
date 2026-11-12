@@ -4,8 +4,16 @@ use serde_json::Value;
 
 impl LocalWorkspace {
     pub async fn set_model(&self, session_id: &str, model_id: &str) -> Result<Value, ClientError> {
+        self.set_model_with_provider(session_id, model_id, "").await
+    }
+    pub async fn set_model_with_provider(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        provider: &str,
+    ) -> Result<Value, ClientError> {
         self.owner
-            .set_model(session_id, model_id)
+            .set_model_with_provider(session_id, model_id, provider)
             .await
             .map_err(Into::into)
     }

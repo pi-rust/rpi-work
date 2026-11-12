@@ -99,7 +99,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     test = await scenario({ manual: true });
     await test.page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await test.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await test.page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await test.page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await test.page.getByLabel('节点地址', { exact: true }).fill(nodeAddress);
     await test.page.getByRole('button', { name: '连接节点', exact: true }).click();

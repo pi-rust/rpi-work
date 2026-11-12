@@ -1384,8 +1384,21 @@ impl LocalWorkspace {
         session_id: &str,
         model_id: &str,
     ) -> Result<Value, WorkspaceError> {
-        self.command_data(session_id, "set_model", json!({ "modelId": model_id }))
-            .await
+        self.set_model_with_provider(session_id, model_id, "").await
+    }
+
+    /// Forward the reported provider so duplicate catalog ids stay unambiguous.
+    pub async fn set_model_with_provider(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        provider: &str,
+    ) -> Result<Value, WorkspaceError> {
+        let mut payload = json!({ "modelId": model_id });
+        if !provider.trim().is_empty() {
+            payload["provider"] = json!(provider);
+        }
+        self.command_data(session_id, "set_model", payload).await
     }
 
     pub async fn set_thinking_level(

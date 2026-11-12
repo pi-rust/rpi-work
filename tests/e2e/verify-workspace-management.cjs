@@ -14,7 +14,7 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
  const message=()=>page.locator('.workspace-notice');
  try{
   await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
-  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'执行节点',exact:true}).click();
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'工作协同',exact:true}).click();
   await page.getByRole('button',{name:'连接其他节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(node.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.locator('.server-details [role=status]').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();
   await row('rpi-work').locator('.project-row').click();await session('dark').locator('.session-item').click();
   await row('rpi-work').locator('.project-row-menu').click();await page.getByRole('menuitem',{name:'重命名项目',exact:true}).click();

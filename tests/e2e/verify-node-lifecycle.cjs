@@ -20,7 +20,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   const status = () => page.locator('.server-details [role=status]');
   const openNodes = async () => {
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
   };
   const connect = async url => {
     if (!await page.locator('#node-url').isVisible()) await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
@@ -146,7 +146,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     });
     await blocked.goto(app);
     await blocked.getByRole('button', { name: '打开设置', exact: true }).click();
-    await blocked.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await blocked.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await blocked.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
     await blocked.getByText('无法保存连接地址；本次连接仍可使用。', { exact: true }).waitFor();
     await blocked.close();

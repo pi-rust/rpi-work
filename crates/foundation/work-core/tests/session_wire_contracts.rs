@@ -193,6 +193,7 @@ fn public_text_allowlist_and_image_tool_results_are_unchanged() {
         EventKind::TextSnapshots {
             message_id: "m".into(),
             snapshots: vec![("m-text-3".into(), "public".into())],
+            thinking: Vec::new(),
             authoritative: true,
         }
     );
@@ -206,16 +207,46 @@ fn public_text_allowlist_and_image_tool_results_are_unchanged() {
             EventKind::Ignored
         );
     }
-    for kind in ["thinking_delta", "tool_call_delta"] {
-        assert_eq!(
-            normalize_event(
-                "message_update",
-                &json!({"eventType":kind,"delta":"private"})
-            )
-            .unwrap(),
-            EventKind::Ignored
-        );
-    }
+    // Reasoning streams as its own block so the UI can render it collapsed
+    // instead of appending it to the assistant's public prose.
+    assert_eq!(
+        normalize_event(
+            "message_update",
+            &json!({"eventType":"thinking_delta","contentIndex":0,"delta":"private"})
+        )
+        .unwrap(),
+        EventKind::ThinkingDelta {
+            block_id: "assistant-message-thinking-0".into(),
+            delta: "private".into(),
+        }
+    );
+    assert_eq!(
+        normalize_event(
+            "message_update",
+            &json!({"eventType":"tool_call_delta","delta":"private"})
+        )
+        .unwrap(),
+        EventKind::Ignored
+    );
+    let event = normalize_event(
+        "message_end",
+        &json!({"message":{
+            "role":"assistant","entryId":"m","content":[
+                {"type":"thinking","thinking":"plan"},
+                {"type":"text","text":"answer"}
+            ]
+        }}),
+    )
+    .unwrap();
+    assert_eq!(
+        event,
+        EventKind::TextSnapshots {
+            message_id: "m".into(),
+            snapshots: vec![("m-text-1".into(), "answer".into())],
+            thinking: vec![("m-thinking-0".into(), "plan".into())],
+            authoritative: true,
+        }
+    );
     let result = json!({"content":[{"type":"image","data":"fixture","mimeType":"image/png"},{"type":"text","text":"caption"}]});
     let event = normalize_event(
         "tool_execution_update",

@@ -1,4 +1,4 @@
-// Actual WASM + local fixture only. Details and design references share one settings dialog.
+// Actual WASM + local fixture only. Session settings and design references have independent entry points.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
@@ -12,19 +12,23 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   page.setDefaultTimeout(10000);
   page.on('pageerror', error => errors.push(error.message));
   const pass = text => { results.push(text); console.log('PASS', text); };
-  const entry = page.locator('.section-tabs').getByRole('button', { name: '打开会话资源配置', exact: true });
+  const entry = page.locator('.app-header').getByRole('button', { name: '设计引用', exact: true });
+  const settingsEntry = page.locator('.app-header').getByRole('button', { name: '会话设置', exact: true });
+  const settings = page.getByRole('dialog', { name: '会话设置', exact: true });
   const config = entry;
-  const modal = page.getByRole('dialog', { name: '会话设置', exact: true });
+  const modal = page.getByRole('dialog', { name: '设计引用', exact: true });
+  const close = async dialog => { await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' }); };
   const draftText = '收起会话能力入口，不丢失草稿';
-  const measure = () => page.locator('.section-tabs').evaluate(root => {
+  const measure = () => page.locator('.app-header .top-actions').evaluate(root => {
     const box = e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
-    return { row: box(root), scroll: root.scrollWidth, client: root.clientWidth, entry: box(root.querySelector('[aria-label="打开会话资源配置"]')), visible: [...root.querySelectorAll('[aria-label="打开会话资源配置"]')].filter(e => e.getBoundingClientRect().width > 0).map(e => ({ name: e.getAttribute('aria-label'), ...box(e) })) };
+    const entries = [...root.querySelectorAll('button')].filter(e => (e.getAttribute('aria-label') || e.textContent.trim()) === '设计引用');
+    return { row: box(root), scroll: root.scrollWidth, client: root.clientWidth, entry: box(entries[0]), visible: entries.filter(e => e.getBoundingClientRect().width > 0).map(e => ({ name: e.getAttribute('aria-label') || e.textContent.trim(), ...box(e) })) };
   });
   try {
     await page.route('https://api.github.com/**', route => route.fulfill({ status: 404, body: '{}' }));
     await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:14180/');
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
@@ -49,18 +53,22 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
         assert.equal(sizes.visible.length, 1, 'mobile shows only one resource entry');
         assert(sizes.scroll <= sizes.client + 1, `no hidden horizontal resource strip: ${JSON.stringify(sizes)}`);
         assert(sizes.visible[0].width >= 44 && sizes.visible[0].height >= 44);
-        assert.equal(await config.getAttribute('aria-label'), '打开会话资源配置');
+        assert.equal(await config.getAttribute('aria-label') || (await config.textContent()).trim(), '设计引用');
         assert.equal(await config.getAttribute('aria-haspopup'), 'dialog');
         assert(await page.locator('.section-tabs').getByRole('button', { name: '打开项目文件', exact: true }).isVisible());
-        await page.locator('.section-tabs').screenshot({ path: `artifacts/mobile-resources-${mode}-${width}-collapsed.png`, animations: 'disabled' });
+        await page.locator('.app-header .top-actions').screenshot({ path: `artifacts/mobile-resources-${mode}-${width}-collapsed.png`, animations: 'disabled' });
         await config.click(); await modal.waitFor();
-        assert.equal(await page.locator('dialog:modal').count(), 1, 'no separate resource modal');
-        assert.equal(await modal.getByRole('tab', { name: '设计引用', exact: true }).getAttribute('aria-selected'), 'true');
-        await modal.evaluate(el => { window.__settingsDialog = el; });
-        await modal.getByRole('tab', { name: '会话详情', exact: true }).click();
-        assert.equal(await modal.locator('.execution-backend-menu').count(), 0, 'no duplicate Agent in details');
-        await modal.getByRole('tab', { name: '设计引用', exact: true }).click();
-        assert(await modal.evaluate(el => el === window.__settingsDialog));
+        assert.equal(await page.locator('dialog:modal').count(), 1, 'only the independent design dialog is open');
+        assert.equal(await modal.getByRole('tab').count(), 0, 'design references have no settings tabs');
+        await close(modal);
+        await settingsEntry.click(); await settings.waitFor();
+        assert.equal(await settings.getByRole('tab', { name: '配置', exact: true }).getAttribute('aria-selected'), 'true');
+        assert.deepEqual(await settings.getByRole('tab').allTextContents(), ['配置', '运行信息', '会话操作']);
+        assert.equal(await settings.locator('.execution-backend-menu').count(), 0, 'no duplicate Agent in configuration');
+        await close(settings);
+        await config.click(); await modal.waitFor();
+        assert.equal(await settings.isVisible(), false, 'settings is closed before design references reopen');
+        assert.equal(await page.locator('dialog:modal').count(), 1);
         const segments = modal.locator('#session-settings-design-panel > .resource-segments');
         for (const name of ['Packages', '扩展', 'Skills', 'Tools', '提示词', '执行后端']) {
           const button = segments.getByRole('button', { name, exact: true });
@@ -81,15 +89,17 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
       await page.setViewportSize({ width: 1280, height: 900 });
     }
     assert.deepEqual(await measure(), desktop, 'desktop resource geometry remains unchanged after resize');
-    await page.locator('.app-header .header-more').click();
-    await page.getByRole('menuitem', { name: '会话设置', exact: true }).click();
-    await modal.waitFor(); assert.equal(await modal.getByRole('tab', { name: '会话详情', exact: true }).getAttribute('aria-selected'), 'true');
-    await modal.getByRole('tab', { name: '设计引用', exact: true }).click();
+    await settingsEntry.click(); await settings.waitFor();
+    assert.equal(await settings.getByRole('tab', { name: '配置', exact: true }).getAttribute('aria-selected'), 'true');
+    await close(settings);
+    await config.click(); await modal.waitFor();
+    assert.equal(await modal.getByRole('tab').count(), 0);
     await modal.locator('#session-settings-design-panel > .resource-segments').getByRole('button', { name: 'Tools', exact: true }).click();
-    await page.keyboard.press('Escape');
+    await close(modal);
+    assert.equal(await draft.inputValue(), draftText);
     assert.equal(fixture.requests.filter(r => ['prompt', 'queue_message', 'set_active_tools'].includes(r.body.type)).length, 0);
     assert.deepEqual(errors, []);
-    pass('unified desktop settings retain details/design navigation; no prompts, configuration mutations or application errors');
+    pass('independent desktop settings/design navigation preserves drafts; no prompts, configuration mutations or application errors');
   } catch (error) {
     await page.screenshot({ path: 'artifacts/mobile-resources-failure.png', animations: 'disabled' }); throw error;
   } finally {

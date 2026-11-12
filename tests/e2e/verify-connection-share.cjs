@@ -39,7 +39,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     if (mobile) await page.getByRole('button', { name: '连接我的电脑', exact: true }).first().click();
     else {
       await page.getByRole('button', { name: '打开设置', exact: true }).click();
-      await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+      await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     }
     await page.addScriptTag({ content: fs.readFileSync('assets/vendor/jsQR.js', 'utf8') });
     return page;

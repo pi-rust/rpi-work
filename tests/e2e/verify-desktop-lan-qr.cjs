@@ -78,7 +78,7 @@ const { chromium } = require('../support/browser.cjs');
   };
   const settings = async page => {
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
   };
   try {
     stage = 'native startup default offer';

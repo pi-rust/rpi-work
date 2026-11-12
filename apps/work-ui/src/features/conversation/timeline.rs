@@ -96,7 +96,24 @@ fn public_parts(value: &Value) -> Vec<PublicPart> {
 #[derive(Debug, PartialEq)]
 enum HistoryPart {
     Public(PublicPart),
+    /// Reasoning text stays its own collapsible region, never public prose.
+    Thinking(String),
     Tool(usize, Value),
+}
+
+/// Reasoning blocks carry their text in `thinking`; redacted payloads and
+/// signatures are never rendered.
+fn thinking_body(item: &Value) -> Option<String> {
+    if item.get("type").and_then(Value::as_str) != Some("thinking")
+        || item.get("redacted").and_then(Value::as_bool) == Some(true)
+    {
+        return None;
+    }
+    let text = item
+        .get("thinking")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    (!text.trim().is_empty()).then(|| text.to_owned())
 }
 
 fn history_parts(content: &Value) -> Vec<HistoryPart> {
@@ -106,6 +123,13 @@ fn history_parts(content: &Value) -> Vec<HistoryPart> {
             .map(HistoryPart::Public)
             .collect();
     };
+    let flush = |parts: &mut Vec<HistoryPart>, pending: &mut Vec<Value>| {
+        parts.extend(
+            public_parts(&Value::Array(std::mem::take(pending)))
+                .into_iter()
+                .map(HistoryPart::Public),
+        );
+    };
     let mut parts = Vec::new();
     let mut pending = Vec::new();
     for (index, item) in items.iter().enumerate() {
@@ -113,22 +137,28 @@ fn history_parts(content: &Value) -> Vec<HistoryPart> {
             item["type"].as_str(),
             Some("toolCall" | "tool_use" | "tool_call")
         ) {
-            parts.extend(
-                public_parts(&Value::Array(std::mem::take(&mut pending)))
-                    .into_iter()
-                    .map(HistoryPart::Public),
-            );
+            flush(&mut parts, &mut pending);
             parts.push(HistoryPart::Tool(index, item.clone()));
+        } else if let Some(text) = thinking_body(item) {
+            flush(&mut parts, &mut pending);
+            parts.push(HistoryPart::Thinking(text));
         } else {
             pending.push(item.clone());
         }
     }
-    parts.extend(
-        public_parts(&Value::Array(pending))
-            .into_iter()
-            .map(HistoryPart::Public),
-    );
+    flush(&mut parts, &mut pending);
     parts
+}
+
+/// Collapsed by default: reasoning is available on demand, not interleaved
+/// with the assistant's public answer.
+fn render_thinking(text: &str) -> Element {
+    rsx! {
+        details { class: "conversation-widget message-thinking", aria_label: "模型思考过程",
+            summary { class: "message-thinking-summary", "思考过程" }
+            div { class: "message-thinking-body", {markdown_view(text)} }
+        }
+    }
 }
 
 // Both projection and history use this exact keyed sibling list. In particular,
@@ -312,6 +342,7 @@ pub fn render_history_in_context(
         .enumerate()
         .map(|(index, part)| match part {
             HistoryPart::Public(part) => (format!("public-{index}"), render_public_part(part)),
+            HistoryPart::Thinking(text) => (format!("thinking-{index}"), render_thinking(&text)),
             HistoryPart::Tool(source_index, item) => {
                 let name =
                     text_field(&item, &["name", "toolName"]).unwrap_or_else(|| "工具调用".into());
@@ -418,6 +449,8 @@ fn render_message_block_with_timing(block: &MessageBlock, timing: Option<ToolTim
                 }
             }
         },
+        MessageBlock::Thinking { text, .. } if text.trim().is_empty() => rsx! {},
+        MessageBlock::Thinking { text, .. } => render_thinking(text),
         MessageBlock::PublicSummary { text, .. } => rsx! {
             aside { class: "conversation-widget conversation-progress", aria_label: "公开进度",
                 span { class: "conversation-progress-label", "公开进度" }
@@ -913,7 +946,9 @@ pub fn plan_from_projection(blocks: &[MessageBlock]) -> Vec<PlanItem> {
                 let items = parse_plan(name, arguments, output);
                 (!items.is_empty()).then_some(items)
             }
-            MessageBlock::PublicSummary { .. } | MessageBlock::Text { .. } => None,
+            MessageBlock::PublicSummary { .. }
+            | MessageBlock::Text { .. }
+            | MessageBlock::Thinking { .. } => None,
         })
         .unwrap_or_default()
 }

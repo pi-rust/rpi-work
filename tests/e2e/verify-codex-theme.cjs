@@ -13,8 +13,14 @@ const url = process.env.WORK_UI_URL || 'http://127.0.0.1:14182/app/';
   const results = [], errors = [];
   const pass = text => { results.push(text); console.log('PASS', text); };
   page.on('pageerror', error => errors.push(error.message)); page.setDefaultTimeout(10000);
-  const dialog = () => page.getByRole('dialog', { name: '外观与主题', exact: true });
-  const open = () => page.getByRole('button', { name: '外观与主题', exact: true }).click();
+  const dialog = () => page.locator('section#appearance.appearance-inline');
+  const open = async () => {
+    if (!await dialog().count()) {
+      if (!await page.getByRole('navigation', { name: '设置分类' }).count()) await page.getByRole('button', { name: '打开设置', exact: true }).click();
+      await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '界面与显示', exact: true }).click();
+      await page.getByRole('navigation', { name: '界面与显示分类' }).getByRole('button', { name: '外观与主题', exact: true }).click();
+    }
+  };
   const choose = name => dialog().locator('.theme-preset').filter({ hasText: name }).click();
   const mode = value => dialog().getByLabel('明暗模式', { exact: true }).selectOption(value);
   const expectTheme = (theme, mode) => page.waitForFunction(({theme, mode}) => document.documentElement.dataset.theme === theme && document.documentElement.dataset.mode === mode, {theme, mode});
@@ -37,7 +43,7 @@ const url = process.env.WORK_UI_URL || 'http://127.0.0.1:14182/app/';
     pass('fresh formal app defaults to Codex monochrome, retaining semantic status colors');
 
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
@@ -63,7 +69,8 @@ const url = process.env.WORK_UI_URL || 'http://127.0.0.1:14182/app/';
     assert.match(await dialog().locator('.theme-preset').first().innerText(), /Codex/);
     await mode('dark'); await expectTheme('codex', 'dark');
     assert.equal((await tokens()).bg, '#212121'); assert.equal((await tokens()).accent, '#f0f0f0');
-    await page.keyboard.press('Escape'); await dialog().waitFor({ state: 'hidden' }); await expectTheme('codex', 'light');
+    await page.keyboard.press('Escape'); await dialog().waitFor(); await expectTheme('codex', 'dark');
+    await dialog().getByRole('button', { name: '取消', exact: true }).click(); await dialog().waitFor({ state: 'hidden' }); await expectTheme('codex', 'light');
     assert.equal(await page.locator('.composer textarea').inputValue(), '保留这份草稿，不要因为切换主题丢失。');
     pass('Codex is first of five presets; cancelling preview restores theme and preserves composer draft');
 

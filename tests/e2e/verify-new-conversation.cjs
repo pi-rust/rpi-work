@@ -31,7 +31,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   try {
     await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:14180/');
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(node.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();

@@ -90,8 +90,9 @@ pub async fn execute(
                 message: "已打开新的会话分支，原会话保持不变。".to_owned(),
             })
         }
-        SessionAction::Rename(_) | SessionAction::Copy(_) | SessionAction::Details(_) => {
-            Err("该会话操作不属于远程 mutation。".to_owned())
-        }
+        SessionAction::Rename(_)
+        | SessionAction::Copy(_)
+        | SessionAction::Details(_)
+        | SessionAction::Design(_) => Err("该会话操作不属于远程 mutation。".to_owned()),
     }
 }

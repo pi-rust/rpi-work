@@ -1134,3 +1134,11 @@ small, .meta { font-size: var(--font-assist); }
   .project-files-tabs button { min-height: 44px; padding-inline: var(--space-8); }
   .project-files-modal > #changes-panel { padding: var(--space-8) 0 0; }
 }
+
+/* Persistence failures stay local and cannot be overwritten by connection updates. */
+.app-shell .draft-storage-error { margin:8px 0; padding:10px 12px; border:1px solid var(--danger); border-radius:var(--radius-md); color:var(--danger); background:var(--danger-bg); font-size:calc(14px * var(--type-scale, 1)); line-height:1.6; overflow-wrap:anywhere; }
+
+.app-shell .workspace-operation-error { position:fixed; top:calc(var(--app-safe-top, 0px) + 60px); right:16px; z-index:65; display:flex; align-items:start; gap:12px; max-width:min(520px, calc(100vw - 32px)); padding:12px 16px; border:1px solid var(--danger); border-radius:var(--radius-md); color:var(--danger); background:var(--card); box-shadow:var(--shadow-sm); font-size:calc(14px * var(--type-scale, 1)); line-height:1.6; overflow-wrap:anywhere; }
+.app-shell .workspace-operation-error button { flex-shrink:0; min-width:44px; min-height:44px; }
+.app-shell .composer-foot { flex-wrap:wrap; }
+.app-shell .composer-foot .operation-status { flex:1 1 220px; white-space:normal; overflow-wrap:anywhere; }

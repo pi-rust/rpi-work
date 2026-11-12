@@ -372,7 +372,9 @@ pub fn request_write(mut store: Signal<AppSettingsState>) {
         }
         state.writing = true;
     }
-    spawn(async move {
+    // Saving appearance closes its editor immediately. Own the writer in the
+    // settings store's scope so navigation cannot cancel an accepted write.
+    dioxus::core::Runtime::current().spawn(store.origin_scope(), async move {
         loop {
             let (snapshot, revision) = {
                 let state = store.peek();

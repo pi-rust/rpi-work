@@ -244,7 +244,7 @@ async function serveHarness() {
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(process.env.WORK_UI_URL);
         await button('打开设置').click();
-        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
         await button('连接其他节点').click(); await page.getByLabel('节点地址', { exact: true }).fill(fixture.url); await button('连接节点').click();
         await page.getByRole('status').filter({ hasText: '在线' }).first().waitFor(); await button('返回会话').click();
         await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();

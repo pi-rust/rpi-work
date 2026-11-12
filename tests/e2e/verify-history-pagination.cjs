@@ -21,7 +21,7 @@ const seed = () => Array.from({ length: 150 }, (_, i) => ({ entryId: `history-${
   const count = expected => page.waitForFunction(n => document.querySelectorAll('#conversation-panel .message-turn[data-history-id]').length === n, expected);
   const connect = async node => {
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(node.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();

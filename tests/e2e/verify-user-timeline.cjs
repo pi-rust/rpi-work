@@ -101,7 +101,7 @@ async function setup(browser, config = {}) {
     s.connect = async node => {
       await page.getByRole('button', { name: '打开设置', exact: true }).click();
       const settings = page.locator('.settings-page');
-      await settings.getByRole('navigation', { name: '设置分类', exact: true }).getByRole('button', { name: '执行节点', exact: true }).click();
+      await settings.getByRole('navigation', { name: '设置分类', exact: true }).getByRole('button', { name: '工作协同', exact: true }).click();
       if (!await settings.getByLabel('节点地址', { exact: true }).isVisible())
         await settings.getByRole('button', { name: '连接其他节点', exact: true }).click();
       await settings.getByLabel('节点地址', { exact: true }).fill(node.url);

@@ -622,6 +622,19 @@ pub trait NodeApi {
         })
     }
 
+    /// Select a catalog id together with its reported provider so duplicate
+    /// model ids across providers stay distinguishable. Implementations that
+    /// cannot disambiguate may ignore the provider.
+    fn set_model_with_provider<'a>(
+        &'a self,
+        session_id: &'a str,
+        model_id: &'a str,
+        provider: &'a str,
+    ) -> NodeFuture<'a, Value> {
+        let _ = provider;
+        self.set_model(session_id, model_id)
+    }
+
     fn set_thinking_level<'a>(
         &'a self,
         session_id: &'a str,

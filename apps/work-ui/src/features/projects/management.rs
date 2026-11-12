@@ -34,6 +34,7 @@ pub enum SessionAction {
     Clone(String),
     Copy(String),
     Details(String),
+    Design(String),
 }
 
 pub fn use_archived_projects() -> Signal<std::collections::HashSet<String>> {
@@ -343,6 +344,7 @@ pub fn SessionMenu(
             hr {}
             button { role: "menuitem", onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Copy(id.clone())) }, "复制会话标识" }
             button { role: "menuitem", onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Details(id.clone())) }, "详情与配置" }
+            button { role: "menuitem", onclick: { let id=id.clone(); move |_| onaction.call(SessionAction::Design(id.clone())) }, "设计引用" }
             if let Some(onnodeinfo) = onnodeinfo {
                 button { role: "menuitem", onclick: move |_| onnodeinfo.call(()), "节点信息" }
             }

@@ -55,7 +55,7 @@ const packageDesign = {
       assert.equal(await computed('.workspace-welcome > strong', 'font-size'), '24px');
     }
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
-    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '执行节点', exact: true }).click();
+    await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();

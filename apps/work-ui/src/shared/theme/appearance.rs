@@ -403,6 +403,7 @@ fn preview_style(theme: &Theme) -> String {
 pub fn AppearancePicker(
     mut settings: Signal<AppearanceSettings>,
     onclose: EventHandler<()>,
+    #[props(default)] embedded: bool,
 ) -> Element {
     let mut library = use_context::<Signal<ThemeLibrary>>();
     let snapshot = use_hook(|| (*settings.read(), library.read().clone()));
@@ -481,7 +482,7 @@ pub fn AppearancePicker(
             let generation = epoch.get();
             let (session, epoch) = (session.clone(), epoch.clone());
             spawn(async move {
-                let script = r"try{const dialog=document.getElementById('appearance'),input=document.getElementById('appearance-import-file'),file=input?.files?.[0];let text='';if(file)text=file.size>65536?'__too_large__':await file.text();if(input)input.value='';dioxus.send(dialog?.open&&dialog.isConnected?text:'__closed__');}catch(_){dioxus.send('__read_error__');}";
+                let script = r"try{const dialog=document.getElementById('appearance'),input=document.getElementById('appearance-import-file'),file=input?.files?.[0];let text='';if(file)text=file.size>65536?'__too_large__':await file.text();if(input)input.value='';dioxus.send(dialog?.isConnected&&(dialog.tagName!=='DIALOG'||dialog.open)?text:'__closed__');}catch(_){dioxus.send('__read_error__');}";
                 let text = document::eval(script).recv::<String>().await;
                 if !session.get() || epoch.get() != generation {
                     return;
@@ -532,9 +533,8 @@ pub fn AppearancePicker(
     let mut cancel_header = cancel.clone();
     rsx! {
         style { {include_str!("../../features/settings/settings.css")} }
-        crate::shared::components::Modal {
-            id: "appearance", title: "外观与主题", class: "appearance-modal",
-            onclose: move |()| cancel_header(),
+        AppearanceSurface {
+            embedded, onclose: move |()| cancel_header(),
             div { class: "modal-body",
                 p { class: "theme-settings-intro", "主题统一控制整个工作台。立即预览主题、明暗模式与密度，保存后保留到本设备。支持完整主题 JSON 与外观偏好 JSON。" }
                 div { class: "theme-preset-grid",
@@ -613,6 +613,26 @@ pub fn AppearancePicker(
             div { class: "modal-actions",
                 button { class: "secondary", onclick: move |_| cancel(), "取消" }
                 button { class: "button primary", disabled: *saving.read(), onclick: move |_| save(), if *saving.read() { "正在保存…" } else { "保存" } }
+            }
+        }
+    }
+}
+
+// Reuse the same preview/save/rollback lifecycle in the settings page and dialogs.
+#[component]
+fn AppearanceSurface(embedded: bool, onclose: EventHandler<()>, children: Element) -> Element {
+    if embedded {
+        rsx! {
+            section { id: "appearance", class: "appearance-modal appearance-inline", aria_label: "外观与主题",
+                div { class: "page-heading", h1 { "外观与主题" } }
+                {children}
+            }
+        }
+    } else {
+        rsx! {
+            crate::shared::components::Modal {
+                id: "appearance", title: "外观与主题", class: "appearance-modal", onclose,
+                {children}
             }
         }
     }

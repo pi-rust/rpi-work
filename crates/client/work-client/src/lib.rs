@@ -778,8 +778,22 @@ impl WorkClient {
     }
 
     pub async fn set_model(&self, session_id: &str, model_id: &str) -> Result<Value, ClientError> {
-        self.command_data(session_id, "set_model", json!({ "modelId": model_id }))
-            .await
+        self.set_model_with_provider(session_id, model_id, "").await
+    }
+
+    /// Disambiguate a catalog id reported by several providers. An empty
+    /// provider keeps the legacy id-only request.
+    pub async fn set_model_with_provider(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        provider: &str,
+    ) -> Result<Value, ClientError> {
+        let mut payload = json!({ "modelId": model_id });
+        if !provider.trim().is_empty() {
+            payload["provider"] = json!(provider);
+        }
+        self.command_data(session_id, "set_model", payload).await
     }
 
     pub async fn set_thinking_level(
@@ -1586,6 +1600,7 @@ fn reconcile_messages(
                 for block in &mut projection.blocks {
                     let id = match block {
                         work_core::MessageBlock::Text { id, .. }
+                        | work_core::MessageBlock::Thinking { id, .. }
                         | work_core::MessageBlock::ToolCall { id, .. }
                         | work_core::MessageBlock::PublicSummary { id, .. } => id,
                     };
@@ -1593,6 +1608,8 @@ fn reconcile_messages(
                         new.clone_into(id);
                     } else if let Some(suffix) = id.strip_prefix(&format!("{old}-text-")) {
                         *id = format!("{new}-text-{suffix}");
+                    } else if let Some(suffix) = id.strip_prefix(&format!("{old}-thinking-")) {
+                        *id = format!("{new}-thinking-{suffix}");
                     }
                 }
             }
@@ -1806,10 +1823,18 @@ fn apply_live_message_event(
         // before applying the next snapshot, keeping projection indices stable.
         for old in merged.previous_ids {
             for block in &mut projection.blocks {
-                if let work_core::MessageBlock::Text { id, .. } = block {
-                    if let Some(suffix) = id.strip_prefix(&format!("{old}-text-")) {
-                        *id = format!("{owner}-text-{suffix}");
+                match block {
+                    work_core::MessageBlock::Text { id, .. } => {
+                        if let Some(suffix) = id.strip_prefix(&format!("{old}-text-")) {
+                            *id = format!("{owner}-text-{suffix}");
+                        }
                     }
+                    work_core::MessageBlock::Thinking { id, .. } => {
+                        if let Some(suffix) = id.strip_prefix(&format!("{old}-thinking-")) {
+                            *id = format!("{owner}-thinking-{suffix}");
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1850,6 +1875,7 @@ fn apply_live_message_event(
         event.kind = EventKind::TextSnapshots {
             message_id,
             snapshots,
+            thinking: Vec::new(),
             authoritative: true,
         };
     }
@@ -3079,7 +3105,10 @@ mod tests {
                 &json!({"eventType":"thinking_delta","delta":"secret"})
             )
             .unwrap(),
-            EventKind::Ignored
+            EventKind::ThinkingDelta {
+                block_id: "assistant-message-thinking-0".into(),
+                delta: "secret".into()
+            }
         );
 
         let started = normalize_event(
@@ -3183,6 +3212,7 @@ mod tests {
                             .into_iter()
                             .map(|(index, text)| (format!("answer-text-{index}"), text.into()))
                             .collect(),
+                        thinking: Vec::new(),
                         authoritative: true,
                     }
                 );

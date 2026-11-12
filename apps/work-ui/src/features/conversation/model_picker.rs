@@ -76,12 +76,13 @@ fn is_current(
         && (!current_provider.is_empty() || !duplicate_ids(models).contains(model.id.as_str()))
 }
 
-/// The existing setter accepts only a raw id. Reject unknown/stale descriptors,
-/// blank ids, and ids whose reported provider cannot be selected unambiguously.
+/// Reject unknown/stale descriptors and blank ids. A reported provider makes a
+/// duplicate id unambiguous; without one, the setter cannot choose a provider.
 pub(crate) fn selectable_model(models: &[ModelDescriptor], selected: &ModelDescriptor) -> bool {
     !selected.id.trim().is_empty()
         && models.iter().any(|model| model == selected)
-        && !duplicate_ids(models).contains(selected.id.as_str())
+        && (!selected.provider.trim().is_empty()
+            || !duplicate_ids(models).contains(selected.id.as_str()))
 }
 
 fn current_model_name<'a>(models: &'a [ModelDescriptor], provider: &str, id: &'a str) -> &'a str {
@@ -241,7 +242,7 @@ pub fn ModelPicker(
                         if !idle { p { "运行中暂不可切换模型" } }
                         if !loading && models.is_empty() { p { "暂无可用模型；可刷新模型列表重试。" } }
                         if !duplicates.is_empty() {
-                            p { "多个供应商报告了相同模型 ID，现有接口无法区分供应商，已禁止选择这些模型：" }
+                            p { "多个供应商报告了相同模型 ID；选择时会连同供应商一起提交，只有未报告供应商的条目无法区分：" }
                             ul { class: "composer-model-duplicates",
                                 for id in &duplicates { li { key: "{id}", code { "{id}" } } }
                             }
@@ -323,11 +324,12 @@ fn ProviderGroup(
                 for model in models {
                     {
                         let current = current_ids.contains(&(model.provider.clone(), model.id.clone()));
-                        let ambiguous = duplicates.contains(&model.id);
+                        // Only an entry that reports no provider stays ambiguous.
+                        let ambiguous = model.provider.trim().is_empty() && duplicates.contains(&model.id);
                         let disabled = locked || ambiguous || model.id.trim().is_empty();
                         rsx! {
                             button {
-                                key: "{model.id}", r#type: "button",
+                                key: "{model.provider}/{model.id}", r#type: "button",
                                 class: "composer-model-option",
                                 "data-model-id": "{model.id}", "data-provider": "{model.provider}",
                                 aria_pressed: current, disabled,
@@ -343,7 +345,7 @@ fn ProviderGroup(
                                 span { class: "composer-model-label",
                                     span { "{model.name}" }
                                     code { "{model.id}" }
-                                    if ambiguous { small { "ID 跨供应商重复，无法切换" } }
+                                    if ambiguous { small { "未报告供应商且 ID 与其他供应商重复，无法切换" } }
                                     if model.id.trim().is_empty() { small { "未报告有效模型 ID" } }
                                 }
                                 if current {
@@ -559,7 +561,9 @@ mod tests {
                 .count(),
             1
         );
-        assert!(!selectable_model(&catalog, &catalog[0]));
+        // A reported provider disambiguates a shared raw id.
+        assert!(selectable_model(&catalog, &catalog[0]));
+        assert!(!selectable_model(&catalog, &model("", "shared")));
     }
 
     #[test]
@@ -635,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn validation_rejects_ambiguous_unknown_blank_and_stale_descriptors() {
+    fn validation_rejects_unknown_blank_and_stale_descriptors() {
         let models = vec![
             model("a", "shared"),
             model("b", "shared"),
@@ -644,11 +648,14 @@ mod tests {
             model("", " "),
         ];
         assert_eq!(duplicate_ids(&models), BTreeSet::from(["shared"]));
-        assert!(!selectable_model(&models, &models[0]));
+        // Provider-qualified duplicates are selectable; unqualified ids are not.
+        assert!(selectable_model(&models, &models[0]));
+        assert!(selectable_model(&models, &models[1]));
         assert!(selectable_model(&models, &models[2]));
         assert!(!selectable_model(&models, &models[4]));
         assert!(!selectable_model(&models, &model("other", "ok")));
         assert!(!selectable_model(&models, &model("a", "unknown")));
+        assert!(!selectable_model(&models, &model("", "shared")));
         let mut stale = models[2].clone();
         stale.name = "changed".into();
         assert!(!selectable_model(&models, &stale));

@@ -79,6 +79,11 @@ pub enum MessageBlock {
         id: String,
         text: String,
     },
+    /// Model reasoning content. Rendered collapsed and never treated as public prose.
+    Thinking {
+        id: String,
+        text: String,
+    },
     ToolCall {
         id: String,
         name: String,
@@ -92,9 +97,10 @@ impl MessageBlock {
     #[must_use]
     pub fn id(&self) -> &str {
         match self {
-            Self::PublicSummary { id, .. } | Self::Text { id, .. } | Self::ToolCall { id, .. } => {
-                id
-            }
+            Self::PublicSummary { id, .. }
+            | Self::Text { id, .. }
+            | Self::Thinking { id, .. }
+            | Self::ToolCall { id, .. } => id,
         }
     }
 }
@@ -113,11 +119,17 @@ pub enum EventKind {
         block_id: String,
         text: String,
     },
+    ThinkingDelta {
+        block_id: String,
+        delta: String,
+    },
     /// One whole structured message, applied under a single event identity/cursor.
     TextSnapshots {
         message_id: String,
         /// Public text block IDs and replacement text, in content-array order.
         snapshots: Vec<(String, String)>,
+        /// Reasoning block IDs and replacement text, in content-array order.
+        thinking: Vec<(String, String)>,
         /// Clear absent same-message text slots in place, never shifting block indices.
         /// Empty start/update arrays are non-authoritative; explicit end arrays are not.
         authoritative: bool,
@@ -254,29 +266,66 @@ impl RunProjection {
                 self.phase = RunPhase::Text;
                 self.upsert_text(block_id, text);
             }
+            EventKind::ThinkingDelta { block_id, delta } => {
+                self.phase = RunPhase::Text;
+                match self.find_block_mut(&block_id) {
+                    Some(MessageBlock::Thinking { text, .. }) => text.push_str(&delta),
+                    Some(_) => {}
+                    None => self.blocks.push(MessageBlock::Thinking {
+                        id: block_id,
+                        text: delta,
+                    }),
+                }
+            }
             EventKind::TextSnapshots {
                 message_id,
                 snapshots,
+                thinking,
                 authoritative,
             } => {
                 self.phase = RunPhase::Text;
                 if authoritative {
-                    let prefix = format!("{message_id}-text-");
+                    let text_prefix = format!("{message_id}-text-");
+                    let thinking_prefix = format!("{message_id}-thinking-");
                     for block in &mut self.blocks {
-                        if let MessageBlock::Text { id, text } = block {
-                            // Validate the complete suffix so IDs such as m-text-1-child
-                            // cannot retire another message's text blocks.
-                            if id.strip_prefix(&prefix).is_some_and(|index| {
-                                !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
-                            }) && !snapshots.iter().any(|(block_id, _)| block_id == id)
+                        match block {
+                            MessageBlock::Text { id, text } => {
+                                // Validate the complete suffix so IDs such as m-text-1-child
+                                // cannot retire another message's text blocks.
+                                if suffix_index(id, &text_prefix).is_some()
+                                    && !snapshots.iter().any(|(block_id, _)| block_id == id)
+                                {
+                                    text.clear();
+                                }
+                            }
+                            MessageBlock::Thinking { id, text }
+                                if suffix_index(id, &thinking_prefix).is_some()
+                                    && !thinking.iter().any(|(block_id, _)| block_id == id) =>
                             {
                                 text.clear();
                             }
+                            _ => {}
                         }
                     }
                 }
-                for (block_id, text) in snapshots {
-                    self.upsert_text(block_id, text);
+                // Preserve content-array order instead of appending every text
+                // slot before every reasoning slot.
+                let mut slots: Vec<(String, String, bool)> = snapshots
+                    .into_iter()
+                    .map(|(block_id, text)| (block_id, text, false))
+                    .chain(
+                        thinking
+                            .into_iter()
+                            .map(|(block_id, text)| (block_id, text, true)),
+                    )
+                    .collect();
+                slots.sort_by_key(|(block_id, _, _)| content_index(block_id));
+                for (block_id, text, is_thinking) in slots {
+                    if is_thinking {
+                        self.upsert_thinking(block_id, text);
+                    } else {
+                        self.upsert_text(block_id, text);
+                    }
                 }
             }
             EventKind::ToolStarted {
@@ -356,6 +405,16 @@ impl RunProjection {
         }
     }
 
+    fn upsert_thinking(&mut self, block_id: String, text: String) {
+        match self.find_block_mut(&block_id) {
+            Some(MessageBlock::Thinking { text: current, .. }) => *current = text,
+            Some(_) => {}
+            None => self
+                .blocks
+                .push(MessageBlock::Thinking { id: block_id, text }),
+        }
+    }
+
     fn upsert_summary(&mut self, text: String) {
         if let Some(MessageBlock::PublicSummary { text: current, .. }) = self
             .blocks
@@ -381,6 +440,21 @@ impl RunProjection {
 
 /// Component package protocol, separate from inert Agent extension designs.
 pub use work_component_api as components;
+
+/// Extract a trailing content-array index such as `m-text-2`; unindexed IDs sort last.
+fn content_index(block_id: &str) -> usize {
+    block_id
+        .rsplit('-')
+        .next()
+        .and_then(|part| part.parse().ok())
+        .unwrap_or(usize::MAX)
+}
+
+/// Require a complete numeric suffix so `m-text-1-child` cannot retire slots.
+fn suffix_index<'a>(id: &'a str, prefix: &str) -> Option<&'a str> {
+    id.strip_prefix(prefix)
+        .filter(|index| !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit()))
+}
 
 #[cfg(test)]
 mod tests {
