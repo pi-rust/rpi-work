@@ -63,6 +63,18 @@ const CONVERSATION_CSS: &str = conversation::CSS;
 const EXTRAS_CSS: &str = composer_extras::CSS;
 const QUEUE_CSS: &str = message_queue::CSS;
 
+#[derive(Clone, PartialEq)]
+enum ProjectOpenTabKind {
+    File,
+    Change { staged: bool },
+}
+
+#[derive(Clone, PartialEq)]
+struct ProjectOpenTab {
+    path: String,
+    kind: ProjectOpenTabKind,
+}
+
 #[component]
 pub(super) fn App() -> Element {
     // Opt-in E2E probe counts actual App executions, not DOM mutations. The
@@ -216,7 +228,7 @@ pub(super) fn App() -> Element {
     let mut git_loading = use_signal(|| false);
     let mut git_error = use_signal(|| None::<String>);
     let mut git_generation = use_signal(|| 0u64);
-    let mut git_refresh = use_signal(|| 0u64);
+    let git_refresh = use_signal(|| 0u64);
     let mut git_scope = use_signal(|| None::<(String, Option<String>)>);
     let mut change_staged = use_signal(|| false);
     let mut selected_project_file = use_signal(|| None::<String>);
@@ -357,6 +369,7 @@ pub(super) fn App() -> Element {
     let mut project_files_open = use_signal(|| false);
     let mut project_file_tab = use_signal(|| "files".to_owned());
     let mut project_file_preview = use_signal(|| false);
+    let mut project_open_tabs = use_signal(Vec::<ProjectOpenTab>::new);
     let mut project_file_lines = use_signal(|| None::<(usize, usize)>);
     let mut reported_files = use_signal(|| (String::new(), Vec::<work_client::FileEntry>::new()));
     let mut project_file_mode = use_signal(|| "preview".to_owned());
@@ -990,6 +1003,7 @@ pub(super) fn App() -> Element {
             git_status.set(None);
             selected_project_file.set(None);
             selected_change_file.set(None);
+            project_open_tabs.set(Vec::new());
             change_diff.set(None);
             projection.set(None);
             transcript.set(Vec::new());
@@ -2298,6 +2312,7 @@ pub(super) fn App() -> Element {
         git_status.set(None);
         selected_project_file.set(None);
         selected_change_file.set(None);
+        project_open_tabs.set(Vec::new());
         change_diff.set(None);
         change_error.set(None);
         status.set("正在加载项目文件…".into());
@@ -2598,6 +2613,17 @@ pub(super) fn App() -> Element {
             .read()
             .clone()
             .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
+        {
+            let mut tabs = project_open_tabs.write();
+            if !tabs.iter().any(|tab| tab.path == path) {
+                tabs.push(ProjectOpenTab {
+                    path: path.clone(),
+                    kind: ProjectOpenTabKind::File,
+                });
+            }
+        }
+        project_file_tab.set("files".into());
+        change_mobile_preview.set(false);
         project_file_preview.set(true);
         if reset_view {
             project_file_lines.set(None);
@@ -2666,6 +2692,8 @@ pub(super) fn App() -> Element {
         });
     };
     let mut open_file = move |path: String| load_file(path, true);
+    let open_file_handler = EventHandler::new(move |path: String| open_file(path));
+    let message_open_file_handler = open_file_handler.clone();
 
     let message_link_scope = use_memo(move || {
         format!(
@@ -2692,7 +2720,7 @@ pub(super) fn App() -> Element {
                 return;
             }
             let image = project_file_kind(&file.path) == "image";
-            open_file(file.path);
+            message_open_file_handler.call(file.path);
             project_file_lines.set(if image { None } else { file.lines });
             project_file_mode.set(if image { "preview" } else { "source" }.into());
             project_files_open.set(true);
@@ -2702,6 +2730,7 @@ pub(super) fn App() -> Element {
         let _scope = message_link_scope.read();
         project_files_open.set(false);
         project_file_preview.set(false);
+        project_open_tabs.set(Vec::new());
         project_file_lines.set(None);
         preview_generation += 1;
         file_content.set(None);
@@ -2757,6 +2786,19 @@ pub(super) fn App() -> Element {
             .read()
             .clone()
             .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
+        {
+            let mut tabs = project_open_tabs.write();
+            if let Some(tab) = tabs.iter_mut().find(|tab| tab.path == path) {
+                tab.kind = ProjectOpenTabKind::Change { staged };
+            } else {
+                tabs.push(ProjectOpenTab {
+                    path: path.clone(),
+                    kind: ProjectOpenTabKind::Change { staged },
+                });
+            }
+        }
+        project_file_tab.set("changes".into());
+        project_file_preview.set(false);
         change_mobile_preview.set(true);
         change_staged.set(staged);
         let generation = *change_generation.read() + 1;
@@ -2783,13 +2825,16 @@ pub(super) fn App() -> Element {
         });
     };
 
+    let open_change_handler =
+        EventHandler::new(move |(path, staged): (String, bool)| open_change(path, staged));
+
     // Keep Git reads independent of file previews and session snapshots.
     // The generation also invalidates patches when refreshing or changing scope.
     use_effect(move || {
         let scope = (node_url.read().clone(), selected_project.read().clone());
         let client = shared_client.read().clone();
         let descriptor = transport_descriptor.read().clone();
-        let reviewing = *project_files_open.read() && project_file_tab.read().as_str() == "changes";
+        let reviewing = *project_files_open.read();
         let _refresh = *git_refresh.read();
         let scope_changed = git_scope.peek().as_ref() != Some(&scope);
         if scope_changed {
@@ -4362,7 +4407,7 @@ pub(super) fn App() -> Element {
             git_loading: *git_loading.read(),
             git_error: git_error.read().clone(),
             change_mobile_preview,
-            change_count,
+            change_count: change_count.clone(),
             reviewed_count,
             change_query,
             change_directory_filter,
@@ -4374,7 +4419,8 @@ pub(super) fn App() -> Element {
             change_staged,
             change_diff,
             change_error,
-            onopen: move |(path, staged)| open_change(path, staged),
+            onopen: open_change_handler.clone(),
+            onback: EventHandler::new(move |()| { project_file_tab.set("files".into()); change_mobile_preview.set(false); }),
         }
     };
 
@@ -4450,10 +4496,10 @@ pub(super) fn App() -> Element {
                     }
                 }
             }
-            main { class: format!("{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
+            main { class: format!("{}{}{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
                 ("settings", false) | ("workspace", false) => "app-shell context-hidden",
                 _ => "app-shell",
-            }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }),
+            }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }, if *project_files_open.read() { " project-files-open" } else { "" }, if *project_file_preview.read() || *change_mobile_preview.read() { " project-files-preview-open" } else { "" }),
                 "data-device-mode": if mobile_device { "mobile" } else { "desktop" },
                 onkeydown: move |event| {
                 if event.key() == Key::Escape && conversation_focus() {
@@ -4472,7 +4518,11 @@ pub(super) fn App() -> Element {
                         strong { "rpi" span { "work" } }
                         span { class: "version", "MVP" }
                     }
+                    button { class: "search-trigger", r#type: "button", aria_label: "搜索项目与会话", onclick: move |_| global_search_open.set(true),
+                        Icon { name: "search" } span { "搜索项目与会话" } kbd { "Ctrl K" }
+                    }
                     nav { class: "primary-nav", aria_label: "主导航",
+                        button { class: if ["packages", "skills", "extensions"].contains(&active_page.read().as_str()) { "nav-item active" } else { "nav-item" }, r#type: "button", onclick: move |_| { active_page.set("packages".into()); sidebar_open.set(false); }, Icon { name: "blocks" } span { "资源中心" } }
                         if !resource_nav_items.is_empty() {
                             div { class: "nav-group advanced-nav-group", aria_label: "高级功能",
                                 button { class: if resource_nav_items.iter().any(|(page, _, _, _)| active_page.read().as_str() == *page) { "nav-item nav-disclosure-trigger active" } else { "nav-item nav-disclosure-trigger" }, r#type: "button", aria_expanded: advanced_features_expanded.to_string(), onclick: move |_| advanced_features_expanded.toggle(), Icon { name: "blocks" } span { "高级功能" } Icon { name: if *advanced_features_expanded.read() { "chevron-down" } else { "chevron-right" } } }
@@ -4768,6 +4818,12 @@ pub(super) fn App() -> Element {
                         }
                         div { class: "top-actions",
                             if workspace_page {
+                                span { class: if node_status_online { "header-connection-status online" } else { "header-connection-status" },
+                                    span { class: "header-connection-dot" }
+                                    if node_display_local { "本机" } else { "节点" }
+                                    " · "
+                                    "{node_status_short_label}"
+                                }
                                 button { class: "icon-button timeline-toggle", r#type: "button",
                                     aria_label: if timeline_visible() { "隐藏时间线" } else { "显示时间线" },
                                     title: if timeline_visible() { "隐藏时间线" } else { "显示时间线" },
@@ -4776,10 +4832,10 @@ pub(super) fn App() -> Element {
                                     onclick: move |_| timeline_visible.set(!timeline_visible()),
                                     Icon { name: "clock" }
                                 }
-                                button { class: "icon-button", r#type: "button", aria_label: "打开项目文件", title: "项目文件与变更", onclick: move |_| {
+                                button { class: "project-files-trigger", r#type: "button", aria_label: "打开项目文件", title: "项目文件与变更", aria_expanded: *project_files_open.read(), onclick: move |_| {
                                     project_file_tab.set("files".into());
                                     project_files_open.set(true);
-                                }, Icon { name: "file".to_owned() } }
+                                }, Icon { name: "file".to_owned() } span { "项目文件" } span { class: "count-badge", "{change_count}" } }
                             }
                             button { class: "icon-button conversation-focus-toggle", r#type: "button", aria_label: "专注阅读", title: "专注阅读（暂时隐藏输入区）", onclick: move |_| conversation_focus.set(true), Icon { name: "fullscreen" } }
                             button { class: "context-toggle", r#type: "button", aria_label: if *inspector_open.read() { "关闭任务上下文" } else { "查看任务上下文" }, title: if *inspector_open.read() { "关闭右侧侧边栏" } else { "打开右侧侧边栏" }, aria_expanded: inspector_open.to_string(), onclick: move |_| {
@@ -5019,7 +5075,9 @@ pub(super) fn App() -> Element {
                                 }
                             }
                             div { class: if running { "composer is-running" } else { "composer" },
-                            if let Some(path) = composer_project_path.as_deref().filter(|path| !path.trim().is_empty()) {
+                            if *project_files_open.read() {
+                                div { class: "composer-draft-heading", "保留这份草稿" }
+                            } else if let Some(path) = composer_project_path.as_deref().filter(|path| !path.trim().is_empty()) {
                                 div { class: "composer-workspace", role: "group", aria_label: "项目上下文",
                                     div { class: "composer-context-line",
                                         div { class: "composer-workspace-path", title: "{path}", aria_label: "项目目录：{path}",
@@ -5393,7 +5451,9 @@ pub(super) fn App() -> Element {
                                 }
                                 button { class: "inspector-small-button", onclick: move |_| {
                                     active_page.set("workspace".into());
-                                    project_file_tab.set("changes".into());
+                                    project_file_tab.set("files".into());
+                                    project_file_preview.set(false);
+                                    change_mobile_preview.set(false);
                                     project_files_open.set(true);
                                 }, "查看全部变更" }
                             }
@@ -5525,25 +5585,79 @@ pub(super) fn App() -> Element {
                     }
                 }
                 if *project_files_open.read() {
-                    Modal { id: "project-files", title: "项目文件", subtitle: format!("{} · 实时文件 · 只读", selected_project_name.read().as_deref().unwrap_or("项目")), class: if *project_file_preview.read() { "project-files-modal show-preview" } else { "project-files-modal" }, onclose: move |()| { project_files_open.set(false); project_file_preview.set(false); },
-                            div { class: "project-files-tabs", role: "tablist", aria_label: "项目工作区",
-                                button { id: "project-files-tab", r#type: "button", role: "tab", class: if project_file_tab.read().as_str() == "files" { "active" } else { "" }, aria_selected: project_file_tab.read().as_str() == "files", onclick: move |_| { project_file_tab.set("files".into()); project_file_preview.set(false); }, Icon { name: "file".to_owned() } "项目文件" }
-                                button { id: "project-changes-tab", r#type: "button", role: "tab", class: if project_file_tab.read().as_str() == "changes" { "active" } else { "" }, aria_selected: project_file_tab.read().as_str() == "changes", onclick: move |_| { project_file_tab.set("changes".into()); git_refresh += 1; }, Icon { name: "diff".to_owned() } "变更"
-                                    if let Some(repository) = git_status.read().as_ref() { span { class: "tab-count", "{repository.files.len()}" } }
+                    Modal { id: "project-files", title: "项目文件", subtitle: format!("{} · {}", workspace_label, selected_project_name.read().as_deref().unwrap_or("项目")), class: if *project_file_preview.read() { "project-files-modal show-preview" } else if *change_mobile_preview.read() { "project-files-modal show-diff" } else { "project-files-modal" }, onclose: move |()| { project_files_open.set(false); project_file_preview.set(false); change_mobile_preview.set(false); },
+                        div { class: "project-files-scope", Icon { name: "folder".to_owned() } span { "当前项目工作区" } span { class: "neutral-pill", "只读预览" } }
+                        if *project_file_preview.read() || *change_mobile_preview.read() {
+                            nav { class: "project-file-open-tabs", role: "tablist", aria_label: "已打开文件",
+                                for tab in project_open_tabs.read().iter() {
+                                    {
+                                        let path = tab.path.clone();
+                                        let kind = tab.kind.clone();
+                                        let label = path.rsplit('/').next().unwrap_or(&path).to_owned();
+                                        let is_change = matches!(&kind, ProjectOpenTabKind::Change { .. });
+                                        let active = match &kind {
+                                            ProjectOpenTabKind::File => *project_file_preview.read() && selected_project_file.read().as_ref() == Some(&path),
+                                            ProjectOpenTabKind::Change { .. } => *change_mobile_preview.read() && selected_change_file.read().as_ref() == Some(&path),
+                                        };
+                                        let file_handler = open_file_handler.clone();
+                                        let change_handler = open_change_handler.clone();
+                                        rsx! {
+                                            button { key: "project-open-tab-{path}", class: if active { "project-file-open-tab active" } else { "project-file-open-tab" }, role: "tab", aria_selected: active, title: "{path}",
+                                                onclick: move |_| match kind.clone() {
+                                                    ProjectOpenTabKind::File => file_handler.call(path.clone()),
+                                                    ProjectOpenTabKind::Change { staged } => change_handler.call((path.clone(), staged)),
+                                                },
+                                                Icon { name: "file".to_owned() } span { "{label}" }
+                                                if is_change { em { "M" } }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            if project_file_tab.read().as_str() == "files" {
+                        }
+                        if project_file_tab.read().as_str() == "files" {
                             div { class: "project-files-layout",
-                                if let (Some(_client), Some(project)) = (shared_client.read().clone(), selected_project.read().clone()) {
-                                    project_files::Browser { key: "{node_url}-{project}", client: shared_client, project: project.clone(), scope: format!("{node_url}\u{1f}{project}"),
-                                        selected: selected_project_file.read().clone(),
-                                        onselect: open_file,
-                                        oninitial: move |path| { if selected_project_file.peek().is_none() { open_file(path); project_file_preview.set(false); } },
-                                        onreported: { let scope = format!("{node_url}\u{1f}{project}"); move |entries| reported_files.set((scope.clone(), entries)) },
+                                div { class: "project-files-list-view",
+                                    div { class: "project-file-browser-shell",
+                                        div { class: "project-files-section-title", strong { "项目目录" } span { "示例目录" } }
+                                        if let (Some(_client), Some(project)) = (shared_client.read().clone(), selected_project.read().clone()) {
+                                            project_files::Browser { key: "{node_url}-{project}", client: shared_client, project: project.clone(), scope: format!("{node_url}\u{1f}{project}"),
+                                                selected: selected_project_file.read().clone(),
+                                                onselect: open_file_handler.clone(),
+                                                oninitial: move |_| {},
+                                                onreported: { let scope = format!("{node_url}\u{1f}{project}"); move |entries| reported_files.set((scope.clone(), entries)) },
+                                            }
+                                        } else { aside { class: "project-file-browser", p { class: "project-no-results", "选择项目并连接节点后加载文件。" } } }
                                     }
-                                } else { aside { class: "project-file-browser", p { class: "project-no-results", "选择项目并连接节点后加载文件。" } } }
+                                    section { class: "project-changes-summary", aria_label: "工作区改动",
+                                        div { class: "project-files-section-title project-changes-heading", strong { "工作区改动" } span { class: "count-badge", "{change_count}" } }
+                                        if *git_loading.read() {
+                                            p { class: "project-no-results", role: "status", "正在读取 Git 状态…" }
+                                        } else if let Some(error) = git_error.read().as_ref() {
+                                            p { class: "project-no-results error-text", role: "alert", "{error}" }
+                                        } else if visible_changes.is_empty() {
+                                            p { class: "project-no-results", "当前没有已加载的变更。" }
+                                        } else {
+                                            for changed in visible_changes.iter() {
+                                                {
+                                                    let path = changed.path.clone();
+                                                    let staged = changed.staged && !changed.unstaged;
+                                                    let filename = path.rsplit_once(['/', '\\']).map_or(path.as_str(), |(_, name)| name).to_owned();
+                                                    let status_code = crate::features::projects::review::change_status_label(&changed.status);
+                                                    let change_handler = open_change_handler.clone();
+                                                    rsx! {
+                                                        button { key: "project-change-{path}", class: "project-file-row project-change-row", title: "{path}", onclick: move |_| change_handler.call((path.clone(), staged)),
+                                                            Icon { name: "file".to_owned() } span { "{filename}" } em { "{status_code}" }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        p { class: "project-files-note", Icon { name: "shield-check".to_owned() } "当前项目范围，非会话归因。" }
+                                    }
+                                }
                                 section { class: "project-file-preview",
-                                    button { class: "project-back", onclick: move |_| project_file_preview.set(false), "返回文件树" }
+                                    button { class: "project-back", onclick: move |_| project_file_preview.set(false), aria_label: "返回文件列表", Icon { name: "back".to_owned() } span { "文件列表" } }
                                     if *file_loading.read() {
                                         div { class: "project-preview-empty", "正在加载文件内容…" }
                                     } else if let Some(error) = file_error.read().as_ref() {
@@ -5578,9 +5692,9 @@ pub(super) fn App() -> Element {
                                     }
                                 }
                             }
-                            } else {
-                                {changes_panel}
-                            }
+                        } else {
+                            {changes_panel}
+                        }
                     }
                 }
                 if *global_search_open.read() {

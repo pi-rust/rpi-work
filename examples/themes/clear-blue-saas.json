@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "kind": "rpi-work-theme",
+  "preferredMode": "light",
+  "density": "standard",
+  "theme": {
+    "id": "clear-blue-saas",
+    "name": "澄蓝 · Clean SaaS",
+    "description": "冷灰画布、纯白表面与科技蓝强调；轻圆角、克制阴影和舒展排版，附带配套深色模式。",
+    "font": "humanist",
+    "headingFont": "humanist",
+    "shape": "soft",
+    "palettes": {
+      "light": {
+        "bg": "#F4F6F8",
+        "side": "#FFFFFF",
+        "panel": "#FFFFFF",
+        "card": "#FFFFFF",
+        "text": "#111827",
+        "muted": "#5B6472",
+        "line": "#E5E7EB",
+        "code": "#F3F4F6",
+        "accent": "#2563EB",
+        "accentBg": "#EFF6FF",
+        "selected": "#EFF6FF"
+      },
+      "dark": {
+        "bg": "#0F172A",
+        "side": "#111827",
+        "panel": "#182234",
+        "card": "#1E293B",
+        "text": "#F3F4F6",
+        "muted": "#B0BAC8",
+        "line": "#334155",
+        "code": "#111827",
+        "accent": "#93C5FD",
+        "accentBg": "#172D4F",
+        "selected": "#1E3A5F"
+      }
+    },
+    "design": {
+      "typography": {
+        "bodyFont": "humanist",
+        "headingFont": "humanist",
+        "codeFont": "code",
+        "scale": 1.0,
+        "bodySize": 14,
+        "navSize": 14,
+        "assistSize": 12,
+        "titleSize": 16,
+        "messageSize": 16,
+        "codeSize": 13,
+        "bodyLineHeight": 1.65,
+        "messageLineHeight": 1.75,
+        "bodyWeight": 400,
+        "headingWeight": 500
+      },
+      "geometry": {
+        "spacingScale": 1.0,
+        "radii": [4, 6, 8, 12, 16],
+        "controlHeight": 40,
+        "hitSize": 44,
+        "borderWidth": 1
+      },
+      "shadow": "subtle",
+      "motion": {
+        "fastMs": 150,
+        "normalMs": 200,
+        "pressMs": 100
+      }
+    }
+  }
+}

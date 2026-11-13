@@ -1,3 +1,12 @@
+RPI Work 0.1.16
+
+## Work UI 项目文件 Inspector 与 Composer 对齐
+
+- 项目文件入口改为右侧 Inspector，支持项目目录、搜索、工作区改动摘要、文件预览和只读 Diff。
+- 文件与 Git 变更共享打开标签；保留真实项目范围、路径校验、节点 capability、generation guard、草稿和会话隔离。
+- Inspector 打开时调整桌面 Header、会话内容和 Composer 的空间分配；保留草稿提示并收紧 Footer 密度，移动端使用近全宽只读布局。
+- 增加文件预览、Markdown/HTML 安全渲染、Diff 行号与只读安全说明的浏览器回归覆盖。
+
 RPI Work 0.1.15
 
 ## 设置、会话与模型选择体验

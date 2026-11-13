@@ -1,5 +1,5 @@
 use crate::shared::app_settings::{self, AppSettingsState};
-use dioxus::prelude::*;
+use dioxus::{html::FileData, prelude::*};
 use serde_json::{Value, json};
 use std::{cell::Cell, fmt::Write as _, rc::Rc};
 
@@ -224,6 +224,27 @@ fn parse_portable_appearance(
         tool_rendering: ToolRendering::parse_optional(object.get("toolRendering"))?,
     })
 }
+// Desktop file pickers deliver native FileData in the form event; they do not
+// populate the WebView's DOM input.files. The same API also handles browser files.
+async fn read_import_file(file: Option<FileData>) -> Result<String, String> {
+    let file = file.ok_or("请选择一个主题或偏好 JSON 文件。")?;
+    if file.size() > MAX_THEME_JSON_BYTES as u64 {
+        return Err("主题 JSON 不能超过 64 KiB。".into());
+    }
+    let text = file
+        .read_string()
+        .await
+        .map_err(|_| "无法读取主题文件。".to_owned())?;
+    // Check the actual UTF-8 byte count too: a native file can change after selection.
+    if text.len() > MAX_THEME_JSON_BYTES {
+        return Err("主题 JSON 不能超过 64 KiB。".into());
+    }
+    if text.is_empty() {
+        return Err("请选择一个主题或偏好 JSON 文件。".into());
+    }
+    Ok(text)
+}
+
 fn import_document(
     text: &str,
     current: AppearanceSettings,
@@ -474,29 +495,21 @@ pub fn AppearancePicker(
     };
     let import = {
         let (session, epoch) = (session.clone(), epoch.clone());
-        move |_| {
-            if *saving.peek() {
+        move |event: FormEvent| {
+            if *saving.peek() || !session.get() {
                 return;
             }
+            let file = event.files().into_iter().next();
             epoch.set(epoch.get() + 1);
             let generation = epoch.get();
             let (session, epoch) = (session.clone(), epoch.clone());
             spawn(async move {
-                let script = r"try{const dialog=document.getElementById('appearance'),input=document.getElementById('appearance-import-file'),file=input?.files?.[0];let text='';if(file)text=file.size>65536?'__too_large__':await file.text();if(input)input.value='';dioxus.send(dialog?.isConnected&&(dialog.tagName!=='DIALOG'||dialog.open)?text:'__closed__');}catch(_){dioxus.send('__read_error__');}";
-                let text = document::eval(script).recv::<String>().await;
+                let text = read_import_file(file).await;
                 if !session.get() || epoch.get() != generation {
                     return;
                 }
-                let result = match text {
-                    Ok(text) if text == "__closed__" => return,
-                    Ok(text) if text == "__too_large__" => {
-                        Err("主题 JSON 不能超过 64 KiB。".into())
-                    }
-                    Ok(text) if text == "__read_error__" => Err("无法读取主题文件。".into()),
-                    Ok(text) if text.is_empty() => Err("请选择一个主题或偏好 JSON 文件。".into()),
-                    Ok(text) => import_document(&text, *settings.peek(), &library.peek()),
-                    Err(_) => Err("无法读取主题文件。".into()),
-                };
+                let result =
+                    text.and_then(|text| import_document(&text, *settings.peek(), &library.peek()));
                 match result {
                     Ok((value, themes, message)) => {
                         library.set(themes);
@@ -603,7 +616,7 @@ pub fn AppearancePicker(
                             spawn(async move { if !matches!(document::eval(&script).recv::<bool>().await, Ok(true)) { error.set("无法导出 JSON 文件。".into()); } });
                         }, "{label}" }
                     }
-                    button { class: "button", disabled: *saving.read(), onclick: move |_| { spawn(async move { let _ = document::eval("document.getElementById('appearance-import-file')?.click();dioxus.send(true);").recv::<bool>().await; }); }, "导入主题" }
+                    button { class: "button", disabled: *saving.read(), onclick: move |_| { spawn(async move { let _ = document::eval("const input=document.getElementById('appearance-import-file');if(input){input.value='';input.click();}dioxus.send(true);").recv::<bool>().await; }); }, "导入主题" }
                     input { id: "appearance-import-file", r#type: "file", accept: ".json,application/json", hidden: true, onchange: import }
                     span { "主题含完整配色 · 偏好引用主题 ID" }
                 }
@@ -641,6 +654,107 @@ fn AppearanceSurface(embedded: bool, onclose: EventHandler<()>, children: Elemen
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn selected_file(contents: &[u8], declared_size: u64) -> FileData {
+        FileData::new(dioxus::html::SerializedFileData {
+            path: "theme.json".into(),
+            size: declared_size,
+            last_modified: 0,
+            content_type: Some("application/json".into()),
+            contents: Some(contents.to_vec().into()),
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read_selected(file: Option<FileData>) -> Result<String, String> {
+        use futures_util::FutureExt;
+        read_import_file(file)
+            .now_or_never()
+            .expect("serialized/native-path test files read synchronously")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_theme_file_reads_from_event_data_without_dom_files() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/themes/codex-reading.json");
+        let file = FileData::new(dioxus::html::SerializedFileData {
+            size: std::fs::metadata(&path).unwrap().len(),
+            path,
+            last_modified: 0,
+            content_type: Some("application/json".into()),
+            contents: None,
+        });
+        let text = read_selected(Some(file)).unwrap();
+        let (settings, library, _) = import_document(
+            &text,
+            AppearanceSettings::default(),
+            &ThemeLibrary::default(),
+        )
+        .unwrap();
+        assert_eq!(library.resolve(settings.theme).id, "codex-reading");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn selected_preference_file_preserves_the_import_contract() {
+        let text = r#"{"schemaVersion":1,"kind":"rpi-work-appearance","preset":"ocean","mode":"dark","density":"compact"}"#;
+        let text = read_selected(Some(selected_file(text.as_bytes(), text.len() as u64))).unwrap();
+        let (settings, _, _) = import_document(
+            &text,
+            AppearanceSettings::default(),
+            &ThemeLibrary::default(),
+        )
+        .unwrap();
+        assert_eq!(settings.theme, Appearance::Ocean);
+        assert_eq!(settings.mode, "dark");
+        assert_eq!(settings.density, "compact");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn selected_file_rejects_missing_empty_unreadable_and_non_utf8_content() {
+        let missing = FileData::new(dioxus::html::SerializedFileData {
+            path: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../Cargo.toml/not-a-file.json"),
+            size: 1,
+            last_modified: 0,
+            content_type: None,
+            contents: None,
+        });
+        for file in [None, Some(selected_file(b"", 0))] {
+            assert_eq!(
+                read_selected(file).unwrap_err(),
+                "请选择一个主题或偏好 JSON 文件。"
+            );
+        }
+        for file in [missing, selected_file(&[0xff], 1)] {
+            assert_eq!(read_selected(Some(file)).unwrap_err(), "无法读取主题文件。");
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn selected_file_checks_declared_and_actual_byte_limits() {
+        let limit = MAX_THEME_JSON_BYTES;
+        let at_limit = vec![b' '; limit];
+        assert_eq!(
+            read_selected(Some(selected_file(&at_limit, limit as u64)))
+                .unwrap()
+                .len(),
+            limit
+        );
+        for file in [
+            selected_file(b"{}", (limit + 1) as u64),
+            selected_file(&vec![b' '; limit + 1], 1),
+        ] {
+            assert_eq!(
+                read_selected(Some(file)).unwrap_err(),
+                "主题 JSON 不能超过 64 KiB。"
+            );
+        }
+    }
 
     #[test]
     fn tool_rendering_defaults_follow_the_theme_and_overrides_round_trip() {

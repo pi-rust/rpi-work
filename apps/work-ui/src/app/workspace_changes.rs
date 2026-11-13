@@ -24,6 +24,7 @@ pub(crate) struct ChangesPanelProps {
     pub(crate) change_diff: Signal<Option<Diff>>,
     pub(crate) change_error: Signal<Option<String>>,
     pub(crate) onopen: EventHandler<(String, bool)>,
+    pub(crate) onback: EventHandler<()>,
 }
 
 #[component]
@@ -47,6 +48,7 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
         change_diff,
         change_error,
         onopen,
+        onback,
     } = props;
 
     rsx! {
@@ -54,11 +56,11 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
             id: "changes-panel",
             role: "tabpanel",
             aria_busy: git_loading,
-            aria_labelledby: "project-changes-tab",
+            aria_labelledby: "project-changes-title",
             class: if *change_mobile_preview.read() { "change-workspace show-diff" } else { "change-workspace" },
             div { class: "review-overview",
                 div { class: "review-heading",
-                    h2 { "变更" span { class: "review-total", "{change_count}" } }
+                    h2 { id: "project-changes-title", "变更" span { class: "review-total", "{change_count}" } }
                     if let Some(branch) = repository.as_ref().and_then(|repo| repo.branch.as_ref()) {
                         p { class: "review-branch", title: "{branch}", "{branch}" }
                     }
@@ -162,10 +164,11 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
                             let has_unstaged = changed.is_some_and(|file| file.unstaged);
                             rsx! {
                                 div { class: "selected-file-heading",
-                                    button { class: "back-to-files", aria_label: "返回文件列表", onclick: move |_| change_mobile_preview.set(false), Icon { name: "back".to_owned() } span { "文件列表" } }
+                                    button { class: "back-to-files", aria_label: "返回文件列表", onclick: move |_| { change_mobile_preview.set(false); onback.call(()); }, Icon { name: "back".to_owned() } span { "文件列表" } }
                                     div { class: "review-file-title", strong { title: "{path}", "{path}" }
                                         small { if *change_staged.read() { "HEAD → 暂存区" } else { "暂存区 → 工作区" } }
                                     }
+                                    span { class: "project-diff-readonly", "只读 Diff" }
                                 }
                                 div { class: "review-file-toolbar",
                                     div { class: "review-diff-switch", role: "group", aria_label: "Diff 基准",
@@ -179,7 +182,21 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
                             }
                         }
                         if let Some(patch) = change_diff.read().as_ref() {
-                            div { class: "selected-diff-scroll", {render_diff(&patch.patch)} }
+                            {
+                                let added = patch.patch.lines().filter(|line| line.starts_with('+') && !line.starts_with("+++")).count();
+                                let deleted = patch.patch.lines().filter(|line| line.starts_with('-') && !line.starts_with("---")).count();
+                                rsx! {
+                                    div { class: "selected-diff-scroll",
+                                        div { class: "project-diff-path",
+                                            Icon { name: "file".to_owned() }
+                                            code { "{path}" }
+                                            span { class: "diff-count", b { "+{added}" } em { "−{deleted}" } }
+                                        }
+                                        {render_diff(&patch.patch)}
+                                        p { class: "project-file-diff-note", Icon { name: "shield-check".to_owned() } "只读预览，不会提交或修改真实文件。" }
+                                    }
+                                }
+                            }
                         } else if let Some(error) = change_error.read().as_ref() {
                             div { class: "change-preview-empty error-text", strong { "Git patch 读取失败" } p { "{error}" }
                                 button { onclick: move |_| onopen.call((path.clone(), *change_staged.peek())), "重试读取 diff" }

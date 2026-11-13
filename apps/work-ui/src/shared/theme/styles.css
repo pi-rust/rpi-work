@@ -97,7 +97,8 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .inspector-footer > div { display:grid; gap:3px; } .inspector-footer > div span { display:block; }
 .inspector-footer span:last-child { color:var(--text); }
 .brand strong { font-weight: 550; }
-.brand strong > span { color: var(--muted); font-weight: 400; margin-left: var(--space-4); }
+.brand strong > span { color: var(--muted); font-weight: 400; margin-left: 0; }
+.app-shell .brand .version { display: none; }
 .brand strong { font-size: calc(22px * var(--type-scale, 1)); letter-spacing: -.04em; }
 .version { margin-left: auto; padding: 3px 5px; border: var(--border-width, 1px) solid var(--accent-line); border-radius: var(--radius-xs); color: var(--accent); font-size: calc(9px * var(--type-scale, 1)); }
 .search-trigger { display: flex; width: 100%; min-height: 36px; margin-bottom: var(--space-8); padding: 0 10px; color: var(--muted); font-size: calc(12px * var(--type-scale, 1)); }
@@ -844,7 +845,7 @@ small, .meta { font-size: var(--font-assist); }
 
 /* Second pass for the application shell: stronger primary navigation and a
    quieter chrome so the current task remains the visual center. */
-.app-shell{--sidebar-width:clamp(220px,var(--sidebar-preferred-width,248px),min(320px,28vw))}
+.app-shell{--sidebar-width:clamp(220px,var(--sidebar-preferred-width,272px),min(320px,28vw))}
 .sidebar{padding:var(--space-18) var(--space-12) 0}
 .brand{min-height:40px;margin-bottom:var(--space-16);padding-inline:var(--space-6)}
 .primary-nav{gap:var(--space-4);padding-bottom:var(--space-16);border-bottom:1px solid var(--line)}
@@ -911,7 +912,7 @@ small, .meta { font-size: var(--font-assist); }
   --layer-toast: 50;
 }
 .app-shell {
-  --sidebar-width: clamp(220px, var(--sidebar-preferred-width, 248px), min(320px, 28vw));
+  --sidebar-width: clamp(220px, var(--sidebar-preferred-width, 272px), min(320px, 28vw));
 }
 .sidebar {
   background: var(--side);
@@ -1142,3 +1143,194 @@ small, .meta { font-size: var(--font-assist); }
 .app-shell .workspace-operation-error button { flex-shrink:0; min-width:44px; min-height:44px; }
 .app-shell .composer-foot { flex-wrap:wrap; }
 .app-shell .composer-foot .operation-status { flex:1 1 220px; white-space:normal; overflow-wrap:anywhere; }
+
+/* Project files are a plain right-side inspector: keep the conversation and
+   the left navigation visible instead of applying a modal glass treatment. */
+dialog.project-files-modal {
+  position: fixed;
+  inset: calc(var(--app-safe-top) + 60px) 0 var(--app-safe-bottom) auto;
+  width: min(392px, calc(100vw - 24px));
+  height: calc(100dvh - var(--app-safe-top) - var(--app-safe-bottom) - 60px);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 24px 0 0 24px;
+  background: var(--panel);
+  box-shadow: -16px 0 36px var(--shadow-color);
+}
+dialog.project-files-modal.show-preview,
+dialog.project-files-modal.show-diff { width: min(720px, calc(100vw - 24px)); }
+dialog.project-files-modal::backdrop {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+dialog.project-files-modal[open] { display: flex; flex-direction: column; }
+dialog.project-files-modal .modal-header { flex: 0 0 auto; min-height: 74px; background: var(--panel); }
+dialog.project-files-modal .modal-header h2::before { display: none; }
+dialog.project-files-modal .project-file-open-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 3px;
+  overflow-x: auto;
+  padding: 0 var(--space-18) 1px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+dialog.project-files-modal .project-file-open-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 132px;
+  max-width: 220px;
+  min-height: 42px;
+  padding: 0 var(--space-10);
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+}
+dialog.project-files-modal .project-file-open-tab:hover,
+dialog.project-files-modal .project-file-open-tab.active {
+  color: var(--text);
+  background: var(--card);
+}
+dialog.project-files-modal .project-file-open-tab.active { border-bottom-color: var(--text); }
+dialog.project-files-modal .project-file-open-tab:focus-visible { outline: 2px solid var(--focus-color); outline-offset: -2px; }
+dialog.project-files-modal .project-file-open-tab .icon { width: 14px; height: 14px; flex: 0 0 14px; }
+dialog.project-files-modal .project-file-open-tab span { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-assist); }
+dialog.project-files-modal .project-file-open-tab em { margin-left: auto; color: var(--warning); font: var(--font-assist) var(--mono); font-style: normal; }
+dialog.project-files-modal .project-files-layout { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+dialog.project-files-modal .project-files-list-view { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+dialog.project-files-modal .project-file-browser-shell { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 340px; max-height: 55%; overflow: hidden; }
+dialog.project-files-modal .project-file-browser-shell > .project-file-browser { flex: 1 1 auto; min-height: 0; border-right: 0; }
+dialog.project-files-modal .project-changes-summary { flex: 0 0 auto; max-height: none; overflow: auto; border-top: 1px solid var(--line); background: var(--panel); }
+dialog.project-files-modal .project-files-scope { display: flex; flex: 0 0 auto; align-items: center; gap: var(--space-7); min-height: 39px; padding: 0 var(--space-18); border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--font-assist); }
+dialog.project-files-modal .project-files-scope > .icon { width: 14px; height: 14px; }
+dialog.project-files-modal .project-files-scope .neutral-pill { margin-left: auto; padding: 2px 6px; font-size: calc(10px * var(--type-scale, 1)); }
+dialog.project-files-modal .project-files-section-title { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: var(--space-8); min-height: 36px; padding: var(--space-8) var(--space-18) var(--space-4); color: var(--muted); font-size: var(--font-assist); }
+dialog.project-files-modal .project-file-browser-shell .project-file-search { margin: var(--space-6) var(--space-18); }
+dialog.project-files-modal .project-file-browser-shell .project-file-search input { height: 31px; }
+dialog.project-files-modal .project-file-browser-shell .project-file-caption { min-height: 28px; padding: 0 var(--space-18) var(--space-4); }
+dialog.project-files-modal .project-file-browser-shell .project-file-tree { padding-inline: var(--space-14); }
+dialog.project-files-modal .project-files-section-title strong { color: var(--text); font-weight: 500; }
+dialog.project-files-modal .project-files-section-title > span:not(.count-badge) { font-size: calc(10px * var(--type-scale, 1)); }
+dialog.project-files-modal .project-changes-heading { padding-top: var(--space-10); }
+dialog.project-files-modal .project-changes-heading .count-badge { min-width: 22px; padding: 2px 6px; font: var(--font-assist) var(--mono); text-align: center; }
+dialog.project-files-modal .project-changes-summary .project-no-results { padding: var(--space-10) var(--space-14); }
+dialog.project-files-modal .project-files-note { display: flex; align-items: flex-start; gap: var(--space-5); margin: 0; padding: var(--space-8) var(--space-18) var(--space-12); color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); line-height: 1.6; }
+dialog.project-files-modal .project-files-note > .icon { width: 13px; height: 13px; flex: 0 0 13px; margin-top: 2px; }
+dialog.project-files-modal .project-change-row { min-height: 38px; padding-inline: var(--space-14); }
+dialog.project-files-modal .project-change-row em { margin-left: auto; color: var(--warning); font: var(--font-assist) var(--mono); font-style: normal; }
+dialog.project-files-modal:not(.show-preview) .project-file-preview { display: none; }
+dialog.project-files-modal.show-preview .project-files-list-view { display: none; }
+dialog.project-files-modal.show-preview .project-files-layout { grid-template-columns: minmax(0, 1fr); }
+dialog.project-files-modal.show-preview .project-file-preview { display: flex; grid-column: 1; min-width: 0; min-height: 0; }
+dialog.project-files-modal.show-preview .project-preview-content { min-height: 0; }
+dialog.project-files-modal.show-preview .project-back { display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: 38px; margin: 0; gap: var(--space-5); padding: 0 var(--space-18); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--muted); background: transparent; font-size: var(--font-assist); text-align: left; }
+dialog.project-files-modal.show-preview .project-back .icon { width: 13px; height: 13px; }
+dialog.project-files-modal #changes-panel { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; padding: 0; overflow: hidden; }
+dialog.project-files-modal.show-diff #changes-panel .review-overview,
+dialog.project-files-modal.show-diff #changes-panel .change-browser { display: none; }
+dialog.project-files-modal.show-diff #changes-panel .change-workspace,
+dialog.project-files-modal.show-diff #changes-panel .change-layout,
+dialog.project-files-modal.show-diff #changes-panel .change-preview { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+dialog.project-files-modal.show-diff #changes-panel .change-layout { display: flex; }
+dialog.project-files-modal.show-diff #changes-panel .change-preview { overflow: hidden; background: var(--panel); }
+dialog.project-files-modal.show-diff #changes-panel .selected-file-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; flex: 0 0 auto; min-height: 38px; padding: 0 var(--space-18); border-bottom: 1px solid var(--line); }
+dialog.project-files-modal.show-diff #changes-panel .back-to-files { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 0; min-height: 38px; gap: var(--space-5); padding: 0; border: 0; color: var(--muted); background: transparent; font-size: var(--font-assist); }
+dialog.project-files-modal.show-diff #changes-panel .back-to-files:hover { color: var(--text); background: transparent; }
+dialog.project-files-modal.show-diff #changes-panel .back-to-files .icon { width: 13px; height: 13px; }
+dialog.project-files-modal.show-diff #changes-panel .review-file-title { display: none; }
+dialog.project-files-modal.show-diff #changes-panel .project-diff-readonly { align-self: center; margin-left: auto; color: var(--muted); font-size: var(--font-assist); }
+dialog.project-files-modal.show-diff #changes-panel .review-file-toolbar { display: none; }
+dialog.project-files-modal.show-diff #changes-panel .selected-diff-scroll { flex: 1; min-height: 0; padding: var(--space-14) var(--space-18); overflow: auto; background: var(--panel); }
+dialog.project-files-modal.show-diff #changes-panel .project-diff-path { display: flex; align-items: flex-start; gap: var(--space-7); padding: var(--space-10); border: 1px solid var(--line); border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: var(--card); color: var(--muted); font-size: var(--font-assist); }
+dialog.project-files-modal.show-diff #changes-panel .project-diff-path > .icon { width: 13px; height: 13px; flex: 0 0 13px; }
+dialog.project-files-modal.show-diff #changes-panel .project-diff-path code { min-width: 0; flex: 1; overflow-wrap: anywhere; font: var(--font-assist) var(--mono); line-height: 1.5; }
+dialog.project-files-modal.show-diff #changes-panel .project-diff-path .diff-count { margin-left: auto; }
+dialog.project-files-modal.show-diff #changes-panel .project-file-diff-note { display: flex; align-items: flex-start; gap: var(--space-5); margin: var(--space-10) 0 0; color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); line-height: 1.6; }
+dialog.project-files-modal.show-diff #changes-panel .project-file-diff-note > .icon { width: 13px; height: 13px; flex: 0 0 13px; }
+dialog.project-files-modal.show-diff #changes-panel .diff-lines { border: 1px solid var(--line); border-top: 0; }
+dialog.project-files-modal.show-diff #changes-panel .diff-line { padding-inline: var(--space-10); }
+.app-shell .project-files-trigger { display: inline-flex; align-items: center; gap: var(--space-5); min-height: 40px; padding: 0 var(--space-10); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); background: var(--card); font-size: var(--font-assist); }
+.app-shell .project-files-trigger:hover,
+.app-shell .project-files-trigger[aria-expanded="true"] { color: var(--text); background: var(--panel); }
+.app-shell .project-files-trigger > .icon { width: 15px; height: 15px; }
+.app-shell .project-files-trigger .count-badge { min-width: 20px; padding: 2px 5px; font: var(--font-assist) var(--mono); text-align: center; }
+.app-shell .project-files-trigger:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+dialog.project-files-modal #changes-panel .change-workspace { min-height: 0; }
+dialog.project-files-modal #changes-panel .change-workspace.show-diff .change-browser { display: none; }
+dialog.project-files-modal #changes-panel .change-workspace.show-diff .change-layout { grid-template-columns: minmax(0, 1fr); }
+dialog.project-files-modal #changes-panel .change-workspace.show-diff .change-preview { min-width: 0; }
+@media (max-width: 767px) {
+  dialog.project-files-modal {
+    inset: calc(var(--app-safe-top) + 56px) var(--app-safe-right) var(--app-safe-bottom) auto;
+    width: calc(100vw - var(--app-safe-left) - var(--app-safe-right) - 12px);
+    height: calc(100dvh - var(--app-safe-top) - var(--app-safe-bottom) - 56px);
+    border-radius: 24px 0 0 24px;
+  }
+  dialog.project-files-modal.show-preview,
+  dialog.project-files-modal.show-diff { width: calc(100vw - var(--app-safe-left) - var(--app-safe-right) - 12px); }
+  dialog.project-files-modal .modal-header { min-height: 64px; padding-inline: var(--space-14); }
+  dialog.project-files-modal .project-files-scope { min-height: 44px; padding-inline: var(--space-14); }
+  dialog.project-files-modal .project-file-browser-shell { min-height: 0; max-height: none; }
+  dialog.project-files-modal .project-file-browser-shell .project-file-search { margin-inline: var(--space-14); }
+  dialog.project-files-modal .project-file-browser-shell .project-file-search input { height: 44px; }
+  dialog.project-files-modal .project-file-browser-shell .project-file-caption { padding-inline: var(--space-14); }
+  dialog.project-files-modal .project-file-browser-shell .project-file-tree { padding-inline: var(--space-8); }
+  dialog.project-files-modal .project-files-section-title { min-height: 42px; padding-inline: var(--space-14); }
+  dialog.project-files-modal .project-files-note { padding-inline: var(--space-14); }
+  .app-shell .project-files-trigger { min-width: 44px; min-height: 44px; padding-inline: 6px; justify-content: center; }
+  .app-shell .project-files-trigger > span:not(.count-badge) { display: none; }
+  .app-shell .project-files-trigger .count-badge { padding-inline: 2px; background: transparent; }
+  dialog.project-files-modal .project-file-open-tabs { padding-inline: var(--space-12); }
+  dialog.project-files-modal .project-file-open-tab { min-width: 142px; min-height: 44px; }
+  dialog.project-files-modal .project-changes-summary { max-height: 280px; }
+  dialog.project-files-modal .project-change-row { min-height: 44px; }
+}
+
+/* Match the prototype's desktop session header without changing the mobile quick switcher. */
+@media (min-width: 768px) {
+  .app-shell .app-header.has-session-controls > .mobile-menu { display: inline-flex; }
+  .app-shell .app-header.has-session-controls > .breadcrumb { display: none; }
+  .app-shell .app-header.has-session-controls > .quick-session { display: flex; align-items: center; justify-content: space-between; flex: 0 1 280px; min-width: 180px; min-height: 40px; padding: 0; color: var(--text); background: transparent; text-align: left; }
+  .app-shell .app-header.has-session-controls > .quick-session > span:first-child { display: grid; min-width: 0; gap: 1px; }
+  .app-shell .app-header.has-session-controls > .quick-session small { order: 2; overflow: hidden; color: var(--muted); font: calc(10px * var(--type-scale, 1)) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell .app-header.has-session-controls > .quick-session strong { order: 1; overflow: hidden; max-width: 280px; font-size: calc(14px * var(--type-scale, 1)); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell .app-header.has-session-controls > .quick-session > .icon { flex: 0 0 14px; width: 14px; height: 14px; color: var(--muted); }
+  .app-shell .app-header.has-session-controls > .top-actions { margin-left: auto; }
+  .app-shell .header-connection-status { display: inline-flex; align-items: center; gap: var(--space-5); color: var(--muted); font-size: var(--font-assist); white-space: nowrap; }
+  .app-shell .header-connection-status.online { color: var(--success); }
+  .app-shell .header-connection-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+}
+
+@media (min-width: 1101px) {
+  /* The prototype reserves the inspector column instead of covering the conversation. */
+  .app-shell.project-files-open > .main-column { width: calc(100% - 392px); overflow: visible; }
+  .app-shell.project-files-preview-open > .main-column { width: calc(100% - 720px); }
+  .app-shell.project-files-open > .main-column > .app-header { position: relative; z-index: 2; width: calc(100% + 392px); }
+  .app-shell.project-files-preview-open > .main-column > .app-header { width: calc(100% + 720px); }
+  .app-shell.project-files-open .conversation-panel { --conversation-content-max: 560px; }
+  .app-shell.project-files-open:not(.project-files-preview-open) .transcript { padding-left: 82px; padding-right: 30px; }
+  .app-shell.project-files-open:not(.project-files-preview-open) .composer-main { padding-left: 82px; padding-right: 30px; padding-bottom: 0; }
+  .app-shell.project-files-preview-open .transcript { padding-left: 135px; padding-right: 30px; }
+  .app-shell.project-files-preview-open .composer-main { padding-left: 135px; padding-right: 30px; padding-bottom: 0; }
+  .app-shell.project-files-open .timeline-toggle { display: none; }
+  .app-shell.project-files-open .project-files-trigger { flex: 0 0 auto; white-space: nowrap; }
+  .app-shell.project-files-open .composer-main .composer { width: min(100%, 560px); padding: 10px 12px 8px; }
+  .app-shell.project-files-open .composer-main .composer textarea { min-height: 48px; }
+  .app-shell.project-files-open .composer-bottom { padding-top: 5px; }
+  .app-shell.project-files-open .composer-foot,
+  .app-shell.project-files-open .runtime-footer { min-height: 0; max-height: 0; margin: 0; padding-block: 0; overflow: hidden; opacity: 0; pointer-events: none; }
+}
+.composer-draft-heading { min-height: 34px; padding: var(--space-8) var(--space-4) var(--space-6); color: var(--text); font-size: var(--font-body); font-weight: 500; }

@@ -1,0 +1,77 @@
+{
+  "scope": "standalone static concept only; not actual Dioxus application; short viewport is not real OS keyboard acceptance",
+  "revision": "settings-collaboration",
+  "checks": [
+    "独立静态原型，默认会话与禁用发送",
+    "项目文件入口同时展示目录与改动，摘要在侧栏打开 Diff 并保留输入草稿",
+    "模型与思考常驻，直接切换并保留草稿；工具过程可展开",
+    "详细命令与简洁显示可切换；错误始终可见，命令和参数原文保留且草稿不变",
+    "侧栏状态只用圆点无文字/额外行，tooltip与无障碍状态保留；切换器仍有文字",
+    "顶栏使用真实浏览器全屏：进入/退出、Escape、外部退出同步，拒绝不伪造成功",
+    "黑白灰默认配色；展示方式仅在设置，侧栏保留最近会话与项目树",
+    "没有独立新建/工作台导航；项目文件夹入口保留节点与项目作用域",
+    "资源分类、搜索与来源切换，来源语义不混淆",
+    "设置页tab点击区域充足；工作协同聚焦节点连接与可信协助边界",
+    "1440/1280/1024/768/390/320 无水平溢出",
+    "手机导航与上下文按需打开，Escape 关闭并恢复焦点",
+    "手机顶栏直达会话；遵循设置无排列tab，跨节点同ID草稿不串用",
+    "320/390px 常用选择器与会话面板可操作，无弹层横向溢出",
+    "工作区优先：默认无右栏，正文占高，常用控件常驻，桌面导航可收起",
+    "长会话标题与200%文字下不挤出主操作",
+    "资源和设置页面在六档宽度均无内容横向溢出",
+    "快捷搜索可筛选示例会话",
+    "原型无真实网络、无脚本异常"
+  ],
+  "workspaceGeometry": [
+    {
+      "width": 1440,
+      "height": 1000,
+      "transcriptHeight": 774,
+      "transcriptViewportRatio": 0.774
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "transcriptHeight": 574,
+      "transcriptViewportRatio": 0.7175
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "transcriptHeight": 542,
+      "transcriptViewportRatio": 0.7057291666666666
+    },
+    {
+      "width": 768,
+      "height": 844,
+      "transcriptHeight": 618,
+      "transcriptViewportRatio": 0.7322274881516587
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "transcriptHeight": 655,
+      "transcriptViewportRatio": 0.7760663507109005
+    },
+    {
+      "width": 320,
+      "height": 844,
+      "transcriptHeight": 655,
+      "transcriptViewportRatio": 0.7760663507109005
+    },
+    {
+      "width": 390,
+      "height": 500,
+      "transcriptHeight": 331,
+      "transcriptViewportRatio": 0.662
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "transcriptHeight": 258,
+      "transcriptViewportRatio": 0.6615384615384615
+    }
+  ],
+  "errors": [],
+  "networkRequests": []
+}

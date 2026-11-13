@@ -62,7 +62,7 @@ const packageDesign = {
     await page.getByRole('status').filter({ hasText: '在线' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
-    await page.locator('.sidebar-sessions').getByRole('button', { name: '为工作台添加深色模式', exact: true }).click();
+    await page.locator('.sidebar-sessions').getByRole('button', { name: '为工作台添加深色模式', exact: true }).first().click();
     await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。', { exact: true }).waitFor();
     await page.locator('.composer textarea').fill(draft);
     const tool = page.locator('.conversation-widget .inline-call').first();
@@ -131,13 +131,21 @@ const packageDesign = {
 
     await page.getByRole('button', { name: '打开项目文件', exact: true }).click();
     const files = page.getByRole('dialog', { name: '项目文件', exact: true });
-    await files.getByRole('heading', { name: 'RPI Work', exact: true }).waitFor();
-    await measure('files', ['.project-file-row', '.project-preview-title strong']);
+    await files.locator('.project-file-browser').waitFor();
+    await measure('files', ['.project-file-row', '.project-changes-summary']);
     if (!baseline) assert.equal(await computed('.project-file-row', 'font-size'), '14px');
+    assert.equal(await files.locator('.project-changes-summary').isVisible(), true);
+    assert.equal(await files.locator('.project-file-browser').isVisible(), true);
     await shot('files'); await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '打开项目文件', exact: true }).click();
-    await files.getByRole('tab', { name: /^变更/ }).click();
-    await page.locator('.change-file').first().click(); await page.locator('.selected-diff-scroll').waitFor();
+    await files.locator('.project-change-row').first().waitFor();
+    await files.locator('.project-change-row').first().click(); await page.locator('.selected-diff-scroll').waitFor();
+    assert.equal(await files.locator('.project-file-open-tab').count() > 0, true);
+    const drawerBox = await files.boundingBox();
+    assert(drawerBox && drawerBox.x + drawerBox.width >= 1439 && drawerBox.width >= 680, 'project files use a wide right inspector');
+    assert.equal(await files.evaluate(element => getComputedStyle(element, '::backdrop').backdropFilter), 'none');
+    assert.equal(await page.locator('.sidebar').isVisible(), true);
+    assert.equal(await page.locator('.conversation-panel').isVisible(), true);
     await measure('review', ['.diff-lines', '.diff-hunk']);
     if (!baseline) {
       assert.equal(await computed('.diff-lines', 'background-color'), await computed('.change-preview', 'background-color'));
@@ -185,6 +193,18 @@ const packageDesign = {
         await page.getByRole('button', { name: '打开项目文件', exact: true }).click();
         await files.locator('.project-file-row').filter({ hasText: 'README.md' }).click();
         await files.getByRole('heading', { name: 'RPI Work', exact: true }).waitFor();
+        const openTabs = files.locator('.project-file-open-tab');
+        assert.equal(await openTabs.count(), 1);
+        const mobileDrawer = await files.boundingBox();
+        assert(mobileDrawer && mobileDrawer.width >= 360 && mobileDrawer.x >= 0, 'mobile project files inspector is near full width');
+        await files.getByRole('button', { name: '返回文件列表', exact: true }).click();
+        await files.locator('.project-file-row').filter({ hasText: 'preview.html' }).click();
+        await openTabs.nth(1).waitFor();
+        await files.getByRole('button', { name: '返回文件列表', exact: true }).click();
+        await files.locator('.project-change-row').first().click();
+        await files.locator('.selected-diff-scroll').waitFor();
+        assert(await openTabs.count() >= 3, 'file and change tabs share one inspector shell');
+        assert(await openTabs.first().evaluate(element => element.parentElement.scrollWidth > element.parentElement.clientWidth), 'mobile file tabs scroll horizontally');
         await bounded('.project-files-modal'); await shot(`files-${width}`); await page.keyboard.press('Escape');
         await page.locator('.app-header .top-actions').evaluate(e => { e.scrollLeft = 0; });
       }
