@@ -55,17 +55,13 @@ fn storage() -> WorkspaceError {
         message: "provider storage unavailable; refresh before retrying; no credentials are included in diagnostics".into() }.into()
 }
 fn ordinary(meta: &std::fs::Metadata) -> bool {
-    if !meta.is_file() || meta.file_type().is_symlink() {
-        return false;
-    }
+    let mut ordinary = meta.is_file() && !meta.file_type().is_symlink();
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes() & 0x400 != 0 {
-            return false;
-        }
+        ordinary &= meta.file_attributes() & 0x400 == 0;
     }
-    true
+    ordinary
 }
 fn read(root: &Path, name: &str) -> Result<Option<Vec<u8>>, WorkspaceError> {
     // Validate every existing ancestor even if the final directory is absent.
