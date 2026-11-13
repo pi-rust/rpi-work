@@ -114,7 +114,6 @@ pub(super) fn App() -> Element {
     let appearance = use_appearance();
     crate::features::observability::footer_plugins::use_footer_preferences();
     let device_mode = device_mode::use_device_mode();
-    updates::use_updates();
     let entry_node = use_hook(try_consume_context::<super::entry::EntryNode>);
     let navigation = use_hook(try_consume_context::<super::node_navigation::NodeNavigation>);
     let initial_node_url = entry_node.as_ref().map_or_else(default_node_url, |node| {

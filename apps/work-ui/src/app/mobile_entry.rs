@@ -55,7 +55,10 @@ mod native {
         connections::{NodePassword, with_timeout},
         entry::{AuthorizedWorkspace, ConnectionEntryFrame, ConnectionSessionControl, EntryNode},
     };
-    use crate::features::settings::connection_panel::ConnectionScreen;
+    use crate::features::settings::{
+        connection_panel::ConnectionScreen,
+        updates::{EntryUpdateButton, EntryUpdatePanel},
+    };
     use dioxus::prelude::*;
     use std::{
         cell::{Cell, RefCell},
@@ -99,6 +102,7 @@ mod native {
         let mut busy = use_signal(|| false);
         let mut scanning = use_signal(|| false);
         let mut album_open = use_signal(|| false);
+        let mut updates_open = use_signal(|| false);
         let mut authorized = use_signal(|| None::<EntryNode>);
         let mut remembered_address = use_signal(String::new);
         let mut memory_warning = use_signal(String::new);
@@ -471,6 +475,10 @@ mod native {
         };
         rsx! {
             ConnectionEntryFrame {
+                EntryUpdateButton { onopen: move |()| updates_open.set(true) }
+                if updates_open() {
+                    EntryUpdatePanel { busy: busy(), onclose: move |()| updates_open.set(false) }
+                }
                 ConnectionScreen {
                     manual: manual(), address: address(),
                     password: password.read().value.clone(),

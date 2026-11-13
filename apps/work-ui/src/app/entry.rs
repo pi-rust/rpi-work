@@ -33,6 +33,11 @@ pub(crate) fn AuthorizedWorkspace(node: EntryNode) -> Element {
 
 #[component]
 pub(super) fn Root() -> Element {
+    // Updates must be available before a mobile user has authenticated into a node.
+    // Keep the update state above every entry/workspace branch so the same checker
+    // and prepared package survive the transition into the workspace.
+    crate::features::settings::updates::use_updates();
+
     #[cfg(target_os = "android")]
     return rsx! { super::mobile_entry::MobileEntry {} };
 

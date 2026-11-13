@@ -2,6 +2,8 @@ use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
 use work_update::Release;
 
+use crate::shared::components::Icon;
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(target_arch = "wasm32")]
 const PREFERENCE: &str = "rpi-work-auto-update-v1";
@@ -99,6 +101,53 @@ fn cache_root() -> Result<std::path::PathBuf, String> {
     #[cfg(not(target_os = "android"))]
     {
         work_update::native::cache_dir()
+    }
+}
+
+#[component]
+pub fn EntryUpdateButton(onopen: EventHandler<()>) -> Element {
+    let state = use_context::<Signal<UpdateState>>();
+    let snapshot = state.read();
+    let available = matches!(snapshot.phase, "available" | "ready");
+    let label = if available {
+        format!(
+            "发现新版本 {}，打开应用更新",
+            snapshot
+                .release
+                .as_ref()
+                .map_or_else(String::new, |release| release.manifest.version.clone())
+        )
+    } else {
+        "应用更新".to_owned()
+    };
+    rsx! {
+        style { {include_str!("updates.css")} }
+        button {
+            r#type: "button",
+            class: if available { "entry-update-button available" } else { "entry-update-button" },
+            aria_label: "{label}",
+            title: "{label}",
+            onclick: move |_| onopen.call(()),
+            Icon { name: "download" }
+            if available { span { class: "entry-update-dot", aria_hidden: "true" } }
+        }
+    }
+}
+
+#[component]
+pub fn EntryUpdatePanel(busy: bool, onclose: EventHandler<()>) -> Element {
+    rsx! {
+        style { {include_str!("updates.css")} }
+        div { class: "entry-update-overlay", role: "presentation",
+            div { class: "entry-update-dialog", role: "dialog", aria_modal: "true", aria_label: "应用更新",
+                div { class: "entry-update-dialog-header",
+                    h2 { "应用更新" }
+                    button { class: "icon-button", r#type: "button", aria_label: "关闭应用更新", title: "关闭",
+                        onclick: move |_| onclose.call(()), "×" }
+                }
+                UpdatePage { busy }
+            }
+        }
     }
 }
 
