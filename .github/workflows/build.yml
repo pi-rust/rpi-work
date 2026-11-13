@@ -50,7 +50,12 @@ jobs:
           shared-key: checks-linux-x64
           cache-on-failure: true
       - run: cargo fmt --all -- --check
-      - run: cargo test --workspace --locked
+      - name: Build ACP fixture for production access tests
+        run: cargo build --locked -p work-client --bin acp-fixture
+      - name: Run workspace tests
+        env:
+          WORK_SESSION_ACCESS_ACP_FIXTURE: ${{ github.workspace }}/target/debug/acp-fixture
+        run: cargo test --workspace --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   desktop:
