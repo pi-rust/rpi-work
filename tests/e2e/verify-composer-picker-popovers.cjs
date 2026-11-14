@@ -1,10 +1,12 @@
-// Real WASM + isolated HTTP/SSE fixture. Build/serve the integrated UI separately.
+// Real WASM + isolated fixture with the shared realtime-to-HTTP policy bridge.
+// The bridge exercises native client frames while exposing discovery response gates.
 // Run: node tests/e2e/verify-composer-picker-popovers.cjs
 // Browsing only: no model/thinking setters, prompts, credentials or config writes.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
+const { bridgeRealtimePolicies } = require('../support/realtime-http-policy-bridge.cjs');
 const UI = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
 const CURRENT = 'deepseek/deepseek-v4-pro';
 const DRAFT = '锚定菜单回归：保留草稿 😀';
@@ -13,7 +15,7 @@ const LABELS = { off: '关闭', minimal: '最低', low: '低', medium: '中', hi
 const catalog = () => [
   { id: CURRENT, name: 'Custom current', provider: 'deepseek', reasoning: true },
   { id: 'alpha/first', name: 'Keyboard 01 enabled', provider: 'alpha', reasoning: true },
-  { id: 'ambiguous', name: 'Keyboard 02 disabled', provider: 'alpha', reasoning: true },
+  { id: '', name: 'Keyboard 02 disabled', provider: 'alpha', reasoning: true },
   { id: 'alpha/last', name: 'Keyboard 03 enabled', provider: 'alpha', reasoning: true },
   { id: 'ambiguous', name: 'Duplicate identity', provider: 'beta', reasoning: false },
   { id: `long/${'raw-model-'.repeat(30)}`, name: LONG, provider: 'long', reasoning: true },
@@ -35,6 +37,7 @@ async function until(check, message) {
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
     context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     page = await context.newPage();
+    await bridgeRealtimePolicies(page, () => [new URL(fixture.url).origin]);
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
     const allowed = [new URL(UI).origin, new URL(fixture.url).origin];
@@ -151,19 +154,21 @@ async function until(check, message) {
     await page.goto(UI);
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
     await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
-    await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '连接设备', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: '在线' }).first().waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
-    await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
+    if (!await page.locator('[data-session-id="dark"] .session-item').isVisible()) {
+      await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
+    }
     await page.locator('[data-session-id="dark"] .session-item').click();
     await page.waitForFunction(() => { const e = document.querySelector('.composer-main textarea'); return e && !e.disabled && e.dataset.imeReady === 'true'; });
     await field().fill(DRAFT);
     await until(async () => (await model().innerText()).trim() === 'Custom current' && !await thinking().isDisabled(), 'runtime-matched catalog name and thinking discovery');
     assert.equal(await model().getAttribute('title'), `deepseek / ${CURRENT}`, 'tooltip preserves provider and raw model ID');
     assert.equal(await thinking().getAttribute('data-thinking-level'), 'high');
-    assert.equal((await thinking().innerText()).trim(), '高');
+    assert.equal((await thinking().innerText()).trim(), '思考 · 高');
     await until(() => runtime.some(state => state.modelId === CURRENT && state.thinkingLevel === 'high'), 'genuine fixture current model/high readback');
     pass('current catalog name is real; raw model tooltip and authoritative high/高 remain distinct');
 
@@ -194,10 +199,10 @@ async function until(check, message) {
     await open(model, modelDialog); await search().fill('Keyboard');
     await until(async () => await modelDialog().locator('.composer-model-option').count() === 3, 'filtered keyboard fixture');
     const first = modelDialog().locator('[data-model-id="alpha/first"]');
-    const disabled = modelDialog().locator('[data-model-id="ambiguous"]');
+    const disabled = modelDialog().locator('[data-model-id=""]');
     const last = modelDialog().locator('[data-model-id="alpha/last"]');
     await until(async () => !await first.isDisabled() && !await last.isDisabled(), 'model discovery settled');
-    assert(await disabled.isDisabled(), 'cross-provider duplicate is naturally disabled');
+    assert(await disabled.isDisabled(), 'a model without a raw ID is disabled');
     await first.focus(); await page.keyboard.press('ArrowDown'); await until(() => focused(last), 'ArrowDown skips disabled middle option');
     await page.keyboard.press('ArrowUp'); await until(() => focused(first), 'ArrowUp skips disabled middle option');
     await page.keyboard.press('End'); await until(() => focused(last), 'End reaches last enabled model');
@@ -231,12 +236,12 @@ async function until(check, message) {
 
     for (const mode of ['light', 'dark']) {
       await page.setViewportSize({ width: 1280, height: 900 });
-      await page.getByRole('button', { name: '更多操作', exact: true }).click();
-      await page.getByRole('menuitem', { name: '外观与主题', exact: true }).click();
-      const appearance = page.getByRole('dialog', { name: '外观与主题', exact: true });
-      await appearance.getByLabel('明暗模式', { exact: true }).selectOption(mode);
-      await appearance.getByRole('button', { name: '保存', exact: true }).click();
-      await appearance.waitFor({ state: 'hidden' });
+      await page.getByRole('button', { name: '打开设置', exact: true }).click();
+      const appearance = page.locator('#appearance');
+      await appearance.getByRole('button', { name: mode === 'dark' ? '深色' : '浅色', exact: true }).click();
+      await appearance.getByRole('button', { name: '保存更改', exact: true }).click();
+      await page.getByRole('button', { name: '返回会话', exact: true }).click();
+      await page.waitForFunction(expected => document.documentElement.dataset.mode === expected, mode);
       for (const width of [1280, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
         await composerFits(width);
@@ -282,7 +287,7 @@ async function until(check, message) {
 
     assert.equal(await field().inputValue(), DRAFT);
     assert.equal(await thinking().getAttribute('data-thinking-level'), 'high');
-    assert.equal((await thinking().innerText()).trim(), '高');
+    assert.equal((await thinking().innerText()).trim(), '思考 · 高');
     assert(runtime.length && runtime.every(state => state.modelId === CURRENT && state.thinkingLevel === 'high'));
     assert.deepEqual(commands.filter(item => !item.body.type.startsWith('get_')), [], 'zero attempted prompt/config/credential writes');
     assert.deepEqual(fixture.requests.filter(item => item.body?.type && !item.body.type.startsWith('get_')), [], 'zero actual fixture writes');

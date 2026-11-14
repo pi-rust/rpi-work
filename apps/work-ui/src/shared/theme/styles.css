@@ -11,7 +11,7 @@
   --icon-md: 14px;
   --icon-lg: 16px;
   /* Root-scoped so top-layer queue dialogs share the conversation measure. */
-  --conversation-content-max: 1000px;
+  --conversation-content-max: 900px;
   --conversation-gutter: 24px;
   --press-duration: 120ms;
   --app-safe-top: env(safe-area-inset-top, 0px);
@@ -92,7 +92,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .sidebar-projects { flex: 1; min-height: 60px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; padding-bottom: var(--space-12); }
 .brand { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-14); min-height: 30px; padding: 0 var(--space-8); color: var(--text); text-decoration: none; }
 .brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 25px; height: 25px; flex-shrink: 0; }
-.brand-mark > svg, .tiny-logomark > svg { display: block; width: 100%; height: 100%; }
+.brand-image { display: block; width: 100%; height: 100%; background: currentColor; -webkit-mask: var(--brand-image) center / contain no-repeat; mask: var(--brand-image) center / contain no-repeat; }
 .inspector-footer { display:flex; align-items:center; gap:var(--space-12); margin: auto 0 0; padding:var(--space-22) var(--space-20) var(--space-18); border-top:var(--border-width, 1px) solid var(--line); color:var(--muted); font-size:calc(9px * var(--type-scale, 1)); letter-spacing:.06em; line-height:1.5; }
 .inspector-footer > div { display:grid; gap:3px; } .inspector-footer > div span { display:block; }
 .inspector-footer span:last-child { color:var(--text); }
@@ -111,6 +111,8 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .nav-item, .project-row, .profile, .new-task { width: 100%; min-width: 0; justify-content: flex-start; text-align: left; padding: var(--space-9) var(--space-10); color: var(--muted); }
 .nav-item { height: var(--control-height); font-size: calc(12px * var(--type-scale, 1)); }
 .nav-item.active { color: var(--selected-text); background: var(--selected-bg); }
+.sidebar .settings-entry { flex-shrink:0; min-height:44px; margin-top:3px; padding:0 12px; gap:11px; border-radius:8px; font-size:14px; }
+.settings-entry > .icon:last-child { margin-left:auto; width:14px; height:14px; }
 .nav-disclosure-trigger { display: flex; align-items: center; gap: var(--space-7); }
 .nav-disclosure-trigger > span { flex: 1; min-width: 0; }
 .nav-disclosure-trigger > .icon:last-child { width: 12px; height: 12px; color: var(--muted); }
@@ -258,14 +260,10 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .runtime-footer .composer-metrics { width: auto; }
 .composer-main:focus-within .composer { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-bg); }
 .composer-bottom { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); padding-top: var(--space-7); }
-/* Share the workspace measure rather than pairing a narrow transcript with a
-   wider editor. Prose keeps its own 760px reading cap; code gains usable width. */
+/* Clarity uses one content column for replies, tools and the editor. */
 .app-shell .conversation-panel {
   --conversation-reading-max: var(--conversation-content-max);
   --conversation-inner-max: var(--conversation-content-max);
-}
-@media (min-width: 1440px) {
-  .app-shell .conversation-panel { --conversation-content-max: clamp(1000px, 70vw, 1120px); }
 }
 .composer-options, .composer-actions { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
 .composer-main .composer-icon { width: 28px; height: 27px; padding: 0; color: var(--muted); }
@@ -489,7 +487,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 
 /* Tablet: preserve the project rail; Inspector opens as an overlay when requested. */
 @media (max-width: 1100px) {
-  .app-shell { --sidebar-width: clamp(200px, var(--sidebar-preferred-width, 210px), min(480px, 40vw)); }
+  .app-shell { --sidebar-width: clamp(200px, var(--sidebar-preferred-width, 272px), min(480px, 40vw)); }
   .app-shell, .app-shell.context-hidden, .app-shell.review-mode { grid-template-columns: var(--sidebar-width) minmax(0,1fr); }
   .main-column { grid-column: 2; width: 100%; }
   .app-shell > .inspector { display: none; }
@@ -519,7 +517,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
   .app-shell.conversation-focus .transcript { padding-top: 56px; }
   .app-shell.conversation-focus .conversation-focus-toolbar { top: var(--space-7); right: var(--space-10); }
   .main-column { width: 100%; }
-  .sidebar { position: fixed; z-index: 40; top: var(--app-safe-top); bottom: var(--app-safe-bottom); left: var(--app-safe-left); width: min(280px,calc(100vw - 32px - var(--app-safe-left) - var(--app-safe-right))); transform: translateX(calc(-101% - var(--app-safe-left))); transition: transform var(--motion-normal); }
+  .sidebar { position: fixed; z-index: 40; top: var(--app-safe-top); bottom: var(--app-safe-bottom); left: var(--app-safe-left); width: min(272px,calc(100vw - 32px - var(--app-safe-left) - var(--app-safe-right))); transform: translateX(calc(-101% - var(--app-safe-left))); transition: transform var(--motion-normal); }
   .sidebar.open { transform: translateX(0); }
   .sidebar-resize-handle { display: none; }
   .scrim { display: block; position: fixed; z-index: 39; inset: 0; width: 100%; height: 100dvh; background: var(--backdrop); border-radius: 0; }
@@ -788,8 +786,9 @@ small, .meta { font-size: var(--font-assist); }
    Keep their state and other entry points intact, with no hidden row footprint. */
 :root .app-shell .composer-main .composer-capabilities { display: none; }
 :root .app-shell .composer-main .composer-bottom {
-  border-top: var(--border-width, 1px) solid var(--line);
-  padding-top: var(--space-6);
+  border-top: 0;
+  padding-top: 0;
+  min-height: 40px;
 }
 
 /* Mobile header status is icon-only; desktop keeps its existing labels/dots. */
@@ -845,7 +844,6 @@ small, .meta { font-size: var(--font-assist); }
 
 /* Second pass for the application shell: stronger primary navigation and a
    quieter chrome so the current task remains the visual center. */
-.app-shell{--sidebar-width:clamp(220px,var(--sidebar-preferred-width,272px),min(320px,28vw))}
 .sidebar{padding:var(--space-18) var(--space-12) 0}
 .brand{min-height:40px;margin-bottom:var(--space-16);padding-inline:var(--space-6)}
 .primary-nav{gap:var(--space-4);padding-bottom:var(--space-16);border-bottom:1px solid var(--line)}
@@ -856,31 +854,32 @@ small, .meta { font-size: var(--font-assist); }
 .search-trigger{min-height:44px;margin-bottom:var(--space-12);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel)}
 .app-header{height:60px;min-height:60px;padding-inline:var(--space-26);background:var(--bg)}
 .app-header .breadcrumb h1{font-size:calc(15px * var(--type-scale,1));font-weight:650}
-@media(max-width:1100px){.app-shell{--sidebar-width:clamp(200px,var(--sidebar-preferred-width,220px),min(300px,34vw))}}
 @media(max-width:767px){.sidebar{padding-top:var(--space-14);padding-inline:var(--space-10)}.app-header{height:56px;min-height:56px;padding-inline:var(--space-10)}}
 
 /* Conversation surface: content first, controls second. */
 .app-shell:not(.conversation-focus) .section-tabs{background:var(--bg)}
 .app-shell:not(.conversation-focus) .section-tabs>.section-tab{min-height:44px;border-bottom:0;border-radius:var(--radius-sm)}
 .app-shell:not(.conversation-focus) .section-tabs>.section-tab.active{background:var(--accent-bg);color:var(--accent)}
-.app-shell .transcript{padding-top:var(--space-32);padding-bottom:var(--space-28)}
+.app-shell .transcript{padding-top:28px;padding-bottom:16px}
 .app-shell .timeline-card{box-shadow:none}
-.app-shell .composer-main{padding:var(--space-12) var(--conversation-gutter) var(--space-12) var(--conversation-gutter-left,var(--conversation-gutter));border-top:0;background:var(--bg)}
-.app-shell .composer-main .composer{width:min(100%,var(--conversation-content-max));margin:0 auto;padding:14px 16px 12px;border-color:var(--line-strong);border-radius:24px;box-shadow:0 4px 18px var(--shadow-color)}
-.app-shell .composer-main .composer textarea{min-height:84px;font-size:var(--font-body);line-height:1.7}
-.app-shell .composer-main .attachment-button-slot .extras-add{width:32px;height:32px}
-.app-shell .composer-main .composer-actions .send-button{width:38px;height:38px}
+.app-shell .composer-main{padding:14px var(--conversation-gutter) 22px var(--conversation-gutter-left,var(--conversation-gutter));border-top:0;background:var(--bg)}
+/* Project context is available in the header and project-files inspector. */
+.app-shell .composer-main .composer-workspace{display:none}
+.app-shell .composer-main .composer{width:min(100%,var(--conversation-content-max));margin:0 auto;padding:12px 12px 8px;border-color:var(--line-strong);border-radius:14px;box-shadow:0 3px 14px var(--shadow-color)}
+.app-shell .composer-main .composer textarea{min-height:64px;max-height:160px;padding:3px 5px 8px;font-size:max(var(--font-body),16px);line-height:1.6}
 @media(min-width:768px){
-  .app-shell .composer-main .composer{padding-bottom:14px}
-  :root .app-shell .composer-main .composer-bottom{padding-top:8px}
+  .app-shell .composer-main .composer textarea:placeholder-shown{height:64px}
 }
+.app-shell .composer-main .attachment-button-slot .extras-add{width:44px;height:44px}
+.app-shell .composer-main .composer-actions .send-button{width:44px;height:44px}
 .app-shell .composer-main:focus-within .composer{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg),0 4px 18px var(--shadow-color)}
 .app-shell:has(.settings-page) .context-toggle{display:none}
 @media(max-width:767px){
-  .app-shell .transcript{padding-top:var(--space-20);padding-bottom:var(--space-18)}
-  .app-shell .composer-main{padding:var(--space-8) var(--conversation-gutter) var(--space-10) var(--conversation-gutter-left,var(--conversation-gutter))}
-  .app-shell .composer-main .composer{padding:var(--space-11) var(--space-10) var(--space-9)}
-  .app-shell .composer-main .composer textarea{min-height:76px}
+  .app-shell .transcript{padding-top:22px;padding-bottom:12px}
+  .app-shell .composer-main{padding:10px max(12px,var(--app-safe-right)) max(12px,var(--app-safe-bottom)) max(12px,var(--app-safe-left))}
+  .app-shell .composer-main .composer{padding:10px 8px 6px;border-radius:14px}
+  .app-shell .composer-main .composer textarea{min-height:48px;max-height:120px;padding:1px 5px 6px;line-height:1.5}
+  .app-shell .composer-main .composer textarea:placeholder-shown{height:48px}
 }
 
 /* Empty workspace is a starting point, not a warning card. */
@@ -894,7 +893,7 @@ small, .meta { font-size: var(--font-assist); }
    should reveal more context without shrinking the conversation underneath. */
 @media(min-width:1101px){
   /* Keep the drawer control above the wide-screen inspector so it remains usable for closing it. */
-  .app-shell > .main-column > .app-header .context-toggle { position: fixed; z-index: 31; top: var(--app-safe-top); right: var(--app-safe-right); }
+  .app-shell:not(.context-hidden) > .main-column > .app-header .context-toggle { position: fixed; z-index: 31; top: var(--app-safe-top); right: var(--app-safe-right); }
   .app-shell:not(.context-hidden):not(.btw-open){grid-template-columns:var(--sidebar-width) minmax(0,1fr)}
   .app-shell:not(.context-hidden):not(.btw-open)>.inspector{position:absolute;z-index:30;top:0;right:0;bottom:0;width:min(360px,calc(100% - var(--sidebar-width) - 32px));border-left:1px solid var(--line);box-shadow:-12px 0 32px var(--shadow-color)}
   .app-shell:not(.context-hidden):not(.btw-open)>.main-column{grid-column:2}
@@ -912,7 +911,6 @@ small, .meta { font-size: var(--font-assist); }
   --layer-toast: 50;
 }
 .app-shell {
-  --sidebar-width: clamp(220px, var(--sidebar-preferred-width, 272px), min(320px, 28vw));
 }
 .sidebar {
   background: var(--side);
@@ -981,7 +979,7 @@ small, .meta { font-size: var(--font-assist); }
   top: var(--app-safe-top);
   bottom: var(--app-safe-bottom);
   left: var(--app-safe-left);
-  width: min(296px, calc(100vw - 32px - var(--app-safe-left) - var(--app-safe-right)));
+  width: min(272px, calc(100vw - 32px - var(--app-safe-left) - var(--app-safe-right)));
   transform: translateX(calc(-101% - var(--app-safe-left)));
   transition: transform var(--motion-normal);
 }
@@ -1049,17 +1047,22 @@ small, .meta { font-size: var(--font-assist); }
   flex: 0 0 auto;
 }
 .app-shell[data-device-mode="mobile"] .transcript {
-  padding: var(--space-20) var(--conversation-gutter) var(--space-18);
+  padding: 22px var(--conversation-gutter) 12px var(--conversation-gutter-left,var(--conversation-gutter));
 }
 .app-shell[data-device-mode="mobile"] .composer-main {
-  padding: var(--space-8) var(--conversation-gutter) var(--space-10);
+  padding: 10px max(12px,var(--app-safe-right)) max(12px,var(--app-safe-bottom)) max(12px,var(--app-safe-left));
 }
 .app-shell[data-device-mode="mobile"] .composer-main .composer {
-  padding: var(--space-11) var(--space-10) var(--space-9);
+  padding: 10px 8px 6px;
+  border-radius: 14px;
 }
 .app-shell[data-device-mode="mobile"] .composer-main textarea {
-  min-height: 76px;
+  height: auto;
+  min-height: 48px;
+  max-height: 120px;
+  padding: 1px 5px 6px;
   font-size: 16px;
+  line-height: 1.5;
 }
 .app-shell[data-device-mode="mobile"] .page-view {
   width: 100%;
@@ -1299,38 +1302,41 @@ dialog.project-files-modal #changes-panel .change-workspace.show-diff .change-pr
   dialog.project-files-modal .project-change-row { min-height: 44px; }
 }
 
-/* Match the prototype's desktop session header without changing the mobile quick switcher. */
+/* Session identity keeps the prototype's title, origin and dropdown geometry. */
+.app-shell .app-header.has-session-controls > .quick-session { gap: 8px; min-height: 44px; padding: 2px 6px; border-radius: 7px; line-height: 1.5; }
+.app-shell .app-header.has-session-controls > .quick-session small { font: calc(11px * var(--type-scale, 1))/1.5 var(--sans); margin-top: 1px; }
+.app-shell .app-header.has-session-controls > .quick-session > .icon { flex: 0 0 13px; width: 13px; height: 13px; }
 @media (min-width: 768px) {
+  .app-shell .app-header.has-session-controls { padding: 6px 24px 6px 14px; gap: 12px; }
+  .app-shell .app-header.has-session-controls > .mobile-menu { width: 40px; min-width: 40px; height: 40px; min-height: 40px; }
   .app-shell .app-header.has-session-controls > .mobile-menu { display: inline-flex; }
   .app-shell .app-header.has-session-controls > .breadcrumb { display: none; }
-  .app-shell .app-header.has-session-controls > .quick-session { display: flex; align-items: center; justify-content: space-between; flex: 0 1 280px; min-width: 180px; min-height: 40px; padding: 0; color: var(--text); background: transparent; text-align: left; }
-  .app-shell .app-header.has-session-controls > .quick-session > span:first-child { display: grid; min-width: 0; gap: 1px; }
-  .app-shell .app-header.has-session-controls > .quick-session small { order: 2; overflow: hidden; color: var(--muted); font: calc(10px * var(--type-scale, 1)) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-  .app-shell .app-header.has-session-controls > .quick-session strong { order: 1; overflow: hidden; max-width: 280px; font-size: calc(14px * var(--type-scale, 1)); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-  .app-shell .app-header.has-session-controls > .quick-session > .icon { flex: 0 0 14px; width: 14px; height: 14px; color: var(--muted); }
+  .app-shell .app-header.has-session-controls > .quick-session { display: flex; align-items: center; justify-content: flex-start; flex: 0 1 auto; width: fit-content; max-width: 100%; min-width: 0; margin-left: -6px; color: var(--text); background: transparent; text-align: left; }
+  .app-shell .app-header.has-session-controls > .quick-session > span:first-child { display: grid; min-width: 0; gap: 0; }
+  .app-shell .app-header.has-session-controls > .quick-session small { order: 2; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell .app-header.has-session-controls > .quick-session strong { order: 1; overflow: hidden; max-width: 280px; font-size: calc(15px * var(--type-scale, 1)); font-weight: 600; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell .app-header.has-session-controls > .quick-session > .icon { color: var(--muted); }
   .app-shell .app-header.has-session-controls > .top-actions { margin-left: auto; }
   .app-shell .header-connection-status { display: inline-flex; align-items: center; gap: var(--space-5); color: var(--muted); font-size: var(--font-assist); white-space: nowrap; }
   .app-shell .header-connection-status.online { color: var(--success); }
   .app-shell .header-connection-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 }
 
-@media (min-width: 1101px) {
-  /* The prototype reserves the inspector column instead of covering the conversation. */
-  .app-shell.project-files-open > .main-column { width: calc(100% - 392px); overflow: visible; }
-  .app-shell.project-files-preview-open > .main-column { width: calc(100% - 720px); }
-  .app-shell.project-files-open > .main-column > .app-header { position: relative; z-index: 2; width: calc(100% + 392px); }
-  .app-shell.project-files-preview-open > .main-column > .app-header { width: calc(100% + 720px); }
-  .app-shell.project-files-open .conversation-panel { --conversation-content-max: 560px; }
-  .app-shell.project-files-open:not(.project-files-preview-open) .transcript { padding-left: 82px; padding-right: 30px; }
-  .app-shell.project-files-open:not(.project-files-preview-open) .composer-main { padding-left: 82px; padding-right: 30px; padding-bottom: 0; }
-  .app-shell.project-files-preview-open .transcript { padding-left: 135px; padding-right: 30px; }
-  .app-shell.project-files-preview-open .composer-main { padding-left: 135px; padding-right: 30px; padding-bottom: 0; }
-  .app-shell.project-files-open .timeline-toggle { display: none; }
-  .app-shell.project-files-open .project-files-trigger { flex: 0 0 auto; white-space: nowrap; }
-  .app-shell.project-files-open .composer-main .composer { width: min(100%, 560px); padding: 10px 12px 8px; }
-  .app-shell.project-files-open .composer-main .composer textarea { min-height: 48px; }
-  .app-shell.project-files-open .composer-bottom { padding-top: 5px; }
-  .app-shell.project-files-open .composer-foot,
-  .app-shell.project-files-open .runtime-footer { min-height: 0; max-height: 0; margin: 0; padding-block: 0; overflow: hidden; opacity: 0; pointer-events: none; }
+@media (max-width: 767px) {
+  .app-shell[data-device-mode="mobile"] .app-header { padding-inline:8px; gap:4px; }
+  .app-shell .app-header.has-session-controls > .quick-session { gap:4px; padding:0; color:var(--text); }
+  .app-shell .project-files-trigger { gap:4px; padding-inline:5px; border:0; }
+  .app-shell .project-files-trigger .count-badge { font-size:10px; min-width:14px; }
+  .app-shell .quick-session > span:first-child { flex:1; }
+  .app-shell .quick-session small { order:2; }
+  .app-shell .quick-session strong { order:1; min-width:0; max-width:100%; font-size:14px; font-weight:600; line-height:1.5; }
+  .app-shell .header-connection-status { display:none; }
+  .app-shell .top-actions { flex-shrink:0; }
+  .app-shell .composer-main .attachment-button-slot .extras-add,
+  .app-shell .composer-main .composer-actions .send-button { width:44px; height:44px; }
 }
+@media (max-width: 359px) {
+  .app-shell .quick-session strong { font-size:13px; }
+}
+
 .composer-draft-heading { min-height: 34px; padding: var(--space-8) var(--space-4) var(--space-6); color: var(--text); font-size: var(--font-body); font-weight: 500; }

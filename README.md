@@ -4,17 +4,6 @@
 
 [下载最新版](https://github.com/pi-rust/rpi-work/releases/latest) · [全部版本](https://github.com/pi-rust/rpi-work/releases) · [构建状态](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [开发与设计文档](#文档)
 
-![桌面工作台：项目导航、对话内工具调用、任务上下文和用量统计](docs/images/workspace-desktop.png)
-
-<details>
-<summary>查看手机界面</summary>
-
-<img src="docs/images/workspace-mobile.png" alt="手机端会话与工具调用" width="390">
-
-</details>
-
-界面截图来自正式 Dioxus 客户端的验收环境，使用示例会话、文件和统计数据。
-
 ## 下载与安装
 
 在 [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest) 的 **Assets** 中选择对应平台：

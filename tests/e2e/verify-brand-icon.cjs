@@ -1,13 +1,12 @@
 const assert = require('node:assert/strict');
 const { readFileSync, mkdirSync } = require('node:fs');
 const { resolve } = require('node:path');
-const { createHash } = require('node:crypto');
 const { chromium } = require('../support/browser.cjs');
 
 (async () => {
   mkdirSync(resolve(__dirname, '../../artifacts'), { recursive: true });
-  const official = readFileSync(resolve(__dirname, '../../assets/branding/rpi.svg'), 'utf8');
-  assert.equal(createHash('sha256').update(official).digest('hex'), '67f5fd2e2791443e3dace12dc02219a387248f4948e2bd840bf34c88bba36744');
+  const official = readFileSync(resolve(__dirname, '../../assets/branding/rpi-gear.png'));
+  const imageURL = `data:image/png;base64,${official.toString('base64')}`;
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
   try {
     for (const width of [1280, 390]) {
@@ -25,26 +24,61 @@ const { chromium } = require('../support/browser.cjs');
         const sidebar = document.querySelector('.sidebar').getBoundingClientRect();
         return sidebar.left >= 0 && sidebar.right <= innerWidth;
       });
-      const svg = mark.locator('svg');
-      assert.equal(await svg.getAttribute('viewBox'), '0 0 32 32');
-      assert.equal(await svg.locator('rect').count(), 4);
-      assert.equal(await svg.locator(':scope > rect').getAttribute('fill'), '#f4f1e9');
-      assert.equal(await svg.locator('g rect').nth(0).getAttribute('fill'), '#101113');
-      assert.equal(await svg.locator('g rect').nth(1).getAttribute('fill'), '#ec6b38');
+      const image = mark.locator('.brand-image');
+      const mask = await image.evaluate(element => getComputedStyle(element).maskImage);
+      assert.equal(mask, `url("${imageURL}")`, 'the supplied gear asset is embedded in the UI');
       const box = await mark.boundingBox();
-      const svgBox = await svg.boundingBox();
-      assert.deepEqual([box.width, box.height], [25, 25], 'match the actual Web workspace brand role');
-      assert.equal(svgBox.width, box.width);
-      assert.equal(svgBox.height, box.height);
+      const imageBox = await image.boundingBox();
+      assert.deepEqual([box.width, box.height], [29, 29], 'retain the prototype sidebar geometry');
+      assert.equal(imageBox.width, box.width);
+      assert.equal(imageBox.height, box.height);
+      assert.equal(await mark.getAttribute('aria-hidden'), 'true');
       assert(box.x >= 0 && box.x + box.width <= width);
       const favicon = page.locator('link[rel="icon"][type="image/svg+xml"]');
       await favicon.waitFor({ state: 'attached' });
       const href = await favicon.getAttribute('href');
-      assert.equal(decodeURIComponent(href.slice('data:image/svg+xml,'.length)), official);
+      assert(href.startsWith('data:image/svg+xml;base64,'));
+      const iconSVG = Buffer.from(href.split(',')[1], 'base64').toString('utf8');
+      assert(iconSVG.includes(`href="${imageURL}"`));
+      assert(iconSVG.includes('prefers-color-scheme:dark'), 'favicon remains visible in dark browser chrome');
+      const alpha = await page.evaluate(async url => {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0);
+        const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+        let transparent = 0, ink = 0;
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] === 0) transparent++;
+          if (data[i] > 240) ink++;
+        }
+        return { corner: data[3], transparent, ink };
+      }, imageURL);
+      assert.equal(alpha.corner, 0);
+      assert(alpha.transparent > 100000 && alpha.ink > 10000, 'transparent negative spaces and solid mark both survive export');
+      if (width === 390) await page.keyboard.press('Escape');
+      await page.locator('.home-mark .brand-image').waitFor();
+      assert.equal(await page.locator('.home-mark .brand-image').evaluate(element => getComputedStyle(element).maskImage), mask);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert.deepEqual(errors, []);
       await page.screenshot({ animations: 'disabled', path: resolve(__dirname, `../../artifacts/brand-icon-${width}.png`) });
-      console.log(`PASS official logo, layout and favicon at ${width}px`);
+      if (width === 390) await page.getByRole('button', { name: '打开项目导航', exact: true }).click();
+      await page.getByRole('button', { name: '打开设置', exact: true }).click();
+      await page.locator('#appearance').getByRole('button', { name: '深色', exact: true }).click();
+      await page.waitForFunction(() => document.documentElement.dataset.mode === 'dark');
+      await page.locator('#appearance').getByRole('button', { name: '保存更改', exact: true }).click();
+      await page.locator('#appearance').getByText('已应用更改。', { exact: true }).waitFor();
+      await page.getByRole('button', { name: '返回会话', exact: true }).click();
+      const darkImage = page.locator('.home-mark .brand-image');
+      const darkFill = await darkImage.evaluate(element => getComputedStyle(element).backgroundColor);
+      assert.equal(darkFill, await page.locator('.home-mark').evaluate(element => getComputedStyle(element).color));
+      assert(darkFill.match(/\d+/g).slice(0, 3).every(channel => Number(channel) > 150), 'dark mode uses a light logo');
+      await page.screenshot({ animations: 'disabled', path: resolve(__dirname, `../../artifacts/brand-icon-dark-${width}.png`) });
+      console.log(`PASS supplied gear logo, transparent asset, layout and adaptive favicon at ${width}px`);
       await page.close();
     }
   } finally {

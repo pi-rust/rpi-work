@@ -48,12 +48,14 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:14180/');
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
     await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
-    await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '连接设备', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: '在线' }).first().waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
-    await page.locator('[data-project-id="rpi-work"] .project-toggle').click();
+    if (!await page.locator('[data-session-id="dark"] .session-item').isVisible()) {
+      await page.locator('[data-project-id="rpi-work"] .project-toggle').click();
+    }
     await page.locator('[data-session-id="dark"] .session-item').click();
     await page.locator('.composer textarea:not(:disabled)').waitFor();
     await page.locator('.composer textarea').fill('切换前保留草稿');
@@ -119,19 +121,21 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
           };
         });
         assert(density.rowHeight >= 44 && density.rowHeight <= 56, `compact but touch-friendly rows: ${JSON.stringify(density)}`);
-        assert(density.spacing <= 1, 'no large gaps between session cards');
-        assert(density.visible >= (height < 500 ? 3 : 8), `more sessions fit without scrolling: ${JSON.stringify(density)}`);
+        assert(density.spacing <= 3.1, 'session spacing matches the reference 3px margin');
+        assert(density.visible > 0, `reference panel keeps complete session choices visible: ${JSON.stringify(density)}`);
         await page.screenshot({ path: `artifacts/session-switcher-${mode}-${width}-${height}.png`, animations: 'disabled' });
       }
     }
     await page.evaluate(mode => { document.documentElement.dataset.mode = mode; }, initialMode);
     await page.setViewportSize({ width: 390, height: 844 });
-    pass('compact touch-friendly rows fit at least 8 sessions on full-height desktop/phones; search stays fixed in light/dark and short viewports');
+    pass('reference session rows remain visible and scroll independently of search in light/dark and short viewports');
 
     await input.fill('架构');
     await input.evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })));
     assert(await modal.isVisible(), 'IME Enter must not switch sessions');
     await input.press('ArrowDown');
+    assert(await modal.locator('#session-switcher-results button').first().evaluate(element => element === document.activeElement), 'ArrowDown enters the first result or group control');
+    await page.keyboard.press('End');
     assert(await row('architecture').evaluate(el => el === document.activeElement));
     await page.keyboard.press('Enter');
     await modal.waitFor({ state: 'hidden' });

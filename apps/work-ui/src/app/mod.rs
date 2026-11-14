@@ -27,6 +27,7 @@ mod transcript_order;
 mod workspace;
 mod workspace_changes;
 mod workspace_connection;
+mod workspace_home;
 mod workspace_protocol;
 mod workspace_sessions;
 mod workspace_sync;

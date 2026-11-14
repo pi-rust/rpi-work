@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const output = path.join(__dirname,'screenshots','settings-collaboration');
+const output = process.env.CLARITY_OUTPUT_DIR ? path.resolve(process.env.CLARITY_OUTPUT_DIR) : path.join(__dirname,'screenshots','settings-collaboration');
 fs.mkdirSync(output,{recursive:true});
 (async () => {
   const browser = await chromium.launch({headless:true});
@@ -38,8 +38,8 @@ fs.mkdirSync(output,{recursive:true});
     await navigate('workspace');
   };
   try {
-    await page.goto(pathToFileURL(path.join(__dirname,'index.html')).href);
-    await check('独立静态原型，默认会话与禁用发送',async () => { await page.locator('#session-title').getByText('重新设计工作台界面',{exact:true}).waitFor();assert(await page.getByRole('button',{name:'发送消息',exact:true}).isDisabled());await noOverflow(); });
+    await page.goto(pathToFileURL(path.join(__dirname,'index.html')).href + '#workspace');
+    await check('独立静态原型，已有会话与禁用发送',async () => { await page.locator('#session-title').getByText('重新设计工作台界面',{exact:true}).waitFor();assert(await page.getByRole('button',{name:'发送消息',exact:true}).isDisabled());await noOverflow(); });
     await capture('01-workspace-desktop');
     await check('项目文件入口同时展示目录与改动，摘要在侧栏打开 Diff 并保留输入草稿',async () => {await page.locator('#prompt').fill('保留这份草稿');await page.locator('.project-files-trigger').click();await assert(await page.locator('#project-files-panel').isVisible());const panelBox=await page.locator('#project-files-panel').boundingBox();const viewportWidth=await page.evaluate(()=>innerWidth);assert(panelBox.x+panelBox.width>=viewportWidth-1 && panelBox.x>viewportWidth/2,'项目文件面板位于右侧');await assert(await page.getByText('项目目录',{exact:true}).isVisible());await assert(await page.getByText('工作区改动',{exact:true}).isVisible());await capture('37-project-files-desktop');await page.locator('#project-files-panel .project-changes .project-file-row.changed').first().click();await assert(await page.locator('#project-file-diff').isVisible());assert(await page.locator('#changes-panel').isHidden());assert((await page.locator('.project-files-panel').boundingBox()).width>600,'文件 Diff 使用大侧栏');await page.locator('[data-file-tab="theme_contract.rs"]').click();assert.match(await page.locator('#project-file-diff-path').innerText(),/theme_contract\.rs/);await page.locator('[data-file-tab="appearance.rs"]').click();await capture('38-project-file-diff-sidebar-desktop');await page.getByRole('button',{name:'返回文件列表',exact:true}).click();assert(await page.getByText('工作区改动',{exact:true}).isVisible());await page.locator('#project-files-panel [data-action="project-files"]').click();await page.locator('.change-summary').click();await assert(await page.locator('#project-file-diff').isVisible());assert(await page.locator('#changes-panel').isHidden());await page.locator('#project-files-panel [data-action="project-file-diff-back"]').click();await page.locator('#project-files-panel [data-action="project-files"]').click();assert.equal(await page.locator('#prompt').inputValue(),'保留这份草稿');});
     await check('模型与思考常驻，直接切换并保留草稿；工具过程可展开',async () => {
@@ -251,6 +251,6 @@ fs.mkdirSync(output,{recursive:true});
       await page.getByRole('button',{name:'关闭会话切换',exact:true}).click();
     });
     await check('原型无真实网络、无脚本异常',async () => {assert.deepEqual(errors,[]);assert.deepEqual(network,[]);});
-    fs.writeFileSync(path.join(__dirname,'verification.json'),JSON.stringify({scope:'standalone static concept only; not actual Dioxus application; short viewport is not real OS keyboard acceptance',revision:'settings-collaboration',checks,workspaceGeometry,errors,networkRequests:network},null,2)+'\n');
+    fs.writeFileSync(process.env.CLARITY_OUTPUT_DIR ? path.join(output,'verification.json') : path.join(__dirname,'verification.json'),JSON.stringify({scope:'standalone static concept only; not actual Dioxus application; short viewport is not real OS keyboard acceptance',revision:'settings-collaboration',checks,workspaceGeometry,errors,networkRequests:network},null,2)+'\n');
   } finally {await browser.close();}
 })().catch(error => {console.error(error);process.exitCode=1;});

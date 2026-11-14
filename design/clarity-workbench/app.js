@@ -3,6 +3,7 @@
 const shell = document.querySelector('.app-shell');
 const toastElement = document.querySelector('.toast');
 let toastTimer;
+let homeMode = false;
 function toast(message) { clearTimeout(toastTimer); toastElement.textContent = message; toastElement.hidden = false; toastTimer = setTimeout(() => { toastElement.hidden = true; }, 2600); }
 function syncNavigation() {
   const mobile = matchMedia('(max-width:767px)').matches;
@@ -10,6 +11,7 @@ function syncNavigation() {
   document.querySelector('.main-shell').inert = mobile && (shell.classList.contains('nav-open') || shell.classList.contains('project-files-open'));
 }
 function showView(view) {
+  if (view === 'home') { openHome(); return; }
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
   document.body.dataset.view = view;
   for (const page of document.querySelectorAll('.page')) page.hidden = page.id !== `${view}-page`;
@@ -22,7 +24,12 @@ function showView(view) {
   shell.classList.remove('nav-open','context-open');
   setProjectFiles(false);
   syncNavigation();
-  history.replaceState(null,'',`#${view}`);
+  history.replaceState(null,'',`#${view === 'workspace' && homeMode ? 'home' : view}`);
+  document.querySelector('.welcome-identity').hidden = view !== 'workspace' || !homeMode;
+  const homeActive = view === 'workspace' && homeMode;
+  document.querySelector('.welcome-nav').classList.toggle('active',homeActive);
+  if (homeActive) document.querySelector('.welcome-nav').setAttribute('aria-current','page');
+  else document.querySelector('.welcome-nav').removeAttribute('aria-current');
 }
 function showTab(tab) {
   const context = document.querySelector('#context-dialog');if (context.open) context.close();
@@ -88,7 +95,87 @@ const demoNodes = [
 let currentNode = 'local', currentSession = 'design', sessionLayout = 'grouped';
 const scopeKey = (node,id) => JSON.stringify([node,id]);
 const sessionDrafts = new Map(), sessionPreferences = new Map();
+const homeState = {node:'local',project:'rpi-work',draft:'',model:'DeepSeek V4 Pro',thinking:'高'};
+const previewMessages = new Map();
+let previewSequence = 0;
+function rememberDraft() {
+  const value = document.querySelector('#prompt').value;
+  if (homeMode) homeState.draft = value;
+  else sessionDrafts.set(scopeKey(currentNode,currentSession),value);
+}
+function syncWorkspaceMode() {
+  document.body.dataset.entry = homeMode ? 'home' : 'chat';
+  for (const element of document.querySelectorAll('.welcome-heading,.welcome-project,.welcome-suggestions,.welcome-footnote')) element.hidden = !homeMode;
+  document.querySelector('.welcome-identity').hidden = !homeMode || document.body.dataset.view !== 'workspace';
+  document.querySelector('#chat-panel').hidden = homeMode;
+  document.querySelector('#changes-panel').hidden = true;
+  document.querySelector('#prompt').placeholder = homeMode ? '有什么想法？尽管告诉 rpi…' : '说说接下来要做什么…';
+  const active = homeMode && document.body.dataset.view === 'workspace';
+  document.querySelector('.welcome-nav').classList.toggle('active',active);
+  if (active) document.querySelector('.welcome-nav').setAttribute('aria-current','page');
+  else document.querySelector('.welcome-nav').removeAttribute('aria-current');
+  const node = demoNodes.find(item => item.id === (homeMode ? homeState.node : currentNode));
+  document.querySelector('#connection-node').textContent = `${node.name}在线 · 演示`;
+  if (homeMode) document.querySelector('#configuration-origin').textContent = `${node.name} · ${homeState.project}`;
+}
+function openHome() {
+  rememberDraft();homeMode = true;
+  showView('workspace');syncWorkspaceMode();
+  document.querySelector('#prompt').value = homeState.draft;
+  document.querySelector('#prompt').dispatchEvent(new Event('input'));
+  syncPreference();renderSessionLists();
+}
+function openHomeProjects() {
+  const list = document.querySelector('#welcome-project-list');list.replaceChildren();
+  for (const node of demoNodes) for (const project of new Set(node.sessions.map(session => session.project))) {
+    const button = document.createElement('button');button.className = 'welcome-project-choice';
+    button.dataset.homeNode = node.id;button.dataset.homeProject = project;
+    button.setAttribute('aria-pressed',String(node.id === homeState.node && project === homeState.project));
+    const icon = document.createElement('i');icon.dataset.icon = 'folder';
+    const name = document.createElement('strong');name.textContent = project;
+    const origin = document.createElement('span');origin.textContent = node.name;
+    const check = document.createElement('i');check.dataset.icon = 'check';
+    button.append(icon,name,origin,check);list.append(button);
+  }
+  mountIcons(list);document.querySelector('#welcome-project-dialog').showModal();
+}
+function renderPreviewConversation() {
+  const messages = previewMessages.get(scopeKey(currentNode,currentSession));
+  document.body.dataset.preview = String(Boolean(messages));
+  document.querySelector('#fixture-transcript').hidden = Boolean(messages);
+  const thread = document.querySelector('#preview-transcript');thread.hidden = !messages;
+  thread.replaceChildren();
+  if (!messages) return;
+  for (const text of messages) {
+    const article = document.createElement('article');article.className = 'user-message';
+    const bubble = document.createElement('div');bubble.className = 'user-bubble';bubble.textContent = text;
+    article.append(bubble);thread.append(article);
+  }
+  const notice = document.createElement('p');notice.className = 'preview-message-note';
+  notice.textContent = '对话预览已创建。这里仅展示输入内容，尚未连接模型。';thread.append(notice);
+}
+function sendPreviewMessage() {
+  const text = document.querySelector('#prompt').value.trim();if (!text) return;
+  if (homeMode) {
+    const node = demoNodes.find(item => item.id === homeState.node);
+    const id = `preview-${++previewSequence}`;
+    node.sessions.unshift({id,title:Array.from(text).slice(0,24).join(''),project:homeState.project,recent:-previewSequence,state:'idle'});
+    const key = scopeKey(node.id,id);
+    sessionPreferences.set(key,{model:homeState.model,thinking:homeState.thinking});
+    previewMessages.set(key,[text]);selectSession(node.id,id);homeState.draft = '';
+  } else {
+    const messages = previewMessages.get(scopeKey(currentNode,currentSession));
+    if (!messages) { toast('这是设计预览：消息没有发送，草稿已保留。');return; }
+    messages.push(text);renderPreviewConversation();
+  }
+  document.querySelector('#prompt').value = '';
+  document.querySelector('#prompt').dispatchEvent(new Event('input'));
+  sessionDrafts.set(scopeKey(currentNode,currentSession),'');
+  document.querySelector('#prompt').focus();
+  document.querySelector('#chat-panel').scrollTop = document.querySelector('#chat-panel').scrollHeight;
+}
 function currentPreference() {
+  if (homeMode) return homeState;
   const key = scopeKey(currentNode,currentSession);
   if (!sessionPreferences.has(key)) sessionPreferences.set(key,{model:currentNode === 'local' ? 'DeepSeek V4 Pro' : 'GPT-5',thinking:currentNode === 'local' ? '高' : '中'});
   return sessionPreferences.get(key);
@@ -117,7 +204,7 @@ function sessionButton(node,session,flat,compactStatus=false) {
   button.className = 'session' + (flat ? ' flat-session' : '');
   button.dataset.node = node.id; button.dataset.sessionId = session.id;
   button.setAttribute('aria-label',`${session.title}，${node.name}，${session.project}`);
-  const selected = currentNode === node.id && currentSession === session.id;
+  const selected = !homeMode && currentNode === node.id && currentSession === session.id;
   button.classList.toggle('active',selected);
   if (selected) button.setAttribute('aria-current','true');
   const copy = document.createElement('span'); copy.className = 'session-copy';
@@ -229,7 +316,7 @@ function renderSessionLists() {
 function selectSession(nodeId,sessionId) {
   const node = demoNodes.find(item => item.id === nodeId), session = node?.sessions.find(item => item.id === sessionId);
   if (!session) return;
-  sessionDrafts.set(scopeKey(currentNode,currentSession),document.querySelector('#prompt').value);
+  rememberDraft();homeMode = false;
   const dialog = document.querySelector('#session-dialog'); if (dialog.open) dialog.close();
   currentNode = node.id;currentSession = session.id;
   document.querySelector('#session-title').textContent = session.title;
@@ -240,6 +327,7 @@ function selectSession(nodeId,sessionId) {
   document.querySelector('#prompt').value = sessionDrafts.get(scopeKey(node.id,session.id)) || '';
   document.querySelector('#prompt').dispatchEvent(new Event('input'));
   renderSessionLists();syncPreference();showView('workspace');showTab('chat');
+  syncWorkspaceMode();renderPreviewConversation();
   document.querySelector('.session-trigger').focus();
   // The inline fixture notice communicates the boundary without covering controls.
 }
@@ -336,6 +424,21 @@ document.addEventListener('click', event => {
     }
   }
   if (button.dataset.view) showView(button.dataset.view);
+  if (button.dataset.action === 'home') openHome();
+  if (button.dataset.action === 'welcome-project') openHomeProjects();
+  if (button.dataset.homeProject) {
+    homeState.node = button.dataset.homeNode;homeState.project = button.dataset.homeProject;
+    document.querySelector('#welcome-project-name').textContent = homeState.project;
+    const node = demoNodes.find(item => item.id === homeState.node);
+    document.querySelector('#welcome-project-node').textContent = node.name;
+    document.querySelector('#configuration-origin').textContent = `${node.name} · ${homeState.project}`;
+    document.querySelector('#welcome-project-dialog').close();syncWorkspaceMode();
+  }
+  if (button.dataset.prompt) {
+    const input = document.querySelector('#prompt');
+    input.value = input.value.trim() ? `${input.value}\n${button.dataset.prompt}` : button.dataset.prompt;
+    input.dispatchEvent(new Event('input'));input.focus();input.setSelectionRange(input.value.length,input.value.length);
+  }
   if (button.dataset.tab) {
     if (button.closest('#project-files-panel')) setProjectFiles(false);
     showTab(button.dataset.tab);
@@ -423,7 +526,7 @@ document.addEventListener('click', event => {
     toast(`已选 ${button.dataset.theme}；仅展示选择状态，不写入真实偏好。`);
   }
   if (button.dataset.mode) { document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active',b === button)); toast('明暗模式入口示意。本轮视觉稿展示浅色方案。'); }
-  if (button.classList.contains('send-button')) toast('这是设计预览：消息没有发送，草稿已保留。');
+  if (button.classList.contains('send-button')) sendPreviewMessage();
   if (button.dataset.action === 'search') openSearch();
 });
 document.querySelector('#session-display-setting').addEventListener('change',event => {
@@ -464,6 +567,7 @@ document.querySelector('#provider-search')?.addEventListener('input', event => {
 document.querySelector('#prompt').addEventListener('input', event => { document.querySelector('.send-button').disabled = !event.target.value.trim(); });
 document.querySelector('#prompt').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (event.target.value.trim()) document.querySelector('.send-button').click(); } });
 document.addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'j') {event.preventDefault();openHome();document.querySelector('#prompt').focus();}
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {event.preventDefault();openSearch();}
   if(event.key==='Escape' && document.fullscreenElement && !document.querySelector('dialog[open]') && !shell.classList.contains('nav-open')) {
     void document.exitFullscreen().catch(()=>toast('退出全屏未成功，请使用浏览器的退出全屏操作。'));
@@ -482,4 +586,10 @@ matchMedia('(max-width:767px)').addEventListener('change',syncNavigation);
 document.querySelector('#context-dialog').addEventListener('close', () => {
   document.querySelector('.topbar [data-action="context"]').setAttribute('aria-expanded','false');
 });
-mountIcons();syncFullscreen();renderResources();renderSessionLists();syncPreference();showView(['workspace','resources','settings'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'workspace');
+function routeHash() {
+  const view = location.hash.slice(1);
+  if (view === 'workspace' && homeMode) {selectSession(currentNode,currentSession);return;}
+  showView(['home','workspace','resources','settings'].includes(view) ? view : 'home');
+}
+window.addEventListener('hashchange',routeHash);
+mountIcons();syncFullscreen();renderResources();renderSessionLists();syncPreference();routeHash();

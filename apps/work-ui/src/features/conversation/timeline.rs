@@ -3,7 +3,7 @@
 use super::message_image::{ImageBlock, MessageImage, image_block};
 use super::message_presentation::{CodeBlock, CopyButton, task_item};
 use crate::features::observability::traces::{ToolTiming, status_label, tool_timing};
-use crate::shared::components::Icon;
+use crate::shared::{brand::BrandMark, components::Icon};
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 use std::fmt::Write as _;
@@ -245,9 +245,7 @@ fn tool_output_parts(output: &str) -> (String, Vec<Result<ImageBlock, String>>) 
 fn assistant_heading() -> Element {
     rsx! {
         div { class: "message-heading assistant-message-heading",
-            span { class: "assistant-avatar", aria_hidden: "true",
-                Icon { name: "code" }
-            }
+            BrandMark { class: "assistant-avatar" }
             strong { "rpi" }
         }
     }

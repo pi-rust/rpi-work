@@ -64,18 +64,15 @@
 /* rpi-web workspace: tool icon, target, optional edit counts, timing and success. */
 :root:not([data-tool-rendering="detailed"]) .conversation-tool { margin-block: 0; }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call {
-  border: 0; border-radius: 0;
-  background: transparent; overflow: clip;
+  border: 1px solid var(--conversation-tool-line,var(--line)); border-radius: var(--radius-sm);
+  background: var(--conversation-tool-bg,var(--panel)); overflow: clip;
 }
-:root:not([data-tool-rendering="detailed"]) .timeline-tool-region + .timeline-tool-region {
-  position: relative;
-}
-:root:not([data-tool-rendering="detailed"]) .timeline-tool-region + .timeline-tool-region::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0;
-  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-}
+/* Each visible tool owns one gap, independent of protocol-row boundaries.
+   Suppressed result rows stay empty and never acquire spacing. */
+:root:not([data-tool-rendering="detailed"]) .conversation-tool { gap: 8px; padding-bottom: 8px; }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary {
-  min-height: 34px; padding: 5px 4px; gap: 8px; border-radius: 5px; color: var(--muted);
+  min-height: 44px; padding: 10px 12px; gap: 7px; color: var(--conversation-tool-muted,var(--muted));
+  font-size: calc(13px * var(--type-scale,1)); line-height: 1.6;
   transition: background-color 160ms ease, color 160ms ease;
 }
 @media (hover: hover) {
@@ -92,17 +89,17 @@
 }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name > strong {
   flex: 0 1 auto; max-width: 70%; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; font-size: var(--font-assist); font-weight: 450; color: var(--muted);
+  white-space: nowrap; font-size: max(var(--font-assist),calc(13px * var(--type-scale,1))); font-weight: 450; color: var(--muted);
 }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name > strong:only-child { max-width: 100%; }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .call-name > code {
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: var(--font-assist)/1.65 var(--mono); color: var(--text);
+  font: max(var(--font-assist),calc(13px * var(--type-scale,1)))/1.65 var(--mono); color: var(--text);
 }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .tool-elapsed { font-size: calc(10px * var(--type-scale, 1)); }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > .call-body {
-  margin: 2px 0 12px 10px; padding: 5px 0 10px 22px;
-  border: 0; border-left: 1px solid var(--line); background: transparent;
+  margin: 0; padding: 0 12px 8px 36px;
+  border: 0; background: transparent;
 }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .call-section-title { margin: 10px 0 6px; }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .call-body pre {
@@ -115,16 +112,16 @@
   padding: 5px 0 5px 32px; color: var(--danger);
 }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .command-preview-surface {
-  padding: 6px 0 8px 16px; border: 0; border-radius: 0; background: transparent;
+  padding: 0; border: 0; border-radius: 0; background: transparent;
 }
 :root:not([data-tool-rendering="detailed"]) .conversation-widget .shell-card .call-body > pre.call-output {
-  padding: 5px 0 2px 16px; border-left: 1px solid var(--line); background: transparent; color: var(--muted);
+  padding: 5px 0 2px; border: 0; background: transparent; color: var(--muted);
 }
 @media (max-width: 767px) {
   :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > summary {
-    min-height: 36px; padding: 4px 6px; gap: 7px;
+    min-height: 44px; padding: 10px; gap: 6px; font-size: calc(12px * var(--type-scale,1));
   }
   :root:not([data-tool-rendering="detailed"]) .conversation-widget .inline-call > .call-body {
-    margin-bottom: 6px; padding-bottom: 6px;
+    padding: 0 10px 8px 30px;
   }
 }

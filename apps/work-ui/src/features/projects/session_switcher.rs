@@ -7,7 +7,12 @@ use super::{management::switcher_session_status, project_picker::project_label};
 
 const CSS: &str = include_str!("session_switcher.css");
 
-fn matches_query(session: &SessionSummary, projects: &[Project], label: &str, query: &str) -> bool {
+pub(super) fn matches_query(
+    session: &SessionSummary,
+    projects: &[Project],
+    label: &str,
+    query: &str,
+) -> bool {
     let project = projects
         .iter()
         .find(|project| session.project_id.as_deref() == Some(&project.id));

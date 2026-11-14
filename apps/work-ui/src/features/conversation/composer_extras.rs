@@ -40,6 +40,12 @@ pub struct AttachmentStore {
     next_id: u64,
 }
 impl AttachmentStore {
+    pub(crate) fn move_to_session(&mut self, from: &str, to: String) {
+        if let Some(state) = self.scopes.remove(from) {
+            self.scopes.insert(to, state);
+        }
+    }
+
     /// Metadata only: pending-state checks must never clone attachment contents.
     pub fn snapshot(&self, scope: &str) -> AttachmentSnapshot {
         self.scopes
@@ -679,6 +685,7 @@ pub fn AttachmentPicker(
     #[props(default = "all".to_owned())] presentation: String,
     #[props(default)] images_supported: bool,
     #[props(default)] disabled: bool,
+    #[props(default)] onmore: Option<EventHandler<()>>,
 ) -> Element {
     // Dioxus reconciles keys on iterator children. A solitary component's key
     // does not give its hooks a new lifetime when its scope prop changes.
@@ -686,7 +693,7 @@ pub fn AttachmentPicker(
         for attachment_scope in [scope] {
             AttachmentScope {
                 key: "{attachment_scope}:{presentation}", scope: attachment_scope, store,
-                onquote, presentation: presentation.clone(), images_supported, disabled,
+                onquote, presentation: presentation.clone(), images_supported, disabled, onmore,
             }
         }
     }
@@ -700,11 +707,12 @@ fn AttachmentScope(
     presentation: String,
     images_supported: bool,
     disabled: bool,
+    onmore: Option<EventHandler<()>>,
 ) -> Element {
     let presentation = AttachmentPresentation::from_prop(&presentation);
     rsx! {
         if matches!(presentation, AttachmentPresentation::All | AttachmentPresentation::Button) {
-            AttachmentReader { scope: scope.clone(), store, images_supported, disabled }
+            AttachmentReader { scope: scope.clone(), store, images_supported, disabled, onmore }
         }
         if matches!(presentation, AttachmentPresentation::All | AttachmentPresentation::Files) {
             AttachmentFiles { scope, store, onquote, images_supported, disabled }
@@ -718,6 +726,7 @@ fn AttachmentReader(
     mut store: Signal<AttachmentStore>,
     images_supported: bool,
     disabled: bool,
+    onmore: Option<EventHandler<()>>,
 ) -> Element {
     let instance = use_hook(|| NEXT_ATTACHMENT_READER.fetch_add(1, Ordering::Relaxed));
     let input_id = format!("rpi-attachment-input-{instance}");
@@ -752,8 +761,13 @@ fn AttachmentReader(
     let paste_input_id = input_id_json.clone();
     rsx! {
         div { class: "composer-extras attachment-picker attachment-button-slot",
-            label { class: "extras-add icon-button", title: if images_supported { "添加待发送图片或文本附件" } else { "添加文本附件；当前节点不支持图片发送" }, aria_label: "添加本地附件",
-                ExtraIcon { kind: "paperclip" }
+            if let Some(onmore) = onmore {
+                button { class: "extras-add icon-button", r#type: "button", title: "附件与更多", aria_label: "附件与更多", aria_haspopup: "dialog", onclick: move |_| onmore.call(()),
+                    ExtraIcon { kind: "plus" }
+                }
+            }
+            label { class: if onmore.is_some() { "attachment-menu-input" } else { "extras-add icon-button" }, title: if images_supported { "添加待发送图片或文本附件" } else { "添加文本附件；当前节点不支持图片发送" }, aria_label: "添加本地附件",
+                ExtraIcon { kind: "plus" }
                 input { id: input_id, r#type: "file", multiple: true, disabled: state.loading || disabled, aria_label: "选择本地附件，可多选",
                     onmounted: move |_| {
                         let input_id = paste_input_id.clone();

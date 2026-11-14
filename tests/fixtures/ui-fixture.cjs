@@ -423,8 +423,8 @@ async function startFixture(port=0,options={}){
   server.on('connection',s=>{
     sockets.add(s);
     s.on('close',()=>sockets.delete(s));
-    // Browser teardown may reset an upgraded socket before the close event.
-    s.on('error',error=>{if(error.code!=='ECONNRESET')throw error;});
+    // Browser teardown may reset or abort an upgraded socket before the close event.
+    s.on('error',error=>{if(!['ECONNRESET','ECONNABORTED'].includes(error.code))throw error;});
   });
   server.on('upgrade',(req,socket)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/api/v1/realtime')installWebSocket(req,socket);else socket.destroy();});
   await new Promise(resolve=>server.listen(port,'127.0.0.1',resolve));

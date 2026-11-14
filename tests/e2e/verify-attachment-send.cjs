@@ -1,13 +1,16 @@
-// Production WASM + synthetic HTTP/SSE only; no Agent or provider is started.
+// Production WASM + isolated fixture through the shared realtime-to-HTTP policy bridge.
+// Native prompt frames carry the attachments; no Agent or provider is started.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
-const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','image/jpeg'],maxImages:4,maxImageBytes:262144,maxTotalImageBytes:524288,maxImageBase64Bytes:349528,maxPromptBytes:786432,maxTextBytes:32768,maxContentBlocks:64,maxImageSide:2000,maxImagePixels:4000000,imageDecodeAllocBudgetBytes:33554432,frameBytes:1048576};
+const { bridgeRealtimePolicies } = require('../support/realtime-http-policy-bridge.cjs');
+const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','image/jpeg'],maxImages:4,maxImageBytes:1048576,maxTotalImageBytes:2097152,maxImageBase64Bytes:1398104,maxPromptBytes:3145728,maxTextBytes:32768,maxContentBlocks:64,maxImageSide:2000,maxImagePixels:4000000,imageDecodeAllocBudgetBytes:67108864,frameBytes:4194304};
 (async () => {
   const fixture = await startFixture(0, { promptContent: PROFILE });
   const browser = await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH});
   const page = await browser.newPage({viewport:{width:1440,height:1000}});
+  await bridgeRealtimePolicies(page,()=>[new URL(fixture.url).origin]);
   page.setDefaultTimeout(12000);
   const results=[], errors=[], geometry=[];
   const pass = name => { results.push(name); console.log('PASS',name); };
@@ -38,12 +41,14 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     const text={name:'说明.md',mimeType:'text/markdown',buffer:Buffer.from('# 完整附件\n安全的文本内容 😀\n最后一行。')};
     await page.getByRole('button',{name:'打开设置',exact:true}).click();
     await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'工作协同',exact:true}).click();
-    await page.getByRole('button',{name:'连接其他节点',exact:true}).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button',{name:'连接设备',exact:true}).click();
     await page.getByLabel('节点地址',{exact:true}).fill(fixture.url);
     await page.getByRole('button',{name:'连接节点',exact:true}).click();
-    await page.locator('.server-details [role=status]').filter({hasText:'在线'}).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({hasText:'已连接'}).waitFor();
     await page.getByRole('button',{name:'返回会话',exact:true}).click();
-    await page.locator('.project-row').filter({hasText:'rpi-work'}).click();
+    if (!await page.locator('[data-session-id="dark"] .session-item').isVisible()) {
+      await page.locator('.project-row').filter({hasText:'rpi-work'}).click();
+    }
     await page.locator('[data-session-id="dark"] .session-item').first().click();
     await page.waitForFunction(()=>document.querySelector('.composer-main textarea')?.dataset.imeReady==='true');
     await page.waitForFunction(()=>Boolean(window.__rpiAttachmentPasteBindings?.size));
@@ -222,9 +227,12 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     await page.locator('[data-session-id="architecture"] .session-item').first().click();await page.locator('[data-session-id="dark"] .session-item').first().click();
     await choose([photo,text]);
     for(const mode of ['light','dark']) {
-      await page.getByRole('button',{name:'更多操作',exact:true}).click();
-      await page.getByRole('menu',{name:'更多操作',exact:true}).getByRole('menuitem',{name:'外观与主题',exact:true}).click();
-      const theme=page.getByRole('dialog',{name:'外观与主题',exact:true});await theme.getByLabel('明暗模式',{exact:true}).selectOption(mode);await theme.getByRole('button',{name:'保存',exact:true}).click();await theme.waitFor({state:'hidden'});
+      await page.getByRole('button',{name:'打开设置',exact:true}).click();
+      const theme=page.locator('#appearance');
+      await theme.getByRole('button',{name:mode==='dark'?'深色':'浅色',exact:true}).click();
+      await theme.getByRole('button',{name:'保存更改',exact:true}).click();
+      await page.getByRole('button',{name:'返回会话',exact:true}).click();
+      await page.waitForFunction(expected=>document.documentElement.dataset.mode===expected,mode);
       for(const width of [1440,390,320]) {
         await page.setViewportSize({width,height:width===1440?1000:844});
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no viewport overflow');

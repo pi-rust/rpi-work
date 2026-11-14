@@ -6,12 +6,15 @@
 .composer-main .send-button>:is(.activity-spinner,.composer-stop-icon,.icon){grid-area:1/1;margin:0}
 .composer-main .send-button>.activity-spinner{width:14px;height:14px;flex:none}
 .composer-stop-icon{display:block;width:8px;height:8px;border-radius:2px;background:currentColor}
-/* One compact disk for send, loading and stop; retain the larger hit target. */
+/* Send, loading, continue and stop share the reference button surface. */
+.app-shell .composer-main .composer-actions .send-button{border-radius:10px}
 .composer-main .composer-actions .send-button,.composer-main .composer-actions .send-button.is-loading:disabled{position:relative;isolation:isolate;background:transparent;border-color:transparent}
-.composer-main .composer-actions .send-button::before{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(28px,100%);height:min(28px,100%);border-radius:50%;background:var(--accent);z-index:0;pointer-events:none}
+.composer-main .composer-actions .send-button::before{content:"";position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;background:var(--conversation-send-bg,var(--accent));z-index:0;pointer-events:none}
+.composer-main .composer-actions .send-button:disabled{opacity:1}
+.composer-main .composer-actions .send-button:disabled:not(.is-loading)::before{background:var(--conversation-send-disabled,var(--selected-bg))}
 .composer-main .composer-actions .send-button>:is(.icon,.activity-spinner,.composer-stop-icon){z-index:1}
-.composer-main .composer-actions .send-button>.icon{width:12px;height:12px;flex:0 0 12px}
-/* Continue shares the compact disk; only its play triangle is filled. */
+.composer-main .composer-actions .send-button>.icon{width:19px;height:19px;flex:0 0 19px}
+/* Continue fills its play triangle inside the same surface. */
 .composer-main .composer-actions .send-button.is-continue>.icon{fill:currentColor;stroke:none}
 @keyframes activity-spin{to{transform:rotate(360deg)}}
 /* Essential progress stays visible; reduced motion slows only this small ring. */

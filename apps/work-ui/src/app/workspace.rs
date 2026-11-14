@@ -22,7 +22,8 @@ use super::{
         resource_snapshot, sync_sidebar_session, transport_online,
     },
     transcript_order::{RowSource, TranscriptOrder},
-    workspace_changes, workspace_connection, workspace_protocol, workspace_sessions,
+    workspace_changes, workspace_connection, workspace_home, workspace_protocol,
+    workspace_sessions,
 };
 use crate::features::projects::{
     preview::{project_file_kind, render_project_file_at},
@@ -239,6 +240,13 @@ pub(super) fn App() -> Element {
     let mut change_diff = use_signal(|| None::<Diff>);
     let mut change_error = use_signal(|| None::<String>);
     let mut selected_session = use_signal(|| None::<String>);
+    let mut home_requested = use_signal(|| true);
+    let home_preferences =
+        use_signal(std::collections::HashMap::<String, workspace_home::Preferences>::new);
+    let mut home_project = use_signal(|| None::<(String, String)>);
+    let mut home_models = use_signal(|| None::<(u64, Result<Vec<ModelDescriptor>, String>)>);
+    let mut home_models_loading = use_signal(|| None::<u64>);
+    let mut home_first_send = use_signal(|| None::<(u64, String)>);
     let selected_tool_program_child = use_signal(|| None::<String>);
     let selected_tool_program_phase = use_signal(|| None::<String>);
     let mut selected_session_title = use_signal(|| None::<String>);
@@ -287,6 +295,7 @@ pub(super) fn App() -> Element {
         )));
     };
     let mut sidebar_open = use_signal(|| false);
+    let mut sidebar_collapsed = use_signal(|| false);
     use_effect(move || {
         let open = *sidebar_open.read();
         spawn(async move {
@@ -377,6 +386,7 @@ pub(super) fn App() -> Element {
     let mut file_error = use_signal(|| None::<String>);
     let mut change_directory_filter = use_signal(String::new);
     let mut change_mobile_preview = use_signal(|| false);
+    let mut change_list_open = use_signal(|| false);
     let mut session_switcher_open = use_signal(|| false);
     let mut new_session_busy = use_signal(|| false);
     let mut new_session_follow = use_signal(|| false);
@@ -513,6 +523,7 @@ pub(super) fn App() -> Element {
     let mut last_turn_usage = use_signal(|| None::<(String, Value)>);
     let mut context_open = use_signal(|| false);
     let mut stats_open = use_signal(|| false);
+    let mut composer_more_open = use_signal(|| false);
     let mut compact_revision = use_signal(|| 0u64);
     let mut compact_pending = use_signal(|| None::<u64>);
     let mut compact_operation_accepted = use_signal(|| false);
@@ -621,6 +632,7 @@ pub(super) fn App() -> Element {
         let _ = *session_generation.read();
         context_open.set(false);
         stats_open.set(false);
+        composer_more_open.set(false);
         compact_pending.set(None);
         compact_operation_accepted.set(false);
         node_compacting.set(false);
@@ -704,6 +716,7 @@ pub(super) fn App() -> Element {
     // The embedded resource view consumes the request after it mounts.
     use_effect(move || {
         if *open_session_config.read() {
+            composer_more_open.set(false);
             session_settings_tab.set("design".into());
             session_details_open.set(true);
         }
@@ -799,6 +812,9 @@ pub(super) fn App() -> Element {
                 .or_else(|| selected_session.peek().clone());
             let automatic = requested.is_none();
             let requested = requested.or_else(|| {
+                if *home_requested.peek() {
+                    return None;
+                }
                 connections::default_session_id(&workspace.sessions, &workspace.projects, |id| {
                     archived_projects
                         .peek()
@@ -1048,12 +1064,19 @@ pub(super) fn App() -> Element {
             let history = node_connection.history.peek().clone();
             spawn(async move {
                 #[cfg(target_arch = "wasm32")]
-            let location = document::eval("const id=new URL(location.href).searchParams.get('session');dioxus.send([location.origin+'/',id]);")
-                .recv::<(String, Option<String>)>()
+            let location = document::eval("const url=new URL(location.href);dioxus.send([url.origin+'/',url.searchParams.get('session'),url.hash]);")
+                .recv::<(String, Option<String>, String)>()
                 .await
                 .ok();
                 #[cfg(target_arch = "wasm32")]
-                let fallback = location.as_ref().map(|(origin, _)| origin.clone());
+                let fallback = location.as_ref().map(|(origin, _, _)| origin.clone());
+                #[cfg(target_arch = "wasm32")]
+                if location
+                    .as_ref()
+                    .is_some_and(|(_, _, hash)| hash == "#workspace")
+                {
+                    home_requested.set(false);
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 let fallback = None::<String>;
                 if *node_address_touched.peek() {
@@ -1063,7 +1086,7 @@ pub(super) fn App() -> Element {
                     // Entry already authenticated this owner. History must never
                     // redirect hosted Web/Android to another remembered node.
                     #[cfg(target_arch = "wasm32")]
-                    if let Some((_, Some(id))) = &location {
+                    if let Some((_, Some(id), _)) = &location {
                         if !id.is_empty()
                             && id.len() <= 128
                             && id.bytes().all(|byte| {
@@ -1078,7 +1101,7 @@ pub(super) fn App() -> Element {
                     return;
                 }
                 #[cfg(target_arch = "wasm32")]
-                if let Some((origin, Some(id))) = location {
+                if let Some((origin, Some(id), _)) = location {
                     if !id.is_empty()
                         && id.len() <= 128
                         && id
@@ -1572,6 +1595,7 @@ pub(super) fn App() -> Element {
             .is_some_and(|(epoch, id)| epoch == *node_connection.epoch.peek() && id == session_id);
         // Automatic background opening must not expand navigation behind settings.
         let expand_project = !automatic || active_page.peek().as_str() == "workspace";
+        home_requested.set(false);
         let _ = document::eval("window.__rpiNewFocusDispose?.();");
         state::cancel_requests(requests);
         transcript.set(Vec::new());
@@ -2345,163 +2369,204 @@ pub(super) fn App() -> Element {
         });
     };
 
-    let mut open_project = move |project_id: String| select_project(project_id, true);
-    let mut new_session = move |project_id: Option<String>| {
-        if *new_session_busy.peek() {
-            return;
+    let mut open_project = move |project_id: String| {
+        if *home_requested.peek() {
+            home_project.set(Some((node_origin(&node_url.peek()), project_id.clone())));
         }
-        if !matches!(*node_connection.phase.peek(), connections::Phase::Online) {
-            status.set("运行环境尚未就绪，请稍后重试。".into());
-            return;
-        }
-        let project_id = project_id
-            .or_else(|| {
-                selected_project.peek().clone().filter(|id| {
-                    !archived_projects
-                        .peek()
-                        .contains(&project_scope_key(&node_url.peek(), id))
-                })
-            })
-            .or_else(|| {
-                projects
-                    .peek()
-                    .iter()
-                    .find(|project| {
-                        !archived_projects
-                            .peek()
-                            .contains(&project_scope_key(&node_url.peek(), &project.id))
-                    })
-                    .map(|project| project.id.clone())
-            });
-        let Some(project_id) = project_id else {
-            project_error.set(None);
-            show_project_form.set(true);
-            return;
-        };
-        let Some(client) = shared_client.peek().clone() else {
-            return;
-        };
-        // Capture the creation preference before detaching the old session. Neither
-        // its persisted binding nor its scope-keyed draft is changed by this path.
-        let backend = selected_backend.peek().clone();
-        let default_model = app_settings::default_provider_model(&app_settings_store.peek().value)
-            .map(|(_, model)| model);
-        select_project(project_id.clone(), false);
-        new_session_busy.set(true);
-        new_session_follow.set(true);
-        status.set("正在准备新会话…".into());
-        let generation = *session_generation.peek();
-        let epoch = *node_connection.epoch.peek();
-        let origin = node_url.peek().clone();
-        // A project switch must not cancel a successful POST and lose its id.
-        state::scoped_spawn(submissions, async move {
-            let project_resources = if backend == "rpi" {
-                Some(NodeApi::native_project_resources(&client, &project_id).await)
-            } else {
-                None
-            };
-            let create_result: Result<String, String> = match project_resources {
-                Some(Ok(resources)) => {
-                    if let Some(selection) = resources.selection {
-                        NodeApi::native_create(
-                            &client,
-                            &project_id,
-                            NativeCreate {
-                                developer: false,
-                                selection: Some(selection),
-                            },
-                        )
-                        .await
-                        .map_err(|error| error.to_string())
-                    } else {
-                        client
-                            .create_session_with_backend(Some(&project_id), &backend)
-                            .await
-                            .map_err(|error| error.to_string())
-                    }
-                }
-                Some(Err(error)) if error.kind == NodeErrorKind::Unsupported => client
-                    .create_session_with_backend(Some(&project_id), &backend)
-                    .await
-                    .map_err(|error| error.to_string()),
-                Some(Err(error)) => Err(error.to_string()),
-                None => client
-                    .create_session_with_backend(Some(&project_id), &backend)
-                    .await
-                    .map_err(|error| error.to_string()),
-            };
-            let result = match create_result {
-                Ok(id) => {
-                    if let Some(model) = default_model.as_deref() {
-                        let _ = client.set_model(&id, model).await;
-                    }
-                    Ok(client
-                        .get_session(&id)
-                        .await
-                        .unwrap_or_else(|_| SessionSummary {
-                            session_id: id,
-                            project_id: Some(project_id.clone()),
-                            title: None,
-                            status: "idle".into(),
-                            created_at: 0,
-                            updated_at: 0,
-                            last_seq: 0,
-                            error: None,
-                            pending_resume: false,
-                            latest_settlement: None,
-                            archived: false,
-                            pinned: false,
-                        }))
-                }
-                Err(error) => Err(error.to_string()),
-            };
-
-            if *node_connection.epoch.peek() != epoch {
+        select_project(project_id, true);
+    };
+    let mut new_session =
+        move |project_id: Option<String>, first: Option<workspace_home::FirstMessage>| {
+            if *new_session_busy.peek() {
                 return;
             }
-            let follow = *new_session_follow.peek() && active_page.peek().as_str() == "workspace";
-            new_session_follow.set(false);
-            match result {
-                Ok(mut session) => {
-                    let id = session.session_id.clone();
-                    if *node_connection.epoch.peek() != epoch {
-                        return;
-                    }
-                    // Some HTTP nodes omit projectId from their session detail
-                    // response. Preserve the explicit creation context in that
-                    // case instead of turning a project session into a standalone one.
-                    if session.project_id.is_none() {
-                        session.project_id = Some(project_id.clone());
-                    }
-                    session.title = Some("新会话".into());
-                    {
-                        let mut items = sessions.write();
-                        items.retain(|item| item.session_id != id);
-                        items.insert(0, session);
-                    }
-                    auto_titles
-                        .write()
-                        .insert(session_scope_key(&origin, &id), String::new());
-                    if follow
-                        && *session_generation.peek() == generation
-                        && selected_project.peek().as_ref() == Some(&project_id)
-                    {
-                        focus_new_session.set(Some(id.clone()));
-                        pending_open.set(Some((false, id)));
-                        status.set("新会话已准备好，直接输入你的需求。".into());
-                    }
-                }
-                Err(error) => {
-                    if follow && *session_generation.peek() == generation {
-                        let message = format!("创建会话失败：{error}；可以重试。");
-                        new_session_error.set(Some(message.clone()));
-                        status.set(message);
-                    }
-                }
+            if !matches!(*node_connection.phase.peek(), connections::Phase::Online) {
+                status.set("运行环境尚未就绪，请稍后重试。".into());
+                return;
             }
-            new_session_busy.set(false);
-        });
-    };
+            let project_id = project_id
+                .or_else(|| {
+                    selected_project.peek().clone().filter(|id| {
+                        !archived_projects
+                            .peek()
+                            .contains(&project_scope_key(&node_url.peek(), id))
+                    })
+                })
+                .or_else(|| {
+                    projects
+                        .peek()
+                        .iter()
+                        .find(|project| {
+                            !archived_projects
+                                .peek()
+                                .contains(&project_scope_key(&node_url.peek(), &project.id))
+                        })
+                        .map(|project| project.id.clone())
+                });
+            let Some(project_id) = project_id else {
+                project_error.set(None);
+                show_project_form.set(true);
+                return;
+            };
+            let Some(client) = shared_client.peek().clone() else {
+                return;
+            };
+            // Capture the creation preference before detaching the old session. Neither
+            // its persisted binding nor its scope-keyed draft is changed by this path.
+            let backend = selected_backend.peek().clone();
+            let default_model =
+                app_settings::default_provider_model(&app_settings_store.peek().value);
+            if first.is_none() {
+                home_requested.set(false);
+            }
+            select_project(project_id.clone(), false);
+            new_session_busy.set(true);
+            new_session_follow.set(true);
+            status.set("正在准备新会话…".into());
+            let generation = *session_generation.peek();
+            let epoch = *node_connection.epoch.peek();
+            let origin = node_url.peek().clone();
+            // A project switch must not cancel a successful POST and lose its id.
+            state::scoped_spawn(submissions, async move {
+                let project_resources = if backend == "rpi" {
+                    Some(NodeApi::native_project_resources(&client, &project_id).await)
+                } else {
+                    None
+                };
+                let create_result: Result<String, String> = match project_resources {
+                    Some(Ok(resources)) => {
+                        if let Some(selection) = resources.selection {
+                            NodeApi::native_create(
+                                &client,
+                                &project_id,
+                                NativeCreate {
+                                    developer: false,
+                                    selection: Some(selection),
+                                },
+                            )
+                            .await
+                            .map_err(|error| error.to_string())
+                        } else {
+                            client
+                                .create_session_with_backend(Some(&project_id), &backend)
+                                .await
+                                .map_err(|error| error.to_string())
+                        }
+                    }
+                    Some(Err(error)) if error.kind == NodeErrorKind::Unsupported => client
+                        .create_session_with_backend(Some(&project_id), &backend)
+                        .await
+                        .map_err(|error| error.to_string()),
+                    Some(Err(error)) => Err(error.to_string()),
+                    None => client
+                        .create_session_with_backend(Some(&project_id), &backend)
+                        .await
+                        .map_err(|error| error.to_string()),
+                };
+                let mut preference_error = None;
+                let result = match create_result {
+                    Ok(id) => {
+                        if let Some(first) = first.as_ref().filter(|_| {
+                            *node_connection.epoch.peek() == epoch
+                                && *session_generation.peek() == generation
+                                && *new_session_follow.peek()
+                        }) {
+                            preference_error = workspace_home::configure_first_message(
+                                &client,
+                                &id,
+                                first,
+                                default_model,
+                            )
+                            .await
+                            .err();
+                        } else if let Some((_, model)) = default_model {
+                            let _ = client.set_model(&id, &model).await;
+                        }
+                        Ok(client
+                            .get_session(&id)
+                            .await
+                            .unwrap_or_else(|_| SessionSummary {
+                                session_id: id,
+                                project_id: Some(project_id.clone()),
+                                title: None,
+                                status: "idle".into(),
+                                created_at: 0,
+                                updated_at: 0,
+                                last_seq: 0,
+                                error: None,
+                                pending_resume: false,
+                                latest_settlement: None,
+                                archived: false,
+                                pinned: false,
+                            }))
+                    }
+                    Err(error) => Err(error.to_string()),
+                };
+
+                if *node_connection.epoch.peek() != epoch {
+                    return;
+                }
+                let follow =
+                    *new_session_follow.peek() && active_page.peek().as_str() == "workspace";
+                new_session_follow.set(false);
+                match result {
+                    Ok(mut session) => {
+                        let id = session.session_id.clone();
+                        if *node_connection.epoch.peek() != epoch {
+                            return;
+                        }
+                        // Some HTTP nodes omit projectId from their session detail
+                        // response. Preserve the explicit creation context in that
+                        // case instead of turning a project session into a standalone one.
+                        if session.project_id.is_none() {
+                            session.project_id = Some(project_id.clone());
+                        }
+                        session.title = Some("新会话".into());
+                        {
+                            let mut items = sessions.write();
+                            items.retain(|item| item.session_id != id);
+                            items.insert(0, session);
+                        }
+                        auto_titles
+                            .write()
+                            .insert(session_scope_key(&origin, &id), String::new());
+                        if follow
+                            && *session_generation.peek() == generation
+                            && selected_project.peek().as_ref() == Some(&project_id)
+                        {
+                            if let Some(first) = first {
+                                let target = session_scope_key(&origin, &id);
+                                let text = state::draft_for(&drafts.peek(), &first.scope).text;
+                                update_draft(drafts, &target, text);
+                                update_draft(drafts, &first.scope, String::new());
+                                attachment_store
+                                    .write()
+                                    .move_to_session(&first.scope, target);
+                                if preference_error.is_none() {
+                                    home_first_send.set(Some((generation + 1, id.clone())));
+                                } else {
+                                    new_session_error.set(preference_error.clone());
+                                }
+                            }
+                            focus_new_session.set(Some(id.clone()));
+                            pending_open.set(Some((false, id)));
+                            status
+                                .set(preference_error.unwrap_or_else(|| {
+                                    "新会话已准备好，直接输入你的需求。".into()
+                                }));
+                        }
+                    }
+                    Err(error) => {
+                        if follow && *session_generation.peek() == generation {
+                            let message = format!("创建会话失败：{error}；可以重试。");
+                            new_session_error.set(Some(message.clone()));
+                            status.set(message);
+                        }
+                    }
+                }
+                new_session_busy.set(false);
+            });
+        };
 
     // Shared by session settings and the resource panel. Changing an execution backend is
     // a creation preference plus an explicit independent-session creation, never
@@ -2535,7 +2600,7 @@ pub(super) fn App() -> Element {
         }
         selected_backend.set(backend);
         if selected_session.peek().is_some() {
-            new_session(project);
+            new_session(project, None);
         }
     });
 
@@ -2839,6 +2904,7 @@ pub(super) fn App() -> Element {
         if scope_changed {
             git_scope.set(Some(scope.clone()));
             git_status.set(None);
+            change_list_open.set(false);
             change_query.set(String::new());
             change_directory_filter.set(String::new());
             change_status_filter.set("all".into());
@@ -3656,7 +3722,7 @@ pub(super) fn App() -> Element {
                     String::new(),
                 );
             }
-            new_session(None);
+            new_session(None, None);
             return;
         }
         if command == "/help" {
@@ -3705,6 +3771,33 @@ pub(super) fn App() -> Element {
         }
         dispatch_composer();
     };
+
+    use_effect(move || {
+        let intent = home_first_send.read().clone();
+        let Some((generation, id)) = intent else {
+            return;
+        };
+        let current = *session_generation.read();
+        if current > generation
+            || (current == generation
+                && opening_session.read().is_none()
+                && selected_session.read().as_ref() != Some(&id))
+        {
+            home_first_send.set(None);
+            return;
+        }
+        if current != generation
+            || selected_session.read().as_ref() != Some(&id)
+            || projection.read().is_none()
+            || !transport_online(projection.read().as_ref(), &node_connection.phase.read())
+        {
+            return;
+        }
+        home_first_send.set(None);
+        if active_page.peek().as_str() == "workspace" && !*home_requested.peek() {
+            send_prompt(false, None);
+        }
+    });
 
     use_effect(move || {
         let intent = pending_enter.read().clone();
@@ -4171,6 +4264,68 @@ pub(super) fn App() -> Element {
         }
     };
     let workspace_page = active_page.read().as_str() == "workspace";
+    let showing_home = workspace_page && *home_requested.read();
+    let online = matches!(*node_connection.phase.read(), connections::Phase::Online);
+    let home_origin = node_origin(&node_url.read());
+    let home_scope = format!("{home_origin}::new-conversation");
+    let home_project_id = home_project
+        .read()
+        .as_ref()
+        .filter(|(origin, _)| origin == &home_origin)
+        .map(|(_, id)| id.clone())
+        .or_else(|| selected_project.read().clone())
+        .filter(|id| visible_projects.iter().any(|project| &project.id == id))
+        .or_else(|| visible_projects.first().map(|project| project.id.clone()));
+    let refresh_home_models = Callback::new(move |()| {
+        let epoch = *node_connection.epoch.peek();
+        if *home_models_loading.peek() == Some(epoch)
+            || !matches!(*node_connection.phase.peek(), connections::Phase::Online)
+        {
+            return;
+        }
+        let Some(client) = shared_client.peek().clone() else {
+            return;
+        };
+        home_models_loading.set(Some(epoch));
+        spawn(async move {
+            let result = workspace_home::configured_models(&client).await;
+            if *node_connection.epoch.peek() == epoch {
+                home_models.set(Some((epoch, result)));
+                home_models_loading.set(None);
+            }
+        });
+    });
+    use_effect(move || {
+        let epoch = *node_connection.epoch.read();
+        if *home_requested.read()
+            && active_page.read().as_str() == "workspace"
+            && matches!(*node_connection.phase.read(), connections::Phase::Online)
+            && home_models
+                .peek()
+                .as_ref()
+                .is_none_or(|(loaded, _)| *loaded != epoch)
+        {
+            refresh_home_models.call(());
+        }
+    });
+    let go_home = Callback::new(move |()| {
+        if !*home_requested.peek() || *new_session_busy.peek() {
+            new_session_error.set(None);
+            new_session_follow.set(false);
+        }
+        home_requested.set(true);
+        active_page.set("workspace".into());
+        sidebar_open.set(false);
+        conversation_focus.set(false);
+        project_files_open.set(false);
+        project_file_preview.set(false);
+        change_mobile_preview.set(false);
+    });
+    let home_model_result = home_models
+        .read()
+        .as_ref()
+        .filter(|(epoch, _)| *epoch == *node_connection.epoch.read())
+        .map(|(_, result)| result.clone());
     let app_settings_document = app_settings_store.read().value.clone();
     let mut resource_nav_items = [
         (app_settings::ids::menus::EXTENSIONS, "blocks", "扩展", 10),
@@ -4211,15 +4366,18 @@ pub(super) fn App() -> Element {
         && (super::local_node::is_local(&node_url.read())
             || node_url.read().as_str() == "about:blank");
     let navigation_title = match active_page.read().as_str() {
+        "resources" => "资源中心",
         "packages" => "Packages",
         "skills" => "技能库",
         "extensions" => "扩展",
         "meta-agent" => "元Agent",
         "settings" => match settings_section.read().as_str() {
-            "devices" => "工作协同",
+            "display" | "appearance" | "session-display" | "footer" => "界面与显示",
+            "devices" | "components" => "工作协同",
             "providers" => "模型供应商",
             "updates" => "应用更新",
-            _ => "通用",
+            "app-settings" => "高级设置",
+            _ => "设置总览",
         },
         _ => "工作空间",
     };
@@ -4268,7 +4426,10 @@ pub(super) fn App() -> Element {
     let (workspace_kind, workspace_label, workspace_icon) =
         node_info::workspace_location(node_display_local, &node_url.read());
     let workspace_address = node_info::safe_address(&node_url.read());
-    let resource_project = selected_project.read().clone();
+    let resource_project = selected_project
+        .read()
+        .clone()
+        .or_else(|| home_project_id.clone());
     let resource_project_name = resource_project
         .as_ref()
         .and_then(|project_id| {
@@ -4406,6 +4567,7 @@ pub(super) fn App() -> Element {
             git_loading: *git_loading.read(),
             git_error: git_error.read().clone(),
             change_mobile_preview,
+            listing_origin: *change_list_open.read(),
             change_count: change_count.clone(),
             reviewed_count,
             change_query,
@@ -4419,7 +4581,7 @@ pub(super) fn App() -> Element {
             change_diff,
             change_error,
             onopen: open_change_handler.clone(),
-            onback: EventHandler::new(move |()| { project_file_tab.set("files".into()); change_mobile_preview.set(false); }),
+            onback: EventHandler::new(move |()| { project_file_tab.set("files".into()); change_mobile_preview.set(false); change_list_open.set(false); }),
         }
     };
 
@@ -4465,6 +4627,8 @@ pub(super) fn App() -> Element {
             style { "{REVIEW_CSS}" }
             style { {activity::CSS} }
             style { "{runtime_stats::CSS}" }
+            style { "{workspace_home::CSS}" }
+            style { {include_str!("workspace_panels.css")} }
             runtime_stats::RuntimeDialogs {
                 scope: selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),
                 runtime_state, projection, transcript, last_turn: last_turn_usage,
@@ -4495,15 +4659,25 @@ pub(super) fn App() -> Element {
                     }
                 }
             }
-            main { class: format!("{}{}{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
+            main { class: format!("{}{}{}{}{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
                 ("settings", false) | ("workspace", false) => "app-shell context-hidden",
                 _ => "app-shell",
-            }, if *btw_open.read() && active_page.read().as_str() == "workspace" { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }, if *project_files_open.read() { " project-files-open" } else { "" }, if *project_file_preview.read() || *change_mobile_preview.read() { " project-files-preview-open" } else { "" }),
+            }, if *btw_open.read() && workspace_page && !showing_home { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }, if *project_files_open.read() { " project-files-open" } else { "" }, if *project_file_preview.read() || *change_mobile_preview.read() { " project-files-preview-open" } else { "" }, if showing_home { " home-page" } else { "" }, if *sidebar_collapsed.read() && !mobile_device { " sidebar-collapsed" } else { "" }),
                 "data-device-mode": if mobile_device { "mobile" } else { "desktop" },
                 onkeydown: move |event| {
-                if event.key() == Key::Escape && conversation_focus() {
+                if (event.modifiers().ctrl() || event.modifiers().meta()) && !event.is_composing() {
+                    if let Key::Character(key) = event.key() {
+                        if key.eq_ignore_ascii_case("j") {
+                            event.prevent_default();
+                            go_home.call(());
+                        } else if key.eq_ignore_ascii_case("k") {
+                            event.prevent_default();
+                            global_search_open.set(true);
+                        }
+                    }
+                } else if event.key() == Key::Escape && conversation_focus() {
                     conversation_focus.set(false);
-                    let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toggle')?.focus(), 0);");
+                    let _ = document::eval("setTimeout(() => document.querySelector('.workspace-view-menu summary')?.focus(), 0);");
                 } else if event.key() == Key::Escape && *sidebar_open.read() {
                     sidebar_open.set(false);
                 }
@@ -4521,7 +4695,13 @@ pub(super) fn App() -> Element {
                         Icon { name: "search" } span { "搜索项目与会话" } kbd { "Ctrl K" }
                     }
                     nav { class: "primary-nav", aria_label: "主导航",
-                        button { class: if ["packages", "skills", "extensions"].contains(&active_page.read().as_str()) { "nav-item active" } else { "nav-item" }, r#type: "button", onclick: move |_| { active_page.set("packages".into()); sidebar_open.set(false); }, Icon { name: "blocks" } span { "资源中心" } }
+                        button { class: if showing_home { "nav-item home-nav active" } else { "nav-item home-nav" },
+                            r#type: "button", aria_label: "新对话", aria_current: showing_home.then_some("page"),
+                            aria_keyshortcuts: "Control+j Meta+j",
+                            onclick: move |_| go_home.call(()),
+                            Icon { name: "edit" } span { "新对话" } kbd { "Ctrl J" }
+                        }
+                        button { class: if ["resources", "packages", "skills", "extensions"].contains(&active_page.read().as_str()) { "nav-item active" } else { "nav-item" }, r#type: "button", onclick: move |_| { active_page.set("resources".into()); sidebar_open.set(false); }, Icon { name: "blocks" } span { "资源中心" } }
                         if !resource_nav_items.is_empty() {
                             div { class: "nav-group advanced-nav-group", aria_label: "高级功能",
                                 button { class: if resource_nav_items.iter().any(|(page, _, _, _)| active_page.read().as_str() == *page) { "nav-item nav-disclosure-trigger active" } else { "nav-item nav-disclosure-trigger" }, r#type: "button", aria_expanded: advanced_features_expanded.to_string(), onclick: move |_| advanced_features_expanded.toggle(), Icon { name: "blocks" } span { "高级功能" } Icon { name: if *advanced_features_expanded.read() { "chevron-down" } else { "chevron-right" } } }
@@ -4639,7 +4819,7 @@ pub(super) fn App() -> Element {
                                 Icon { name: "message" }
                                 strong { "当前节点还没有活动会话" }
                                 span { "创建后，会话会按项目显示在这里；已归档会话可从底部查看。" }
-                                button { class: "button", disabled: *new_session_busy.read() || !matches!(*node_connection.phase.read(), connections::Phase::Online), onclick: move |_| new_session(None),
+                                button { class: "button", disabled: *new_session_busy.read() || !online, onclick: move |_| new_session(None, None),
                                     if *new_session_busy.read() { "正在创建…" } else { "新建会话" }
                                 }
                             }
@@ -4688,7 +4868,7 @@ pub(super) fn App() -> Element {
                                         class: "project-new-session", r#type: "button",
                                         aria_label: "在 {display_name} 中新建会话", title: "在此项目中新建会话",
                                         disabled: *new_session_busy.read() || !matches!(*node_connection.phase.read(), connections::Phase::Online),
-                                        onclick: move |_| new_session(Some(create_project_id.clone())),
+                                        onclick: move |_| new_session(Some(create_project_id.clone()), None),
                                         Icon { name: "plus".to_owned() }
                                     }
                                     button {
@@ -4700,7 +4880,7 @@ pub(super) fn App() -> Element {
                                     }
                                     div { id: "project-menu-{project_id}", class: "workspace-menu", popover: "auto", role: "menu", aria_label: "项目操作",
                                         onkeydown: move |event| event.stop_propagation(),
-                                        button { role: "menuitem", disabled: *new_session_busy.read() || !matches!(*node_connection.phase.read(), connections::Phase::Online), onclick: { let id=project_id.clone(); move |_| new_session(Some(id.clone())) }, "新建会话" }
+                                        button { role: "menuitem", disabled: *new_session_busy.read() || !online, onclick: { let id=project_id.clone(); move |_| new_session(Some(id.clone()), None) }, "新建会话" }
                                         button { role: "menuitem", onclick: { let id=project_id.clone(); move |_| { editing_project_id.set(Some(id.clone())); project_name_error.set(None); project_name_open.set(true); } }, "重命名项目" }
                                         button { role: "menuitem", onclick: { let id=project_id.clone(); move |_| show_node_info(Some(id.clone())) }, "节点信息" }
                                         hr {}
@@ -4783,60 +4963,88 @@ pub(super) fn App() -> Element {
                         }
                     }
                     button { class: "nav-item archive-entry", onclick: move |_| { archive_open.set(true); sidebar_open.set(false); }, Icon { name: "folder" } "已归档" }
-                    button { class: "profile", aria_label: "打开设置", onclick: move |_| { active_page.set("settings".to_owned()); settings_section.set("settings".to_owned()); sidebar_open.set(false); },
-                        span { class: "avatar", "R" }
-                        span { strong { "设置" } small { if device_mode.read().is_mobile() { "电脑连接与外观" } else { "运行环境、Provider 与外观" } } }
-                        Icon { name: "settings".to_owned() }
+                    button { class: if active_page.read().as_str() == "settings" { "nav-item settings-entry active" } else { "nav-item settings-entry" }, aria_label: "打开设置", onclick: move |_| { active_page.set("settings".to_owned()); settings_section.set("appearance".to_owned()); sidebar_open.set(false); },
+                        Icon { name: "settings" }
+                        span { "设置" }
+                        Icon { name: "chevron-right" }
                     }
                 }
                 super::sidebar_resize::Handle {}
                 div { class: "main-column",
-                    header { class: if workspace_page { "app-header has-session-controls" } else { "app-header" },
-                        button { class: "mobile-menu", aria_label: "打开项目导航", onclick: move |_| sidebar_open.set(true), Icon { name: "menu".to_owned() } }
-                        div { class: if workspace_page { "breadcrumb" } else { "breadcrumb page-breadcrumb" },
-                            Icon { name: if active_page.read().as_str() == "settings" { "settings" } else { "folder" } }
+                    header { class: if showing_home { "app-header home-header" } else if workspace_page { "app-header has-session-controls" } else { "app-header" },
+                        button { class: "mobile-menu", aria_label: if !mobile_device && !sidebar_collapsed() { "收起项目导航" } else { "打开项目导航" },
+                            aria_expanded: if mobile_device { sidebar_open() } else { !sidebar_collapsed() },
+                            aria_controls: "project-sidebar",
+                            onclick: move |_| { if device_mode.peek().is_mobile() { sidebar_open.toggle(); } else { sidebar_collapsed.toggle(); } },
+                            Icon { name: "menu" }
+                        }
+                        if showing_home {
+                            div { class: "home-identity", strong { "rpi " span { "work" } } span { "新对话" } }
+                        }
+                        div { class: if workspace_page { "breadcrumb" } else { "breadcrumb page-breadcrumb" }, hidden: showing_home,
+                            Icon { name: if active_page.read().as_str() == "settings" { "settings" } else if active_page.read().as_str() == "resources" { "blocks" } else { "folder" } }
                             span { class: "breadcrumb-project",
                                 if active_page.read().as_str() == "settings" { "设置" }
+                                else if active_page.read().as_str() == "resources" { "资源中心" }
                                 else { "{selected_project_name.read().as_deref().unwrap_or(\"rpi-work\")}" }
                             }
-                            span { class: "slash", "/" }
+                            span { class: "slash", if active_page.read().as_str() == "resources" { Icon { name: "chevron-right" } } else { "/" } }
                             h1 {
                                 if workspace_page {
                                     if let Some(title) = selected_session_title.read().as_deref().filter(|s| !s.trim().is_empty()) { "{title}" } else if selected_session.read().is_some() { "未命名会话" } else { "未选择会话" }
-                                } else { "{navigation_title}" }
+                                } else if active_page.read().as_str() == "resources" { "{selected_project_name.read().as_deref().unwrap_or(\"rpi-work\")}" }
+                                else { "{navigation_title}" }
                             }
                         }
-                        if workspace_page {
-                            button { class: "quick-session", aria_label: "切换会话", onclick: move |_| { session_switcher_open.set(true); },
+                        if workspace_page && !showing_home {
+                            button { class: "quick-session", aria_label: "切换会话",
+                                title: format!("{}\n{}\n{}", selected_session_title.read().as_deref().unwrap_or("选择一个会话"), composer_project_path.as_deref().unwrap_or_default(), composer_branch.as_deref().unwrap_or_default()),
+                                onclick: move |_| { session_switcher_open.set(true); },
                                 span {
-                                    small { "{selected_project_name.read().as_deref().unwrap_or(\"rpi-work\")}" }
+                                    small { if node_display_local { "本机" } else { "节点" } " · {selected_project_name.read().as_deref().unwrap_or(\"rpi-work\")}" }
                                     strong { {selected_session_title.read().as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(if selected_session.read().is_some() { "未命名会话" } else { "选择一个会话" }).to_owned()} }
                                 }
                                 Icon { name: "chevron".to_owned() }
                             }
                         }
                         div { class: "top-actions",
-                            if workspace_page {
                                 span { class: if node_status_online { "header-connection-status online" } else { "header-connection-status" },
                                     span { class: "header-connection-dot" }
                                     if node_display_local { "本机" } else { "节点" }
                                     " · "
                                     "{node_status_short_label}"
                                 }
+                                if workspace_page && (!showing_home || selected_session.read().is_some()) {
                                 button { class: "icon-button timeline-toggle", r#type: "button",
                                     aria_label: if timeline_visible() { "隐藏时间线" } else { "显示时间线" },
                                     title: if timeline_visible() { "隐藏时间线" } else { "显示时间线" },
                                     aria_pressed: timeline_visible(), aria_expanded: timeline_visible(),
                                     disabled: selected_session.read().is_none(),
-                                    onclick: move |_| timeline_visible.set(!timeline_visible()),
+                                    onclick: move |_| { home_requested.set(false); timeline_visible.set(!timeline_visible()); },
                                     Icon { name: "clock" }
                                 }
+                                }
+                                if (workspace_page && !showing_home) || selected_project.read().is_some() {
                                 button { class: "project-files-trigger", r#type: "button", aria_label: "打开项目文件", title: "项目文件与变更", aria_expanded: *project_files_open.read(), onclick: move |_| {
+                                    home_requested.set(false);
                                     project_file_tab.set("files".into());
                                     project_files_open.set(true);
                                 }, Icon { name: "file".to_owned() } span { "项目文件" } span { class: "count-badge", "{change_count}" } }
                             }
-                            button { class: "icon-button conversation-focus-toggle", r#type: "button", aria_label: "专注阅读", title: "专注阅读（暂时隐藏输入区）", onclick: move |_| conversation_focus.set(true), Icon { name: "fullscreen" } }
+                            if showing_home || !workspace_page {
+                                    workspace_home::Fullscreen {}
+                            } else {
+                                    details { class: "workspace-view-menu",
+                                        summary { class: "icon-button", aria_label: "视图选项", title: "视图选项", Icon { name: "fullscreen" } }
+                                        div { class: "workspace-view-options",
+                                            workspace_home::Fullscreen { labelled: true }
+                                            button { class: "button conversation-focus-toggle", r#type: "button", onclick: move |_| {
+                                                let _ = document::eval("document.querySelector('.workspace-view-menu')?.removeAttribute('open')");
+                                                conversation_focus.set(true);
+                                            }, Icon { name: "panel" } "专注阅读" }
+                                        }
+                                    }
+                            }
                             button { class: "context-toggle", r#type: "button", aria_label: if *inspector_open.read() { "关闭任务上下文" } else { "查看任务上下文" }, title: if *inspector_open.read() { "关闭右侧侧边栏" } else { "打开右侧侧边栏" }, aria_expanded: inspector_open.to_string(), onclick: move |_| {
                                 inspector_preference_user_changed.set(true);
                                 let next = !*inspector_open.read();
@@ -4875,11 +5083,12 @@ pub(super) fn App() -> Element {
                         }
                     }
                 }
-                if ["packages", "skills", "extensions"].contains(&active_page.read().as_str()) {
+                if ["resources", "packages", "skills", "extensions"].contains(&active_page.read().as_str()) {
                     div { class: "page-view resource-center-page",
                         crate::features::resources::center::ResourceCenter {
                             key: "resource-center-{active_page}-{node_url}-{selected_project:?}-{node_connection.epoch}-{session_generation}-{selected_session:?}",
                             kind: active_page.read().clone(), project: resource_project.clone(), project_name: resource_project_name.clone(),
+                            categories: resource_nav_items.iter().map(|(id, _, title, _)| ((*id).to_string(), (*title).to_string())).collect::<Vec<_>>(),
                             session: selected_session.read().clone(), session_name: selected_session_title.read().clone(),
                             session_scope: selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)),
                             library: resource_library, shared_client, connection_epoch: node_connection.epoch,
@@ -4923,7 +5132,36 @@ pub(super) fn App() -> Element {
                         onconnect: connect, onlogin: login, appearance
                     }
                 }
+                if showing_home {
+                    workspace_home::Home {
+                        scope: home_scope, drafts, attachments: attachment_store,
+                        preferences: home_preferences,
+                        projects: visible_projects.iter().map(|project| {
+                            let alias = project_aliases.read().get(&project_scope_key(&home_origin, &project.id))
+                                .cloned().unwrap_or_else(|| project.name.clone());
+                            (project.id.clone(), alias, project.path.clone())
+                        }).collect::<Vec<_>>(),
+                        project_id: home_project_id.clone(),
+                        node: if node_display_local { "本机".to_string() } else { "节点".to_string() },
+                        online, busy: *new_session_busy.read(), ready: *drafts_ready.read(),
+                        models: home_model_result.as_ref().and_then(|result| result.as_ref().ok()).cloned().unwrap_or_default(),
+                        default_model: app_settings::default_provider_model(&app_settings_document),
+                        model_loading: *home_models_loading.read() == Some(*node_connection.epoch.read()),
+                        model_error: home_model_result.and_then(Result::err),
+                        error: new_session_error.read().clone().or_else(|| draft_storage_error.read().clone()),
+                        onproject: { let origin = home_origin.clone(); move |id| home_project.set(Some((origin.clone(), id))) },
+                        onadd: move |()| { project_error.set(None); show_project_form.set(true); },
+                        onconnect: move |()| open_node_settings(),
+                        onrefresh: refresh_home_models,
+                        onsubmit: move |message| {
+                            if let Some(id) = home_project_id.clone() {
+                                new_session(Some(id), Some(message));
+                            }
+                        },
+                    }
+                }
                 div { class: match (active_page.read().as_str(), *inspector_open.read()) {
+                    _ if showing_home => "workspace page-hidden",
                     ("workspace", true) => "workspace",
                     ("workspace", false) => "workspace context-hidden",
                     _ => "workspace page-hidden",
@@ -4933,7 +5171,7 @@ pub(super) fn App() -> Element {
                             div { class: "conversation-focus-toolbar", role: "toolbar", aria_label: "专注阅读",
                                 button { class: "icon-button", r#type: "button", aria_label: "退出专注阅读", title: "退出专注阅读（Esc）", onclick: move |_| {
                                     conversation_focus.set(false);
-                                    let _ = document::eval("setTimeout(() => document.querySelector('.conversation-focus-toggle')?.focus(), 0);");
+                                    let _ = document::eval("setTimeout(() => document.querySelector('.workspace-view-menu summary')?.focus(), 0);");
                                 },
                                     Icon { name: "fullscreen-exit" }
                                 }
@@ -4953,6 +5191,11 @@ pub(super) fn App() -> Element {
                                         });
                                     }, "读取后续只读历史" }
                                 }
+                            }
+                        }
+                        if !showing_home && selected_session.read().is_some() {
+                            if let Some(error) = new_session_error.read().as_ref() {
+                                p { class: "home-feedback", role: "alert", "{error}" }
                             }
                         }
                         if active_page.read().as_str() == "workspace" {
@@ -5002,7 +5245,7 @@ pub(super) fn App() -> Element {
                                         } else {
                                             button { class: "button primary", disabled: *new_session_busy.read() || !matches!(*node_connection.phase.read(), connections::Phase::Online), onclick: move |_| {
                                                 if projects.read().is_empty() { project_error.set(None); show_project_form.set(true); }
-                                                else { new_session(None); }
+                                                else { new_session(None, None); }
                                             }, if *new_session_busy.read() { "正在创建…" } else if projects.read().is_empty() { "打开项目" } else { "开始新任务" } }
                                             if *new_session_busy.read() || status.read().starts_with("创建会话失败") || !matches!(*node_connection.phase.read(), connections::Phase::Online) {
                                                 p { role: "status", "{status}" }
@@ -5122,32 +5365,10 @@ pub(super) fn App() -> Element {
                                     }
                                 }
                             }
-                            div { class: "composer-capabilities",
-                                button { class: "button", aria_label: "BTW", onclick: move |_| { if selected_session.read().is_some() { btw_open.set(true); } else { status.set("请先打开主会话，再创建独立旁问。".into()); } }, Icon { name: "message" } "BTW 旁问" }
-                                details { class: "capability-menu",
-                                summary { Icon { name: "blocks" } "常用能力" }
-                                div { class: "capability-menu-items",
-                                button { class: "button", onclick: move |_| { session_settings_tab.set("details".into()); session_details_open.set(true); }, "Tools" }
-                                button { class: "button", onclick: move |_| status.set("当前为节点 Agent 会话；可在 Tools 中配置真实工具。节点未提供 Plan/Ask 模式切换协议。".into()), "Agent 模式" }
-                                button { class: "button", onclick: move |_| status.set("可用命令：/btw [问题]、/compact、/new、/help。".into()), "/ 命令" }
-                                button { class: "button", disabled: selected_session.read().is_none(), onclick: move |_| context_open.set(true), "压缩上下文" }
-                                }
-                                }
-                                if let Some(session_id) = selected_session.read().clone() {
-                                    resources::SkillPicker { session_id: session_scope_key(&node_url.read(), &session_id), library: resource_library, open_session_config, onquote: move |text: String| {
-                                        if let Some(id) = selected_session.read().as_deref() {
-                                            let scope = session_scope_key(&node_url.read(), id);
-                                            let existing = drafts.read().get(&scope).map(|draft| draft.text.clone()).unwrap_or_default();
-                                            let text = if existing.is_empty() { text } else { format!("{existing}\n{text}") };
-                                            update_draft(drafts, &scope, text);
-                                        }
-                                    } }
-                                }
-                            }
                             div { class: "composer-bottom",
                                 div { class: "composer-options",
                                     if let Some(session_id) = selected_session.read().clone() {
-                                        { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope, store: attachment_store, presentation: "button".to_owned(), images_supported: session_access.read().as_ref().is_some_and(work_client::SessionAccess::supports_prompt_content), disabled: submitting, onquote: move |text| {
+                                        { let scope = session_scope_key(&node_url.read(), &session_id); rsx! { composer_extras::AttachmentPicker { scope, store: attachment_store, presentation: "button".to_owned(), onmore: move |()| composer_more_open.set(true), images_supported: session_access.read().as_ref().is_some_and(work_client::SessionAccess::supports_prompt_content), disabled: submitting, onquote: move |text| {
                                             if let Some(id) = selected_session.read().as_deref() { let scope = session_scope_key(&node_url.read(), id); let existing = drafts.read().get(&scope).map(|d| d.text.clone()).unwrap_or_default(); update_draft(drafts, &scope, if existing.is_empty() { text } else { format!("{existing}\n{text}") }); }
                                         } } } }
                                     }
@@ -5377,6 +5598,7 @@ pub(super) fn App() -> Element {
                                     button { onclick: move |_| { active_page.set("settings".into()); settings_section.set("providers".into()); }, Icon { name: "server".to_owned() } "Provider" }
                                 }
                                 button { onclick: move |_| context_open.set(true), Icon { name: "panel".to_owned() } "管理上下文" }
+                                button { disabled: selected_session.read().is_none(), onclick: move |_| stats_open.set(true), Icon { name: "clock" } "用量与运行统计" }
                                 button { disabled: !session_supports("get_queue"), onclick: move |_| {
                                     active_page.set("workspace".into());
                                     if queue.read().as_ref().is_none_or(|snapshot| !snapshot.items.iter().any(|item| message_queue::QueueStatus::from_wire(item.status.as_deref()).is_active())) { status.set("没有待处理消息；运行时发送新消息即可排队。".into()); }
@@ -5436,7 +5658,7 @@ pub(super) fn App() -> Element {
                             }
                         }
                         if let Some(repository) = git_status.read().as_ref() {
-                            div { class: "inspector-card",
+                            div { class: "inspector-card inspector-changes",
                                 strong { "工作区变更" }
                                 small { "Git 工作区 · 共 {repository.files.len()} 个文件；无本轮归属证据" }
                                 div { class: "inspector-files",
@@ -5607,7 +5829,9 @@ pub(super) fn App() -> Element {
                                                     ProjectOpenTabKind::Change { staged } => change_handler.call((path.clone(), staged)),
                                                 },
                                                 Icon { name: "file".to_owned() } span { "{label}" }
-                                                if is_change { em { "M" } }
+                                                if is_change {
+                                                    em { "{git_status.read().as_ref().and_then(|repository| repository.files.iter().find(|file| file.path == tab.path)).map(|file| crate::features::projects::review::change_status_label(&file.status)).unwrap_or(\"M\")}" }
+                                                }
                                             }
                                         }
                                     }
@@ -5618,7 +5842,7 @@ pub(super) fn App() -> Element {
                             div { class: "project-files-layout",
                                 div { class: "project-files-list-view",
                                     div { class: "project-file-browser-shell",
-                                        div { class: "project-files-section-title", strong { "项目目录" } span { "示例目录" } }
+                                        div { class: "project-files-section-title", strong { "项目目录" } span { "节点目录" } }
                                         if let (Some(_client), Some(project)) = (shared_client.read().clone(), selected_project.read().clone()) {
                                             project_files::Browser { key: "{node_url}-{project}", client: shared_client, project: project.clone(), scope: format!("{node_url}\u{1f}{project}"),
                                                 selected: selected_project_file.read().clone(),
@@ -5629,15 +5853,17 @@ pub(super) fn App() -> Element {
                                         } else { aside { class: "project-file-browser", p { class: "project-no-results", "选择项目并连接节点后加载文件。" } } }
                                     }
                                     section { class: "project-changes-summary", aria_label: "工作区改动",
-                                        div { class: "project-files-section-title project-changes-heading", strong { "工作区改动" } span { class: "count-badge", "{change_count}" } }
+                                        div { class: "project-files-section-title project-changes-heading", strong { "工作区改动" } span { class: "count-badge", "{change_count}" }
+                                            button { class: "project-change-filter-entry", onclick: move |_| { change_list_open.set(true); project_file_tab.set("changes".into()); project_file_preview.set(false); change_mobile_preview.set(false); }, "筛选变更" }
+                                        }
                                         if *git_loading.read() {
                                             p { class: "project-no-results", role: "status", "正在读取 Git 状态…" }
                                         } else if let Some(error) = git_error.read().as_ref() {
                                             p { class: "project-no-results error-text", role: "alert", "{error}" }
-                                        } else if visible_changes.is_empty() {
+                                        } else if repository_snapshot.as_ref().is_none_or(|repository| repository.files.is_empty()) {
                                             p { class: "project-no-results", "当前没有已加载的变更。" }
                                         } else {
-                                            for changed in visible_changes.iter() {
+                                            for changed in repository_snapshot.iter().flat_map(|repository| repository.files.iter()) {
                                                 {
                                                     let path = changed.path.clone();
                                                     let staged = changed.staged && !changed.unstaged;
@@ -5645,14 +5871,14 @@ pub(super) fn App() -> Element {
                                                     let status_code = crate::features::projects::review::change_status_label(&changed.status);
                                                     let change_handler = open_change_handler.clone();
                                                     rsx! {
-                                                        button { key: "project-change-{path}", class: "project-file-row project-change-row", title: "{path}", onclick: move |_| change_handler.call((path.clone(), staged)),
+                                                        button { key: "project-change-{path}", class: "project-file-row project-change-row", title: "{path}", onclick: move |_| { change_list_open.set(false); change_handler.call((path.clone(), staged)); },
                                                             Icon { name: "file".to_owned() } span { "{filename}" } em { "{status_code}" }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
-                                        p { class: "project-files-note", Icon { name: "shield-check".to_owned() } "当前项目范围，非会话归因。" }
+                                        p { class: "project-files-note", Icon { name: "shield".to_owned() } "当前项目范围，非会话归因。" }
                                     }
                                 }
                                 section { class: "project-file-preview",
@@ -5696,9 +5922,32 @@ pub(super) fn App() -> Element {
                         }
                     }
                 }
+                if *composer_more_open.read() {
+                    Modal { id: "composer-more", title: "附件与更多", class: "composer-more-dialog", trap_focus: true, onclose: move |()| composer_more_open.set(false),
+                        div { class: "modal-body composer-more-actions",
+                            button { class: "button", disabled: submitting, onclick: move |_| {
+                                let _ = document::eval("document.querySelector('.composer-options .attachment-picker input[type=file]')?.click();");
+                            }, Icon { name: "file" } "选择文件" }
+                            button { class: "button", onclick: move |_| { composer_more_open.set(false); btw_open.set(true); }, Icon { name: "message" } "BTW 旁问" }
+                            button { class: "button", onclick: move |_| { composer_more_open.set(false); session_settings_tab.set("details".into()); session_details_open.set(true); }, Icon { name: "settings" } "会话设置与 Tools" }
+                            button { class: "button", onclick: move |_| { composer_more_open.set(false); session_settings_tab.set("design".into()); session_details_open.set(true); }, Icon { name: "blocks" } "管理能力" }
+                            button { class: "button", onclick: move |_| { composer_more_open.set(false); context_open.set(true); }, Icon { name: "panel" } "压缩上下文" }
+                            if let Some(session_id) = selected_session.read().clone() {
+                                resources::SkillPicker { session_id: session_scope_key(&node_url.read(), &session_id), library: resource_library, open_session_config, onquote: move |text: String| {
+                                    if let Some(id) = selected_session.read().as_deref() {
+                                        let scope = session_scope_key(&node_url.read(), id);
+                                        let existing = drafts.read().get(&scope).map(|draft| draft.text.clone()).unwrap_or_default();
+                                        update_draft(drafts, &scope, if existing.is_empty() { text } else { format!("{existing}\n{text}") });
+                                    }
+                                } }
+                            }
+                            p { class: "meta", "可用命令：/btw [问题]、/compact、/new、/help。" }
+                        }
+                    }
+                }
                 if *global_search_open.read() {
                     project_picker::SearchDialog {
-                        projects: visible_projects.clone(), sessions: visible_sessions.clone(),
+                        projects: visible_projects.clone(), sessions: visible_sessions.clone(), states: switcher_states.clone(),
                         onproject: move |id| { global_search_open.set(false); open_project(id); },
                         onsession: move |id| { global_search_open.set(false); open_session(id); },
                         onclose: move |()| global_search_open.set(false),
@@ -5712,7 +5961,7 @@ pub(super) fn App() -> Element {
                         onclose: move |()| session_switcher_open.set(false),
                     }
                 }
-            if *btw_open.read() && active_page.read().as_str() == "workspace" {
+            if *btw_open.read() && workspace_page && !showing_home {
                 if let Some(session_id) = selected_session.read().clone() {
                     BtwHost { onclose: move |()| btw_open.set(false),
                         composer_extras::BtwPanel {

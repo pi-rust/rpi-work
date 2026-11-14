@@ -12,6 +12,12 @@ const draftText = '关闭右侧栏时保留草稿 😀';
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(10000);
   page.on('pageerror', error => errors.push(error.message));
+  const runtimeMutations = [];
+  page.on('websocket', socket => socket.on('framesent', ({ payload }) => {
+    const frame = JSON.parse(payload);
+    if (['reserve', 'execute'].includes(frame.type)) runtimeMutations.push(frame.type);
+  }));
+  const commandWrites = () => fixture.requests.filter(request => request.body.type && !request.body.type.startsWith('get_')).length;
   const panel = () => page.locator('.app-shell > .inspector');
   const close = () => panel().getByRole('button', { name: '关闭任务上下文', exact: true });
   const draft = () => page.getByRole('textbox', { name: '发送给 agent 的消息', exact: true });
@@ -63,16 +69,18 @@ const draftText = '关闭右侧栏时保留草稿 😀';
     await page.goto(process.env.WORK_UI_URL || 'http://127.0.0.1:14180/');
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
     await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
-    await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '连接设备', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
-    await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
+    if (!await page.locator('.sidebar-sessions [data-session-id="dark"] .session-item').isVisible()) {
+      await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
+    }
     await page.locator('.sidebar-sessions').getByRole('button', { name: '为工作台添加深色模式', exact: true }).click();
     await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。', { exact: true }).waitFor();
     await draft().fill(draftText);
-    const mutationsBefore = fixture.requests.filter(r => !String(r.body.type).startsWith('get_')).length;
+    const mutationsBefore = commandWrites();
     const scenarios = [
       { name: 'desktop', width: 1440, height: 900 },
       { name: 'tablet', width: 1100, height: 844 },
@@ -91,11 +99,12 @@ const draftText = '关闭右侧栏时保留草稿 😀';
         document.querySelector('.app-shell').style.removeProperty('--type-scale');
       });
       if (await panel().isVisible()) { await close().click(); await closed(); }
-      await page.getByRole('button', { name: '外观与主题', exact: true }).click();
-      const appearance = page.getByRole('dialog', { name: '外观与主题', exact: true });
-      await appearance.getByLabel('明暗模式', { exact: true }).selectOption(mode);
-      await appearance.getByRole('button', { name: '保存', exact: true }).click();
-      await appearance.waitFor({ state: 'hidden' });
+      await page.getByRole('button', { name: '打开设置', exact: true }).click();
+      const appearance = page.locator('#appearance');
+      await appearance.getByRole('button', { name: mode === 'dark' ? '深色' : '浅色', exact: true }).click();
+      await appearance.getByRole('button', { name: '保存更改', exact: true }).click();
+      await appearance.getByText('已应用更改。', { exact: true }).waitFor();
+      await page.getByRole('button', { name: '返回会话', exact: true }).click();
       for (const scenario of scenarios) {
         await page.setViewportSize({ width: scenario.width, height: scenario.height });
         await page.evaluate(({ insets = [0, 0, 0, 0], scale = 1 }) => {
@@ -122,7 +131,8 @@ const draftText = '关闭右侧栏时保留草稿 😀';
         console.log('PASS', results.at(-1));
       }
     }
-    assert.equal(fixture.requests.filter(r => !String(r.body.type).startsWith('get_')).length, mutationsBefore);
+    assert.equal(commandWrites(), mutationsBefore);
+    assert.deepEqual(runtimeMutations, []);
     assert.deepEqual(errors, []);
     console.log('PASS inspector close: 18 layout cases, no runtime mutations or browser errors');
   } catch (error) {

@@ -11,17 +11,27 @@ async function check(name,fn){try{await fn();results.push({name,passed:true});co
     await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
     await page.getByRole('button',{name:'打开设置',exact:true}).click();
     await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'工作协同',exact:true}).click();
-    await page.getByRole('button',{name:'连接其他节点',exact:true}).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button',{name:'连接设备',exact:true}).click();
     await page.getByLabel('节点地址',{exact:true}).fill(fixture.url);
     await page.getByRole('button',{name:'连接节点',exact:true}).click();
-    await page.getByRole('status').filter({hasText:'在线'}).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({hasText:'已连接'}).waitFor();
     await page.getByRole('button',{name:'返回会话',exact:true}).click();
-    await page.locator('.project-row').filter({hasText:'rpi-work'}).click();
+    if (!await page.locator('.sidebar-sessions [data-session-id="dark"] .session-item').isVisible()) {
+      await page.locator('.project-row').filter({hasText:'rpi-work'}).click();
+    }
     await page.locator('.sidebar-sessions').getByRole('button',{name:'为工作台添加深色模式',exact:true}).first().click();
     await page.locator('.transcript').getByText('主题切换已经准备好，接下来运行组件测试。',{exact:true}).first().waitFor();
     await page.locator('.composer-main textarea').fill('文件预览必须保留本条草稿');
     await page.getByRole('button',{name:'打开项目文件',exact:true}).click();
     let review=page.getByRole('dialog',{name:/项目文件/});
+    await check('long change lists scroll to the final file without losing the close control',async()=>{
+      await review.locator('.project-change-row').filter({hasText:'module-119.rs'}).click();
+      await review.locator('.project-diff-path').filter({hasText:'src/module-119.rs'}).waitFor();
+      const close=await review.locator('.modal-header button').boundingBox();
+      const frame=await review.boundingBox();
+      assert(close.y>=frame.y && close.y+close.height<=frame.y+frame.height);
+      await review.getByRole('button',{name:'返回文件列表',exact:true}).click();
+    });
     await review.locator('.project-change-row').filter({hasText:'theme.rs'}).click();
     await check('change view shows patch with added/deleted lines and line numbers',async()=>{
       await page.locator('.change-preview').getByText(/let theme = "dark"/).waitFor();

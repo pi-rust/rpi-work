@@ -29,7 +29,7 @@ const messages = [
   result('orphan-1', terminal(1234), commands[0]),
   result('orphan-2', terminal(5678), commands[1]),
   call('linked', terminal(9000)), result('linked', terminal(3456)),
-  { entryId: `${prefix}private`, role: 'assistant', content: [{ type: 'thinking', thinking: 'Hidden fixture thought, not public text.' }] },
+  { entryId: `${prefix}private`, role: 'assistant', content: [{ type: 'thinking', thinking: 'Redacted fixture thought, never rendered.', redacted: true }] },
   result('orphan-3', terminal(789)),
   call('fallback', terminal(4321)), result('fallback'),
   { ...result('unknown'), timestamp: 1, startedAt: 100, endedAt: 999999, durationMs: 888888 },
@@ -104,18 +104,19 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   };
   const appearance = async (mode, rendering) => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.locator('.app-header .header-more').click();
-    await page.getByRole('menuitem', { name: '外观与主题', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: '外观与主题', exact: true });
-    await dialog.getByLabel('明暗模式', { exact: true }).selectOption(mode);
+    await page.getByRole('button', { name: '打开设置', exact: true }).click();
+    const dialog = page.locator('#appearance.appearance-inline');
+    await dialog.getByRole('button', { name: mode === 'dark' ? '深色' : '浅色', exact: true }).click();
+    await dialog.locator('.theme-advanced > summary').click();
     await dialog.getByLabel('工具展示', { exact: true }).selectOption(rendering);
-    await dialog.getByRole('button', { name: '保存', exact: true }).click();
-    await dialog.waitFor({ state: 'hidden' });
+    await dialog.getByRole('button', { name: '保存更改', exact: true }).click();
+    await dialog.locator('.theme-import-notice').filter({ hasText: '已应用更改' }).waitFor();
+    await page.getByRole('button', { name: '返回会话', exact: true }).click();
     await page.waitForFunction(({ mode, rendering }) => document.documentElement.dataset.mode === mode && document.documentElement.dataset.toolRendering === rendering, { mode, rendering });
   };
   const session = async id => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.locator(`[data-session-id="${id}"] .session-item`).click();
+    await page.getByLabel('会话列表', { exact: true }).locator(`[data-session-id="${id}"] .session-item`).click();
     await until(`${id} WebSocket subscription`, async () => fixture.requests.some(r => r.path === '/api/v1/realtime' && r.sessionId === id));
   };
   try {
@@ -138,12 +139,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.goto(WEB);
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
     await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
-    await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '连接设备', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
-    if (!await page.locator('[data-session-id="dark"] .session-item').isVisible()) await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
+    if (!await page.getByLabel('会话列表', { exact: true }).locator('[data-session-id="dark"] .session-item').isVisible()) await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
     await session('dark');
     await card('orphan-1').waitFor(); await card('orphan-3').waitFor();
     await page.waitForFunction(() => !document.querySelector('.composer textarea')?.disabled);
@@ -153,7 +154,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     report.initialEvidence = await measure();
     report.initialEvidence.containers = await containers();
     report.initialEvidence.expectedBadges = { 'orphan-1': '1.23s', 'orphan-2': '5.68s' };
-    report.initialEvidence.spacingRegression = report.initialEvidence.gaps.some(gap => Math.abs(gap) > 1);
+    report.initialEvidence.spacingRegression = report.initialEvidence.gaps.some(gap => Math.abs(gap - 8) > 1);
     report.initialEvidence.timingRegression = ['orphan-1', 'orphan-2'].some(id => report.initialEvidence.badges[id]?.text !== expected[id]);
     console.log('INITIAL EVIDENCE', JSON.stringify(report.initialEvidence));
     fs.writeFileSync('artifacts/tool-spacing-timing-validation.json', JSON.stringify(report, null, 2));
@@ -165,10 +166,10 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
         fs.writeFileSync(red, JSON.stringify(report, null, 2));
       }
     }
-    assert(report.initialEvidence.gaps.every(gap => Math.abs(gap) <= 1), `orphan/linked tool gaps must be <=1px: ${report.initialEvidence.gaps}; badge evidence: ${JSON.stringify(report.initialEvidence.badges)}`);
+    assert(report.initialEvidence.gaps.every(gap => Math.abs(gap - 8) <= 1), `orphan/linked tools share the canonical 8px gap: ${report.initialEvidence.gaps}; badge evidence: ${JSON.stringify(report.initialEvidence.badges)}`);
     for (const [id, text] of Object.entries(expected)) await timingIs(id, text, !['unknown', 'negative', 'malformed', 'running-snapshot'].includes(id));
     zeroContainers(report.initialEvidence.containers);
-    pass('adjacent orphan/linked/orphan tools have no gaps; result metadata wins; terminal call metadata fallback; invalid/unknown snapshots stay unknown');
+    pass('adjacent orphan/linked/orphan tools share 8px gaps across hidden rows; result metadata wins; terminal call metadata fallback; invalid/unknown snapshots stay unknown');
 
     for (const mode of ['light', 'dark']) for (const rendering of ['simple', 'detailed']) {
       await appearance(mode, rendering);
@@ -180,10 +181,9 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
         // history-container padding and hidden rows are required to be zero.
         zeroContainers(geometry.containers);
         if (rendering === 'simple') {
-          for (const gap of geometry.gaps) assert(Math.abs(gap) <= 1, `${mode}/${width}: gap ${gap}`);
+          for (const gap of geometry.gaps) assert(Math.abs(gap - 8) <= 1, `${mode}/${width}: canonical gap ${gap}`);
           for (const box of geometry.boxes) {
-            if (width > 767) assert(Math.abs(box.height - 34) <= 1, `${mode}/${width}: desktop tool row remains unchanged ${box.height}`);
-            else assert(Math.abs(box.height - 36) <= 1, `${mode}/${width}: compact mobile tool row ${box.height}`);
+            assert(Math.abs(box.height - 46) <= 1, `${mode}/${width}: 44px summary plus its surface border ${box.height}`);
           }
         }
         for (const [id, text] of Object.entries(expected)) await timingIs(id, text);
@@ -196,7 +196,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     await appearance('light', 'simple');
     await card('orphan-1').locator(':scope > summary').click();
     const bodySpace = await card('orphan-1').locator(':scope > .call-body').evaluate(el => { const s = getComputedStyle(el); return [parseFloat(s.marginBottom), parseFloat(s.paddingBottom)]; });
-    assert.deepEqual(bodySpace, [12, 10], 'desktop expanded tool spacing remains unchanged');
+    assert.deepEqual(bodySpace, [0, 8], 'expanded content stays on the same tool surface');
     const copy = card('orphan-1').getByRole('button', { name: '复制完整命令', exact: true });
     if (await copy.count()) {
       await copy.click();
@@ -260,7 +260,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     throw error;
   } finally {
     report.requests = fixture?.requests;
-    report.forbiddenRequests = fixture?.requests.filter(r => (/\/commands$/.test(r.path) && !String(r.body.type).startsWith('get_')) || (!['GET', 'HEAD', 'OPTIONS'].includes(r.method) && !/\/(commands|open)$/.test(r.path))) || [];
+    report.forbiddenRequests = fixture?.requests.filter(r => (/\/commands$/.test(r.path) && !String(r.body.type).startsWith('get_')) || (!['GET', 'HEAD', 'OPTIONS'].includes(r.method) && !/\/(commands|open|tool-program\/snapshot)$/.test(r.path))) || [];
     fs.writeFileSync('artifacts/tool-spacing-timing-validation.json', JSON.stringify(report, null, 2));
     try { assert.deepEqual(report.forbiddenRequests, [], 'no prompt/tool/model/credential/mutation writes'); }
     finally { try { if (browser) await browser.close(); } finally { if (fixture) await fixture.close(); } }

@@ -185,7 +185,7 @@ pub fn Browser(
                         let expanded = snapshot.expanded.contains(&path); let active = selected.as_ref() == Some(&path);
                         let mut expand_load = load; let retry_path = path.clone(); let mut retry = load;
                         rsx! {
-                            button { key: "tree-{path}", class: if active { "project-file-row selected" } else { "project-file-row" }, style: "padding-left:{14 + depth * 14}px", aria_expanded: if directory { Some(expanded) } else { None },
+                            button { key: "tree-{path}", class: if active { "project-file-row selected" } else { "project-file-row" }, style: "padding-left:{5 + depth * 24}px", aria_expanded: if directory { Some(expanded) } else { None },
                                 onclick: move |_| if directory {
                                     if tree.peek().expanded.contains(&path) { tree.write().expanded.remove(&path); }
                                     else { tree.write().expanded.insert(path.clone()); if !tree.peek().children.contains_key(&path) && !tree.peek().loading.contains(&path) { expand_load(path.clone()); } }

@@ -1,4 +1,5 @@
 //! Formal native resource controls. All authority and observations come from `NodeApi`.
+use crate::shared::components::Icon;
 use dioxus::prelude::*;
 use std::collections::BTreeMap;
 use work_client::WorkspaceClient;
@@ -214,6 +215,11 @@ pub fn NativeResources(
     onopen: EventHandler<String>,
     #[props(default)] kind: String,
     #[props(default)] configuration_only: bool,
+    #[props(default)] expanded_list: bool,
+    #[props(default)] query_override: Option<Signal<String>>,
+    #[props(default)] scope_override: Option<Signal<String>>,
+    #[props(default)] install_open_override: Option<Signal<bool>>,
+    #[props(default)] oncatalog: Option<EventHandler<Option<NativeCatalog>>>,
     #[props(default)] revision: u64,
 ) -> Element {
     let mut catalog = use_signal(|| None::<NativeCatalog>);
@@ -229,8 +235,12 @@ pub fn NativeResources(
     let mut catalog_error = use_signal(String::new);
     let mut session_error = use_signal(String::new);
     let mut receipt_resource = use_signal(|| None::<String>);
-    let mut query = use_signal(String::new);
-    let mut scope_filter = use_signal(|| "all".to_owned());
+    let local_query = use_signal(String::new);
+    let local_scope = use_signal(|| "all".to_owned());
+    let mut query = query_override.unwrap_or(local_query);
+    let mut scope_filter = scope_override.unwrap_or(local_scope);
+    let local_install_open = use_signal(|| false);
+    let mut install_open = install_open_override.unwrap_or(local_install_open);
     let mut detail = use_signal(|| None::<NativeResource>);
     let mut last_request = use_signal(|| None::<NativeApply>);
     let mut scope_value = use_signal(|| "project".to_owned());
@@ -258,12 +268,18 @@ pub fn NativeResources(
             catalog_error.set(String::new());
             session_error.set(String::new());
             if !online {
+                if let Some(handler) = oncatalog {
+                    handler.call(None);
+                }
                 loading.set(false);
                 catalog.set(None);
                 observed.set(None);
                 return;
             }
             let Some(client) = shared_client.read().clone() else {
+                if let Some(handler) = oncatalog {
+                    handler.call(None);
+                }
                 catalog_error.set("节点连接尚未就绪，请重新连接后重试。".into());
                 loading.set(false);
                 catalog.set(None);
@@ -292,9 +308,15 @@ pub fn NativeResources(
                 loading.set(false);
                 match result {
                     Ok(value) => {
+                        if let Some(handler) = oncatalog {
+                            handler.call(Some(value.clone()));
+                        }
                         catalog.set(Some(value));
                     }
                     Err(e) => {
+                        if let Some(handler) = oncatalog {
+                            handler.call(None);
+                        }
                         catalog.set(None);
                         catalog_error.set(e.to_string());
                     }
@@ -557,11 +579,12 @@ pub fn NativeResources(
     };
     let current = observed.read().clone();
     let recovery = current.as_ref().map(recovery_admission).unwrap_or_default();
-    let simple_resource =
-        matches!(kind.as_str(), "extension" | "package" | "skill") && !configuration_only;
+    let simple_resource = matches!(kind.as_str(), "extension" | "package" | "skill")
+        && !configuration_only
+        && !expanded_list;
     let correction = online && recovery.1;
     rsx! {
-        section { class: if simple_resource { "native-resources resource-simple-list" } else { "native-resources" }, aria_label: "原生执行资源", aria_busy: loading() || busy(),
+        section { class: if simple_resource { "native-resources resource-simple-list" } else if expanded_list { "native-resources native-resource-catalog" } else { "native-resources" }, aria_label: "原生执行资源", aria_busy: loading() || busy(),
             style { {include_str!("native.css")} }
             if configuration_only {
                 h2 { if session.is_some() { "会话执行资源" } else { "项目默认资源组合" } }
@@ -573,7 +596,7 @@ pub fn NativeResources(
                         button { class: "button", disabled: busy() || loading() || !online, onclick: move |_| { error.set(String::new()); refresh += 1; }, "刷新目录 / 回读" }
                     }
                 }
-                if !simple_resource {
+                if !simple_resource && !expanded_list {
                     div { class: "native-resource-filters",
                         label { "搜索节点资源" input { r#type: "search", aria_label: "搜索节点资源", value: "{query}", placeholder: "名称、用途或来源…", oninput: move |e| query.set(e.value()) } }
                         label { "资源范围" select { aria_label: "资源范围", value: "{scope_filter}", onchange: move |e| scope_filter.set(e.value()),
@@ -607,6 +630,9 @@ pub fn NativeResources(
                             for resource in resources {
                                 { let open_resource = resource.clone(); let display_name = display_resource_name(&resource.name); let selected = current.as_ref().and_then(|s| s.configuration.as_ref()).map(|c| c.desired.main_package.as_ref().is_some_and(|r| r.reference.as_deref() == Some(resource.reference.as_str())) || c.desired.skills.iter().chain(&c.desired.extensions).any(|r| r.reference.as_deref() == Some(resource.reference.as_str()))); let installation = super::detail::installation_label(&resource.facts); let selection_text = match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" }; let install_class = match resource.facts["installed"].as_bool() { Some(true) => "installed", Some(false) => "not-installed", None => "unknown" }; let selection_class = match selected { Some(true) => "selected", Some(false) => "not-selected", None => "unknown" }; rsx! {
                                     article { key: "{resource.reference}", class: "native-resource-card",
+                                        if expanded_list {
+                                            span { class: "native-resource-icon", Icon { name: match resource.kind { NativeKind::Package => "blocks", NativeKind::Skill => "skills", NativeKind::Extension => "tool" } } }
+                                        }
                                         div { class: "native-resource-heading",
                                             h3 { "{display_name}" }
                                             span { class: "native-install-state {install_class}", role: "status", aria_label: "安装状态：{installation}", "{installation}" }
@@ -620,7 +646,7 @@ pub fn NativeResources(
                                             div { class: "native-resource-footer",
                                                 span { class: "native-selection-state {selection_class}", role: "status", aria_label: "{selection_text}", "{selection_text}" }
                                                 span { class: "native-load-state", role: "status", aria_label: "实际加载状态：未核实", title: "节点资源目录不提供实际加载证据；请在会话资源状态中核实", "实际加载：未核实" }
-                                                button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, if resource.facts["installed"] == false { "下载安装" } else { "查看详情" } }
+                                                button { class: "button", aria_haspopup: "dialog", onclick: move |_| { error.set(String::new()); notice.set(String::new()); detail.set(Some(open_resource.clone())); }, if resource.facts["installed"] == false { "下载安装" } else { "查看详情" } if expanded_list { Icon { name: "back" } } }
                                             }
                                         }
                                     }
@@ -630,7 +656,8 @@ pub fn NativeResources(
                         details { summary { "节点能力与目录诊断" } pre { "{catalog.profile}" } for diagnostic in &catalog.diagnostics { p { "{diagnostic}" } } }
                     } }
                 }
-            details { summary { "安装与高级管理" }
+            details { class: "native-install-entry", open: install_open(),
+                summary { onclick: move |event| { event.prevent_default(); install_open.toggle(); }, "安装与高级管理" }
                 p { "安装到节点不会自动选择或加载到会话。更新、重装和移除请使用对应资源的详情。" }
                 label { "Scope" select { aria_label: "原生资源范围", value: "{scope_value}", onchange: move |e| { scope_value.set(e.value()); trusted.set(false); }, option { value: "project", "Project" } option { value: "global", "Global" } } }
                 label { "Kind" select { aria_label: "原生资源类型", value: "{kind_value}", onchange: move |e| { kind_value.set(e.value()); trusted.set(false); }, option { value: "package", "Package" } option { value: "skill", "Skill" } option { value: "extension", "Extension" } } }

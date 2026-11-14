@@ -1,12 +1,13 @@
 .composer-extras {color:var(--text);min-width:0}
 .composer-extras.attachment-picker {display:block}
 .composer-extras .extras-add {position:relative;display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer}
-/* Smaller visible control without shrinking the file input's full hit area. */
-.composer-main .attachment-button-slot .extras-add {border:0;background:transparent}
-.composer-main .attachment-button-slot .extras-add::before {content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:24px;height:24px;border:1px solid var(--line);border-radius:var(--radius-sm);pointer-events:none}
-.composer-main .attachment-button-slot .extras-add>svg {width:12px;height:12px;flex:0 0 12px}
+/* The attachment input occupies the reference control's full hit area. */
+.composer-main .attachment-button-slot .extras-add {border:0;border-radius:7px;background:transparent}
+.composer-main .attachment-button-slot .extras-add::before {content:"";position:absolute;inset:0;box-sizing:border-box;width:100%;height:100%;border:0;border-radius:inherit;pointer-events:none}
+.composer-main .attachment-button-slot .extras-add>svg {width:18px;height:18px;flex:0 0 18px}
 .composer-main .attachment-button-slot .extras-add:focus-within::before {outline:2px solid var(--focus-color,var(--accent));outline-offset:2px}
 .composer-extras .extras-add input {position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.composer-extras .attachment-menu-input {display:none}
 .composer-extras .draft-attachments {display:flex;gap:var(--space-7);flex-wrap:wrap;margin-top:var(--space-8)}
 .composer-extras .draft-chip {display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);max-width:240px;min-width:0}
 .composer-extras .draft-chip>button:first-child {display:flex;align-items:center;gap:var(--space-7);padding:var(--space-6) var(--space-7);min-width:0;justify-content:flex-start;color:var(--text);background:transparent;border:0}

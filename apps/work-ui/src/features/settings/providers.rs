@@ -827,6 +827,19 @@ fn ProviderSettingsState(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let mut provider_search = use_signal(String::new);
+    let query = provider_search.read().trim().to_lowercase();
+    let matching_entries: Vec<_> = entries
+        .iter()
+        .filter(|entry| {
+            entry.id.to_lowercase().contains(&query)
+                || entry.definition.as_ref().is_some_and(|definition| {
+                    definition.name.to_lowercase().contains(&query)
+                        || definition.base_url.to_lowercase().contains(&query)
+                })
+        })
+        .cloned()
+        .collect();
     let draft_value = draft();
     let editor_value = editor();
     let definition_title = if draft_value.existing {
@@ -838,10 +851,8 @@ fn ProviderSettingsState(
         style { {include_str!("providers.css")} }
         section { class: "provider-management", aria_label: "节点供应商配置",
             div { class: "page-heading provider-toolbar",
-                div { h1 { "模型供应商" } p { "管理当前节点的模型连接，配置后即可在会话中选择。" } }
-                div { class: "provider-actions",
-                    button { class: "button primary", disabled: !enabled, onclick: move |_| edit.call(Edit::OpenNew), Icon { name: "plus" } "添加供应商" }
-                }
+                div { h2 { "模型供应商" } p { "管理当前执行节点的模型连接，配置后才能在会话中选择。" } }
+                span { class: "neutral-pill", Icon { name: "server" } "当前执行节点" }
             }
             div { class: "provider-overview", role: "note",
                 Icon { name: "info" }
@@ -857,10 +868,17 @@ fn ProviderSettingsState(
                 button { class: "button", disabled: !enabled, onclick: move |_| edit.call(Edit::ResumeDefinition), "恢复未保存定义草稿" }
             }
             p { class: "provider-meta provider-list-caption", "已保存的供应商可在会话的模型选择器中使用。凭据只显示保存来源，不会回读密钥内容。" }
+            div { class: "provider-toolbar",
+                label { class: "provider-search", r#for: "settings-provider-search", "搜索供应商"
+                    input { id: "settings-provider-search", r#type: "search", placeholder: "名称、ID 或 Base URL…", value: "{provider_search}", oninput: move |event| provider_search.set(event.value()) }
+                }
+                button { class: "button primary", disabled: !enabled, onclick: move |_| edit.call(Edit::OpenNew), Icon { name: "plus" } "添加供应商" }
+            }
             div { class: "provider-section-heading", h2 { "已添加" } span { "· {entries.len()}" } }
+            if !query.is_empty() && matching_entries.is_empty() { p { class: "provider-empty-hint", role: "status", "未找到匹配的供应商。" } }
             div { class: "provider-catalog",
                 if entries.is_empty() && catalog.read().is_some() { p { "没有保存的供应商配置。可添加供应商。" } }
-                for entry in entries {
+                for entry in matching_entries {
                     { let id = entry.id.clone();
                       let edit_def = entry.definition.clone();
                       let stored = entry.stored_credential;
@@ -911,8 +929,8 @@ fn ProviderSettingsState(
                     }
                 }
             }
-            div { class: "provider-section-heading provider-section-heading-muted", h2 { "可添加" } span { "· 0" } }
-            p { class: "provider-empty-hint", "供应商目录由当前宿主提供；需要新增宿主未内置的供应商时，请先下载 Provider 扩展。" }
+            div { class: "provider-section-heading provider-section-heading-muted", h2 { "自定义供应商" } }
+            p { class: "provider-empty-hint", "没有合适的供应商时，可添加兼容协议、Base URL 和模型定义。Provider 扩展单独管理。" }
             if editor_value == Editor::Definition {
                 Modal { id: "provider-definition", title: definition_title, class: "provider-dialog", trap_focus: true, onclose: move |()| edit.call(Edit::Close),
                     div { class: "modal-body provider-management",

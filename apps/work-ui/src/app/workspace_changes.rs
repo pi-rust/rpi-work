@@ -11,6 +11,7 @@ pub(crate) struct ChangesPanelProps {
     pub(crate) git_loading: bool,
     pub(crate) git_error: Option<String>,
     pub(crate) change_mobile_preview: Signal<bool>,
+    pub(crate) listing_origin: bool,
     pub(crate) change_count: String,
     pub(crate) reviewed_count: usize,
     pub(crate) change_query: Signal<String>,
@@ -35,6 +36,7 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
         git_loading,
         git_error,
         mut change_mobile_preview,
+        listing_origin,
         change_count,
         reviewed_count,
         mut change_query,
@@ -66,6 +68,8 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
                     }
                 }
                 div { class: "review-actions",
+                    button { aria_label: "刷新变更", disabled: git_loading, onclick: move |_| git_refresh += 1, Icon { name: "refresh" } }
+                    button { onclick: move |_| onback.call(()), "返回项目目录" }
                     span { class: "review-progress", title: "仅记录本次阅读进度，不代表 Git 暂存或提交；刷新后重置。", "{reviewed_count}/{change_count} 已审阅" }
                 }
             }
@@ -164,7 +168,7 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
                             let has_unstaged = changed.is_some_and(|file| file.unstaged);
                             rsx! {
                                 div { class: "selected-file-heading",
-                                    button { class: "back-to-files", aria_label: "返回文件列表", onclick: move |_| { change_mobile_preview.set(false); onback.call(()); }, Icon { name: "back".to_owned() } span { "文件列表" } }
+                                    button { class: "back-to-files", aria_label: "返回文件列表", onclick: move |_| { change_mobile_preview.set(false); if !listing_origin { onback.call(()); } }, Icon { name: "back".to_owned() } span { "文件列表" } }
                                     div { class: "review-file-title", strong { title: "{path}", "{path}" }
                                         small { if *change_staged.read() { "HEAD → 暂存区" } else { "暂存区 → 工作区" } }
                                     }
@@ -193,7 +197,7 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
                                             span { class: "diff-count", b { "+{added}" } em { "−{deleted}" } }
                                         }
                                         {render_diff(&patch.patch)}
-                                        p { class: "project-file-diff-note", Icon { name: "shield-check".to_owned() } "只读预览，不会提交或修改真实文件。" }
+                                        p { class: "project-file-diff-note", Icon { name: "shield".to_owned() } "只读预览，不会提交或修改真实文件。" }
                                     }
                                 }
                             }

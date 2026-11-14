@@ -167,6 +167,8 @@ pub fn ModelPicker(
     busy: bool,
     #[props(default)] thinking_busy: bool,
     #[props(default)] verification_required: bool,
+    #[props(default = ".composer-model-picker")] anchor: &'static str,
+    #[props(default)] preference: bool,
     commit_revision: u64,
     onrefresh: EventHandler,
     onselect: EventHandler<ModelDescriptor>,
@@ -216,7 +218,7 @@ pub fn ModelPicker(
             PickerPopover {
                 id: "composer-model-picker",
                 title: "选择供应商与模型",
-                anchor: ".composer-model-picker",
+                anchor,
                 class: "composer-model-popover",
                 onclose: move |()| open.set(false),
                 div { class: "composer-picker-heading",
@@ -288,7 +290,7 @@ pub fn ModelPicker(
                                     .map(|model| (model.provider.clone(), model.id.clone())).collect::<Vec<_>>(),
                                 duplicates: duplicates.iter().map(|id| (*id).to_string()).collect::<Vec<_>>(),
                                 locked,
-                                onselect,
+                                onselect: move |model| { onselect.call(model); if preference { open.set(false); } },
                                 oncurrent: move |()| open.set(false),
                             }
                         }
@@ -386,6 +388,8 @@ pub fn ThinkingPicker(
     #[props(default)] loading: bool,
     #[props(default)] load_error: Option<String>,
     #[props(default)] verification_required: bool,
+    #[props(default = ".composer-thinking-select")] anchor: &'static str,
+    #[props(default)] preference: bool,
     onrefresh: EventHandler,
     error: Option<String>,
     commit_revision: u64,
@@ -423,14 +427,17 @@ pub fn ThinkingPicker(
             onclick: move |_| {
                 if !trigger_disabled { open.set(!open()); }
             },
-            span { class: "composer-thinking-label", "{thinking_label(&current_level)}" }
+            span { class: "composer-thinking-label",
+                if !current_level.is_empty() { "思考 · " }
+                "{thinking_label(&current_level)}"
+            }
             span { class: "composer-model-chevron", Icon { name: "chevron" } }
         }
         if open() {
             PickerPopover {
                 id: "composer-thinking-picker",
                 title: "选择思考等级",
-                anchor: ".composer-thinking-select",
+                anchor,
                 class: "composer-thinking-dialog",
                 onclose: move |()| open.set(false),
                 div { class: "composer-picker-heading",
@@ -471,7 +478,7 @@ pub fn ThinkingPicker(
                                             move |_| {
                                                 if locked { return; }
                                                 if current { open.set(false); }
-                                                else { onselect.call(level.clone()); }
+                                                else { onselect.call(level.clone()); if preference { open.set(false); } }
                                             }
                                         },
                                         span { class: "composer-model-label", "{thinking_label(level)}" }

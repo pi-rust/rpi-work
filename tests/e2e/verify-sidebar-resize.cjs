@@ -50,12 +50,14 @@ const URL = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
     }), 'the visible border and both sides of it must hit the drag handle');
     await page.getByRole('button', { name: '打开设置', exact: true }).click();
     await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
-    await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '连接设备', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: '在线' }).first().waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
-    await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
+    if (!await page.locator('[data-session-id="dark"] .session-item').isVisible()) {
+      await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
+    }
     await page.locator('[data-session-id="dark"] .session-item').click();
     const composer = page.getByRole('textbox', { name: '发送给 agent 的消息', exact: true });
     await composer.fill('拖动侧栏时保留这份草稿');
@@ -123,7 +125,7 @@ const URL = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
     assert.equal(await handle.isVisible(), false);
     await page.getByRole('button', { name: '打开项目导航', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().left >= -0.5);
-    await expectWidth(280);
+    await expectWidth(272);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -132,9 +134,9 @@ const URL = process.env.WORK_UI_URL || 'http://127.0.0.1:14180/';
     await expectWidth(272);
     assert.equal(await stored(), null);
     await page.setViewportSize({ width: 800, height: 950 });
-    await expectWidth(210);
+    await expectWidth(272);
     await page.setViewportSize({ width: 1440, height: 1000 });
-    pass('responsive limits preserve desktop preference; phone drawer is unchanged; double-click restores desktop/tablet defaults');
+    pass('responsive limits preserve desktop preference; phone drawer matches the 272px prototype; double-click restores desktop/tablet defaults');
 
     const start = await begin();
     await move(start, 400);

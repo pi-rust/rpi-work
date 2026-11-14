@@ -913,58 +913,60 @@ pub fn ProjectNameDialog(
 pub fn SearchDialog(
     projects: Vec<Project>,
     sessions: Vec<SessionSummary>,
+    #[props(default)] states: std::collections::HashMap<String, (String, String)>,
     onproject: EventHandler<String>,
     onsession: EventHandler<String>,
     onclose: EventHandler<()>,
 ) -> Element {
     let mut query = use_signal(String::new);
-    let needle = query.read().trim().to_lowercase();
-    let matching_projects = projects.iter().filter(|project| {
-        format!("{} {}", project.name, project.path)
-            .to_lowercase()
-            .contains(&needle)
-    });
-    let matching_sessions = sessions.iter().filter(|session| {
-        let title = session.title.as_deref().unwrap_or("未命名会话");
-        let project = projects
-            .iter()
-            .find(|project| session.project_id.as_deref() == Some(project.id.as_str()));
-        format!(
-            "{} {} {}",
-            title,
-            project.map_or("", |project| &project.name),
-            project.map_or("", |project| &project.path)
-        )
-        .to_lowercase()
-        .contains(&needle)
-    });
+    let needle = query.read().replace('\\', "/").to_lowercase();
+    let matching_projects = projects
+        .iter()
+        .filter(|project| {
+            let searchable = format!("{} {}", project.name, project.path)
+                .replace('\\', "/")
+                .to_lowercase();
+            needle
+                .split_whitespace()
+                .all(|word| searchable.contains(word))
+        })
+        .collect::<Vec<_>>();
+    let matching_sessions = sessions
+        .iter()
+        .filter_map(|session| {
+            let state = states.get(&session.session_id).cloned().unwrap_or_else(|| {
+                let (tone, label) = super::management::switcher_session_status(session, None);
+                (tone.to_owned(), label.to_owned())
+            });
+            super::session_switcher::matches_query(session, &projects, &state.1, &needle)
+                .then_some((session, state))
+        })
+        .collect::<Vec<_>>();
     rsx! {
-        Modal { id: "global-search", title: "找到你的工作", class: "search-dialog-modal", onclose,
+        Modal { id: "global-search", title: "找到你的工作", class: "search-dialog-modal", trap_focus: true, onclose,
             div { class: "modal-body",
-                div { class: "global-search-input", Icon { name: "search".to_owned() } input { aria_label: "搜索项目、目录或会话", placeholder: "搜索项目、目录或会话…", value: "{query}", autofocus: true, oninput: move |event| query.set(event.value()) } }
+                div { class: "global-search-input", Icon { name: "search" } input { aria_label: "搜索项目、目录或会话", placeholder: "搜索项目、会话或状态…", value: "{query}", autofocus: true, oninput: move |event| query.set(event.value()) } }
                 div { class: "search-result-groups",
                     section { class: "search-result-group", h3 { "项目" }
-                        for project in matching_projects {
+                        for project in matching_projects.iter() {
                             {
                                 let project_id = project.id.clone();
-                                let project_name = project.name.clone();
-                                let project_path = project.path.clone();
                                 rsx! {
-                                    button { class: "search-result-row", onclick: move |_| onproject.call(project_id.clone()), Icon { name: "folder".to_owned() } span { strong { "{project_name}" } small { "{project_path}" } } }
+                                    button { class: "search-result-row", onclick: move |_| onproject.call(project_id.clone()), Icon { name: "folder" } span { strong { "{project.name}" } small { "{project.path}" } } }
                                 }
                             }
                         }
-                        if projects.iter().all(|project| !format!("{} {}", project.name, project.path).to_lowercase().contains(&needle)) { p { class: "search-empty", "没有匹配的项目" } }
+                        if matching_projects.is_empty() { p { class: "search-empty", "没有匹配的项目" } }
                     }
                     section { class: "search-result-group", h3 { "会话" }
-                        for session in matching_sessions {
+                        for (session, state) in matching_sessions.iter() {
                             {
                                 let session_id = session.session_id.clone();
                                 let title = session.title.as_deref().unwrap_or("未命名会话").to_owned();
-                                rsx! { button { class: "search-result-row", onclick: move |_| onsession.call(session_id.clone()), Icon { name: "message".to_owned() } span { strong { "{title}" } small { "{project_label(&projects, session.project_id.as_deref())}" } } } }
+                                rsx! { button { class: "search-result-row", "data-session-id": "{session_id}", onclick: move |_| onsession.call(session_id.clone()), Icon { name: "message" } span { strong { "{title}" } small { "{project_label(&projects, session.project_id.as_deref())} · {state.1}" } } } }
                             }
                         }
-                        if sessions.iter().all(|session| { let title = session.title.as_deref().unwrap_or("未命名会话"); !format!("{} {}", title, project_label(&projects, session.project_id.as_deref())).to_lowercase().contains(&needle) }) { p { class: "search-empty", "没有匹配的会话" } }
+                        if matching_sessions.is_empty() { p { class: "search-empty", "没有匹配的会话" } }
                     }
                 }
             }

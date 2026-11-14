@@ -428,11 +428,12 @@ pub fn AppearancePicker(
 ) -> Element {
     let mut library = use_context::<Signal<ThemeLibrary>>();
     let snapshot = use_hook(|| (*settings.read(), library.read().clone()));
-    let original = use_signal(|| snapshot);
+    let mut original = use_signal(|| snapshot);
     let mut error = use_signal(String::new);
     let mut notice = use_signal(String::new);
     let saving = use_signal(|| false);
     let app_settings = try_use_context::<Signal<AppSettingsState>>();
+    let storage_error = app_settings.and_then(|store| store.read().error.clone());
     let session = use_hook(|| Rc::new(Cell::new(true)));
     let saved = use_hook(|| Rc::new(Cell::new(false)));
     let epoch = use_hook(|| Rc::new(Cell::new(0u64)));
@@ -448,18 +449,24 @@ pub fn AppearancePicker(
         });
     }
     let mut cancel = {
-        let (session, saved) = (session.clone(), saved.clone());
+        let (session, saved, epoch) = (session.clone(), saved.clone(), epoch.clone());
         move || {
-            session.set(false);
+            epoch.set(epoch.get() + 1);
             if !saved.get() {
                 let (value, themes) = original.peek().clone();
                 settings.set(value);
                 library.set(themes);
             }
-            onclose.call(());
+            if embedded {
+                error.set(String::new());
+                notice.set("已撤销未保存的预览。".into());
+            } else {
+                session.set(false);
+                onclose.call(());
+            }
         }
     };
-    let save = {
+    let mut save = {
         let (session, saved, epoch) = (session.clone(), saved.clone(), epoch.clone());
         move || {
             let mut error = error;
@@ -488,9 +495,15 @@ pub fn AppearancePicker(
                 return;
             }
             app_settings::request_write(app_settings);
-            saved.set(true);
-            session.set(false);
-            onclose.call(());
+            if embedded {
+                original.set((value, themes));
+                error.set(String::new());
+                notice.set("已应用更改。".into());
+            } else {
+                saved.set(true);
+                session.set(false);
+                onclose.call(());
+            }
         }
     };
     let import = {
@@ -535,6 +548,17 @@ pub fn AppearancePicker(
             )
         }))
         .collect();
+    let (primary_cards, additional_cards): (Vec<_>, Vec<_>) =
+        cards.into_iter().partition(|(appearance, _)| {
+            !embedded
+                || matches!(
+                    appearance,
+                    Appearance::Codex | Appearance::Ocean | Appearance::Graphite
+                )
+        });
+    let additional_selected = additional_cards
+        .iter()
+        .any(|(appearance, _)| *appearance == settings.read().theme);
     let visual = library
         .read()
         .resolve(settings.read().theme)
@@ -544,88 +568,193 @@ pub fn AppearancePicker(
     let code_font = visual.typography.code_font.stack();
     let radii = format!("{:?}", visual.geometry.radii);
     let mut cancel_header = cancel.clone();
+    let advanced = rsx! {
+        details { class: "theme-advanced", open: !embedded,
+            summary { "工具展示与主题文件" }
+        div { class: "setting-row tool-rendering-row",
+            div {
+                label { r#for: "tool-rendering", "工具展示" }
+                p { "仅改变展示；不影响执行、确认和状态。" }
+            }
+            select { id: "tool-rendering", value: settings.read().tool_rendering.map_or("theme", ToolRendering::as_str), disabled: *saving.read(), onchange: move |event| {
+                settings.write().tool_rendering = match event.value().as_str() {
+                    "simple" => Some(ToolRendering::Simple),
+                    "detailed" => Some(ToolRendering::Detailed),
+                    _ => None,
+                };
+                error.set(String::new());
+            },
+                option { value: "theme", if visual.tool_rendering.is_simple() { "跟随主题 · 简单" } else { "跟随主题 · 详情" } }
+                option { value: "simple", "简单 · Codex 紧凑摘要" }
+                option { value: "detailed", "详情 · 当前完整卡片" }
+            }
+        }
+            section { class: "theme-design-summary", aria_label: "主题视觉规格",
+                h3 { "视觉规格 · 不只是配色" }
+                dl {
+                    div { dt { "正文字体" } dd { "{body_font}" } }
+                    div { dt { "标题字体" } dd { "{heading_font}" } }
+                    div { dt { "代码字体" } dd { "{code_font}" } }
+                    div { dt { "字号 / 行高" } dd { "{visual.typography.scale}× · 正文 {visual.typography.body_size}px · 消息 {visual.typography.message_size}px / {visual.typography.message_line_height}" } }
+                    div { dt { "间距 / 圆角" } dd { "{visual.geometry.spacing_scale}× · {radii}px" } }
+                    div { dt { "控件 / 触控" } dd { "{visual.geometry.control_height}px / {visual.geometry.hit_size}px" } }
+                    div { dt { "动效" } dd { "{visual.motion.fast} / {visual.motion.normal}ms" } }
+                }
+                p { "完整视觉规格使用主题 JSON v2；旧版主题仍可直接使用。字体仅使用本机安全字体栈，不下载外部资源。" }
+            }
+            div { class: "theme-contract-preview", span { "品牌强调" } span { "成功 / 新增" } span { "失败 / 删除" } span { "运行状态" } }
+        div { class: "theme-portable",
+            for (full, label) in [(true,"导出主题 JSON"),(false,"导出偏好 JSON")] {
+                button { class: "button", onclick: move |_| {
+                    let script = export_script(*settings.peek(), &library.peek(), full);
+                    spawn(async move { if !matches!(document::eval(&script).recv::<bool>().await, Ok(true)) { error.set("无法导出 JSON 文件。".into()); } });
+                }, "{label}" }
+            }
+            if !embedded {
+                button { class: "button", disabled: *saving.read(), onclick: move |_| { spawn(async move { let _ = document::eval("const input=document.getElementById('appearance-import-file');if(input){input.value='';input.click();}dioxus.send(true);").recv::<bool>().await; }); }, "导入主题" }
+            }
+            span { "主题含完整配色 · 偏好引用主题 ID" }
+        }
+        }
+    };
     rsx! {
         style { {include_str!("../../features/settings/settings.css")} }
         AppearanceSurface {
             embedded, onclose: move |()| cancel_header(),
             div { class: "modal-body",
-                p { class: "theme-settings-intro", "主题统一控制整个工作台。立即预览主题、明暗模式与密度，保存后保留到本设备。支持完整主题 JSON 与外观偏好 JSON。" }
-                div { class: "theme-preset-grid",
-                    for (appearance, theme) in cards {
-                        button {
-                            key: "{theme.id}", class: if settings.read().theme == appearance { "theme-preset selected" } else { "theme-preset" },
-                            aria_pressed: settings.read().theme == appearance, disabled: *saving.read(),
-                            onclick: move |_| { settings.write().theme = appearance; error.set(String::new()); notice.set(String::new()); },
-                            span { class: "theme-mini", style: preview_style(&theme), "data-mode": settings.read().mode,
-                                i { class: "theme-mini-sidebar", b {} b {} b {} }
-                                i { class: "theme-mini-content", b {} em {} em {} span {} }
-                            }
-                            span { class: "theme-preset-label", strong { "{theme.name}" } if settings.read().theme == appearance { crate::shared::components::Icon { name: "check" } } }
-                            small { "{theme.description}" }
-                        }
+                div { class: "theme-settings-heading",
+                    div {
+                        h3 { "选择你的主题" }
+                        p { class: "theme-settings-intro", "清晰的文字，恰好的留白，以及一点个性。" }
+                    }
+                    if embedded {
+                        button { class: "button theme-import-button", disabled: *saving.read(), onclick: move |_| { spawn(async move { let _ = document::eval("const input=document.getElementById('appearance-import-file');if(input){input.value='';input.click();}dioxus.send(true);").recv::<bool>().await; }); }, crate::shared::components::Icon { name: "download" } "导入主题" }
                     }
                 }
-                div { class: "theme-setting-fields",
-                    div { class: "form-field", label { r#for: "color-mode", "明暗模式" }
+                div { class: "theme-preset-grid",
+                    for (appearance, theme) in primary_cards {
+                        {theme_card(appearance, theme, settings, error, notice, saving, embedded)}
+                    }
+                }
+                div { class: "setting-row appearance-mode-row",
+                    div {
+                        if embedded { strong { "明暗模式" } } else { label { r#for: "color-mode", "明暗模式" } }
+                        p { "也可以跟随系统的外观设置。" }
+                    }
+                    if embedded {
+                        div { class: "segmented", aria_label: "明暗模式",
+                            button { class: if settings.read().mode == "light" { "active" } else { "" }, aria_pressed: settings.read().mode == "light", disabled: *saving.read(), onclick: move |_| { settings.write().mode = "light"; error.set(String::new()); }, ColorModeIcon { dark: false } "浅色" }
+                            button { class: if settings.read().mode == "dark" { "active" } else { "" }, aria_pressed: settings.read().mode == "dark", disabled: *saving.read(), onclick: move |_| { settings.write().mode = "dark"; error.set(String::new()); }, ColorModeIcon { dark: true } "深色" }
+                            button { class: if settings.read().mode == "system" { "active" } else { "" }, aria_pressed: settings.read().mode == "system", disabled: *saving.read(), onclick: move |_| { settings.write().mode = "system"; error.set(String::new()); }, "系统" }
+                        }
+                    } else {
                         select { id: "color-mode", value: settings.read().mode, disabled: *saving.read(), onchange: move |event| { settings.write().mode = mode(Some(&event.value())).unwrap_or("light"); error.set(String::new()); },
                             option { value: "light", "浅色" } option { value: "dark", "深色" } option { value: "system", "跟随系统" }
                         }
                     }
-                    div { class: "form-field", label { r#for: "density", "界面密度" }
-                        select { id: "density", value: settings.read().density, disabled: *saving.read(), onchange: move |event| { settings.write().density = density(Some(&event.value())).unwrap_or("standard"); error.set(String::new()); },
-                            option { value: "standard", "标准 · 舒展阅读" } option { value: "compact", "紧凑 · 展示更多内容" }
-                        }
+                }
+                div { class: "setting-row appearance-density-row",
+                    div {
+                        label { r#for: "density", "界面密度" }
+                        p { "舒展留白，或在一屏里容纳更多信息。" }
                     }
-                    div { class: "form-field tool-rendering-field",
-                        label { r#for: "tool-rendering", "工具展示" }
-                        select {
-                            id: "tool-rendering", value: settings.read().tool_rendering.map_or("theme", ToolRendering::as_str), disabled: *saving.read(),
-                            onchange: move |event| {
-                                settings.write().tool_rendering = match event.value().as_str() {
-                                    "simple" => Some(ToolRendering::Simple),
-                                    "detailed" => Some(ToolRendering::Detailed),
-                                    _ => None,
-                                };
-                                error.set(String::new());
-                            },
-                            option { value: "theme", if visual.tool_rendering.is_simple() { "跟随主题 · 简单" } else { "跟随主题 · 详情" } }
-                            option { value: "simple", "简单 · Codex 紧凑摘要" }
-                            option { value: "detailed", "详情 · 当前完整卡片" }
-                        }
-                        small { "仅改变展示；简单模式也可展开完整参数与结果，不影响执行、确认和状态。" }
+                    select { id: "density", value: settings.read().density, disabled: *saving.read(), onchange: move |event| { settings.write().density = density(Some(&event.value())).unwrap_or("standard"); error.set(String::new()); },
+                        option { value: "standard", "标准 · 舒展阅读" } option { value: "compact", "紧凑 · 更多内容" }
                     }
                 }
-                section { class: "theme-design-summary", aria_label: "主题视觉规格",
-                    h3 { "视觉规格 · 不只是配色" }
-                    dl {
-                        div { dt { "正文字体" } dd { "{body_font}" } }
-                        div { dt { "标题字体" } dd { "{heading_font}" } }
-                        div { dt { "代码字体" } dd { "{code_font}" } }
-                        div { dt { "字号 / 行高" } dd { "{visual.typography.scale}× · 正文 {visual.typography.body_size}px · 消息 {visual.typography.message_size}px / {visual.typography.message_line_height}" } }
-                        div { dt { "间距 / 圆角" } dd { "{visual.geometry.spacing_scale}× · {radii}px" } }
-                        div { dt { "控件 / 触控" } dd { "{visual.geometry.control_height}px / {visual.geometry.hit_size}px" } }
-                        div { dt { "动效" } dd { "{visual.motion.fast} / {visual.motion.normal}ms" } }
-                    }
-                    p { "完整视觉规格使用主题 JSON v2；旧版主题仍可直接使用。字体仅使用本机安全字体栈，不下载外部资源。" }
-                }
-                div { class: "theme-contract-preview", span { "品牌强调" } span { "成功 / 新增" } span { "失败 / 删除" } span { "运行状态" } }
-                div { class: "theme-portable",
-                    for (full, label) in [(true,"导出主题 JSON"),(false,"导出偏好 JSON")] {
-                        button { class: "button", onclick: move |_| {
-                            let script = export_script(*settings.peek(), &library.peek(), full);
-                            spawn(async move { if !matches!(document::eval(&script).recv::<bool>().await, Ok(true)) { error.set("无法导出 JSON 文件。".into()); } });
-                        }, "{label}" }
-                    }
-                    button { class: "button", disabled: *saving.read(), onclick: move |_| { spawn(async move { let _ = document::eval("const input=document.getElementById('appearance-import-file');if(input){input.value='';input.click();}dioxus.send(true);").recv::<bool>().await; }); }, "导入主题" }
-                    input { id: "appearance-import-file", r#type: "file", accept: ".json,application/json", hidden: true, onchange: import }
-                    span { "主题含完整配色 · 偏好引用主题 ID" }
-                }
+                if !embedded { {advanced.clone()} }
+                input { id: "appearance-import-file", r#type: "file", accept: ".json,application/json", hidden: true, onchange: import }
                 p { class: "theme-import-notice", role: "status", "{notice}" }
                 p { class: "theme-error", role: "alert", "{error}" }
+                if let Some(storage_error) = storage_error {
+                    p { class: "theme-error appearance-storage-error", role: "alert", "{storage_error}" }
+                }
             }
             div { class: "modal-actions",
+                if embedded { span { class: "appearance-save-scope", crate::shared::components::Icon { name: "shield" } "不影响模型、会话和执行权限。" } }
                 button { class: "secondary", onclick: move |_| cancel(), "取消" }
-                button { class: "button primary", disabled: *saving.read(), onclick: move |_| save(), if *saving.read() { "正在保存…" } else { "保存" } }
+                button { class: "button primary", disabled: *saving.read(), onclick: move |_| save(), if *saving.read() { "正在保存…" } else if embedded { "保存更改" } else { "保存" } }
+            }
+            if embedded {
+                p { class: "settings-tip", role: "note", crate::shared::components::Icon { name: "info" } "支持导入和导出主题 JSON。预览不满意，随时切回原主题。" }
+                if !additional_cards.is_empty() {
+                    details { class: "theme-additional", open: additional_selected,
+                        summary { "更多主题" }
+                        div { class: "theme-preset-grid",
+                            for (appearance, theme) in additional_cards {
+                                {theme_card(appearance, theme, settings, error, notice, saving, embedded)}
+                            }
+                        }
+                    }
+                }
+                {advanced}
+            }
+        }
+    }
+}
+
+fn theme_card(
+    appearance: Appearance,
+    theme: Theme,
+    mut settings: Signal<AppearanceSettings>,
+    mut error: Signal<String>,
+    mut notice: Signal<String>,
+    saving: Signal<bool>,
+    embedded: bool,
+) -> Element {
+    let description = if embedded {
+        match appearance {
+            Appearance::Codex => "黑白灰 · 专注内容",
+            Appearance::Ocean => "冷灰画布 · 科技蓝",
+            Appearance::Graphite => "深色表面 · 柔和对比",
+            _ => &theme.description,
+        }
+    } else {
+        &theme.description
+    };
+    let label = if embedded {
+        match appearance {
+            Appearance::Codex => "Codex 黑白",
+            Appearance::Ocean => "澄蓝",
+            Appearance::Graphite => "石墨",
+            _ => &theme.name,
+        }
+    } else {
+        &theme.name
+    };
+    let preview_mode = if embedded && appearance == Appearance::Graphite {
+        "dark"
+    } else {
+        settings.read().mode
+    };
+    rsx! {
+        button {
+            key: "{theme.id}", r#type: "button",
+            class: if settings.read().theme == appearance { "theme-preset selected" } else { "theme-preset" },
+            aria_pressed: settings.read().theme == appearance, disabled: *saving.read(),
+            onclick: move |_| { settings.write().theme = appearance; error.set(String::new()); notice.set(String::new()); },
+            span { class: "theme-mini", style: preview_style(&theme), "data-mode": preview_mode,
+                i { class: "theme-mini-sidebar", b {} b {} b {} }
+                i { class: "theme-mini-content", b {} em {} em {} span {} }
+            }
+            span { class: "theme-preset-label", strong { "{label}" }
+                if settings.read().theme == appearance { crate::shared::components::Icon { name: "check" } }
+            }
+            small { "{description}" }
+        }
+    }
+}
+
+// Match the reference's two supplemental appearance glyphs.
+#[component]
+fn ColorModeIcon(dark: bool) -> Element {
+    rsx! {
+        svg { class: "icon", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true", "focusable": "false",
+            if dark {
+                path { d: "M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" }
+            } else {
+                circle { cx: "12", cy: "12", r: "4" }
+                path { d: "M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" }
             }
         }
     }
@@ -637,7 +766,6 @@ fn AppearanceSurface(embedded: bool, onclose: EventHandler<()>, children: Elemen
     if embedded {
         rsx! {
             section { id: "appearance", class: "appearance-modal appearance-inline", aria_label: "外观与主题",
-                div { class: "page-heading", h1 { "外观与主题" } }
                 {children}
             }
         }

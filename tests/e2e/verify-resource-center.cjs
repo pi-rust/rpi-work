@@ -5,6 +5,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
 
@@ -20,6 +21,7 @@ const nativeResources = [
       installed: true, inUse: false, ownership: 'resource',
       source: 'D:/Projects/rpi-work/.rpi/resources/package/base-tools/entry.json',
       version: '1.2.3', recordedDigest: 'a'.repeat(64),
+      description: '为当前项目提供文件读取、命令执行与代码审查能力，支持完整的开发工作流。',
     },
   },
   {
@@ -99,7 +101,14 @@ const sessionResources = {
   let page;
   const pass = name => { results.push(name); console.log(`PASS ${name}`); };
   const cardFor = name => page.locator('.native-resource-card').filter({ hasText: name }).first();
-  const settingsEntry = () => page.locator('.app-header').getByRole('button', { name: '设计引用', exact: true });
+  const selectCategory = async name => {
+    const center = page.locator('.resource-center');
+    await center.getByRole('navigation', { name: '资源类型', exact: true })
+      .getByRole('button', { name, exact: true }).click();
+    await center.getByRole('navigation', { name: '资源视图', exact: true })
+      .getByRole('button', { name: '当前节点', exact: true }).click();
+  };
+  const settingsEntry = () => page.locator('.resource-center').getByRole('button', { name: '会话资源设置', exact: true });
   const settingsDialog = () => page.getByRole('dialog', { name: '设计引用', exact: true });
 
   try {
@@ -138,9 +147,11 @@ const sessionResources = {
 
     await page.addInitScript(address => {
       localStorage.setItem('rpi-work-nodes-v1', JSON.stringify({ version: 1, recent: [address], selected: address }));
-      localStorage.setItem('rpi-work-appearance-v1', JSON.stringify({ theme: 'codex', mode: 'system', density: 'standard' }));
+      localStorage.setItem('rpi-work-settings-v1', JSON.stringify({ version: 1, appearance: { theme: 'codex', mode: 'system', density: 'standard' } }));
     }, fixture.url);
     await page.goto(bundleUrl);
+    await page.waitForFunction(() => document.documentElement.dataset.appearance === 'system');
+    await page.locator('[data-session-id="dark"] .session-item').click();
     await page.locator('[data-history-id="user-dark"]').waitFor();
     const draft = page.locator('.composer textarea');
     const draftText = '资源设置必须保留的会话草稿';
@@ -150,12 +161,13 @@ const sessionResources = {
     assert.equal(await page.locator('.package-discovery').count(), 0, 'discovery is lazy before first visit');
     assert.equal(await page.locator('.resources-page').count(), 0, 'legacy resource wrapper is lazy before first visit');
     const nav = page.locator('.primary-nav');
-    for (const name of ['扩展', 'Packages', '技能库']) await nav.getByRole('button', { name, exact: true }).waitFor();
-    pass('sidebar exposes the three resource categories and keeps resource wrappers lazy');
+    await nav.getByRole('button', { name: '资源中心', exact: true }).waitFor();
+    pass('sidebar exposes one resource-center entry and keeps resource wrappers lazy');
 
-    await nav.getByRole('button', { name: '扩展', exact: true }).click();
+    await nav.getByRole('button', { name: '资源中心', exact: true }).click();
     const center = page.locator('.resource-center');
     await center.waitFor();
+    await selectCategory('扩展');
     const viewNav = center.getByRole('navigation', { name: '资源视图', exact: true });
     for (const name of ['当前节点', '发现资源', '本地设计']) {
       const button = viewNav.getByRole('button', { name, exact: true });
@@ -167,11 +179,15 @@ const sessionResources = {
     const range = center.getByLabel('资源范围', { exact: true });
     assert.deepEqual(await range.locator('option').evaluateAll(options => options.map(option => option.value)), ['all', 'project', 'global']);
     await cardFor(nativeResources[1].name).waitFor();
+    assert.deepEqual(await center.locator('.resource-center-overview strong').evaluateAll(elements => elements.map(element => element.firstChild.textContent.trim())), ['01', '01', '01'], 'overview excludes packages whose installation is unknown');
+    assert.deepEqual(await center.getByRole('navigation', {name: '资源类型', exact: true}).getByRole('button').evaluateAll(elements => elements.map(element => element.getAttribute('aria-label'))), ['Packages', '技能库', '扩展']);
+    assert.deepEqual(await center.locator('.resource-category-count').allTextContents(), ['2', '1', '1'], 'category counts include every catalog row, including unknown installation');
     assert.notEqual(await center.getAttribute('aria-busy'), 'true');
     assert.equal(await center.locator('.native-resource-card [role="status"]').count(), 3);
     assert.equal(await center.locator('.native-load-state[role="status"]').first().getAttribute('aria-label'), '实际加载状态：未核实');
     assert.equal(await center.locator('.native-resource-card h3').allTextContents().then(names => names.some(name => name.includes(' · '))), false);
     const extensionCard = cardFor(nativeResources[1].name);
+    assert.equal(await extensionCard.locator('[data-lucide="circle-help"]').count(), 0, 'resource card icons resolve to bundled geometry');
     assert.doesNotMatch(await extensionCard.locator('.native-install-state').innerText(), /已加载|运行中|inUse/);
     assert.match(await extensionCard.locator('.native-selection-state').innerText(), /会话|已保存|选择/);
     assert.equal(mutations.length, 0, 'reading native state never mutates the node');
@@ -183,7 +199,7 @@ const sessionResources = {
       ['Packages', 'package', [nativeResources[0].name, nativeResources[2].name], '基础工作包'],
       ['技能库', 'skill', [nativeResources[3].name], '代码审查技能'],
     ]) {
-      await nav.getByRole('button', { name: category, exact: true }).click();
+      await selectCategory(category);
       const current = page.locator('.resource-center');
       await current.locator('.native-resource-card').first().waitFor();
       const nativeText = await current.locator('.native-resource-card').allTextContents();
@@ -229,7 +245,7 @@ const sessionResources = {
     assert.equal(await page.locator('.resources-page').count(), 1, 'visited legacy/design wrapper is retained');
     pass('category navigation restricts native and discovered resources while retaining visited hidden views');
 
-    await nav.getByRole('button', { name: '扩展', exact: true }).click();
+    await selectCategory('扩展');
     const native = cardFor(nativeResources[1].name);
     const detailButton = native.getByRole('button', { name: '查看详情', exact: true });
     await detailButton.click();
@@ -266,6 +282,8 @@ const sessionResources = {
     const trusted = detail.getByRole('checkbox', { name: /我已核对此资源和来源/ });
     const submitUpdate = detail.getByRole('button', { name: '确认并提交', exact: true });
     assert(await submitUpdate.isDisabled());
+    assert.equal(await source.inputValue(), nativeResources[1].facts.source);
+    await source.fill('');
     await trusted.check();
     assert(await submitUpdate.isDisabled(), 'source is required even when trust is checked');
     await source.fill('D:/Projects/rpi-work/.rpi/resources/extension/updated-source/entry.json');
@@ -307,9 +325,11 @@ const sessionResources = {
     pass('details are bounded/keyboard-closable and management mutates only after explicit trusted update or removal confirmation');
 
     catalogFailed = true;
-    await nav.getByRole('button', { name: '扩展', exact: true }).click();
+    await selectCategory('扩展');
     await center.getByRole('button', { name: '刷新目录 / 回读', exact: true }).click();
     await center.getByRole('alert').filter({ hasText: '目录读取失败' }).waitFor();
+    assert.deepEqual(await center.locator('.resource-center-overview strong').evaluateAll(elements => elements.map(element => element.firstChild.textContent.trim())), ['—', '—', '—'], 'unavailable counts cannot display stale catalog values');
+    assert.equal(await center.locator('.resource-category-count').count(), 0, 'unavailable category counts cannot retain stale catalog values');
     assert.equal((await center.innerText()).includes('正在读取节点目录…'), false);
     assert.match(await center.getByRole('alert').innerText(), /目录读取失败/);
     pass('native catalog failure reports a retryable error without stale loading text');
@@ -317,7 +337,7 @@ const sessionResources = {
     catalogFailed = false;
     await center.getByRole('button', { name: '刷新目录 / 回读', exact: true }).click();
     await cardFor(nativeResources[1].name).waitFor();
-    await nav.getByRole('button', { name: 'Packages', exact: true }).click();
+    await selectCategory('Packages');
     await settingsEntry().click();
     const settings = settingsDialog();
     await settings.waitFor();
@@ -333,9 +353,107 @@ const sessionResources = {
 
     // Capture both themes and all requested widths. The extension card is intentionally
     // long and must remain visible on the first screen without a horizontal strip.
-    await nav.getByRole('button', { name: '扩展', exact: true }).click();
+    await nav.getByRole('button', { name: '资源中心', exact: true }).click();
+    await selectCategory('扩展');
+    const installEntry = center.locator('.native-install-entry');
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({width, height: width < 600 ? 844 : 768});
+      await viewNav.getByRole('button', {name: '发现资源', exact: true}).click();
+      assert.equal(await center.locator('.resource-category-count').count(), 0, 'node counts are hidden in the discovery view');
+      await center.getByRole('button', {name: '导入资源', exact: true}).click();
+      assert(await installEntry.getAttribute('open') !== null);
+      const installName = installEntry.getByLabel('原生安装名称', {exact: true});
+      await installName.waitFor({state: 'visible'});
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '原生安装名称');
+      const bounds = await installName.boundingBox();
+      assert(bounds.y >= 0 && bounds.y + bounds.height <= (width < 600 ? 844 : 768), `${width}: import name input is outside the viewport`);
+      assert.equal(mutations.length, 2, 'opening the import form does not install a resource');
+      await installEntry.locator('summary').click();
+      assert.equal(await installEntry.getAttribute('open'), null);
+      await center.locator('.resource-center-heading').scrollIntoViewIfNeeded();
+    }
+    pass('the primary import action switches views, reveals and focuses the existing form on desktop and mobile');
+
+    const reference = await browser.newPage();
+    await reference.goto(pathToFileURL(path.resolve('design/clarity-workbench/index.html')).href + '#resources');
+    const layoutPairs = [
+      ['.resource-center-heading', '.resources-page .page-heading'],
+      ['.resource-center-heading > .button', '.resources-page .page-heading > .button'],
+      ['.resource-center-overview', '.resource-overview'],
+      ['.resource-center-overview > div', '.resource-overview > div'],
+      ['.resource-center-context', '.resource-scope'],
+      ['.resource-center-nav', '.resource-nav'],
+      ['.resource-center-views', '.scope-tabs'],
+      ['.resource-center-search', '.resource-search'],
+      ['.resource-center-categories', '.resource-filters'],
+      ['.native-resource-card', '.resource-package'],
+    ];
+    for (const [width, height] of [[1920, 1080], [1440, 1000], [1440, 768], [1280, 900], [1024, 768], [768, 768], [390, 844], [320, 844]]) {
+      await page.setViewportSize({width, height});
+      await reference.setViewportSize({width, height});
+      await page.waitForFunction(w => document.querySelector('.app-shell').dataset.deviceMode === (w < 768 ? 'mobile' : 'desktop'), width);
+      await center.locator('.resource-center-heading').scrollIntoViewIfNeeded();
+      for (const [actualSelector, referenceSelector] of layoutPairs) {
+        const [actual, expected] = await Promise.all([
+          center.locator(actualSelector).first().boundingBox(),
+          reference.locator(referenceSelector).first().boundingBox(),
+        ]);
+        // Card content comes from the node. The common frame and list origin
+        // follow the prototype regardless of the resource's name or status.
+        const axes = actualSelector === '.native-resource-card' ? ['x', 'y', 'width'] : ['x', 'y', 'width', 'height'];
+        for (const axis of axes) assert(Math.abs(actual[axis] - expected[axis]) <= 1, `${width}x${height}: ${actualSelector} ${axis} ${actual[axis]} vs ${expected[axis]}`);
+      }
+      pass(`resource frame and list origin match the prototype within 1px at ${width}x${height}`);
+    }
+    // Compare inner typography and surfaces as well as the outer frame. Include
+    // a real description so mobile specificity errors cannot hide behind empty data.
+    await selectCategory('Packages');
+    const stylePairs = [
+      ['.resource-center-heading h1', '.resources-page h1', ['fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'color']],
+      ['.resource-center-heading > .button', '.resources-page .page-heading > .button', ['fontSize', 'fontWeight', 'padding', 'gap', 'height', 'backgroundColor', 'borderColor']],
+      ['.resource-center-heading > .button .icon', '.resources-page .page-heading > .button .icon', ['width', 'height']],
+      ['.resource-center-heading p:not(.resource-center-eyebrow)', '.resources-page .page-subtitle', ['fontSize', 'lineHeight', 'color']],
+      ['.resource-overview-icon', '.overview-icon', ['backgroundColor', 'color', 'borderRadius']],
+      ['.resource-center-overview strong > span', '.resource-overview strong > span', ['fontSize', 'fontWeight', 'letterSpacing', 'color']],
+      ['.resource-center-context', '.resource-scope', ['backgroundColor', 'borderBottomColor']],
+      ['.resource-context-project', '.scope-project', ['fontSize', 'fontWeight', 'gap', 'color']],
+      ['.resource-center-views button.active', '.scope-tabs button.active', ['fontSize', 'fontWeight', 'backgroundColor', 'color', 'boxShadow']],
+      ['.resource-center-categories button[aria-pressed=true]', '.filter-chips button.active', ['fontSize', 'fontWeight', 'backgroundColor', 'color', 'borderColor']],
+      ['.native-resource-card', '.resource-package', ['padding', 'gap', 'borderColor', 'borderWidth', 'borderRadius']],
+      ['.native-resource-heading h3', '.resource-heading h2', ['fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'color']],
+      ['.native-resource-description', '.package-description', ['fontSize', 'lineHeight', 'color']],
+      ['.native-resource-icon', '.resource-package > .resource-icon', ['width', 'height', 'backgroundColor', 'color', 'borderRadius']],
+      ['.native-resource-footer .button', '.package-footer button', ['fontSize', 'minHeight', 'padding', 'color']],
+    ];
+    for (const width of [1440, 1024, 390, 320]) {
+      await page.setViewportSize({width, height: 844});
+      await reference.setViewportSize({width, height: 844});
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(220);
+      for (const [actualSelector, referenceSelector, properties] of stylePairs) {
+        const readStyle = (element, keys) => {
+          const style = getComputedStyle(element);
+          return Object.fromEntries(keys.map(key => [key, style[key]]));
+        };
+        const [actual, expected] = await Promise.all([
+          center.locator(actualSelector).first().evaluate(readStyle, properties),
+          reference.locator(referenceSelector).first().evaluate(readStyle, properties),
+        ]);
+        assert.deepEqual(actual, expected, `${width}: ${actualSelector} differs from prototype`);
+      }
+      const description = cardFor(nativeResources[0].name).locator('.native-resource-description');
+      assert.equal(await description.innerText(), nativeResources[0].facts.description);
+      assert(await description.evaluate(element => element.clientHeight <= parseFloat(getComputedStyle(element).lineHeight) * 2 + 1), 'description occupies at most two lines');
+      assert.equal(await cardFor(nativeResources[2].name).locator('.native-resource-description').count(), 0, 'missing descriptions remain optional');
+      await page.screenshot({path: path.join(outputDir, `resource-packages-light-${width}.png`), animations: 'disabled'});
+      await reference.screenshot({path: path.join(outputDir, `resource-reference-${width}.png`), animations: 'disabled'});
+      pass(`resource inner typography, icons, borders and actions match the prototype at ${width}`);
+    }
+    await selectCategory('扩展');
+    await reference.close();
     for (const mode of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: mode });
+      await page.waitForFunction(mode => document.documentElement.dataset.mode === mode, mode);
       for (const width of [1440, 768, 390, 320]) {
         const height = width < 600 ? 844 : 768;
         await page.setViewportSize({ width, height });
@@ -345,19 +463,30 @@ const sessionResources = {
           const box = element => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
           const extension = [...root.querySelectorAll('.native-resource-card')].find(card => card.textContent.includes('自定义工具扩展'));
           return {
+            colorMode: document.documentElement.dataset.mode,
+            background: getComputedStyle(root.querySelector('.resource-center-surface')).backgroundColor,
             viewport: { width: innerWidth, height: innerHeight },
             center: box(root), scrollWidth: root.scrollWidth, clientWidth: root.clientWidth,
             extension: extension ? box(extension) : null,
             firstScreen: extension ? extension.getBoundingClientRect().bottom <= innerHeight + 1 : false,
             cardHeights: [...root.querySelectorAll('.native-resource-card')].filter(visible).map(box).map(item => item.height),
-            controls: [...root.querySelectorAll('button, summary, input:not([type=checkbox]), select')].filter(visible).map(element => ({text: element.textContent || element.getAttribute('aria-label'), ...box(element)})),
+            controls: [...root.querySelectorAll('button, summary, input:not([type=checkbox]), select')].filter(visible).map(element => {
+              const bounds = box(element);
+              const pseudo = getComputedStyle(element, '::before');
+              const search = element.closest('.resource-center-search');
+              const targetHeight = search ? search.getBoundingClientRect().height : Math.max(bounds.height, pseudo.content !== 'none' ? parseFloat(pseudo.height) || 0 : 0);
+              const minimum = element.matches('.resource-center-scope') ? 33.5 : search && innerWidth >= 768 ? 37 : 43.9;
+              return {text: element.textContent || element.getAttribute('aria-label'), ...bounds, targetHeight, minimum};
+            }),
           };
         });
         assert(metrics.center.x >= -1 && metrics.center.x + metrics.center.width <= width + 1);
-        assert(metrics.scrollWidth <= metrics.clientWidth + 1, `${mode}/${width}: horizontal overflow`);
-        assert(metrics.extension && metrics.firstScreen, `${mode}/${width}: extension is not visible in first screen`);
+        assert.equal(metrics.colorMode, mode, 'screenshot uses the requested color mode');
+        if (mode === 'dark') assert.notEqual(metrics.background, geometry.find(item => item.mode === 'light' && item.width === width).background, 'dark surface changes the rendered background');
+        assert(metrics.scrollWidth <= metrics.clientWidth + 1, `${mode}/${width}: horizontal overflow ${metrics.scrollWidth}/${metrics.clientWidth}`);
+        assert(metrics.extension && metrics.firstScreen, `${mode}/${width}: extension is not visible in first screen ${JSON.stringify(metrics.extension)}`);
         assert(metrics.cardHeights.every(heightValue => heightValue <= 260), `${mode}/${width}: normal native card exceeds 260px`);
-        assert(metrics.controls.every(control => control.height >= 43.9), `${mode}/${width}: control below 44px ${JSON.stringify(metrics.controls.filter(control => control.height < 43.9))}`);
+        assert(metrics.controls.every(control => control.targetHeight >= control.minimum), `${mode}/${width}: undersized control ${JSON.stringify(metrics.controls.filter(control => control.targetHeight < control.minimum))}`);
         geometry.push({ mode, width, ...metrics });
         await page.screenshot({ path: path.join(outputDir, `resource-center-${mode}-${width}.png`), fullPage: false, animations: 'disabled' });
         if (width < 600) {
@@ -384,7 +513,7 @@ const sessionResources = {
         }
       }
     }
-    pass('light/dark screenshots at 1440/768/390/320 have no horizontal overflow, 44px controls, bounded cards and visible extension');
+    pass('light/dark screenshots at 1440/768/390/320 have no horizontal overflow, bounded cards, visible extension and usable control targets');
     assert.deepEqual(errors, [], errors.join('\n'));
   } catch (error) {
     results.push(`FAILED: ${error.message}`);

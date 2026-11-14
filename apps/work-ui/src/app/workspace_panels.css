@@ -1,0 +1,324 @@
+/* Project files and context use the same drawer geometry as Clarity. */
+.app-shell dialog.project-files-modal .project-change-filter-entry {
+  margin-left: auto;
+  padding: 4px 8px;
+  min-height: 32px;
+  color: var(--files-muted);
+  font-size: calc(11px * var(--type-scale, 1));
+}
+.app-shell dialog.project-files-modal #changes-panel:not(.show-diff) .change-layout {
+  display: flex;
+  flex-direction: column;
+}
+.app-shell dialog.project-files-modal #changes-panel:not(.show-diff) .change-browser {
+  flex: 1;
+  border-right: 0;
+  overflow-y: auto;
+}
+.app-shell dialog.project-files-modal #changes-panel:not(.show-diff) .change-filters,
+.app-shell dialog.project-files-modal #changes-panel:not(.show-diff) .change-list-caption {
+  flex-shrink: 0;
+}
+.app-shell dialog.project-files-modal #changes-panel:not(.show-diff) .change-file-list {
+  flex: 1 0 120px;
+}
+.app-shell dialog.project-files-modal #changes-panel:not(.show-diff) .change-preview {
+  display: none;
+}
+.app-shell dialog.project-files-modal #changes-panel .review-overview {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 8px;
+}
+.app-shell dialog.project-files-modal #changes-panel .review-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.app-shell dialog.project-files-modal #changes-panel .review-actions button {
+  min-height: 36px;
+  padding: 4px 8px;
+}
+.app-shell .composer-more-dialog {
+  width: min(400px, calc(100vw - 24px));
+}
+.app-shell .composer-more-actions {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+}
+.app-shell .composer-more-actions > .button,
+.app-shell .composer-more-actions .skill-picker-trigger {
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+}
+.app-shell .composer-more-actions .skill-picker-chips {
+  flex-wrap: wrap;
+}
+.app-shell .composer-more-actions .skill-picker-trigger {
+  font: inherit;
+}
+.app-shell .composer-more-actions .meta {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+@media (max-width: 767px) {
+  .app-shell dialog.project-files-modal .project-change-filter-entry,
+  .app-shell dialog.project-files-modal #changes-panel .review-actions button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+[data-theme="codex"][data-mode="light"] .app-shell dialog.project-files-modal {
+  --files-ink: #303030;
+  --files-muted: #707070;
+  --files-note: #777;
+  --files-surface: #fff;
+  --files-hover: #f3f3f3;
+}
+.app-shell dialog.project-files-modal {
+  --files-ink: var(--text);
+  --files-muted: var(--muted);
+  --files-note: var(--muted);
+  --files-surface: var(--card);
+  --files-hover: var(--selected-bg);
+  padding: 20px 18px 24px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 22px 0 0 22px;
+  background: var(--files-surface);
+  color: var(--files-ink);
+  font-size: calc(14px * var(--type-scale, 1));
+  line-height: 1.6;
+  box-shadow: -24px 0 70px rgba(25, 38, 58, .16);
+  animation: none;
+}
+.app-shell dialog.project-files-modal .modal-header {
+  min-height: 0;
+  gap: 8px;
+  padding: 0 5px 13px;
+  background: transparent;
+}
+.app-shell dialog.project-files-modal .modal-header h2 {
+  color: var(--files-ink);
+  font-size: calc(14px * var(--type-scale, 1));
+  font-weight: 600;
+  line-height: 1.6;
+}
+.app-shell dialog.project-files-modal .modal-header .modal-subtitle {
+  margin: 2px 0 0;
+  color: var(--files-muted);
+  font-size: calc(10px * var(--type-scale, 1));
+  line-height: 1.6;
+}
+.app-shell dialog.project-files-modal .modal-header .icon-button {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  color: var(--files-muted);
+}
+.app-shell dialog.project-files-modal .project-files-scope {
+  padding: 0 5px;
+  border: 0;
+  color: var(--files-muted);
+  font-size: calc(11px * var(--type-scale, 1));
+  line-height: 1.6;
+}
+.app-shell dialog.project-files-modal .project-files-scope .neutral-pill {
+  border-radius: 5px;
+  background: var(--files-hover);
+  color: var(--files-muted);
+}
+.app-shell dialog.project-files-modal .project-files-layout {
+  flex: 1;
+  height: auto;
+  grid-template-rows: minmax(0, 1fr);
+}
+.app-shell dialog.project-files-modal .project-files-list-view { overflow: auto; scrollbar-width: thin; }
+.app-shell dialog.project-files-modal .project-file-browser-shell {
+  flex: 1 0 240px;
+  min-height: 240px;
+  max-height: none;
+}
+.app-shell dialog.project-files-modal .project-file-browser-shell > .project-file-browser { background: transparent; }
+.app-shell dialog.project-files-modal .project-files-section-title {
+  min-height: 0;
+  padding: 10px 5px 6px;
+  color: var(--files-muted);
+  font-size: calc(11px * var(--type-scale, 1));
+  line-height: 1.6;
+}
+.app-shell dialog.project-files-modal .project-files-section-title strong { color: var(--files-ink); }
+.app-shell dialog.project-files-modal .project-file-browser-shell .project-file-search { margin: 6px 5px; }
+.app-shell dialog.project-files-modal .project-file-browser-shell .project-file-caption { padding: 0 5px 4px; }
+.app-shell dialog.project-files-modal .project-file-browser-shell .project-file-tree { padding: 0 0 10px; }
+.app-shell dialog.project-files-modal .project-file-row {
+  min-height: 30px;
+  gap: 7px;
+  padding: 4px 5px;
+  border-radius: 5px;
+  color: var(--files-muted);
+  font-size: calc(11px * var(--type-scale, 1));
+  line-height: 1.6;
+}
+.app-shell dialog.project-files-modal .project-file-row > .icon { width: 13px; height: 13px; flex: 0 0 13px; }
+.app-shell dialog.project-files-modal .project-file-row:hover,
+.app-shell dialog.project-files-modal .project-file-row.selected { color: var(--files-ink); background: var(--files-hover); }
+.app-shell dialog.project-files-modal .project-file-count { padding: 8px 5px; font-size: calc(10px * var(--type-scale, 1)); }
+.app-shell dialog.project-files-modal .project-file-browser .project-files-footer {
+  padding: 8px 5px;
+  background: transparent;
+  color: var(--files-muted);
+  font-size: calc(10px * var(--type-scale, 1));
+  line-height: 1.6;
+}
+.app-shell dialog.project-files-modal .project-changes-summary {
+  flex: 1 0 150px;
+  min-height: 150px;
+  max-height: 50%;
+  background: transparent;
+  scrollbar-width: thin;
+}
+.app-shell dialog.project-files-modal .project-changes-heading { padding-top: 12px; }
+.app-shell dialog.project-files-modal .project-change-row { min-height: 34px; }
+.app-shell dialog.project-files-modal .project-change-row em { font: calc(10px * var(--type-scale, 1))/1.6 var(--sans); }
+.app-shell dialog.project-files-modal .project-files-note {
+  gap: 6px;
+  padding: 9px 5px 0;
+  color: var(--files-note);
+  line-height: 1.65;
+}
+.app-shell dialog.project-files-modal .project-file-open-tabs {
+  margin: 0 -18px 16px;
+  padding: 0 18px 1px;
+}
+.app-shell dialog.project-files-modal .project-file-open-tab {
+  min-width: 130px;
+  max-width: 205px;
+  min-height: 38px;
+  gap: 6px;
+  border-radius: 8px 8px 0 0;
+}
+.app-shell dialog.project-files-modal .project-file-open-tab .icon { width: 13px; height: 13px; flex: 0 0 13px; }
+.app-shell dialog.project-files-modal .project-file-open-tab span { font-size: calc(11px * var(--type-scale, 1)); }
+.app-shell dialog.project-files-modal .project-file-open-tab em { font: calc(10px * var(--type-scale, 1))/1.6 var(--sans); }
+.app-shell dialog.project-files-modal.show-diff #changes-panel .change-preview { overflow: auto; background: transparent; }
+.app-shell dialog.project-files-modal.show-diff #changes-panel .selected-file-heading {
+  min-height: 38px;
+  padding: 0;
+  margin-bottom: 12px;
+  border: 0;
+}
+.app-shell dialog.project-files-modal.show-diff #changes-panel .back-to-files {
+  min-height: 34px;
+  gap: 5px;
+  padding: 5px 7px;
+  font-size: calc(11px * var(--type-scale, 1));
+}
+.app-shell dialog.project-files-modal.show-diff #changes-panel .project-diff-readonly { font-size: calc(10px * var(--type-scale, 1)); }
+.app-shell dialog.project-files-modal.show-diff #changes-panel .selected-diff-scroll {
+  order: 1;
+  flex: 1 0 auto;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+}
+.app-shell dialog.project-files-modal.show-diff #changes-panel .project-diff-path {
+  gap: 6px;
+  padding: 11px 10px;
+  border-radius: 7px 7px 0 0;
+  color: var(--files-muted);
+  font-size: calc(10px * var(--type-scale, 1));
+}
+.app-shell dialog.project-files-modal.show-diff #changes-panel .project-diff-path code { font: calc(10px * var(--type-scale, 1))/1.5 var(--mono); }
+.app-shell dialog.project-files-modal.show-diff #changes-panel .project-diff-path > .icon { width: 12px; height: 12px; flex: 0 0 12px; margin-top: 1px; }
+.app-shell dialog.project-files-modal.show-diff #changes-panel .diff-count { gap: 5px; font-size: calc(10px * var(--type-scale, 1)); }
+.app-shell dialog.project-files-modal.show-diff #changes-panel .diff-lines {
+  min-height: 360px;
+  padding: 7px 0;
+  border-radius: 0 0 7px 7px;
+  overflow-x: auto;
+  font-size: calc(12px * var(--type-scale, 1));
+  line-height: 1.55;
+}
+.app-shell dialog.project-files-modal.show-diff #changes-panel .diff-line {
+  min-width: 620px;
+  grid-template-columns: 38px 38px 14px minmax(0, 1fr);
+  padding: 6px 10px;
+}
+.app-shell dialog.project-files-modal.show-diff #changes-panel .project-file-diff-note {
+  gap: 6px;
+  margin: 11px 5px 0;
+  color: var(--files-note);
+  line-height: 1.65;
+}
+/* Keep the production staging and reading-progress controls available. */
+.app-shell dialog.project-files-modal.show-diff #changes-panel .review-file-toolbar {
+  display: flex;
+  order: 2;
+  flex-wrap: wrap;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+}
+@media (max-width: 767px) {
+  .app-shell dialog.project-files-modal {
+    width: min(370px, calc(100vw - 12px - var(--app-safe-left) - var(--app-safe-right)));
+    padding: 16px 16px 24px;
+    border-radius: 24px 0 0 24px;
+  }
+  .app-shell dialog.project-files-modal.show-preview,
+  .app-shell dialog.project-files-modal.show-diff { width: calc(100vw - 12px - var(--app-safe-left) - var(--app-safe-right)); }
+  .app-shell dialog.project-files-modal .modal-header { padding-bottom: 14px; }
+  .app-shell dialog.project-files-modal .modal-header .icon-button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .app-shell dialog.project-files-modal .project-files-section-title { padding-top: 13px; }
+  .app-shell dialog.project-files-modal .project-file-browser-shell { flex-basis: 270px; min-height: 270px; }
+  .app-shell dialog.project-files-modal .project-file-row { min-height: 40px; font-size: calc(13px * var(--type-scale, 1)); }
+  .app-shell dialog.project-files-modal .project-change-row { min-height: 34px; }
+  .app-shell dialog.project-files-modal .project-file-open-tabs { margin-inline: -16px; padding-inline: 16px; }
+  .app-shell dialog.project-files-modal .project-file-open-tab { min-width: 142px; min-height: 44px; }
+  .app-shell dialog.project-files-modal.show-diff #changes-panel .diff-lines { min-height: 300px; }
+  .app-shell dialog.project-files-modal.show-diff #changes-panel .diff-line { min-width: 560px; }
+}
+
+/* Reset grid placement when the context column becomes a fixed drawer. */
+.app-shell:not(.context-hidden):not(.btw-open) > .inspector.visible {
+  position: fixed;
+  z-index: 35;
+  inset: var(--app-safe-top) var(--app-safe-right) var(--app-safe-bottom) auto;
+  grid-column: auto;
+  grid-row: auto;
+  width: min(360px, calc(100vw - 24px - var(--app-safe-left) - var(--app-safe-right)));
+  background: var(--panel);
+  box-shadow: -20px 0 80px rgba(0, 0, 0, .08);
+}
+.app-shell:not(.context-hidden) > .main-column > .app-header .context-toggle { position: static; }
+.app-shell > .inspector > h3 { min-height: 64px; padding: 8px 20px; font-size: calc(14px * var(--type-scale, 1)); font-weight: 600; }
+.app-shell > .inspector .inspector-content { display: flex; flex-direction: column; padding: 20px; }
+.app-shell > .inspector .inspector-card {
+  margin: 0 0 16px;
+  padding: 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  font-size: calc(14px * var(--type-scale, 1));
+  line-height: 1.6;
+}
+.app-shell > .inspector .overview-card { order: -3; }
+.app-shell > .inspector .inspector-environment { order: -2; }
+.app-shell > .inspector .inspector-changes { order: -1; }
+.app-shell > .inspector .inspector-content .inspector-card > strong,
+.app-shell > .inspector .inspector-content .inspector-section-label > strong { margin-bottom: 14px; font-size: calc(14px * var(--type-scale, 1)); letter-spacing: 0; }
+.app-shell > .inspector .data-line { margin-top: 10px; gap: 12px; font-size: calc(12px * var(--type-scale, 1)); }
+.app-shell > .inspector .data-line > span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.app-shell > .inspector .inspector-card > small { font-size: calc(11px * var(--type-scale, 1)); }
+.app-shell > .inspector .inspector-file-row { min-height: 34px; font-size: calc(11px * var(--type-scale, 1)); }
+.app-shell > .inspector :is(.runtime-shortcuts button, .inspector-small-button) { min-height: 40px; font-size: calc(11px * var(--type-scale, 1)); }
+@media (max-width: 767px) {
+  .app-shell > .inspector .inspector-content { padding: 16px; }
+}

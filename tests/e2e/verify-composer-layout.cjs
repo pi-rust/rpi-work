@@ -40,7 +40,7 @@ async function sourceFixture(page) {
         <div class="composer-extras attachment-picker attachment-button-slot"><label class="extras-add" aria-label="添加附件">${icon}<input type="file" aria-label="添加附件"></label></div>
         <div class="composer-model-controls"><button class="composer-select composer-model-picker" aria-label="选择供应商与模型" title="deepseek / ${CURRENT}" data-model-id="${CURRENT}">
           <span class="composer-model-provider">${LONG}</span><span class="composer-model-chevron">${icon}</span></button>
-        <button class="composer-select composer-thinking-select" aria-label="思考等级"><span class="composer-thinking-label">高</span><span class="composer-model-chevron">${icon}</span></button></div>
+        <button class="composer-select composer-thinking-select" aria-label="思考等级"><span class="composer-thinking-label">思考 · 高</span><span class="composer-model-chevron">${icon}</span></button></div>
       </div><div class="composer-actions"><button class="send-button" aria-label="发送消息">${icon}</button></div></div>
       </div><div class="composer-foot"><span>已连接</span><button class="session-trace-trigger">Trace</button></div>
       <footer class="runtime-footer plugin-footer"><div class="footer-plugin"><span class="footer-item"><span class="footer-value">↑32k ↓4.8k</span></span><span class="footer-item tool-metric"><span class="footer-value">2 tools</span></span></div></footer></div>
@@ -66,10 +66,10 @@ async function integratedFixture(page, fixture) {
   await page.goto(UI);
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
   await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '工作协同', exact: true }).click();
-  await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
+  await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '连接设备', exact: true }).click();
   await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
   await page.getByRole('button', { name: '连接节点', exact: true }).click();
-  await page.getByRole('status').filter({ hasText: '在线' }).first().waitFor();
+  await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
   await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
   await page.getByLabel('会话列表', { exact: true }).locator('[data-session-id="dark"] .session-item').click();
@@ -82,7 +82,9 @@ async function integratedFixture(page, fixture) {
 async function geometry(page) {
   return page.locator('.conversation-panel').evaluate(panel => {
     const box = selector => {
-      const el = panel.querySelector(selector), r = el.getBoundingClientRect(), s = getComputedStyle(el);
+      const el = panel.querySelector(selector);
+      if (!el) return null;
+      const r = el.getBoundingClientRect(), s = getComputedStyle(el);
       return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height,
         scroll: el.scrollWidth, client: el.clientWidth, font: parseFloat(s.fontSize),
         max: parseFloat(s.maxWidth),
@@ -117,15 +119,14 @@ async function geometry(page) {
       else {
         await page.setViewportSize({ width: 1440, height: 900 });
         await page.getByRole('button', { name: '打开设置', exact: true }).click();
-        await page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: '通用', exact: true }).click();
-        await page.locator('.settings-card').filter({ hasText: '外观与主题' }).click();
-        const theme = page.getByRole('dialog', { name: '外观与主题', exact: true });
-        await theme.getByLabel('明暗模式', { exact: true }).selectOption(mode);
-        await theme.getByRole('button', { name: '保存', exact: true }).click();
-        await theme.waitFor({ state: 'hidden' });
+        const theme = page.locator('#appearance.appearance-inline');
+        await theme.getByRole('button', { name: mode === 'dark' ? '深色' : '浅色', exact: true }).click();
+        await theme.getByRole('button', { name: '保存更改', exact: true }).click();
+        await theme.locator('.theme-import-notice').filter({ hasText: '已应用更改' }).waitFor();
         await page.getByRole('button', { name: '返回会话', exact: true }).click();
       }
       for (const width of WIDTHS) {
+        const sendSize = 44;
         await page.setViewportSize({ width, height: 900 });
         await page.locator('.sidebar').evaluate(async el => { await Promise.all(el.getAnimations().map(a => a.finished.catch(() => {}))); });
         let shortHeight;
@@ -134,15 +135,15 @@ async function geometry(page) {
           const g = await geometry(page), label = `${mode}/${width}/${content ? content === SHORT ? 'short' : 'multiline' : 'empty'}`;
           measurements.push({ label, geometry: g });
           const check = (condition, reason) => assert(condition, `${label}: ${reason}\n${JSON.stringify(g)}`);
-          check(g.textarea.height >= (width < 768 ? 75.5 : 83.5), 'text entry retains its 76px mobile / 84px desktop writing area');
-          if (!content) check(g.textarea.height <= (width < 768 ? 77 : 85), 'empty input stays compact instead of reserving 120px');
+          check(g.textarea.height >= (width < 768 ? 47.5 : 63.5), 'text entry matches the prototype writing area: 48px mobile / 64px desktop');
+          if (!content) check(g.textarea.height <= (width < 768 ? 49 : 65), 'empty input stays compact instead of reserving a tall writing area');
           check(g.textarea.height <= 226, 'long input is bounded at 25dvh');
           if (content === SHORT) shortHeight = g.textarea.height;
           if (content === MULTILINE && await field.evaluate(e => CSS.supports('field-sizing', 'content'))) check(g.textarea.height > shortHeight, 'multiline entry grows before scrolling');
           check(g['.composer-bottom'].height <= 53, 'one compact control row, not an inflated provider bar');
           check(g['.composer'].height <= g.textarea.height + g['.composer-bottom'].height + g['.composer-workspace'].height + 42, 'no spare chrome beyond the project context, input and compact controls');
-          check(g['.composer-capabilities'].height === 0, 'hidden capability row leaves no footprint');
-          check(g['.composer-model-picker'].height <= (width < 768 ? 44 : 32) + 1, 'legacy select heights cannot override picker geometry');
+          check(!g['.composer-capabilities'] || g['.composer-capabilities'].height === 0, 'capability controls leave no extra row in the composer');
+          check(g['.composer-model-picker'].height <= 45, 'legacy select heights cannot override picker geometry');
           check(g['.composer-model-provider'].scroll > g['.composer-model-provider'].client, 'long model label truncates');
           check(g['.composer-model-picker'].right <= g['.composer-thinking-select'].x + 1, 'model shrinks before thinking');
           check(g['.composer-thinking-select'].right <= g['.send-button'].x + 1, 'thinking does not overlap send');
@@ -157,7 +158,7 @@ async function geometry(page) {
           }
           check(g['.runtime-footer'].height <= 32, 'default tools stay in one compact row');
           check(g['.runtime-footer'].scroll <= g['.runtime-footer'].client + 1, 'default tools fit without horizontal clipping');
-          if (width === 1920) check(g['.composer'].width > 1000 && g['.transcript > [data-message-row]'].width > 1000, 'wide view expands real content, not just empty margins');
+          if (width === 1920) check(Math.abs(g['.composer'].width - 900) <= 1 && Math.abs(g['.transcript > [data-message-row]'].width - 900) <= 1, 'wide view preserves the canonical 900px conversation and editor column');
           for (const selector of controls) {
             const r = g[selector];
             check(r.visible && r.x >= 0 && r.right <= width + 1 && r.bottom <= 900, `${selector} remains in viewport`);
@@ -169,11 +170,11 @@ async function geometry(page) {
           if (width < 768) check(g.textarea.font >= 16, 'mobile entry avoids iOS zoom');
           assert.equal(await field.inputValue(), content, `${label}: draft unchanged`);
           if (content === SHORT) {
-            for (const [selector, size] of [['.attachment-button-slot .extras-add', 24], ['.send-button', 28]]) {
+            for (const [selector, size] of [['.attachment-button-slot .extras-add', 44], ['.send-button', sendSize]]) {
               const visual = await page.locator(selector).evaluate(el => {
                 const s = getComputedStyle(el, '::before'); return [parseFloat(s.width), parseFloat(s.height)];
               });
-              assert.deepEqual(visual, [size, size], `${label}: ${selector} paints a compact control inside the hit area`);
+              assert.deepEqual(visual, [size, size], `${label}: ${selector} paints its expected surface`);
             }
           }
           if (!SOURCE && content === SHORT && [1920, 1440, 390, 320].includes(width)) {
@@ -189,14 +190,14 @@ async function geometry(page) {
           }
           assert.equal(await field.inputValue(), MULTILINE, 'browsing configuration preserves draft');
         }
-        // Check the same compact disk in busy/stop states without sending a
+        // Check the same button surface in busy/stop states without sending a
         // prompt or clicking stop. Integrated mode uses real fixture events.
         if (SOURCE) {
           for (const state of ['is-loading', 'is-stop is-loading']) {
             await page.locator('.send-button').evaluate((el, state) => { el.className = `send-button ${state}`; el.disabled = true; }, state);
             assert.deepEqual(await page.locator('.send-button').evaluate(el => {
               const s = getComputedStyle(el, '::before'); return [parseFloat(s.width), parseFloat(s.height)];
-            }), [28, 28], `${mode}/${width}: ${state} keeps the compact disk`);
+            }), [sendSize, sendSize], `${mode}/${width}: ${state} keeps the button surface`);
           }
           await page.locator('.send-button').evaluate(el => { el.className = 'send-button'; el.disabled = false; });
         } else {
@@ -205,7 +206,7 @@ async function geometry(page) {
           await stop.waitFor();
           assert.deepEqual(await stop.evaluate(el => {
             const s = getComputedStyle(el, '::before'); return [parseFloat(s.width), parseFloat(s.height)];
-          }), [28, 28], `${mode}/${width}: stop keeps the compact disk`);
+          }), [sendSize, sendSize], `${mode}/${width}: stop keeps the button surface`);
           if (width < 768) { const r = await stop.boundingBox(); assert(r.width >= 44 && r.height >= 44, 'stop retains a 44px touch target'); }
           fixture.emit({ type: 'agent_settled', runId: 'layout-stop-check', outcome: 'completed', pendingResume: false });
           await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();

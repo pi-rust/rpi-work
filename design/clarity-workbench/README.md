@@ -4,9 +4,21 @@
 
 当前视觉层暂不使用毛玻璃或背景模糊，恢复直接、清晰的白色工作面与灰色边界。左侧会话导航、中间消息区和右侧文件 inspector 各自保持清楚的空间边界；视觉回退不改变节点、会话、权限、资源和供应商的状态边界。
 
+## 初始进入界面
+
+直接打开 [`index.html`](index.html) 或 [`#home`](index.html#home)，默认进入参考 ChatGPT 的欢迎页；[`#workspace`](index.html#workspace) 保留已有会话的演示页面。
+
+- 沿用黑白灰视觉、项目侧栏与同一个输入器；中央显示问候语、大输入框和四个快捷任务，手机改为两列快捷入口。
+- 输入框顶部选择节点与项目，底部直接选择模型、思考等级和附件。快捷任务填入草稿，不自动发送；已有输入会保留。
+- 点击发送或按 Enter 后，在所选项目下创建内存中的预览对话并展示输入文字；不会请求模型或创建真实节点会话。Shift + Enter 换行，空白和输入法组合中的 Enter 不发送。
+- 侧栏轻量的“新对话”入口或 Ctrl / Cmd + J 返回欢迎页；欢迎页与已有会话的草稿、模型偏好分别保留，刷新后重置。
+- 欢迎页和新建预览对话不显示固定历史的文件改动数量与上下文用量。点击已有会话恢复原工作台内容。
+
+新增视觉在 `welcome.css`，交互复用 `app.js` 中原有会话、模型和输入器逻辑；仅用于静态设计原型。
+
 ## 当前设计原则
 
-**移除原型额外添加的顶部“新建会话”大按钮与“工作台”导航。** 对话本身就是工作区；新建入口归属项目文件夹图标，展开箭头仍只负责折叠，已有会话仍直接点击打开。原型文件夹点击只展示节点 / 项目作用域说明，不真实创建，也不切走当前会话或丢失草稿。
+**不增加顶部“新建会话”大按钮与“工作台”导航。** 对话本身就是工作区；侧栏提供轻量“新对话”入口，项目文件夹图标保留原有项目作用域预览，展开箭头仍只负责折叠，已有会话仍直接点击打开。原型文件夹点击只展示节点 / 项目作用域说明，不真实创建，也不切走当前会话或丢失草稿。
 
 1. **工作区优先**：一条顶栏、一个工作面；左侧恢复既有约 272px 尺度并可收起，右侧上下文默认关闭。会话区保留“最近的会话 → 当前项目与会话 → 项目树 / 会话”、折叠、项目文件夹新建 / 项目操作与会话操作入口，底部保留归档。正文阅读宽度上限 900px，不为填满屏幕而无限拉长一行文字。
 2. **常用操作常驻**：模型、思考等级直接显示在输入器底部，桌面 / 手机均可直接打开选择器，不经过“配置”。附件 / 会话能力 / 其他设置放进 `+` 更多入口。
@@ -18,33 +30,7 @@
 
 ## 截图
 
-当前截图均在 `screenshots/settings-collaboration/`：
-
-- [桌面工作台 · 1440 × 1000](screenshots/minimal-commands/01-workspace-desktop.png)
-- [手机工作台 · 390 × 844](screenshots/minimal-commands/05-workspace-mobile.png)
-- [窄屏工作台 · 320 × 844](screenshots/minimal-commands/06-workspace-mobile-320.png)
-- [手机会话切换 · 按节点](screenshots/minimal-commands/12-session-switcher-grouped-mobile.png)
-- [手机会话切换 · 平铺](screenshots/minimal-commands/13-session-switcher-flat-mobile.png)
-- [桌面会话列表 · 平铺](screenshots/minimal-commands/14-sessions-flat-desktop.png)
-- [收起左导航](screenshots/minimal-commands/07-workspace-focus.png)
-- [桌面 · 1280 × 800](screenshots/minimal-commands/10-workspace-desktop-1280.png)
-- [手机短视口 · 390 × 500](screenshots/minimal-commands/11-workspace-short-mobile.png)
-- [上下文抽屉](screenshots/minimal-commands/08-context-on-demand.png)
-- [附件与更多](screenshots/minimal-commands/09-configuration-on-demand.png)
-- [项目文件侧栏 · 桌面](screenshots/settings-collaboration/37-project-files-desktop.png)
-- [项目文件侧栏 · 手机](screenshots/settings-collaboration/37-project-files-mobile.png)
-- [项目文件侧栏内 Diff · 桌面](screenshots/settings-collaboration/38-project-file-diff-sidebar-desktop.png)
-- [项目文件侧栏内 Diff · 手机](screenshots/settings-collaboration/38-project-file-diff-sidebar-mobile.png)
-
-右侧 Diff 查看器是大尺寸文件 inspector，支持同时打开多个改动文件并通过 Tab 切换；切换文件只更新侧栏内容，不跳转主工作区。
-- [变更视图](screenshots/minimal-commands/04-changes-desktop.png)
-- [资源中心](screenshots/minimal-commands/02-resources-desktop.png)
-- [外观设置](screenshots/minimal-commands/03-settings-desktop.png)
-- [会话展示设置 · 桌面](screenshots/minimal-commands/18-session-display-settings-desktop.png)
-- [会话展示设置 · 手机](screenshots/minimal-commands/19-session-display-settings-mobile.png)
-- [项目文件夹新建入口 · 作用域预览](screenshots/minimal-commands/20-project-folder-entry-desktop.png)
-
-初版三栏截图保留在 `screenshots/` 根目录；`screenshots/workspace-first/`、`screenshots/node-monochrome/` 与 `screenshots/sidebar-preserved/` 为先前版本，只供对比。当前版本移除了会话排列切换条，左侧以既有产品结构为准。
+截图文件已清理，不作为设计基准提交或保留。需要视觉验收时，直接打开本目录的 [`index.html`](index.html#workspace)，或运行验证脚本临时生成截图；生成物不应重新提交。
 
 ## 全屏、会话状态与详细命令
 
@@ -69,34 +55,16 @@
 
 `work_core::MessageBlock::ToolCall` 直接提供的是工具名、参数、输出和 `ToolStatus`；并非每个工具都结构化提供工作目录、退出码或独立 stdout / stderr。生产接入只展示明确提供的字段；缺失显示“未提供”或省略，不能把工具完成当作退出码 0，不能把混合输出猜成 stderr。布局和交互可以落地，但这些附加字段需要按实际工具结果契约接入。现有 `workspace.rs` 的 `conversation_focus` 会暂时隐藏输入器，**不是浏览器 / 原生窗口全屏**。
 
-新增截图：
-
-- [侧栏圆点状态 · 桌面](screenshots/minimal-commands/21-sidebar-session-states-desktop.png)
-- [详细命令 · 桌面](screenshots/minimal-commands/22-detailed-commands-desktop.png)
-- [失败命令与错误输出 · 桌面](screenshots/minimal-commands/23-failed-command-desktop.png)
-- [详细命令 · 手机](screenshots/minimal-commands/24-detailed-command-mobile.png)
-- [圆点状态 · 手机侧栏](screenshots/minimal-commands/25-sidebar-session-states-mobile.png)
-- [浏览器全屏](screenshots/minimal-commands/26-browser-fullscreen-desktop.png)
-- [详细命令 · 320px](screenshots/minimal-commands/27-detailed-command-mobile-320.png)
-- [工作协同设置 · 桌面](screenshots/settings-collaboration/28-collaboration-settings-desktop.png)
-- [工作协同设置 · 手机（扫码 / 输入地址）](screenshots/settings-collaboration/29-collaboration-settings-mobile.png)
-- [Packages 列表](screenshots/settings-collaboration/30-packages-list-desktop.png)
-- [Skills 列表](screenshots/settings-collaboration/31-skills-list-desktop.png)
-- [Extensions 列表](screenshots/settings-collaboration/32-extensions-list-desktop.png)
-- [资源安装确认 · 发现资源](screenshots/settings-collaboration/33-resource-install-detail.png)
-- [资源列表 · 移动端](screenshots/settings-collaboration/34-resource-list-mobile.png)
-- [供应商设置 · 桌面端](screenshots/settings-collaboration/35-provider-settings-desktop.png)
-- [供应商设置 · 移动端](screenshots/settings-collaboration/35-provider-settings-mobile.png)
-- [添加供应商 · 桌面端](screenshots/settings-collaboration/36-provider-add-desktop.png)
-- [添加供应商 · 移动端](screenshots/settings-collaboration/36-provider-add-mobile.png)
-
 ## 打开与验证
 
 浏览器直接打开 [`index.html`](index.html)，不需要服务器、构建或外部网络。
 
 ```sh
-node design/clarity-workbench/verify.cjs
+node design/clarity-workbench/verify-welcome.cjs
+CLARITY_OUTPUT_DIR=target/clarity-workbench-regression node design/clarity-workbench/verify.cjs
 ```
+
+欢迎页验证覆盖首次进入、空白禁用发送、快捷任务、项目 / 模型 / 思考选择、纯文本消息、进入对话、草稿隔离、手机导航，以及 320–1440px 六档宽度与短视口。结果与临时截图写入 `target/clarity-welcome/`；以上回归命令把原工作台验证产物写入 `target/clarity-workbench-regression/`。
 
 使用仓库既有 Playwright 开发依赖，生成截图与 [`verification.json`](verification.json)。验证覆盖：项目文件统一入口、目录树与工作区改动列表、右侧大尺寸文件 inspector、多个文件 Tab 切换、改动文件进入只读 Diff；真实浏览器全屏进入 / 退出 / Escape / 外部退出同步与模拟拒绝、侧栏无状态文字且保留圆点 / tooltip / 无障碍描述、切换器文字状态、详细命令切换及参数原文与失败保留、无额外新建 / 工作台导航、文件夹入口不切换会话与草稿且区分节点 / 项目作用域、设置页切换会话展示方式、侧栏保留最近会话与项目树、侧栏 / 切换器无排列 tab、默认黑白配色、模型 / 思考直接切换、手机顶栏切会话、节点分组 / 平铺 / 搜索 / 空结果、同 raw session ID 跨节点草稿隔离、资源来源语义、草稿保留、模态焦点恢复、六档宽度、短视口、长标题与放大文字、无文档级水平溢出、无真实网络和脚本异常。
 
@@ -111,13 +79,13 @@ node design/clarity-workbench/verify.cjs
 - 工具过程按需展开；变更标注“当前项目 Git diff，不代表全部由此会话产生”。
 - 资源统一导航，但“当前节点 / 发现资源 / 本地设计”仍分开；发现不等于已安装，本地设计不等于执行权限。
 - 设置仍区分本设备外观与当前节点执行配置。主题选择 / 明暗 / 密度入口用于展示交互位置，不代表完整主题切换实现；黑白默认通过本原型的 `monochrome.css` 实现。
-- 没有真实发送、安装、保存配置、文件选择、复制或 Git 操作。低频占位操作有“设计预览”说明；常用选择不弹 toast 遮挡输入器。
+- 欢迎页可在内存创建预览对话、展示输入文字并继续追加消息；没有真实模型发送、安装、保存配置、文件选择、复制或 Git 操作。低频占位操作有“设计预览”说明；常用选择不弹 toast 遮挡输入器。
 
 字体使用本机 Inter / Segoe UI / Noto Sans SC / PingFang SC / Microsoft YaHei，不下载字体。图标复用仓库 Lucide 0.468.0 路径（ISC，见 `assets/icons/LICENSE`），另有简单太阳 / 月亮图形。
 
 ## 产品实施状态
 
-**产品落地继续暂停，先确认此版截图。** 当前入口及新增 CSS / JS 仅服务此设计目录，不可被生产代码直接加载。
+**产品落地继续暂停，先确认此版原型。** 当前入口及新增 CSS / JS 仅服务此设计目录，不可被生产代码直接加载。
 
 此前开始的资源 / 设置生产布局草稿已暂存至 `target/clarity-implementation-paused/product-layout.patch` 并只撤回本次委派的生产布局改动，避免留下未接入的组件；原有桌面主题导入修复与用户主题文件保留。旧补丁不是新版设计实现，不能直接应用后视为完成。
 

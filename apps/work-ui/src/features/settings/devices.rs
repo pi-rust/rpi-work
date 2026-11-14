@@ -585,7 +585,7 @@ pub fn DevicesPage(
                     div { class: "page-heading collaboration-page-heading",
                         div {
                             div { class: "overline", "DEVICES & COLLABORATION" }
-                            h1 { "工作协同" }
+                            h2 { "工作协同" }
                             p { "查看已连接的工作节点，并分享当前节点。" }
                         }
                         span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "当前节点已连接" } else if busy { "节点连接中" } else { "当前节点未连接" } }
@@ -626,10 +626,10 @@ pub fn DevicesPage(
                     div { class: "page-heading collaboration-page-heading",
                         div {
                             div { class: "overline", "DEVICES & COLLABORATION" }
-                            h1 { "工作协同" }
+                            h2 { "工作协同" }
                             p { "连接其他设备，或允许可信设备访问这台电脑上的工作空间。" }
                         }
-                        span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "本机节点在线" } else if busy { "节点准备中" } else { "本机节点未就绪" } }
+                        span { role: "status", class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { if owned_local { "本机节点在线" } else { "当前节点已连接" } } else if busy { "节点连接中" } else { "当前节点未连接" } }
                     }
                     div { class: "collaboration-actions",
                         section { class: "collaboration-action-card connect-card", aria_label: "连接其他设备",
@@ -657,7 +657,7 @@ pub fn DevicesPage(
                                                 Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(()); }
                                                 Err(message) => error.set(message),
                                             }
-                                        }, if busy { "正在连接…" } else { "连接设备" } }
+                                        }, if busy { "正在连接…" } else { "连接节点" } }
                                     }
                                     if !error.read().is_empty() { p { class: "connection-form-error", role: "alert", "{error}" } }
                                 }
@@ -718,6 +718,23 @@ pub fn DevicesPage(
                                 }
                             }
                         }
+                    section { class: "collaboration-action-card web-access-card", aria_label: "允许 Web 访问",
+                        div { class: "collaboration-action-heading",
+                            span { class: "collaboration-action-icon", Icon { name: "server" } }
+                            div { h2 { "允许 Web 访问" } p { "通过浏览器访问当前工作节点的项目、会话和任务。" } }
+                            span { class: "neutral-pill", if owned_local && sharing.enabled && sharing.listening && !sharing.app_url.is_empty() { "已开启" } else { "未开启" } }
+                        }
+                        div { class: "plugin-guide",
+                            Icon { name: "shield" }
+                            div {
+                                strong { "与远程入口共用访问设置" }
+                                p { "Web 访问随当前电脑的远程入口启停，仍需节点鉴权。" }
+                            }
+                            if owned_local && sharing.enabled && sharing.listening && !sharing.app_url.is_empty() {
+                                a { class: "button", href: "{sharing.app_url}", target: "_blank", rel: "noopener noreferrer", "打开 Web 入口" }
+                            }
+                        }
+                    }
                     }
                     div { class: "collaboration-lists",
                         section { class: "collaboration-list-panel", aria_label: "最近连接",
@@ -738,17 +755,19 @@ pub fn DevicesPage(
                         }
                         section { class: "collaboration-list-panel visited-panel", aria_label: "被访问的设备",
                             div { class: "collaboration-list-heading", div { h2 { "被访问的设备" } p { "曾经访问过这台电脑的设备" } } }
-                            div { class: "collaboration-empty", Icon { name: "shield" } strong { "暂时没有访问记录" } span { "开启远程协助并完成设备授权后，\n这里会显示访问过你的设备。" } }
+                            div { class: "collaboration-empty", Icon { name: "shield" } strong { "暂无可用记录" } span { "此页面暂不提供设备访问记录。" } }
                         }
                     }
                 }
             }
-            // A hosted/remote desktop entry keeps the connected-node details below.
+            // Keep node diagnostics and host controls available without appending a
+            // second settings page to the collaboration surface.
             if owned_local || (!mobile_client && !scoped_entry) {
-                div { class: "overline", "DEVICES & COLLABORATION" }
+                details { class: "connection-details", open: !collaboration_hub,
+                summary { "当前节点与连接详情" }
                 div { class: "page-heading connection-page-heading",
                     div {
-                        h1 { "当前远程节点" }
+                        h2 { if owned_local { "本机节点详情" } else { "当前节点详情" } }
                         p { "查看当前连接的工作节点，或切换到其他设备。" }
                     }
                     if owned_local {
@@ -842,10 +861,12 @@ pub fn DevicesPage(
                                 onconnect.call(());
                             }, "使用这台电脑" }
                             }
-                            button { class: "button", onclick: move |_| remote_open.set(!remote_open()), "连接其他节点" }
+                            if !collaboration_hub {
+                                button { class: "button", onclick: move |_| remote_open.set(!remote_open()), "连接其他节点" }
+                            }
                         }
                         if owned_local { p { class: "connection-help", "本机 RPC 和桌面 HTTP 共用这一份工作空间；远程协作默认关闭。开启并保存后，手机可通过二维码访问相同会话和任务；共享开关与 HTTP 配置会记住，不会自动修改防火墙。" } }
-                        if *remote_open.read() {
+                        if *remote_open.read() && !collaboration_hub {
                             div { class: "remote-node-form",
                                 div { class: "form-field",
                                     label { r#for: "node-url", "节点地址" }
@@ -907,6 +928,7 @@ pub fn DevicesPage(
                             }, "连接" }
                         }
                     }
+                }
                 }
             } else if !mobile_collaboration && !collaboration_hub {
                 ConnectionScreen {
