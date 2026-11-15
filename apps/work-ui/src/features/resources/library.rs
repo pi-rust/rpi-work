@@ -578,11 +578,13 @@ pub fn ResourcePage(
     #[props(default)] session_name: Option<String>,
     #[props(default)] session_scope: Option<String>,
     #[props(default)] on_back: Option<EventHandler<()>>,
+    #[props(default)] import_open_override: Option<Signal<bool>>,
 ) -> Element {
     let mut search = use_signal(String::new);
     let mut status = use_signal(|| "all".to_owned());
     let mut detail = use_signal(|| None::<String>);
-    let mut paste_open = use_signal(|| false);
+    let local_paste_open = use_signal(|| false);
+    let mut paste_open = import_open_override.unwrap_or(local_paste_open);
     let mut paste = use_signal(String::new);
     let mut error = use_signal(String::new);
     let mut import_error = use_signal(String::new);

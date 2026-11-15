@@ -3,6 +3,10 @@ use std::io::{self, BufRead, Write};
 use serde_json::{Value, json};
 
 fn main() {
+    if std::env::args().any(|argument| argument == "--version") {
+        println!("rpi 0.24.0");
+        return;
+    }
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout());
     let mut hanging = false;

@@ -6868,13 +6868,17 @@ dependencies = [
 name = "work-host"
 version = "0.1.0"
 dependencies = [
+ "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "work-client",
  "work-component-api",
  "work-http-runtime",
  "work-node-host",
+ "work-node-runtime",
+ "work-update",
 ]
 
 [[package]]
@@ -6977,7 +6981,7 @@ dependencies = [
 
 [[package]]
 name = "work-ui"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "base64 0.22.1",
  "dioxus",
@@ -7006,6 +7010,7 @@ dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
  "flate2",
+ "fs2",
  "futures-util",
  "reqwest",
  "semver",
@@ -7013,6 +7018,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "tar",
+ "tempfile",
+ "tokio",
  "zip",
 ]
 

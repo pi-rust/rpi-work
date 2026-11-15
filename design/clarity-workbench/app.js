@@ -20,7 +20,7 @@ function showView(view) {
     button.classList.toggle('active',active);
     if (active) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');
   }
-  document.querySelector('#section-label').textContent = {workspace:'工作台',resources:'资源中心',settings:'设置'}[view];
+  document.querySelector('#section-label').textContent = {workspace:'工作台',resources:'资源中心',settings:'设置',authoring:'资源开发'}[view];
   shell.classList.remove('nav-open','context-open');
   setProjectFiles(false);
   syncNavigation();
@@ -30,6 +30,7 @@ function showView(view) {
   document.querySelector('.welcome-nav').classList.toggle('active',homeActive);
   if (homeActive) document.querySelector('.welcome-nav').setAttribute('aria-current','page');
   else document.querySelector('.welcome-nav').removeAttribute('aria-current');
+  document.dispatchEvent(new CustomEvent('clarity:view', {detail: view}));
 }
 function showTab(tab) {
   const context = document.querySelector('#context-dialog');if (context.open) context.close();
@@ -124,6 +125,7 @@ function openHome() {
   document.querySelector('#prompt').value = homeState.draft;
   document.querySelector('#prompt').dispatchEvent(new Event('input'));
   syncPreference();renderSessionLists();
+  document.dispatchEvent(new CustomEvent('clarity:workspace', {detail: 'home'}));
 }
 function openHomeProjects() {
   const list = document.querySelector('#welcome-project-list');list.replaceChildren();
@@ -173,6 +175,7 @@ function sendPreviewMessage() {
   sessionDrafts.set(scopeKey(currentNode,currentSession),'');
   document.querySelector('#prompt').focus();
   document.querySelector('#chat-panel').scrollTop = document.querySelector('#chat-panel').scrollHeight;
+  document.dispatchEvent(new CustomEvent('clarity:workspace', {detail: 'sent'}));
 }
 function currentPreference() {
   if (homeMode) return homeState;
@@ -230,7 +233,7 @@ function renderSessionList(container,query = '') {
   let matches = 0;
   const flatItems = [];
   for (const node of demoNodes) {
-    const list = node.sessions.filter(session => `${node.name} ${session.project} ${session.title}`.toLowerCase().includes(query.toLowerCase()));
+    const list = node.sessions.filter(session => !session.archived).filter(session => `${node.name} ${session.project} ${session.title}`.toLowerCase().includes(query.toLowerCase()));
     if (!list.length) continue;
     matches += list.length;
     if (sessionLayout === 'flat') {for (const session of list) flatItems.push({node,session});continue;}
@@ -269,7 +272,7 @@ function renderSidebarSessions() {
   const node = demoNodes.find(item => item.id === currentNode);
   const recent = document.createElement('section');recent.className='sidebar-recent';recent.setAttribute('aria-label','最近的会话');
   const heading=document.createElement('p');heading.className='sidebar-section-label';heading.textContent='最近的会话';recent.append(heading);
-  for(const session of [...node.sessions].sort((a,b)=>a.recent-b.recent).slice(0,2)) recent.append(sidebarSession(node,session,true));
+  for(const session of node.sessions.filter(session=>!session.archived).sort((a,b)=>a.recent-b.recent).slice(0,2)) recent.append(sidebarSession(node,session,true));
   container.append(recent);
   const divider=document.createElement('div');divider.className='sidebar-session-divider';divider.textContent='当前项目与会话';container.append(divider);
   const catalog=document.createElement('div');catalog.className='sidebar-catalog';container.append(catalog);
@@ -280,7 +283,7 @@ function renderSidebarSessions() {
       const summary=document.createElement('summary');summary.className='node-heading';
       const icon=document.createElement('i');icon.dataset.icon=node.id==='local'?'monitor':'server';
       const title=document.createElement('strong');title.textContent=node.name;
-      const count=document.createElement('span');count.className='node-session-count';count.textContent=String(node.sessions.length);
+      const count=document.createElement('span');count.className='node-session-count';count.textContent=String(node.sessions.filter(session=>!session.archived).length);
       summary.append(icon,title,count);group.append(summary);
     }
     for(const project of [...new Set(node.sessions.map(session=>session.project))]) {
@@ -298,7 +301,7 @@ function renderSidebarSessions() {
       }
       entry.append(summary);
       const list=document.createElement('div');list.className='session-list';
-      for(const session of node.sessions.filter(item=>item.project===project)) list.append(sidebarSession(node,session));
+      for(const session of node.sessions.filter(item=>item.project===project && !item.archived)) list.append(sidebarSession(node,session));
       entry.append(list);group.append(entry);
     }
     catalog.append(group);
@@ -328,6 +331,7 @@ function selectSession(nodeId,sessionId) {
   document.querySelector('#prompt').dispatchEvent(new Event('input'));
   renderSessionLists();syncPreference();showView('workspace');showTab('chat');
   syncWorkspaceMode();renderPreviewConversation();
+  document.dispatchEvent(new CustomEvent('clarity:workspace', {detail: 'selected'}));
   document.querySelector('.session-trigger').focus();
   // The inline fixture notice communicates the boundary without covering controls.
 }
@@ -357,31 +361,7 @@ const resources = {
   ]
 };
 let resourceKind = 'packages', resourceSource = '当前节点';
-function renderResources() {
-  const query = document.querySelector('#resource-search').value.trim().toLowerCase();
-  const list = resources[resourceKind].filter(item => `${item.name} ${item.id} ${item.description}`.toLowerCase().includes(query));
-  const grid = document.querySelector('#resource-grid');
-  grid.replaceChildren();
-  for (const item of list) {
-    const card = document.createElement('article'); card.className = `resource-package resource-card-${resourceKind}`;
-    const kindLabel = {packages:'能力集合',skills:'知识与工作流',extensions:'运行扩展'}[resourceKind];
-    const kindDetails = resourceKind === 'packages'
-      ? `<span><b>组成</b>${item.tags.join(' · ')}</span><span><b>作用范围</b>当前节点</span>`
-      : resourceKind === 'skills'
-        ? `<span><b>适用领域</b>${item.tags.join(' · ')}</span><span><b>触发方式</b>按任务路由</span>`
-        : `<span class="extension-status"><i class="status-dot online"></i>可用扩展</span><span><b>权限边界</b>${item.permission}</span>`;
-    // All markup below is curated local fixture content, not model/user HTML.
-    card.innerHTML = `<span class="resource-icon ${item.tone}"><i data-icon="${item.icon}"></i></span><div class="resource-heading"><h2>${item.name}<span class="resource-kind-label">${kindLabel}</span></h2><p class="package-id">${item.id}</p></div><p class="package-description">${item.description}</p><div class="resource-meta">${kindDetails}</div><div class="package-footer"><span>${resourceSource === '当前节点' ? item.version : resourceSource + ' · 示例'}</span><button data-action="resource-detail" data-resource="${item.name}">查看详情<i data-icon="arrow-right"></i></button></div>`;
-    grid.append(card);
-  }
-  document.querySelector('.resource-empty').hidden = list.length !== 0;
-  document.querySelector('#resource-source-note').textContent = {
-    '当前节点':'节点已安装资源与本地设计相互独立。查看详情后，再决定是否用于当前会话。',
-    '发现资源':'发现目录不等于已安装。正式安装前需要核对来源、清单和权限；原型不会执行安装。',
-    '本地设计':'本地设计是未执行的资源声明，不等于当前节点已经安装或信任的能力。'
-  }[resourceSource];
-  mountIcons(grid);
-}
+function renderResources() { window.clarityFlow?.renderResources(); }
 let fullscreenPending=false;
 function syncFullscreen() {
   const button=document.querySelector('[data-action="fullscreen"]');
@@ -411,6 +391,7 @@ function toggleToolDetails() {
 document.addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.closest('#resources-page,#detail-dialog') || button.dataset.resourceEntry) return;
   if (button.dataset.toast) {
     if (button.closest('.project-heading')) event.preventDefault();
     toast(button.dataset.toast);
@@ -480,31 +461,6 @@ document.addEventListener('click', event => {
     }
     if (action === 'models') document.querySelector('#provider-models-dialog').showModal();
   }
-  if (button.dataset.action === 'resource-detail') {
-    const item = resources[resourceKind].find(resource => resource.name === button.dataset.resource);
-    if (item) {
-      document.querySelector('#detail-resource-name').textContent = item.name;
-      document.querySelector('#detail-resource-description').textContent = item.description;
-      document.querySelector('#detail-resource-source').textContent = resourceSource;
-      document.querySelector('#detail-resource-target').textContent = resourceSource === '本地设计' ? '本机设计目录' : '本机节点 · rpi-work';
-      document.querySelector('#detail-resource-version').textContent = resourceSource === '当前节点' ? item.version : `${resourceSource} · 待核对清单`;
-      const action = document.querySelector('#detail-resource-action');
-      action.disabled = resourceSource === '当前节点';
-      action.textContent = resourceSource === '当前节点' ? '已安装' : resourceSource === '本地设计' ? '导入到本地设计' : '安装到当前节点';
-      action.dataset.resourceName = item.name;
-      action.dataset.resourceSource = resourceSource;
-      document.querySelector('#detail-resource-boundary').textContent = resourceSource === '当前节点'
-        ? '节点已安装；查看详情不会自动把资源加入当前会话。'
-        : resourceSource === '本地设计'
-          ? '导入只保存资源声明，不代表节点已安装、已信任或拥有执行权限。'
-          : '安装前应核对来源、版本、清单和权限；安装不会自动加入当前会话。';
-    }
-    document.querySelector('#detail-dialog').showModal();
-  }
-  if (button.hasAttribute('data-resource-action')) {
-    button.textContent = '原型不执行安装';button.disabled = true;
-    toast('这是安装确认预览：不会连接节点、写入目录或改变当前会话。');
-  }
   if (button.dataset.action === 'model') document.querySelector('#model-dialog').showModal();
   if (button.dataset.action === 'thinking') document.querySelector('#thinking-dialog').showModal();
   if (button.dataset.thinking) {
@@ -514,8 +470,6 @@ document.addEventListener('click', event => {
     currentPreference().model = button.dataset.model;syncPreference();
     button.closest('dialog').close();
   }
-  if (button.dataset.kind) { resourceKind = button.dataset.kind; document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('active',b === button)); renderResources(); }
-  if (button.dataset.source) { resourceSource = button.dataset.source; document.querySelectorAll('[data-source]').forEach(b => b.classList.toggle('active',b === button)); renderResources(); }
   if (button.dataset.settings) {
     document.querySelectorAll('[data-settings]').forEach(b => b.classList.toggle('active',b === button));
     showSettingsCategory(button.dataset.settings);
@@ -587,7 +541,14 @@ document.querySelector('#context-dialog').addEventListener('close', () => {
   document.querySelector('.topbar [data-action="context"]').setAttribute('aria-expanded','false');
 });
 function routeHash() {
-  const view = location.hash.slice(1);
+  const raw = location.hash.slice(1);
+  const view = raw.split('?')[0];
+  if (['resources','skills','extensions','packages','authoring'].includes(view)) {
+    showView(view === 'authoring' ? 'authoring' : 'resources');
+    history.replaceState(null,'',`#${raw}`);
+    window.clarityFlow?.readRoute();
+    return;
+  }
   if (view === 'workspace' && homeMode) {selectSession(currentNode,currentSession);return;}
   showView(['home','workspace','resources','settings'].includes(view) ? view : 'home');
 }

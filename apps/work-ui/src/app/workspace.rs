@@ -77,7 +77,7 @@ struct ProjectOpenTab {
 }
 
 #[component]
-pub(super) fn App() -> Element {
+pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     // Opt-in E2E probe counts actual App executions, not DOM mutations. The
     // one-time handshake leaves only a Cell check in normal WASM renders;
     // document::eval is never called per render unless the test opts in at boot.
@@ -102,16 +102,7 @@ pub(super) fn App() -> Element {
             let _ = document::eval("window.__rpiAppRenderProbe.appRenders++;");
         }
     }
-    let mut app_settings_store = use_signal(AppSettingsState::default);
-    use_context_provider(|| app_settings_store);
-    use_effect(move || {
-        if app_settings_store.peek().ready {
-            return;
-        }
-        spawn(async move {
-            app_settings_store.set(app_settings::load_state().await);
-        });
-    });
+    let app_settings_store = use_context::<Signal<AppSettingsState>>();
     let appearance = use_appearance();
     crate::features::observability::footer_plugins::use_footer_preferences();
     let device_mode = device_mode::use_device_mode();
@@ -656,8 +647,13 @@ pub(super) fn App() -> Element {
     let mut project_aliases = use_signal(std::collections::HashMap::<String, String>::new);
     let mut project_aliases_loaded = use_signal(|| false);
     settings::use_pairing();
-    let mut active_page = use_signal(|| "workspace".to_owned());
-    let mut advanced_features_expanded = use_signal(|| false);
+    let mut active_page = use_signal(|| {
+        if connection_setup {
+            "settings".to_owned()
+        } else {
+            "workspace".to_owned()
+        }
+    });
     // Leaving the composer abandons automatic navigation for this attempt.
     // Returning before its response arrives must not restore that intent.
     use_effect(move || {
@@ -665,7 +661,13 @@ pub(super) fn App() -> Element {
             new_session_follow.set(false);
         }
     });
-    let mut settings_section = use_signal(|| "settings".to_owned());
+    let mut settings_section = use_signal(|| {
+        if connection_setup {
+            "devices".to_owned()
+        } else {
+            "settings".to_owned()
+        }
+    });
     let mut session_details_open = use_signal(|| false);
     let mut session_settings_tab = use_signal(|| "details".to_owned());
     let mut timeline_visible = use_signal(|| false);
@@ -4296,14 +4298,10 @@ pub(super) fn App() -> Element {
         });
     });
     use_effect(move || {
-        let epoch = *node_connection.epoch.read();
+        let _epoch = *node_connection.epoch.read();
         if *home_requested.read()
             && active_page.read().as_str() == "workspace"
             && matches!(*node_connection.phase.read(), connections::Phase::Online)
-            && home_models
-                .peek()
-                .as_ref()
-                .is_none_or(|(loaded, _)| *loaded != epoch)
         {
             refresh_home_models.call(());
         }
@@ -4702,18 +4700,6 @@ pub(super) fn App() -> Element {
                             Icon { name: "edit" } span { "新对话" } kbd { "Ctrl J" }
                         }
                         button { class: if ["resources", "packages", "skills", "extensions"].contains(&active_page.read().as_str()) { "nav-item active" } else { "nav-item" }, r#type: "button", onclick: move |_| { active_page.set("resources".into()); sidebar_open.set(false); }, Icon { name: "blocks" } span { "资源中心" } }
-                        if !resource_nav_items.is_empty() {
-                            div { class: "nav-group advanced-nav-group", aria_label: "高级功能",
-                                button { class: if resource_nav_items.iter().any(|(page, _, _, _)| active_page.read().as_str() == *page) { "nav-item nav-disclosure-trigger active" } else { "nav-item nav-disclosure-trigger" }, r#type: "button", aria_expanded: advanced_features_expanded.to_string(), onclick: move |_| advanced_features_expanded.toggle(), Icon { name: "blocks" } span { "高级功能" } Icon { name: if *advanced_features_expanded.read() { "chevron-down" } else { "chevron-right" } } }
-                                if *advanced_features_expanded.read() {
-                                    div { class: "nav-subitems",
-                                        for (page, icon, title, _) in resource_nav_items.iter() {
-                                            button { class: if active_page.read().as_str() == *page { "nav-item active" } else { "nav-item" }, onclick: { let page = (*page).to_owned(); move |_| { active_page.set(page.clone()); sidebar_open.set(false); } }, Icon { name: (*icon).to_owned() } "{title}" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                     div { class: "sidebar-projects", role: "navigation", aria_label: "项目与会话", "data-session-display-mode": session_display_mode.key(),
                     if !recent_sessions.is_empty() {
@@ -5088,10 +5074,12 @@ pub(super) fn App() -> Element {
                         crate::features::resources::center::ResourceCenter {
                             key: "resource-center-{active_page}-{node_url}-{selected_project:?}-{node_connection.epoch}-{session_generation}-{selected_session:?}",
                             kind: active_page.read().clone(), project: resource_project.clone(), project_name: resource_project_name.clone(),
+                            projects: projects.read().iter().map(|project| (project.id.clone(), project_aliases.read().get(&project_scope_key(&node_origin(node_url.read().as_str()), &project.id)).cloned().unwrap_or_else(|| project.name.clone()))).collect::<Vec<_>>(),
+                            node_label: if node_display_local { "本机".to_owned() } else { node_info::safe_address(&node_url.read()) },
                             categories: resource_nav_items.iter().map(|(id, _, title, _)| ((*id).to_string(), (*title).to_string())).collect::<Vec<_>>(),
                             session: selected_session.read().clone(), session_name: selected_session_title.read().clone(),
                             session_scope: selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)),
-                            library: resource_library, shared_client, connection_epoch: node_connection.epoch,
+                            library: resource_library, legacy: meta_store, shared_client, connection_epoch: node_connection.epoch,
                             session_generation, idle: !extension_locked,
                             online: matches!(*node_connection.phase.read(), connections::Phase::Online),
                             onopen: move |id: String| { active_page.set("workspace".into()); pending_open.set(Some((false,id))); },
@@ -5152,6 +5140,7 @@ pub(super) fn App() -> Element {
                         onproject: { let origin = home_origin.clone(); move |id| home_project.set(Some((origin.clone(), id))) },
                         onadd: move |()| { project_error.set(None); show_project_form.set(true); },
                         onconnect: move |()| open_node_settings(),
+                        onconfigure: move |()| { active_page.set("settings".into()); settings_section.set("providers".into()); },
                         onrefresh: refresh_home_models,
                         onsubmit: move |message| {
                             if let Some(id) = home_project_id.clone() {
@@ -5788,7 +5777,7 @@ pub(super) fn App() -> Element {
                                             backend_binding: session_binding.read().clone(), backend_busy: *new_session_busy.read(),
                                             onbackendchange: move |backend| { session_details_open.set(false); change_backend.call(backend); },
                                             session_title: selected_session_title.read().clone(),
-                                            on_browse: Some(EventHandler::new(move |()| { session_details_open.set(false); active_page.set("packages".to_owned()); })),
+                                            on_browse: Some(EventHandler::new(move |()| { session_details_open.set(false); active_page.set("resources".to_owned()); })),
                                             extension_config_locked: extension_locked, selected_session,
                                             library: resource_library, onquote: move |text: String| {
                                                 if let Some(id) = selected_session.read().as_deref() {

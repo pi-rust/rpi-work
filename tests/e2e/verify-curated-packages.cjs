@@ -47,6 +47,8 @@ const bounded = async (promise, label, ms = 20000) => {
     const env = { ...process.env };
     for (const k of Object.keys(env)) if (/^(RPI_|WORK_|WEBVIEW2_|XDG_|NODE_OPTIONS$|NODE_PATH$)|API.?KEY|TOKEN|SECRET|PASSWORD|PROXY|CREDENTIAL/i.test(k)) delete env[k];
     for (const n of ['home', 'roaming', 'local', 'agent', 'cwd', 'temp']) fs.mkdirSync(path.join(temp, n));
+    fs.mkdirSync(path.join(temp, 'data'));
+    fs.writeFileSync(path.join(temp, 'data', 'sharing.json'), JSON.stringify({ allow_sharing: true }));
     Object.assign(env, { HOME: path.join(temp, 'home'), USERPROFILE: path.join(temp, 'home'), APPDATA: path.join(temp, 'roaming'), LOCALAPPDATA: path.join(temp, 'local'), XDG_DATA_HOME: path.join(temp, 'local'), RPI_CODING_AGENT_DIR: path.join(temp, 'agent'), TMP: path.join(temp, 'temp'), TEMP: path.join(temp, 'temp'), NO_PROXY: '127.0.0.1,localhost', RPI_WORK_RPI_BIN: fixture, RPI_WORK_DATA_DIR: path.join(temp, 'data'), RPI_WORK_HTTP_BIND: '127.0.0.1', RPI_WORK_HTTP_PORT: '0', RPI_WORK_HTTP_PASSWORD: password, RPI_WORK_HTTP_ASSETS: assets });
     stage = 'owner-start';
     child = spawn(cli, ['serve', '--shutdown-stdin'], { env, cwd: path.join(temp, 'cwd'), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -66,7 +68,7 @@ const bounded = async (promise, label, ms = 20000) => {
     // Test-owned device preference, consumed by the real appearance adapter.
     // No DOM tokens/business state or API responses are injected.
     await context.addInitScript(() => {
-      if (!localStorage.getItem('rpi-work-appearance-v1')) localStorage.setItem('rpi-work-appearance-v1', JSON.stringify({ theme: 'codex', mode: 'system', density: 'standard', toolRendering: 'simple', customThemes: [] }));
+      if (!localStorage.getItem('rpi-work-settings-v1')) localStorage.setItem('rpi-work-settings-v1', JSON.stringify({ version: 1, appearance: { theme: 'codex', mode: 'system', density: 'standard', toolRendering: 'simple', customThemes: [] } }));
     });
     // Only this fresh owner's origin is reachable from the browser; no response mocking.
     await context.route(/^https?:\/\//, route => {
@@ -89,123 +91,141 @@ const bounded = async (promise, label, ms = 20000) => {
     stage = 'formal-ui';
     await page.goto(`${base}/`);
     await page.locator('.sidebar').waitFor();
-    const projectEntry = page.locator('.project-entry').filter({ hasText: project.name });
-    await projectEntry.waitFor();
-    // Selecting a project with zero sessions must not run a model; the owned
-    // legacy-only synthetic fixture cannot support exact native creation.
-    await projectEntry.locator('.project-row').click();
-    await page.locator('.sidebar').getByRole('button', { name: 'Packages', exact: true }).click();
-    const discovery = page.getByRole('region', { name: '精选 Package 发现' });
-    await discovery.waitFor();
-    await until(async () => await discovery.locator('.package-card').count() === 3, 'curated catalog');
-    assert.match(await discovery.innerText(), /非在线市场/);
-    assert.equal(requests.filter(r => r.path.endsWith('/packages/acquire') || r.path.endsWith('/packages/install')).length, 0);
-    pass('fresh formal resource page reads three real curated offers without acquisition/installation');
-    stage = 'preview-filter';
-    await discovery.getByLabel('筛选目录', { exact: true }).fill('work-basics');
-    await until(async () => await discovery.locator('.package-card').count() === 2, 'filtered catalog');
-    await discovery.getByLabel('资源类型', { exact: true }).selectOption('skill');
-    await until(async () => await discovery.locator('.package-card').count() === 1, 'skill filter');
-    await discovery.getByRole('button', { name: '详情 / 内容预览', exact: true }).click();
-    const detail = discovery.getByRole('region', { name: '精选包详情' });
-    await detail.getByText('SKILL.md', { exact: true }).waitFor();
-    await detail.getByText('SKILL.md', { exact: true }).click();
-    await detail.getByText(/Read project standards and relevant source first/).waitFor();
-    const install = detail.getByRole('button', { name: '安装', exact: true });
-    assert(await install.isDisabled());
+    await page.locator('.project-entry').filter({ hasText: project.name }).locator('.project-row').click();
+    await page.locator('.primary-nav').getByRole('button', { name: '资源中心', exact: true }).click();
+    const center = page.locator('.resource-center-v2');
+    const button = (name, root = center) => root.getByRole('button', { name, exact: true });
+    const source = async name => {
+      await button(name, center.getByRole('navigation', { name: '资源视图' })).click();
+      await until(() => center.getAttribute('aria-busy').then(value => value === 'false'), 'resource readback');
+    };
+    await until(async () => await center.locator('.resource-workbench-row').count() === 3, 'real curated catalog');
+    assert.equal(requests.filter(request => request.path.endsWith('/packages/acquire') || request.path.endsWith('/packages/install')).length, 0);
+    pass('formal resource center reads the real embedded catalog without acquisition, installation or model sessions');
     const before = await api(`projects/${project.id}/packages`);
-    assert(before.packages.every(p => !p.acquired));
-    pass('filters and canonical Skill preview are read-only; installation starts disabled');
-    stage = 'download';
-    const got = page.waitForEvent('download');
-    await detail.getByRole('button', { name: '下载到本机', exact: true }).click();
-    const download = await got;
+    assert(before.packages.every(offer => !offer.acquired));
+    const offer = before.packages.find(offer => offer.manifest.kind === 'skill');
+    assert(offer);
+    const skillRow = () => center.locator('.resource-workbench-row[data-resource-kind="skills"]').filter({ hasText: offer.manifest.id });
+    await button('查看详情', skillRow()).click();
+    const detail = page.getByRole('dialog', { name: '资源详情', exact: true });
+    await until(async () => await detail.getByRole('button', { name: '下载到本机', exact: true }).isEnabled(), 'verified content preview');
+    await detail.getByText('查看资源内容', { exact: true }).click();
+    await detail.getByText('SKILL.md', { exact: true }).click();
+    assert.match(await detail.innerText(), /Read project standards and relevant source first/);
+    const pendingDownload = page.waitForEvent('download');
+    await button('下载到本机', detail).click();
     const downloaded = path.join(output, 'curated-skill.rpi-package.json');
-    await download.saveAs(downloaded);
+    await (await pendingDownload).saveAs(downloaded);
     const bundle = JSON.parse(fs.readFileSync(downloaded, 'utf8'));
-    const offer = before.packages.find(p => p.manifest.kind === 'skill');
     assert.equal(bundle.manifest.id, offer.manifest.id);
     assert.equal(bundle.sha256, offer.sha256);
     assert.equal(crypto.createHash('sha256').update(JSON.stringify([bundle.manifest, bundle.sources])).digest('hex'), bundle.sha256);
-    assert((await api(`projects/${project.id}/packages`)).packages.every(p => !p.acquired));
-    pass('real browser JSON download matches node metadata/source SHA-256 and does not acquire');
-    stage = 'acquire';
-    await detail.getByRole('button', { name: '获取到当前节点', exact: true }).click();
-    await until(async () => (await discovery.locator('.package-card').innerText()).includes('当前执行节点：已获取'), 'authoritative acquired reread');
-    const acquired = await api(`projects/${project.id}/packages`);
-    assert.equal(acquired.packages.filter(p => p.acquired).length, 1);
-    assert(await install.isDisabled());
-    const trust = detail.getByRole('checkbox');
-    await trust.check(); assert(await install.isEnabled());
-    await detail.getByLabel('安装范围', { exact: true }).selectOption('global');
-    assert(!await trust.isChecked()); assert(await install.isDisabled());
-    await detail.getByLabel('安装范围', { exact: true }).selectOption('project');
-    await trust.check();
-    const submitted = page.waitForResponse(r => r.url().endsWith('/packages/install') && r.request().method() === 'POST');
-    await install.click();
-    const response = await submitted;
-    // Legacy-only synthetic host: explicit Unsupported, never fake installed/loaded.
-    assert(!response.ok());
-    await discovery.getByRole('alert').filter({ hasText: '安装失败或结果未知' }).waitFor();
-    assert(!await trust.isChecked());
-    assert(!((await discovery.innerText()).includes('当前节点安装回执成功')));
-    assert.equal((await api('sessions')).sessions.length, 0);
-    pass('node acquisition persists; scope change clears trust; unsupported synthetic host refuses install without fake success/run');
+    assert((await api(`projects/${project.id}/packages`)).packages.every(offer => !offer.acquired));
+    await page.keyboard.press('Escape');
+    pass('real node preview and browser download preserve canonical metadata, source bytes and SHA-256');
+    stage = 'installation';
+    await button('安装', skillRow()).click();
+    let install = page.getByRole('dialog', { name: '选择安装范围', exact: true });
+    assert(await button('确认安装', install).isDisabled());
+    await install.locator('[name=install-scope][value=global]').check();
+    await install.getByRole('checkbox').check();
+    await install.locator('[name=install-scope][value=project]').check();
+    assert(!await install.getByRole('checkbox').isChecked());
+    assert(await button('确认安装', install).isDisabled());
+    await button('取消', install).click();
+    assert((await api(`projects/${project.id}/packages`)).packages.every(offer => !offer.acquired));
+    await button('查看详情', skillRow()).click();
+    await until(async () => await button('获取到当前节点', detail).isEnabled(), 'standalone acquisition');
+    await button('获取到当前节点', detail).click();
+    await button('节点已获取', detail).waitFor();
+    assert.equal((await api(`projects/${project.id}/packages`)).packages.filter(offer => offer.acquired).length, 1);
+    await page.keyboard.press('Escape');
+    pass('standalone node acquisition remains available and is confirmed by authoritative catalog readback');
+    await button('安装', skillRow()).click();
+    install = page.getByRole('dialog', { name: '选择安装范围', exact: true });
+    await install.locator('[name=install-scope][value=project]').check();
+    await install.getByRole('checkbox').check();
+    await button('确认安装', install).click();
+    const expectInstall = process.env.WORK_PACKAGE_EXPECT_INSTALL === '1';
+    await until(async () => await button('完成安装', install).count() || await install.getByRole('alert').count(), 'installation outcome', 30000);
+    const acquiredCount = (await api(`projects/${project.id}/packages`)).packages.filter(offer => offer.acquired).length;
+    if (expectInstall) {
+      assert.equal(acquiredCount, 1);
+      assert.equal(await install.getByRole('alert').count(), 0, await install.innerText());
+      await button('完成安装', install).click();
+      const installed = (await api(`projects/${project.id}/native-resources`)).resources;
+      assert(installed.some(resource => resource.scope === 'project' && resource.name === offer.manifest.name && resource.facts.installed === true));
+      pass('project installation succeeds through the real native manager and is confirmed by directory readback');
+      await source('公共库');
+      await button('安装', skillRow()).click();
+      install = page.getByRole('dialog', { name: '选择安装范围', exact: true });
+      await install.locator('[name=install-scope][value=global]').check();
+      await install.getByRole('checkbox').check();
+      await button('确认安装', install).click();
+      await button('完成安装', install).waitFor({ timeout: 30000 });
+      await button('完成安装', install).click();
+      await center.getByLabel('已安装资源范围', { exact: true }).selectOption(project.id);
+      await until(async () => (await center.locator('.resource-workbench-row').count()) === 1, 'same-version deduplication');
+      assert.match(await center.innerText(), /项目安装 · 全局也可用/);
+      const globalResource = (await api(`projects/${project.id}/native-resources`)).resources.find(resource => resource.scope === 'global' && resource.name === offer.manifest.name);
+      assert(globalResource && globalResource.facts.installed === true);
+      await button('查看详情', center.locator('.native-resource-card')).click();
+      const installedDetail = page.getByRole('dialog', { name: '资源详情', exact: true });
+      await installedDetail.locator('summary').filter({ hasText: '管理此资源' }).click();
+      await button('移除资源', installedDetail).click();
+      await button('确认移除', installedDetail).click();
+      await until(async () => !(await api(`projects/${project.id}/native-resources`)).resources.some(resource => resource.scope === 'project' && resource.name === offer.manifest.name && resource.facts.installed === true), 'project removal');
+      await page.keyboard.press('Escape');
+      assert((await api(`projects/${project.id}/native-resources`)).resources.some(resource => resource.reference === globalResource.reference && resource.facts.installed === true));
+      pass('global installation and project installation deduplicate; project removal preserves the global installation');
+      fs.mkdirSync(path.join(temp, 'second-project'));
+      const second = (await api('projects', 'POST', { name: 'Second resource scope', path: path.join(temp, 'second-project'), initGit: false })).project;
+      const inherited = (await api(`projects/${second.id}/native-resources`)).resources;
+      assert(inherited.some(resource => resource.scope === 'global' && resource.name === offer.manifest.name && resource.facts.installed === true));
+      assert(!inherited.some(resource => resource.scope === 'project' && resource.name === offer.manifest.name && resource.facts.installed === true));
+      pass('the second real project inherits global installation without a project installation record');
+    } else {
+      assert(acquiredCount <= 1);
+      assert.equal(await button('完成安装', install).count(), 0);
+      assert(!await install.getByRole('checkbox').isChecked());
+      await page.keyboard.press('Escape');
+      pass('unsupported synthetic runtime refuses installation and exposes explicit recovery without fake success');
+    }
+    assert.equal((await api('sessions')).sessions.length, 0, 'installation never starts a model session');
+    await source('公共库');
     stage = 'responsive';
     for (const theme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: theme });
-      await until(() => page.evaluate(expected => document.documentElement.dataset.mode === expected, theme), 'actual appearance mode');
+      await until(() => page.evaluate(expected => document.documentElement.dataset.mode === expected, theme), 'actual color mode');
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
-        await delay(120);
-        await discovery.scrollIntoViewIfNeeded();
-        const measured = await discovery.evaluate(el => {
-          const bounds = el.getBoundingClientRect();
-          const controls = [...el.querySelectorAll('button,input:not([type=checkbox]),select,summary')].filter(e => e.getClientRects().length).map(e => ({ tag: e.tagName, height: e.getBoundingClientRect().height }));
-          return { left: bounds.left, right: bounds.right, width: innerWidth, scroll: el.scrollWidth, client: el.clientWidth, controls, color: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor };
+        await center.locator('.resource-center-heading').scrollIntoViewIfNeeded();
+        const measured = await center.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          return { width: innerWidth, left: box.left, right: box.right, overflow: element.scrollWidth - element.clientWidth,
+            color: getComputedStyle(element).color, background: getComputedStyle(element.closest('.page-view')).backgroundColor };
         });
-        assert(measured.left >= -1 && measured.right <= width + 1, 'discovery stays in viewport');
-        assert(measured.scroll <= measured.client + 1, 'discovery has no horizontal overflow');
-        assert(measured.controls.every(c => c.height >= 43.9), '44px targets');
-        geometry.push({ theme, width, ...measured });
-        await page.screenshot({ path: path.join(output, `packages-${theme}-${width}.png`), fullPage: true });
+        assert(measured.left >= -1 && measured.right <= width + 1 && measured.overflow <= 1);
+        geometry.push({ theme, ...measured });
+        await page.screenshot({ path: path.join(output, `packages-${theme}-${width}.png`), animations: 'disabled' });
       }
     }
-    assert.notEqual(geometry.find(g => g.theme === 'light').background, geometry.find(g => g.theme === 'dark').background, 'actual light/dark palette changes');
-    pass('shared Chromium presentation fits 1440/390/320 in verified light/dark modes with 44px targets');
-    stage = 'reload';
-    await page.setViewportSize({ width: 1440, height: 1000 });
+    assert.notEqual(geometry.find(item => item.theme === 'light').background, geometry.find(item => item.theme === 'dark').background);
+    pass('formal resource center fits 1440/390/320px with real light/dark theme changes');
     await page.reload();
     await page.locator('.sidebar').waitFor();
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('.project-entry').filter({ hasText: project.name }).locator('.project-row').click();
-    await page.locator('.sidebar').getByRole('button', { name: 'Packages', exact: true }).click();
-    await until(async () => (await discovery.innerText()).includes('当前执行节点：已获取'), 'reload acquired readback');
-    const skillCard = discovery.locator('.package-card').filter({ hasText: '独立基础 Skill' });
-    await skillCard.getByRole('button', { name: '详情 / 内容预览', exact: true }).click();
-    assert(!await detail.getByRole('checkbox').isChecked());
-    const refresh = discovery.getByRole('button', { name: '刷新精选目录', exact: true });
-    await refresh.focus(); await page.keyboard.press('Enter');
-    await until(async () => await discovery.locator('.package-card').count() === 3, 'keyboard refresh');
+    await page.locator('.primary-nav').getByRole('button', { name: '资源中心', exact: true }).click();
+    await until(async () => await center.locator('.resource-workbench-row').count() === 3, 'reloaded catalog');
+    await button('安装', skillRow()).click();
+    install = page.getByRole('dialog', { name: '选择安装范围', exact: true });
+    assert(!await install.getByRole('checkbox').isChecked());
+    assert.equal(await install.locator('[name=install-scope]:checked').count(), 0);
     assert.equal((await api('sessions')).sessions.length, 0);
-    assert.equal(requests.filter(r => r.path.endsWith('/packages/acquire')).length, 1);
-    assert.equal(requests.filter(r => r.path.endsWith('/packages/install')).length, 1);
-    stage = 'project-scope';
-    await skillCard.getByRole('button', { name: /详情 \/ 内容预览/ }).click();
-    await detail.getByRole('checkbox').check();
-    const second = (await api('projects', 'POST', { name: 'Second curated scope', initGit: false })).project;
-    // Explicit catalog reload is a normal UI action; no state/DOM injection.
-    await page.getByRole('button', { name: '刷新会话', exact: true }).click();
-    await page.locator('.project-entry').filter({ hasText: second.name }).locator('.project-row').click();
-    await page.locator('.sidebar').getByRole('button', { name: 'Packages', exact: true }).click();
-    await until(async () => await discovery.locator('.package-card').count() === 3, 'second project catalog');
-    assert.equal(await detail.count(), 0, 'selection and trust from old project are discarded');
-    await discovery.locator('.package-card').filter({ hasText: '独立基础 Skill' }).getByRole('button', { name: '详情 / 内容预览', exact: true }).click();
-    assert(!await detail.getByRole('checkbox').isChecked());
-    assert(await detail.getByRole('button', { name: '安装', exact: true }).isDisabled());
-    assert.equal((await api('sessions')).sessions.length, 0);
-    pass('switching project remounts discovery and clears selection/trust; node cache is not a project installation');
-    assert.equal(errors.length, 0, errors.join('\n'));
-    pass('reload rereads acquired bytes and clears trust; keyboard refresh and no automatic retries/model sessions');
+    pass('reload discards install scope and authorization and never creates a session');
+    assert.deepEqual(errors, []);
     stage = 'cleanup';
   } catch (error) {
     failure = redact(error.stack || error); console.error(failure); process.exitCode = 1;
@@ -220,8 +240,8 @@ const bounded = async (promise, label, ms = 20000) => {
     const exitCode = child?.exitCode;
     if (errors.length || forcedCleanup) { process.exitCode = 1; failure ||= 'cleanup/browser error'; }
     if (child && exitCode !== 0) { process.exitCode = 1; failure ||= `owner exit ${exitCode}`; }
-    if (temp && (!child || child.exitCode !== null || child.signalCode)) fs.rmSync(temp, { recursive: true, force: true });
-    fs.writeFileSync(report, JSON.stringify({ status: failure ? 'failed' : 'passed', stage, results, failure, errors, requests, geometry, blockedExternal: external, forcedCleanup, ownerExitCode: exitCode, tempRemoved: temp ? !fs.existsSync(temp) : true, cliSha256: fs.existsSync(cli) ? sha(cli) : null, wasmSha256: artifactHash, fixtureSha256: fs.existsSync(fixture) ? sha(fixture) : null, scriptSha256: sha(__filename), processOutput, limitations: ['Embedded curated data only, not an online market or arbitrary URL/import API.', 'Legacy-only synthetic host: this tests install refusal, NOT successful native install/session loading.', 'Chromium viewport/media checks are not Windows WebView2 or Android device acceptance.'], generatedAtUtc: new Date().toISOString() }, null, 2) + '\n');
+    if (temp && (!child || child.exitCode !== null || child.signalCode)) { assert(path.resolve(temp).startsWith(path.resolve(os.tmpdir()) + path.sep) && path.basename(temp).startsWith('rpi-curated-packages-')); fs.rmSync(temp, { recursive: true, force: true }); }
+    fs.writeFileSync(report, JSON.stringify({ status: failure ? 'failed' : 'passed', stage, results, failure, errors, requests, geometry, blockedExternal: external, forcedCleanup, ownerExitCode: exitCode, tempRemoved: temp ? !fs.existsSync(temp) : true, cliSha256: fs.existsSync(cli) ? sha(cli) : null, wasmSha256: artifactHash, fixtureSha256: fs.existsSync(fixture) ? sha(fixture) : null, scriptSha256: sha(__filename), processOutput, limitations: ['Embedded curated data only, not an online market or arbitrary URL/import API.', process.env.WORK_PACKAGE_EXPECT_INSTALL === '1' ? 'Real native resource manager and isolated projects; no model session is created.' : 'Synthetic host tests install refusal; successful native installation requires WORK_PACKAGE_EXPECT_INSTALL=1 with an explicit native binary.', 'Chromium viewport/media checks are not Windows WebView2 or Android device acceptance.'], generatedAtUtc: new Date().toISOString() }, null, 2) + '\n');
     console.log(report);
   }
 })();

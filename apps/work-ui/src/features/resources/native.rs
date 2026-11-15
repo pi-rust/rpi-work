@@ -12,7 +12,7 @@ use work_core::api::{
 pub(super) fn recorded_version(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
-fn operation_id() -> String {
+pub(super) fn operation_id() -> String {
     format!(
         "work-{}",
         web_time::SystemTime::now()
@@ -21,7 +21,7 @@ fn operation_id() -> String {
             .as_nanos()
     )
 }
-fn selection(desired: &NativeDesired) -> Option<NativeSelection> {
+pub(super) fn selection(desired: &NativeDesired) -> Option<NativeSelection> {
     Some(NativeSelection {
         main_package: desired.main_package.as_ref()?.reference.clone()?,
         package_instructions: desired.package_instructions.clone(),
@@ -150,11 +150,13 @@ fn resource_matches(resource: &NativeResource, kind: &str, query: &str, scope: &
 }
 
 fn extension_identity(resource: &NativeResource) -> String {
-    format!(
-        "{:?}:{}",
+    serde_json::to_string(&(
         resource.kind,
-        display_resource_name(&resource.name)
-    )
+        &resource.name,
+        &resource.facts["version"],
+        &resource.facts["recordedDigest"],
+    ))
+    .unwrap_or_default()
 }
 
 fn resource_preference(resource: &NativeResource) -> (u8, u8) {
@@ -761,8 +763,15 @@ mod presentation_tests {
     }
 
     #[test]
-    fn extension_list_deduplicates_versions_and_prefers_installed_project_entry() {
+    fn extension_list_preserves_versions_and_prefers_installed_project_duplicate() {
         let resources = deduplicate_extensions(vec![
+            NativeResource {
+                reference: "global-installed".into(),
+                scope: NativeScope::Global,
+                kind: NativeKind::Extension,
+                name: "review-v1.1.0-bbbbbbbb".into(),
+                facts: json!({"installed": true}),
+            },
             NativeResource {
                 reference: "global-old".into(),
                 scope: NativeScope::Global,
@@ -778,8 +787,17 @@ mod presentation_tests {
                 facts: json!({"installed": true}),
             },
         ]);
-        assert_eq!(resources.len(), 1);
-        assert_eq!(resources[0].reference, "project-installed");
+        assert_eq!(resources.len(), 2);
+        assert!(
+            resources
+                .iter()
+                .any(|resource| resource.reference == "global-old")
+        );
+        assert!(
+            resources
+                .iter()
+                .any(|resource| resource.reference == "project-installed")
+        );
     }
 
     #[test]

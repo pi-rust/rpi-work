@@ -56,6 +56,8 @@ jobs:
         env:
           WORK_SESSION_ACCESS_ACP_FIXTURE: ${{ github.workspace }}/target/debug/acp-fixture
         run: cargo test --workspace --locked
+      - name: Verify desktop runtime setup and recovery
+        run: cargo test --locked -p work-host --features test-fixtures --test setup_flow
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   desktop:

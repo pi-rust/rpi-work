@@ -21,7 +21,7 @@ const formalUrl=process.env.WORK_UI_URL;
   if(formalUrl){await page.getByRole('button',{name:'手机连接这台电脑',exact:true}).click();await qr.getByLabel('手机可访问的节点地址',{exact:true}).fill('https://192.168.50.8:3030')}
   else{await page.getByLabel('手机可访问的节点地址',{exact:true}).fill('https://192.168.50.8:3030');await page.getByRole('button',{name:'显示地址二维码',exact:true}).first().click()}
   await qr.locator('#device-address-qr-code svg').waitFor();
-  await page.addScriptTag({path:path.resolve('design/prototype/vendor/jsQR.js')});
+  await page.addScriptTag({path:path.resolve('assets/vendor/jsQR.js')});
   const decoded=await qr.locator('#device-address-qr-code svg').evaluate(async svg=>{
    const image=new Image(),url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml'}));image.src=url;await image.decode();URL.revokeObjectURL(url);const canvas=document.createElement('canvas');canvas.width=600;canvas.height=600;const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,600,600);context.drawImage(image,0,0,600,600);const pixels=context.getImageData(0,0,600,600);return window.jsQR(pixels.data,600,600)?.data;
   });

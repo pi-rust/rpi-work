@@ -1,0 +1,149 @@
+/* Resource catalog and preparation share the Clarity prototype's layout. */
+.resource-center-v2 { gap: 0; }
+.resource-center-v2 .resource-center-heading { margin-bottom: 29px; }
+.resource-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.resource-forward-icon { display: inline-flex; flex: none; transform: rotate(180deg); }
+.resource-forward-icon .icon { width: 15px; height: 15px; }
+.resource-center-overview .resource-forward-icon { margin-left: auto; color: var(--muted); }
+.resource-refresh { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.resource-refresh .icon { width: 14px; height: 14px; }
+.resource-library-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.resource-center-v2 .resource-center-views { display: flex; width: auto; padding: 4px; gap: 3px; border: 0; background: var(--panel); }
+.resource-center-v2 .resource-center-views button { min-width: 80px; min-height: 36px; padding: 6px 10px; font-size: 12px; border: 0; }
+.resource-installed-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); max-width: 100%; }
+.resource-installed-scope select { min-height: 40px; max-width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--card); }
+.resource-count-context { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 12px; font-size: 12px; line-height: 1.8; color: var(--muted); }
+.resource-count-context strong { font-weight: 500; color: var(--text); }
+.resource-center-v2 .resource-center-overview { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin: 0 0 26px; }
+.resource-center-v2 .resource-center-overview > button { display: flex; gap: 17px; align-items: center; padding: 16px 24px; min-height: 112px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); text-align: left; }
+.resource-center-v2 .resource-center-overview > button > .icon:last-child { margin-left: auto; width: 15px; color: var(--muted); }
+.resource-center-v2 .resource-center-overview .resource-overview-icon { display: grid; place-items: center; width: 45px; height: 45px; flex: none; border-radius: 12px; background: var(--panel); color: var(--text); }
+.resource-center-v2 .resource-center-overview strong { display: block; font-size: 27px; font-weight: 600; letter-spacing: -.7px; line-height: 1.3; }
+.resource-overview-label { display: block; font-size: 13px; color: var(--muted); }
+.resource-center-overview small { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.resource-center-workbench { display: grid; grid-template-columns: minmax(0,1fr) 264px; gap: 20px; align-items: start; }
+.resource-center-v2 .resource-center-surface { min-width: 0; border: 1px solid var(--line); border-radius: 13px; background: var(--card); overflow: hidden; }
+.resource-center-v2 .resource-center-nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 12px 23px; border-bottom: 1px solid var(--line); }
+.resource-center-v2 .resource-center-search { width: 280px; max-width: 100%; min-height: 38px; padding: 7px 10px; gap: 7px; flex: 0 1 280px; }
+.resource-center-v2 .resource-center-search input { font-size: 12px; line-height: 1.6; padding: 0; }
+.resource-center-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 13px 23px 5px; }
+.resource-center-v2 .resource-center-categories { padding: 0; margin: 0; gap: 3px; }
+.resource-center-v2 .resource-center-categories button { min-height: 36px; padding: 6px 10px; font-size: 12px; }
+.resource-result-count { margin-left: auto; color: var(--muted); font-size: 12px; }
+.resource-center-list { padding: 6px 20px 12px; }
+.resource-workbench-row, .resource-center-v2 .resource-workbench-row.native-resource-card { display: grid; grid-template-columns: 34px minmax(0,1fr) 138px; grid-template-areas: "icon heading actions" ". description actions" ". meta actions"; gap: 8px 12px; padding: 18px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.resource-workbench-row:last-child { border-bottom: 0; }
+.resource-row-icon { grid-area: icon; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; background: var(--panel); color: var(--text); }
+.resource-row-icon .icon { width: 18px; height: 18px; }
+.resource-row-heading { grid-area: heading; }
+.resource-center-v2 .resource-row-heading h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 9px; margin: 0; font-size: 15px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.resource-row-heading h2 span { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+.resource-row-heading p { margin: 3px 0 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.resource-center-v2 .resource-row-description { grid-area: description; margin: 0; font-size: 13px; line-height: 1.8; color: var(--muted); overflow-wrap: anywhere; }
+.resource-row-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 5px 14px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.resource-row-actions { grid-area: actions; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.resource-row-actions > span { font-size: 11px; color: var(--muted); text-align: right; }
+.resource-center-v2 .resource-row-actions .button { min-height: 36px; font-size: 12px; padding: 5px 10px; }
+.resource-center-v2 .resource-center-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px 20px; border-top: 1px solid var(--line); }
+.resource-center-v2 .resource-center-footer p { flex: 1 1 260px; margin: 0; font-size: 12px; color: var(--muted); }
+.resource-text-button { min-height: 36px; padding: 4px 0; font-size: 12px; color: var(--muted); }
+.resource-selection-panel { position: sticky; top: 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.resource-selection-content { display: flex; flex-direction: column; gap: 12px; }
+.resource-selection-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.resource-selection-heading h2 { font-size: 14px; margin: 0; }
+.resource-selection-heading h2 span { font-weight: 400; color: var(--muted); margin-left: 5px; }
+.resource-selection-empty { padding: 20px 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.resource-selected-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.resource-selected-item > .icon { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--muted); }
+.resource-selected-item > div { flex: 1; }
+.resource-selected-item strong { display: block; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.resource-selected-item small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.resource-selected-item .icon-button { width: 32px; height: 32px; min-width: 32px; flex: none; }
+.resource-selection-dock { display: none; }
+.resource-flow-field { display: grid; gap: 7px; font-size: 12px; font-weight: 500; }
+.resource-flow-field select { width: 100%; min-height: 44px; padding: 10px; font: inherit; font-size: 13px; color: var(--text); border: 1px solid var(--line); border-radius: 7px; background: var(--card); }
+dialog.app-dialog.resource-flow-dialog { width: 760px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 0; overflow: hidden; border-radius: 16px; background: var(--card); }
+dialog.app-dialog.resource-flow-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.resource-flow-dialog .modal-header { padding: 22px 26px 16px; margin: 0; border: 0; flex: none; }
+dialog.app-dialog.resource-flow-dialog .modal-header h2 { font-size: 20px; }
+dialog.app-dialog.resource-flow-dialog .modal-header h2::before { display: none; }
+.resource-flow-body { min-height: 0; overflow: auto; padding: 0 26px 26px; display: flex; flex-direction: column; gap: 16px; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; overscroll-behavior: contain; }
+.resource-flow-body > * { flex-shrink: 0; min-width: 0; }
+.resource-flow-body p { margin: 0; }
+.resource-flow-body :is(pre, input, textarea, select) { max-width: 100%; }
+.resource-flow-body pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; }
+.resource-flow-lead { color: var(--muted); }
+.resource-flow-box { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.resource-flow-box h3 { font-size: 13px; margin: 0 0 9px; }
+.resource-flow-box p { margin: 5px 0; font-size: 12px; overflow-wrap: anywhere; }
+.resource-install-choices { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
+.resource-install-choices legend { margin-bottom: 8px; font-size: 13px; }
+.resource-install-choice { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.resource-install-choice:has(input:checked) { border-color: var(--text); background: var(--panel); }
+.resource-install-choice input { margin-top: 5px; }
+.resource-flow-dialog input[type=radio], .resource-flow-dialog input[type=checkbox] { accent-color: var(--text); }
+.resource-install-choice strong, .resource-install-choice small { display: block; }
+.resource-install-choice small { margin-top: 5px; font-size: 12px; color: var(--muted); }
+.resource-flow-trust { display: flex; align-items: flex-start; gap: 10px; font-size: 12px; }
+.resource-flow-trust input { margin-top: 5px; }
+.resource-flow-note { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.resource-flow-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 16px; }
+.resource-flow-actions .button { min-height: 44px; }
+dialog.app-dialog.resource-authoring-dialog { width: 1060px; }
+.resource-authoring-dialog .native-authoring { overflow: visible; padding: 0; }
+.resource-center-v2 .resources-page { padding: 16px 20px; }
+@media (min-width: 1600px) {
+  .resource-center-workbench { grid-template-columns: minmax(0,1fr) 290px; gap: 24px; }
+}
+@media (max-width: 1150px) {
+  .resource-center-workbench { grid-template-columns: minmax(0,1fr) 230px; gap: 14px; }
+  .resource-selection-panel { padding: 14px; }
+  .resource-center-v2 .resource-center-overview > button { padding: 18px; gap: 10px; }
+}
+@media (max-width: 1050px) {
+  .resource-workbench-row, .resource-center-v2 .resource-workbench-row.native-resource-card { grid-template-columns: 34px minmax(0,1fr); grid-template-areas: "icon heading" ". description" ". meta" ". actions"; padding: 20px 0; }
+  .resource-row-actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+  .resource-row-actions > span { margin-right: auto; text-align: left; }
+}
+@media (max-width: 980px) {
+  .resource-center-workbench { grid-template-columns: minmax(0,1fr); }
+  .resource-selection-panel { display: none; }
+  .resource-center-v2 { padding-bottom: 80px; }
+  .resource-selection-dock { display: flex; position: sticky; bottom: -10px; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); z-index: 4; box-shadow: 0 -6px 24px #00000008; }
+}
+@media (max-width: 767px) {
+  .app-shell:has(.resource-center-v2) .page-breadcrumb > :is(h1, .slash, .icon) { display: none; }
+  .app-shell:has(.resource-center-v2) .page-breadcrumb > .breadcrumb-project { display: inline-flex; white-space: nowrap; }
+  .resource-center-v2 .resource-center-heading { flex-wrap: wrap; gap: 14px; }
+  .resource-center-v2 .resource-heading-actions { width: 100%; justify-content: flex-start; }
+  .resource-heading-actions .button { min-height: 40px; }
+  .resource-library-toolbar .resource-center-views { width: 100%; }
+  .resource-library-toolbar .resource-center-views button { flex: 1; min-width: 0; min-height: 40px; }
+  .resource-installed-scope { width: 100%; }
+  .resource-installed-scope select { flex: 1; font-size: 16px; }
+  .resource-center-v2 .resource-center-overview { gap: 10px; }
+  .resource-center-v2 .resource-center-overview > button { flex-direction: column; align-items: flex-start; padding: 13px 11px; gap: 8px; }
+  .resource-center-v2 .resource-center-overview .resource-forward-icon { display: none; }
+  .resource-center-v2 .resource-center-overview .resource-overview-icon { width: 28px; height: 28px; }
+  .resource-overview-label { font-size: 11px; }
+  .resource-center-overview small { font-size: 10px; line-height: 1.6; }
+  .resource-center-v2 .resource-center-overview strong { font-size: 23px; }
+  .resource-center-v2 .resource-center-nav { flex-direction: row; flex-wrap: nowrap; padding: 12px 14px; }
+  .resource-center-v2 .resource-center-search { width: auto; max-width: none; flex: 1; }
+  .resource-refresh { min-width: 44px; min-height: 44px; }
+  .resource-refresh-label { display: none; }
+  .resource-center-v2 .resource-center-search input { font-size: 16px; }
+  .resource-center-filter-row { padding: 13px 14px 5px; }
+  .resource-center-v2 .resource-center-categories { flex-basis: 100%; }
+  .resource-center-v2 .resource-center-categories button { min-height: 40px; padding: 6px 9px; }
+  .resource-center-list { padding-inline: 14px; }
+  .resource-workbench-row, .resource-center-v2 .resource-workbench-row.native-resource-card { grid-template-columns: 28px minmax(0,1fr); grid-template-areas: "icon heading" ". description" ". meta" "actions actions"; gap: 7px 10px; padding: 18px 0; }
+  .resource-row-icon { width: 28px; height: 28px; }
+  .resource-center-v2 .resource-row-heading h2 { font-size: 14px; }
+  .resource-row-actions { padding-left: 38px; }
+  .resource-center-v2 .resource-row-actions .button { min-height: 44px; }
+  .resource-flow-dialog .modal-header { padding: 20px 20px 16px; }
+  .resource-flow-body { padding: 0 20px 20px; }
+  .resource-flow-field select { font-size: 16px; }
+  .resource-flow-dialog .resource-selected-item .icon-button { width: 44px; height: 44px; min-width: 44px; }
+}

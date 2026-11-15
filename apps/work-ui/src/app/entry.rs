@@ -33,6 +33,13 @@ pub(crate) fn AuthorizedWorkspace(node: EntryNode) -> Element {
 
 #[component]
 pub(super) fn Root() -> Element {
+    let mut app_settings = use_signal(crate::shared::app_settings::AppSettingsState::default);
+    use_context_provider(|| app_settings);
+    use_effect(move || {
+        spawn(async move {
+            app_settings.set(crate::shared::app_settings::load_state().await);
+        });
+    });
     // Updates must be available before a mobile user has authenticated into a node.
     // Keep the update state above every entry/workspace branch so the same checker
     // and prepared package survive the transition into the workspace.
@@ -45,7 +52,7 @@ pub(super) fn Root() -> Element {
     return rsx! { HostedEntry {} };
 
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    rsx! { super::workspace::App {} }
+    rsx! { super::desktop_setup::DesktopEntry {} }
 }
 
 /// Only a directly opened static entry may opt out with an actual 404. A selected

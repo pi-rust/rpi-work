@@ -150,10 +150,24 @@ fs.mkdirSync(output,{recursive:true});
       await page.locator('#sidebar-sessions [data-node-group="studio"]>.node-heading').click();
     });
     await view('resources'); await capture('02-resources-desktop');
-    await check('资源分类、搜索与来源切换，来源语义不混淆',async () => {await page.locator('[data-kind="packages"]').click();await capture('30-packages-list-desktop');const row = page.locator('.resource-package').first();const rowBox = await row.boundingBox();assert(rowBox.width > rowBox.height * 2.5,'资源实际以列表行呈现');assert(await row.locator('.resource-meta').isVisible());assert.equal(await row.locator('[data-icon="more"], .package-top').count(),0);assert(await row.getByRole('button',{name:'查看详情',exact:false}).isVisible());await page.setViewportSize({width:390,height:844});await capture('34-resource-list-mobile');assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));await page.setViewportSize({width:1440,height:1000});await page.locator('[data-kind="skills"]').click();assert.equal(await page.locator('.resource-package').count(),3);await capture('31-skills-list-desktop');await page.getByRole('textbox',{name:'搜索资源',exact:true}).fill('Dioxus');assert.equal(await page.locator('.resource-package').count(),1);await page.getByRole('textbox',{name:'搜索资源',exact:true}).fill('不存在的资源');assert(await page.locator('.resource-empty').isVisible());await page.getByRole('textbox',{name:'搜索资源',exact:true}).fill('');await page.locator('[data-kind="extensions"]').click();await capture('32-extensions-list-desktop');await page.locator('[data-source="本地设计"]').click();assert.match(await page.locator('#resource-source-note').innerText(),/不等于当前节点已经安装/);await page.locator('[data-source="发现资源"]').click();assert.match(await page.locator('#resource-source-note').innerText(),/不等于已安装/);await page.locator('[data-source="当前节点"]').click();await page.locator('[data-kind="packages"]').click();
-      await page.locator('.resource-package').first().getByRole('button',{name:'查看详情',exact:false}).click();assert(await page.locator('#detail-dialog').isVisible());assert.equal(await page.locator('#detail-resource-source').innerText(),'当前节点');assert.equal(await page.locator('#detail-resource-action').innerText(),'已安装');assert(await page.locator('#detail-resource-action').isDisabled());await page.keyboard.press('Escape');
-      await page.locator('[data-source="发现资源"]').click();await page.locator('.resource-package').first().getByRole('button',{name:'查看详情',exact:false}).click();assert.equal(await page.locator('#detail-resource-action').innerText(),'安装到当前节点');assert(!await page.locator('#detail-resource-action').isDisabled());await capture('33-resource-install-detail');await page.locator('#detail-resource-action').click();assert.equal(await page.locator('#detail-resource-action').innerText(),'原型不执行安装');await page.keyboard.press('Escape');
-      await page.locator('[data-source="本地设计"]').click();await page.locator('.resource-package').first().getByRole('button',{name:'查看详情',exact:false}).click();assert.equal(await page.locator('#detail-resource-action').innerText(),'导入到本地设计');await page.keyboard.press('Escape');await page.locator('[data-source="当前节点"]').click();await page.locator('[data-kind="packages"]').click();});
+    await check('资源分类、搜索、详情与选择工作流程',async () => {
+      await page.locator('[data-kind="packages"]').click();await capture('30-packages-list-desktop');
+      const row=page.locator('.flow-resource').first();assert(await row.locator('.resource-meta').isVisible());
+      await page.setViewportSize({width:390,height:844});await capture('34-resource-list-mobile');await noOverflow();
+      await page.setViewportSize({width:1440,height:1000});await page.locator('[data-kind="skills"]').click();
+      assert.equal(await page.locator('.flow-resource').count(),4);await capture('31-skills-list-desktop');
+      await page.getByRole('searchbox',{name:'搜索资源',exact:true}).fill('Dioxus');assert.equal(await page.locator('.flow-resource').count(),1);
+      await page.getByRole('searchbox',{name:'搜索资源',exact:true}).fill('不存在的资源');assert(await page.locator('.resource-empty').isVisible());
+      await page.getByRole('searchbox',{name:'搜索资源',exact:true}).fill('');await page.locator('[data-kind="extensions"]').click();await capture('32-extensions-list-desktop');
+      await page.locator('[data-source="本地设计"]').click();assert.match(await page.locator('#resource-source-note').innerText(),/保存、查看和导出/);
+      await page.locator('[data-source="公共库"]').click();assert.match(await page.locator('#resource-source-note').innerText(),/点击安装后选择全局或指定项目/);
+      await page.locator('[data-kind="packages"]').click();await page.locator('.flow-resource').first().getByRole('button',{name:'查看详情',exact:true}).click();
+      assert(await page.locator('#detail-dialog').isVisible());assert.match(await page.locator('#detail-resource-facts').innerText(),/安装来源/);
+      await page.locator('#detail-dialog [data-flow="select-tool"]').click();await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#selected-list .selected-tool').count(),1);
+      await page.locator('.selection-panel [data-flow="checkout"]').click();await capture('33-resource-install-detail');
+      assert(await page.locator('#work-project').isVisible());await page.keyboard.press('Escape');
+    });
     await page.locator('.sidebar [data-view="settings"]').click(); await capture('03-settings-desktop');
     await check('设置页tab点击区域充足；工作协同聚焦节点连接与可信协助边界',async () => {
       await page.getByRole('heading',{name:'界面与显示',exact:true}).waitFor();assert(await page.getByText('仅本设备',{exact:true}).isVisible());

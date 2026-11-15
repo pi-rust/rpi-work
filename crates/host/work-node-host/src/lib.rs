@@ -59,29 +59,7 @@ pub fn start() -> Option<LocalGuard> {
 }
 
 pub fn start_with(options: LaunchOverrides) -> Option<LocalGuard> {
-    let result = claim_start(&STARTED).and_then(|()| {
-        let runtime = LocalRuntime::prepare_with(options.rpi_bin, options.data)?;
-        let client = Arc::new(
-            LocalWorkspace::new(runtime.rpi.clone(), runtime.data.clone())
-                .map_err(|error| error.to_string())?,
-        );
-        let data = runtime.data.clone();
-        let mut guard = LocalGuard {
-            lock: Some(runtime),
-            http: None,
-            client,
-            node_id: String::new(),
-        };
-        // Construct the guard first so an unwinding startup still retains the
-        // data lock through cleanup, even before CONNECTION is published.
-        guard.node_id = http::node_identity(&data)?;
-        guard.http = http::start(&guard.client, &data, &options.http);
-        if let Err(error) = components::register(&guard.client) {
-            eprintln!("Component registration failed: {error}");
-        }
-        let _ = CONNECTION.set(guard.client.clone());
-        Ok(guard)
-    });
+    let result = claim_start(&STARTED).and_then(|()| start_claimed(options));
     match result {
         Ok(guard) => Some(guard),
         Err(error) => {
@@ -89,6 +67,42 @@ pub fn start_with(options: LaunchOverrides) -> Option<LocalGuard> {
             None
         }
     }
+}
+
+/// Desktop preparation may fail before publishing an owner. Only that failure
+/// releases the startup claim, so repairing a path or a lock can be retried.
+/// A successfully published owner still consumes the process's single lifetime.
+pub fn try_start_with(options: LaunchOverrides) -> Result<LocalGuard, String> {
+    claim_start(&STARTED)?;
+    let result = start_claimed(options);
+    if result.is_err() {
+        STARTED.store(false, Ordering::Release);
+    }
+    result
+}
+
+fn start_claimed(options: LaunchOverrides) -> Result<LocalGuard, String> {
+    let runtime = LocalRuntime::prepare_with(options.rpi_bin, options.data)?;
+    let data = runtime.data.clone();
+    // Finish fallible preparation before creating HTTP executors or publishing
+    // the owner. A returned error leaves no live child or background service.
+    let node_id = http::node_identity(&data)?;
+    let client = Arc::new(
+        LocalWorkspace::new(runtime.rpi.clone(), runtime.data.clone())
+            .map_err(|error| error.to_string())?,
+    );
+    let mut guard = LocalGuard {
+        lock: Some(runtime),
+        http: None,
+        client,
+        node_id,
+    };
+    guard.http = http::start(&guard.client, &data, &options.http);
+    if let Err(error) = components::register(&guard.client) {
+        eprintln!("Component registration failed: {error}");
+    }
+    let _ = CONNECTION.set(guard.client.clone());
+    Ok(guard)
 }
 
 /// The exact local facade passed to the HTTP server, never a second owner.

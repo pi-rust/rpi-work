@@ -1,12 +1,12 @@
 //! Download and install the native `rpi` runtime from its fixed GitHub release.
 
-use super::{http_client, sha256};
+use super::sha256;
+use fs2::FileExt;
 use serde::Deserialize;
 use std::{
     fs,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const REPOSITORY: &str = "bigfish1913/pi-rust";
@@ -15,6 +15,14 @@ const MAX_METADATA: usize = 512 * 1024;
 const MAX_CHECKSUM: usize = 4096;
 const MAX_ARCHIVE: u64 = 256 * 1024 * 1024;
 const MAX_RUNTIME: u64 = 256 * 1024 * 1024;
+
+fn http_client() -> Result<reqwest::Client, String> {
+    crate::http_client_builder()
+        .http1_only()
+        .read_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| error.to_string())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeRelease {
@@ -44,6 +52,10 @@ struct GitHubAsset {
 
 /// Return the latest stable rpi release for this desktop's target.
 pub async fn latest() -> Result<RuntimeRelease, String> {
+    release_metadata().await.map_err(|error| error.to_string())
+}
+
+async fn release_metadata() -> Result<RuntimeRelease, RuntimeInstallError> {
     let target = super::super::target();
     let extension = if target.contains("windows") {
         "zip"
@@ -59,11 +71,12 @@ pub async fn latest() -> Result<RuntimeRelease, String> {
         .get(format!(
             "https://api.github.com/repos/{REPOSITORY}/releases/latest"
         ))
+        .timeout(std::time::Duration::from_secs(20))
         .send()
         .await
-        .map_err(|error| format!("无法连接 GitHub：{error}"))?
+        .map_err(|error| RuntimeInstallError::http("无法连接 GitHub", error))?
         .error_for_status()
-        .map_err(|error| format!("GitHub 发布信息读取失败：{error}"))?;
+        .map_err(|error| RuntimeInstallError::http("GitHub 发布信息读取失败", error))?;
     let bytes = read_bounded(response, MAX_METADATA).await?;
     let metadata: GitHubRelease = serde_json::from_slice(&bytes)
         .map_err(|error| format!("GitHub 发布信息格式无效：{error}"))?;
@@ -114,92 +127,219 @@ pub async fn latest() -> Result<RuntimeRelease, String> {
     })
 }
 
-/// Download, verify, and atomically install the selected rpi executable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeInstallProgress {
+    Resolving,
+    Downloading { received: u64, total: u64 },
+    Verifying,
+    Extracting,
+}
+
+#[derive(Debug)]
+pub struct RuntimeInstallError {
+    pub message: String,
+    pub retryable: bool,
+}
+
+impl RuntimeInstallError {
+    fn http(context: &str, error: reqwest::Error) -> Self {
+        let mut details = Vec::new();
+        let mut source = std::error::Error::source(&error);
+        while let Some(cause) = source {
+            details.push(cause.to_string());
+            source = cause.source();
+        }
+        let detail = if details.is_empty() {
+            String::new()
+        } else {
+            format!("（{}）", details.join(" → "))
+        };
+        Self {
+            retryable: error.is_connect()
+                || error.is_timeout()
+                || error.is_body()
+                || error
+                    .status()
+                    .is_some_and(|status| status.is_server_error() || status.as_u16() == 429),
+            message: format!("{context}：{error}{detail}"),
+        }
+    }
+}
+
+impl std::fmt::Display for RuntimeInstallError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RuntimeInstallError {}
+
+impl From<String> for RuntimeInstallError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            retryable: false,
+        }
+    }
+}
+
+impl From<&str> for RuntimeInstallError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+
+/// A verified archive extracted to a private executable. Dropping preparation,
+/// including cancellation, removes temporary files and releases the installer lock.
+/// The previous runtime is untouched until activate atomically replaces it.
+#[derive(Debug)]
+pub struct PreparedRuntime {
+    pub release: RuntimeRelease,
+    binary: tempfile::TempPath,
+    directory: PathBuf,
+    _staging: tempfile::TempDir,
+    _lock: fs::File,
+}
+
+impl PreparedRuntime {
+    pub fn executable(&self) -> &Path {
+        &self.binary
+    }
+
+    pub fn activate(self) -> Result<PathBuf, String> {
+        let destination = self.directory.join(runtime_filename());
+        self.binary
+            .persist(&destination)
+            .map_err(|error| format!("无法启用 rpi，原有版本已保留：{error}"))?;
+        Ok(destination)
+    }
+}
+
+/// Keep the existing settings entry on the same verified installation path.
 pub async fn install_latest(mut progress: impl FnMut(u64, u64)) -> Result<PathBuf, String> {
-    let release = latest().await?;
+    prepare_latest(|event| {
+        if let RuntimeInstallProgress::Downloading { received, total } = event {
+            progress(received, total);
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .activate()
+}
+
+pub async fn prepare_latest(
+    mut progress: impl FnMut(RuntimeInstallProgress),
+) -> Result<PreparedRuntime, RuntimeInstallError> {
     let directory = install_dir()?;
     fs::create_dir_all(&directory).map_err(|error| format!("无法创建 rpi 安装目录：{error}"))?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| error.to_string())?
-        .as_nanos();
-    let staging = directory.join(format!(".rpi-{nonce}"));
-    fs::create_dir(&staging).map_err(|error| error.to_string())?;
-    let archive = staging.join(&release.archive_name);
-    let result = async {
-        let response = http_client()?
-            .get(&release.archive_url)
-            .send()
-            .await
-            .map_err(|error| format!("rpi 下载失败：{error}"))?
-            .error_for_status()
-            .map_err(|error| format!("rpi 下载失败：{error}"))?;
-        if response
-            .content_length()
-            .is_some_and(|size| size != release.archive_size)
-        {
-            return Err("rpi 下载大小与 GitHub 摘要不一致".into());
-        }
-        let mut output = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&archive)
-            .map_err(|error| error.to_string())?;
-        let mut response = response;
-        let mut received = 0u64;
-        while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
-            received = received.saturating_add(chunk.len() as u64);
-            if received > release.archive_size || received > MAX_ARCHIVE {
-                return Err("rpi 下载超过大小限制".into());
-            }
-            output
-                .write_all(&chunk)
-                .map_err(|error| error.to_string())?;
-            progress(received, release.archive_size);
-        }
-        output.sync_all().map_err(|error| error.to_string())?;
-        drop(output);
-        if fs::metadata(&archive)
-            .map_err(|error| error.to_string())?
-            .len()
-            != release.archive_size
-            || sha256(&archive)? != release.archive_sha256
-        {
-            return Err("rpi 下载包 SHA-256 校验失败，已阻止安装".into());
-        }
-        let sidecar = read_bounded(
-            http_client()?
-                .get(&release.checksum_url)
-                .send()
-                .await
-                .map_err(|error| format!("rpi 校验文件下载失败：{error}"))?
-                .error_for_status()
-                .map_err(|error| format!("rpi 校验文件下载失败：{error}"))?,
-            MAX_CHECKSUM,
-        )
-        .await?;
-        let sidecar_hash = std::str::from_utf8(&sidecar)
-            .map_err(|_| "rpi 校验文件编码无效")?
-            .split_whitespace()
-            .next()
-            .ok_or("rpi 校验文件为空")?;
-        if sidecar_hash.to_ascii_lowercase() != release.archive_sha256 {
-            return Err("GitHub rpi 校验文件与发布摘要不一致".into());
-        }
-        let staged_binary = staging.join(runtime_filename());
-        extract_binary(&archive, &staged_binary, &release)?;
-        set_executable(&staged_binary)?;
-        let final_binary = directory.join(runtime_filename());
-        if final_binary.exists() {
-            fs::remove_file(&final_binary).map_err(|error| format!("无法替换旧 rpi：{error}"))?;
-        }
-        fs::rename(&staged_binary, &final_binary)
-            .map_err(|error| format!("无法安装 rpi：{error}"))?;
-        Ok(final_binary)
+    let lock = lock_install(&directory)?;
+    progress(RuntimeInstallProgress::Resolving);
+    let release = release_metadata().await?;
+    prepare_archive(release, directory, lock, http_client()?, progress).await
+}
+
+fn lock_install(directory: &Path) -> Result<fs::File, RuntimeInstallError> {
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory.join("install.lock"))
+        .map_err(|error| error.to_string())?;
+    lock.try_lock_exclusive()
+        .map_err(|_| "另一个窗口正在安装 rpi，请稍后重试".to_string())?;
+    Ok(lock)
+}
+
+async fn prepare_archive(
+    release: RuntimeRelease,
+    directory: PathBuf,
+    lock: fs::File,
+    client: reqwest::Client,
+    mut progress: impl FnMut(RuntimeInstallProgress),
+) -> Result<PreparedRuntime, RuntimeInstallError> {
+    let staging = tempfile::Builder::new()
+        .prefix(".rpi-")
+        .tempdir_in(&directory)
+        .map_err(|error| error.to_string())?;
+    let archive = staging.path().join(&release.archive_name);
+    progress(RuntimeInstallProgress::Downloading {
+        received: 0,
+        total: release.archive_size,
+    });
+    let mut response = client
+        .get(&release.archive_url)
+        .send()
+        .await
+        .map_err(|error| RuntimeInstallError::http("rpi 下载失败", error))?
+        .error_for_status()
+        .map_err(|error| RuntimeInstallError::http("rpi 下载失败", error))?;
+    if response
+        .content_length()
+        .is_some_and(|size| size != release.archive_size)
+    {
+        return Err("rpi 下载大小与 GitHub 摘要不一致".into());
     }
-    .await;
-    let _ = fs::remove_dir_all(&staging);
-    result
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&archive)
+        .map_err(|error| error.to_string())?;
+    let mut received = 0u64;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| RuntimeInstallError::http("rpi 下载中断", error))?
+    {
+        received = received.saturating_add(chunk.len() as u64);
+        if received > release.archive_size || received > MAX_ARCHIVE {
+            return Err("rpi 下载超过大小限制".into());
+        }
+        output
+            .write_all(&chunk)
+            .map_err(|error| error.to_string())?;
+        progress(RuntimeInstallProgress::Downloading {
+            received,
+            total: release.archive_size,
+        });
+    }
+    output.sync_all().map_err(|error| error.to_string())?;
+    drop(output);
+    progress(RuntimeInstallProgress::Verifying);
+    if received != release.archive_size || sha256(&archive)? != release.archive_sha256 {
+        return Err("rpi 下载包 SHA-256 校验失败，已阻止安装".into());
+    }
+    let checksum = client
+        .get(&release.checksum_url)
+        .send()
+        .await
+        .map_err(|error| RuntimeInstallError::http("rpi 校验文件下载失败", error))?
+        .error_for_status()
+        .map_err(|error| RuntimeInstallError::http("rpi 校验文件下载失败", error))?;
+    let checksum = read_bounded(checksum, MAX_CHECKSUM).await?;
+    let checksum = std::str::from_utf8(&checksum)
+        .map_err(|_| "rpi 校验文件编码无效")?
+        .split_whitespace()
+        .next()
+        .ok_or("rpi 校验文件为空")?;
+    if checksum.to_ascii_lowercase() != release.archive_sha256 {
+        return Err("GitHub rpi 校验文件与发布摘要不一致".into());
+    }
+    progress(RuntimeInstallProgress::Extracting);
+    let mut binary = tempfile::Builder::new()
+        .prefix("rpi-")
+        .suffix(std::env::consts::EXE_SUFFIX)
+        .tempfile_in(staging.path())
+        .map_err(|error| error.to_string())?;
+    extract_binary(&archive, binary.as_file_mut(), &release)?;
+    set_executable(binary.path())?;
+    Ok(PreparedRuntime {
+        release,
+        binary: binary.into_temp_path(),
+        directory,
+        _staging: staging,
+        _lock: lock,
+    })
 }
 
 pub fn install_dir() -> Result<PathBuf, String> {
@@ -222,10 +362,17 @@ fn runtime_filename() -> &'static str {
     if cfg!(windows) { "rpi.exe" } else { "rpi" }
 }
 
-async fn read_bounded(response: reqwest::Response, limit: usize) -> Result<Vec<u8>, String> {
+async fn read_bounded(
+    response: reqwest::Response,
+    limit: usize,
+) -> Result<Vec<u8>, RuntimeInstallError> {
     let mut response = response;
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| RuntimeInstallError::http("GitHub 响应中断", error))?
+    {
         if bytes.len().saturating_add(chunk.len()) > limit {
             return Err("GitHub 响应超过大小限制".into());
         }
@@ -241,13 +388,8 @@ fn safe_archive_path(path: &Path) -> bool {
             .all(|component| matches!(component, Component::Normal(_)))
 }
 
-fn copy_runtime(mut reader: impl Read, destination: &Path) -> Result<(), String> {
-    let mut output = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(|error| error.to_string())?;
-    let size = std::io::copy(&mut reader.by_ref().take(MAX_RUNTIME + 1), &mut output)
+fn copy_runtime(mut reader: impl Read, output: &mut fs::File) -> Result<(), String> {
+    let size = std::io::copy(&mut reader.by_ref().take(MAX_RUNTIME + 1), output)
         .map_err(|error| error.to_string())?;
     if size == 0 || size > MAX_RUNTIME {
         return Err("rpi 可执行文件大小无效".into());
@@ -258,7 +400,7 @@ fn copy_runtime(mut reader: impl Read, destination: &Path) -> Result<(), String>
 
 fn extract_binary(
     archive: &Path,
-    destination: &Path,
+    destination: &mut fs::File,
     release: &RuntimeRelease,
 ) -> Result<(), String> {
     let expected = runtime_filename();
@@ -336,20 +478,5 @@ fn set_executable(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn runtime_archive_name_matches_target() {
-        let target = "x86_64-pc-windows-msvc";
-        assert_eq!(
-            format!("rpi-v0.1.0-{target}.zip"),
-            "rpi-v0.1.0-x86_64-pc-windows-msvc.zip"
-        );
-    }
-
-    #[test]
-    fn install_directory_is_not_the_application_directory() {
-        assert!(install_dir().is_ok() || std::env::var_os("HOME").is_none());
-    }
-}
+#[path = "rpi_runtime_tests.rs"]
+mod tests;

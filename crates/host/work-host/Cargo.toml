@@ -12,13 +12,27 @@ unsafe_code = "warn"
 all = "warn"
 pedantic = "warn"
 
+[features]
+test-fixtures = []
+
+[[bin]]
+name = "setup-rpi-fixture"
+path = "tests/fixtures/rpi.rs"
+required-features = ["test-fixtures"]
+test = false
+doc = false
+
 [dependencies]
 work-node-host = { path = "../work-node-host" }
+work-node-runtime = { path = "../../node/work-node-runtime" }
+work-update = { path = "../../update/work-update" }
 work-http-runtime = { path = "../../transport/work-http-runtime" }
 work-client = { path = "../../client/work-client" }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["rt", "signal", "time", "sync", "macros"] }
+tokio = { version = "1", features = ["rt", "signal", "time", "sync", "macros", "process", "io-util"] }
+tempfile = "3"
+semver = "1"
 
 [dev-dependencies]
 work-component-api = { path = "../../components/work-component-api" }

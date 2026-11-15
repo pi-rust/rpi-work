@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
-const {chromium}=require('../support/browser.cjs'),jsQR=require('../../design/prototype/vendor/jsQR.js');
+const {chromium}=require('../support/browser.cjs'),jsQR=require('../../assets/vendor/jsQR.js');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']}),page=await browser.newPage({viewport:{width:1440,height:1050}}),results=[],errors=[],external=[];
  page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:14173/'))external.push(r.url());});

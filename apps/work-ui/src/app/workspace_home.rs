@@ -62,7 +62,7 @@ pub(super) async fn configure_first_message(
     if model.is_none() && first.thinking.is_empty() {
         return Ok(());
     }
-    let result = super::config_requests::bounded("应用新会话配置", async {
+    let result = Box::pin(super::config_requests::bounded("应用新会话配置", async {
         let configuration = client.session_configuration(id).await?;
         if let Some((provider, model)) = model {
             if !configuration.supports_command("set_model") {
@@ -109,7 +109,7 @@ pub(super) async fn configure_first_message(
             return Err(ClientError::Protocol("思考等级回读与所选配置不一致".into()));
         }
         Ok(())
-    })
+    }))
     .await;
     result.map_err(|error| format!("新会话配置待确认：{error}。草稿已保留。"))
 }
@@ -164,6 +164,7 @@ pub(super) fn Home(
     onproject: EventHandler<String>,
     onadd: EventHandler,
     onconnect: EventHandler,
+    onconfigure: EventHandler,
     onrefresh: EventHandler,
     onsubmit: EventHandler<FirstMessage>,
 ) -> Element {
@@ -182,8 +183,10 @@ pub(super) fn Home(
     let project_name = project.map_or_else(|| "选择项目".to_string(), |(_, name, _)| name.clone());
     let project_path = project.map(|(_, _, path)| path.clone());
     let files = attachments.read().snapshot(&scope);
+    let models_ready = !model_loading && model_error.is_none() && !models.is_empty();
     let can_send = ready
         && online
+        && models_ready
         && project.is_some()
         && !busy
         && !files.loading
@@ -210,6 +213,25 @@ pub(super) fn Home(
                     BrandMark { class: "home-mark" }
                     h1 { "今天，想做点什么？" }
                     p { "一个想法，一段代码，或者一个待解决的问题。" }
+                }
+                if online && (!models_ready || project.is_none()) {
+                    section { class: "home-onboarding", aria_label: "首次使用引导",
+                        if model_loading {
+                            p { role: "status", "正在检查模型配置…" }
+                        } else if let Some(error) = model_error.as_ref() {
+                            h2 { "暂时无法确认模型配置" }
+                            p { role: "alert", "{error}" }
+                            button { class: "button", onclick: move |_| onrefresh.call(()), Icon { name: "refresh" } "重新检查配置" }
+                        } else if !models_ready {
+                            h2 { "配置模型，开始使用" }
+                            p { "运行环境已连接。添加模型供应商与凭据后，即可开始对话。" }
+                            button { class: "button primary", onclick: move |_| onconfigure.call(()), Icon { name: "settings" } "配置模型" }
+                        } else {
+                            h2 { "选择一个工作项目" }
+                            p { "模型已就绪。打开项目目录，开始第一条对话。" }
+                            button { class: "button primary", onclick: move |_| onadd.call(()), Icon { name: "folder" } "打开项目目录" }
+                        }
+                    }
                 }
                 div { class: "home-editor",
                     div { class: "home-composer",
@@ -240,7 +262,7 @@ pub(super) fn Home(
                             }
                             model_picker::ModelPicker {
                                 models, current_model: model_id, current_provider: provider,
-                                loading: model_loading, error: model_error, read_supported: online,
+                                loading: model_loading, error: model_error.clone(), read_supported: online,
                                 write_supported: online, idle: !busy, busy: false, commit_revision: 0,
                                 anchor: ".home-tools .composer-model-picker", preference: true,
                                 onrefresh, onselect: { let scope = scope.clone(); move |value| {

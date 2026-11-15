@@ -17,12 +17,10 @@ pub(crate) fn requested_address() -> Option<&'static str> {
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-pub(crate) fn start() -> Option<work_host::LocalGuard> {
-    if requested_address().is_some_and(|address| !is_local(address)) {
-        None
-    } else {
-        work_host::start()
-    }
+pub(crate) fn setup() -> std::sync::Arc<work_host::setup::DesktopSetup> {
+    static SETUP: std::sync::OnceLock<std::sync::Arc<work_host::setup::DesktopSetup>> =
+        std::sync::OnceLock::new();
+    std::sync::Arc::clone(SETUP.get_or_init(work_host::setup::DesktopSetup::new))
 }
 
 pub(crate) fn client() -> Option<work_client::WorkspaceClient> {
@@ -64,6 +62,13 @@ pub(crate) fn startup_error() -> Option<&'static str> {
 }
 
 pub(crate) fn needs_runtime_install() -> bool {
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    if matches!(
+        setup().snapshot().phase,
+        work_host::setup::Phase::Failed | work_host::setup::Phase::Cancelled
+    ) {
+        return true;
+    }
     startup_error().is_some_and(|error| error.starts_with("未找到 rpi 执行宿主"))
 }
 

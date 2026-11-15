@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
+const baseline = require('../fixtures/baselines/prototype-review-baseline.json');
 
 function check(mode) {
   const script = `
@@ -13,7 +14,7 @@ function check(mode) {
     fs.readFileSync = function(file, ...args) {
       let result = original.call(this, file, ...args);
       const name = String(file).replace(/\\\\/g, '/');
-      if (name.includes('/design/prototype/') && Buffer.isBuffer(result)) {
+      if (name.includes('/design/clarity-workbench/') && Buffer.isBuffer(result)) {
         const lf = result.toString('latin1').replace(/\\r\\n/g, '\\n');
         if (mode === 'lf') result = Buffer.from(lf, 'latin1');
         if (mode === 'crlf') result = Buffer.from(lf.replace(/\\n/g, '\\r\\n'), 'latin1');
@@ -33,7 +34,7 @@ for (const mode of ['lf', 'crlf']) {
   test(`frozen design accepts ${mode.toUpperCase()} checkouts`, () => {
     const result = check(mode);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /39 unchanged design files/);
+    assert.ok(result.stdout.includes(`${Object.keys(baseline.hashes).length} unchanged design files`), result.stdout);
   });
 }
 for (const [mode, error] of [['drift', /Frozen design changed/], ['missing-script', /Missing workflow script/]]) {

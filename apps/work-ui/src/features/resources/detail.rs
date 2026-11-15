@@ -40,6 +40,7 @@ pub(super) fn ResourceDetail(
     let mut source = use_signal(move || initial_source);
     let mut version = use_signal(move || initial_version);
     let mut trusted = use_signal(|| false);
+    let mut install_scope = use_signal(|| None::<NativeScope>);
     let blocked = busy || loading || !online;
     let target = reference.clone();
     let installable = facts["installed"] == false && !source.peek().trim().is_empty();
@@ -65,9 +66,18 @@ pub(super) fn ResourceDetail(
             if installable {
                 fieldset { class: "native-detail-authorization", disabled: blocked,
                     legend { "直接安装此资源" }
+                    label { "安装范围"
+                        select { aria_label: "安装范围", value: match install_scope() { Some(NativeScope::Global) => "global", Some(NativeScope::Project) => "project", None => "" },
+                            onchange: move |event| { install_scope.set(match event.value().as_str() { "global" => Some(NativeScope::Global), "project" => Some(NativeScope::Project), _ => None }); trusted.set(false); },
+                            option { value: "", disabled: true, "请选择全局或项目" }
+                            option { value: "global", "节点全局" }
+                            option { value: "project", "当前项目" }
+                        }
+                    }
                     label { "节点来源（已由目录提供）" input { aria_label: "资源安装来源", readonly: true, value: "{source}" } }
                     label { class: "native-trust", input { r#type: "checkbox", checked: trusted(), onchange: move |e| trusted.set(e.checked()) } "我已检查来源并明确授权安装。安装不会自动选择或加载到会话。" }
-                    button { class: "button primary", disabled: blocked || !trusted(), onclick: { let name = name.clone(); let kind = kind; let scope = scope; move |_| {
+                    button { class: "button primary", disabled: blocked || !trusted() || install_scope().is_none(), onclick: { let name = name.clone(); let kind = kind; move |_| {
+                        let Some(scope) = install_scope() else { return; };
                         onmanage.call(NativeManagement::Install { scope, kind, name: name.clone(), source: source(), version: super::native::recorded_version(version()), trusted: true });
                         trusted.set(false);
                     } }, "确认下载安装" }

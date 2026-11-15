@@ -18,8 +18,9 @@ test('workspace navigation and connection actions do not fork by platform', () =
   const workspace=read('apps/work-ui/src/app/workspace.rs');
   const defaults=workspace.slice(workspace.indexOf('let mut active_page ='),workspace.indexOf('let mut session_details_open ='));
   assert.doesNotMatch(defaults,/target_os|target_arch|cfg!/);
-  assert.match(defaults,/active_page = use_signal\(\|\| "workspace"/);
-  assert.match(defaults,/settings_section = use_signal\(\|\| "settings"/);
+  assert.match(workspace,/fn App\(#\[props\(default\)\] connection_setup: bool\)/);
+  assert.match(defaults,/active_page = use_signal\(\|\| \{\s*if connection_setup \{\s*"settings"\.to_owned\(\)\s*\} else \{\s*"workspace"\.to_owned\(\)/);
+  assert.match(defaults,/settings_section = use_signal\(\|\| \{\s*if connection_setup \{\s*"devices"\.to_owned\(\)\s*\} else \{\s*"settings"\.to_owned\(\)/);
   const devices=read('apps/work-ui/src/features/settings/devices.rs');
   const presentation=devices.slice(devices.indexOf('ConnectionScreen {'),devices.indexOf('if !connection.warning'));
   assert.doesNotMatch(presentation,/target_os|target_arch|cfg!/);

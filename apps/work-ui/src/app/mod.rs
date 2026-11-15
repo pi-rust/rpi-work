@@ -11,6 +11,8 @@ pub(crate) mod connections;
 mod continuation;
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 mod desktop_launch;
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+pub(crate) mod desktop_setup;
 pub(crate) mod device_mode;
 pub(crate) mod entry;
 mod history;

@@ -24,7 +24,7 @@ Android 0.1.0 使用临时开发签名，首次迁移到固定签名版需要卸
 
 ### 1. 桌面使用本机；Web 默认是同一桌面的入口
 
-当前源码的原生桌面在进程内使用 Work owner，由锁定 Git revision 的 `rpi-extcore` Service 通过 stdio `rpi --mode rpc` 执行 Agent 与控制操作；依赖细节见[架构总览](docs/architecture/overview.md)。桌面不需要、也不会启动 `rpi-http`，没有本机 HTTP 登录步骤。只需安装兼容的 `rpi`（应用可执行文件旁、PATH、RPI Work 自动安装目录或 Cargo 用户目录；也可用 `RPI_WORK_RPI_BIN` 指定），模型凭据仍在 rpi 中配置。源码后续改动不会自动升级已安装的应用；请通过 Release 或应用更新安装对应版本。
+当前源码的原生桌面在进程内使用 Work owner，由锁定 Git revision 的 `rpi-extcore` Service 通过 stdio `rpi --mode rpc` 执行 Agent 与控制操作；依赖细节见[架构总览](docs/architecture/overview.md)。桌面不需要、也不会启动 `rpi-http`，没有本机 HTTP 登录步骤。桌面窗口打开后自动检查 `rpi`。缺少时从 rpi 官方 GitHub Release 下载对应平台的稳定版本，校验 SHA-256、验证版本与 RPC 能力后安装并直接启动本机工作空间。已有程序可位于应用可执行文件旁、PATH、RPI Work 自动安装目录或 Cargo 用户目录，也可用 `RPI_WORK_RPI_BIN` 指定。无效路径、下载失败和工作区占用均提供恢复入口，可选择已有程序或连接远程节点。环境就绪后，欢迎页按实际配置引导添加模型和打开项目，模型凭据保存在执行节点。源码后续改动不会自动升级已安装的应用；请通过 Release 或应用更新安装对应版本。
 
 当前源码的 Web 默认使用桌面同一个 owner 的项目、会话与运行状态：打开桌面提供的 Web 地址，有效登录直接进入，否则只输入宿主密码；不用填写节点地址或点击连接。Android 原生 App 通过桌面的一次性授权二维码进入。源码变化不自动替换已安装／正在运行的旧版本，详见下方桌面 HTTP 入口。
 

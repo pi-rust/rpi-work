@@ -139,6 +139,10 @@ pub fn target() -> &'static str {
 }
 
 pub fn http_client() -> Result<reqwest::Client, String> {
+    http_client_builder().build().map_err(|e| e.to_string())
+}
+
+pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
     let builder = reqwest::Client::builder();
     #[cfg(not(target_arch = "wasm32"))]
     let builder = builder
@@ -146,7 +150,7 @@ pub fn http_client() -> Result<reqwest::Client, String> {
         .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(std::time::Duration::from_secs(300))
         .https_only(true);
-    builder.build().map_err(|e| e.to_string())
+    builder
 }
 
 async fn bounded(response: reqwest::Response, limit: usize) -> Result<Vec<u8>, String> {

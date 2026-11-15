@@ -57,7 +57,7 @@ Reddit 橙参考 [Reddit 官方品牌页](https://redditinc.com/brand) 的 Orang
 
 ## 2. 主题定义
 
-历史 HTML 原型源文件：[theme-catalog.js](../../design/prototype/theme-catalog.js)。正式应用的对应模型位于上文 Rust 文件。定义采用纯数据和纯函数，不依赖 Agent 或网络：
+历史 HTML 原型源文件：[theme-catalog.js](https://github.com/pi-rust/rpi-work/blob/v0.1.17/design/prototype/theme-catalog.js)。正式应用的对应模型位于上文 Rust 文件。定义采用纯数据和纯函数，不依赖 Agent 或网络：
 
 ```text
 ThemeDefinition

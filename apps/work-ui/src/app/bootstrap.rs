@@ -66,9 +66,9 @@ pub fn launch() {
             }
             super::desktop_launch::Mode::Gui(None) => {}
         }
-        // Remote mode has no guard. Owning GUI mode retains the same host as
-        // work-cli serve until core-owned children shut down.
-        let mut local_node = super::local_node::start();
+        // Show the window before preparation. The same controller retains any
+        // eventual owner through downloads, retries and the entire GUI lifetime.
+        let local_setup = super::local_node::setup();
         // Dioxus enables always-on-top for debug builds by default. A normal
         // workspace must let the user switch to other applications in every profile.
         let window = desktop_window();
@@ -80,9 +80,7 @@ pub fn launch() {
                         // Tao's event loop exits the process without unwinding
                         // the launch stack. Release the owned node before that.
                         if matches!(event, dioxus::desktop::tao::event::Event::LoopDestroyed) {
-                            if let Some(guard) = local_node.take() {
-                                guard.shutdown();
-                            }
+                            local_setup.shutdown();
                         }
                     })
                     .with_on_window(|window, _| {
