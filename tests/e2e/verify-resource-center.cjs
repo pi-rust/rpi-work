@@ -216,11 +216,11 @@ function operation(body, revision) {
     assert.equal(writes.length, 0);
     await button('移除资源', detail).click();
     await button('确认移除', detail).click();
-    await detail.getByRole('status').waitFor();
+    await detail.locator('.native-detail-notice').waitFor();
     await page.keyboard.press('Escape');
     await ready();
     assert.deepEqual(await totals(), ['02', '00', '01']);
-    assert.match(await row('base').innerText(), /全局可用/);
+    await row('base').filter({ hasText: /全局可用/ }).waitFor();
     assert.equal(writes.at(-1).body.reference, 'project-rpi-work-base-1.0.0');
     pass('installed scopes inherit globals, deduplicate matching versions, preserve distinct versions and remove only the explicit reference');
 
