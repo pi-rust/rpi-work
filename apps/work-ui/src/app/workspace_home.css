@@ -200,7 +200,7 @@
 
 .app-shell.sidebar-collapsed { --sidebar-width: 0px; }
 .app-shell.sidebar-collapsed > :is(.sidebar, .sidebar-resize-handle) { display: none; }
-.app-shell.sidebar-collapsed > .main-column { grid-column: 2; }
+.app-shell.sidebar-collapsed:not(.conversation-focus) > .main-column { grid-column: 2; }
 .home-nav kbd { margin-left: auto; font: 11px var(--sans); color: var(--muted); }
 .app-shell .sidebar { padding: 20px 10px 12px; background: var(--bg); font-size: calc(14px * var(--type-scale, 1)); line-height: 1.6; }
 .app-shell .sidebar .brand { min-height: 29px; padding-inline: 8px; gap: 10px; margin-bottom: 24px; }
@@ -341,3 +341,18 @@
 
 .app-shell > .main-column > .app-header > .mobile-menu { display: inline-flex; }
 .app-shell[data-device-mode="mobile"] .sidebar .primary-nav .nav-item { min-height: 44px; height: 44px; }
+
+.app-shell.conversation-focus { grid-template-columns: minmax(0, 1fr); }
+.app-shell.conversation-focus > .main-column { grid-column: 1; width: 100%; }
+.app-shell.conversation-focus > .inspector.visible { display: none; }
+.app-shell.conversation-focus .conversation-panel > .transcript {
+  padding-top: calc(var(--hit-size) + 24px);
+}
+.app-shell.conversation-focus .conversation-focus-toolbar .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.app-shell > .inspector > h3:has(.inspector-focus-toggle) {
+  grid-template-columns: minmax(0, 1fr) 44px 44px;
+}
+.inspector-focus-toggle { width: 44px; height: 44px; padding: 0; }

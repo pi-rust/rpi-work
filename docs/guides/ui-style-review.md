@@ -41,7 +41,7 @@ Activity 使用 [`adjustResize`](https://developer.android.com/develop/ui/views/
 - 功能图标映射在 `assets/icons/lucide-map.json`，当前 41 个语义名；`lucide-catalog.json` 保存 SVG primitives、许可版本及源模块哈希。`shared/icons.rs` 是生成的编译期静态 allowlist，不接受用户 SVG，也不产生运行时 npm/网络依赖。未知名称回退为 `circle-help`。
 - 图形使用 `currentColor`、24×24 viewBox、Lucide 默认 2px stroke；角色尺寸为 12/14/16px，保留已有助手头像、工具行及手机发送按钮的上下文尺寸。图标与触控区分开计算，手机菜单、附件和发送仍至少 44px。并非全应用尺寸与 Web 逐像素一致。
 - 助手头像使用 `code-xml`；附件入口使用 `paperclip`；关闭、侧栏、设置、工具操作等统一取自同一目录。工作区品牌标记采用 Web 的 25px 角色尺寸，保留原有品牌栏高度。
-- 品牌源只有 `assets/branding/rpi.svg`，与 Web 的 `public/favicon.svg` 相同。离线生成 PNG、多分辨率 ICO 和 ICNS；Windows exe resource 与窗口配置显式使用该品牌，Dioxus bundle 配置及 macOS 手工包引用相应资源。
+- 品牌源使用用户提供的 `assets/branding/rpi-gear.png`，界面与 favicon 嵌入同一齿轮图。`rpi.svg` 是带浅色底和留白的安装图标派生文件，可离线生成 PNG、多分辨率 ICO 和 ICNS。Windows exe resource、窗口图标、Dioxus bundle 及 macOS 手工包引用生成资源。
 
 重新生成与检查（生成器参数必须指向已安装的本地 pinned 包，不会自动安装依赖）：
 

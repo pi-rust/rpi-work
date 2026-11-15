@@ -295,6 +295,7 @@ function operation(body, revision) {
     await work.getByLabel('工作项目', { exact: true }).selectOption('rpi-work');
     await button('准备并继续', work).click();
     dialog = await install('project');
+    assert(await dialog.getByLabel('安装节点', { exact: true }).isDisabled(), 'work preparation installs on the work project’s own node');
     await button('继续工作准备', dialog).click();
     await button('准备并继续', work).click();
     await work.waitFor({ state: 'hidden' });

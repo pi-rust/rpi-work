@@ -2,13 +2,14 @@ mod background;
 mod bootstrap;
 mod config_requests;
 #[cfg(any(target_os = "android", test))]
-mod connection_auth;
+pub(crate) mod connection_auth;
 #[cfg(any(target_os = "android", test))]
 mod connection_memory;
 #[cfg(target_os = "android")]
 mod connection_memory_android;
 pub(crate) mod connections;
 mod continuation;
+pub(crate) mod desktop_background;
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 mod desktop_launch;
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]

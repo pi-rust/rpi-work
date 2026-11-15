@@ -92,11 +92,11 @@
   overscroll-behavior-x:contain;overscroll-behavior-y:auto;touch-action:auto;
 }
 /* Syntax consumes theme semantics; mix toward text to keep custom themes legible. */
-.conversation-code .code-token-keyword{color:color-mix(in srgb,var(--info) 75%,var(--text));font-weight:600}
-.conversation-code .code-token-string{color:color-mix(in srgb,var(--success) 75%,var(--text))}
-.conversation-code .code-token-comment{color:color-mix(in srgb,var(--muted) 80%,var(--text));font-style:italic}
-.conversation-code .code-token-number{color:color-mix(in srgb,var(--warning) 75%,var(--text))}
-.conversation-code .code-token-literal{color:color-mix(in srgb,var(--info) 75%,var(--text))}
+:is(.conversation-code,.project-code,.diff-lines) .code-token-keyword{color:color-mix(in srgb,var(--info) 75%,var(--text));font-weight:600}
+:is(.conversation-code,.project-code,.diff-lines) .code-token-string{color:color-mix(in srgb,var(--success) 75%,var(--text))}
+:is(.conversation-code,.project-code,.diff-lines) .code-token-comment{color:color-mix(in srgb,var(--muted) 80%,var(--text));font-style:italic}
+:is(.conversation-code,.project-code,.diff-lines) .code-token-number{color:color-mix(in srgb,var(--warning) 75%,var(--text))}
+:is(.conversation-code,.project-code,.diff-lines) .code-token-literal{color:color-mix(in srgb,var(--info) 75%,var(--text))}
 /* Shared CopyButton chrome also works in a plan region without a message widget. */
 .conversation-code .conversation-copy .markdown-copy,
 .conversation-tool .tool-icon-button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;min-width:28px;height:28px;min-height:28px;padding:0;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--muted)}
@@ -133,10 +133,88 @@
 .conversation-widget summary{list-style:none;cursor:pointer}
 .conversation-widget summary::-webkit-details-marker{display:none}
 /* Reasoning stays available on demand and visually subordinate to the answer. */
-.conversation-widget.message-thinking{width:100%;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);overflow:clip;margin:0}
-.conversation-widget.message-thinking>.message-thinking-summary{padding:var(--space-7) var(--space-11);font-size:calc(10px * var(--type-scale, 1));color:var(--muted)}
-.conversation-widget.message-thinking[open]>.message-thinking-summary{color:var(--text);border-bottom:1px solid var(--line)}
-.conversation-widget.message-thinking>.message-thinking-body{padding:var(--space-10) var(--space-12);color:var(--muted);font-size:calc(11px * var(--type-scale, 1));line-height:1.8;max-height:340px;overflow:auto}
+.conversation-widget.message-thinking {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 16px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.conversation-widget.message-thinking > .message-thinking-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0 4px 0 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: max(var(--font-assist), calc(14px * var(--type-scale, 1)));
+  line-height: 1.5;
+}
+.conversation-widget .message-thinking-summary > .message-thinking-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  transition: transform var(--motion-fast, 120ms) ease;
+}
+.conversation-widget.message-thinking[open] > .message-thinking-summary > .message-thinking-chevron {
+  transform: rotate(90deg);
+}
+.conversation-widget .message-thinking-summary:hover {
+  color: var(--text);
+}
+.conversation-widget.message-thinking > .message-thinking-body {
+  max-height: min(360px, 45dvh);
+  margin: 0 0 4px 2px;
+  padding: 2px 12px 2px 16px;
+  overflow: auto;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: max(var(--font-assist), calc(14px * var(--type-scale, 1)));
+  line-height: max(var(--reading-line-height, 1.7), 1.75);
+  overscroll-behavior-x: contain;
+}
+.message-thinking-body > .conversation-markdown {
+  --conversation-prose: var(--muted);
+  --conversation-ink: var(--muted);
+  --body-text: var(--muted);
+  color: inherit;
+  font: inherit;
+}
+.message-thinking-body .conversation-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 12px 0 6px;
+  font-size: inherit;
+  line-height: inherit;
+}
+.message-thinking-body .conversation-markdown > :first-child {
+  margin-top: 0;
+}
+.message-thinking-body .conversation-markdown :is(p, ul, ol) {
+  margin-bottom: 10px;
+}
+.message-thinking-body .conversation-markdown > :last-child {
+  margin-bottom: 0;
+}
+.timeline-content-region:has(> .message-thinking) + .timeline-content-region > .agent-message {
+  margin-top: 16px;
+}
+.message-thinking-body:focus-visible {
+  outline: 2px solid var(--focus-color, var(--accent));
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .conversation-widget .message-thinking-summary > .message-thinking-chevron {
+    transition: none;
+  }
+}
 .conversation-widget svg{width:14px;height:14px;flex:0 0 14px}
 .conversation-widget .inline-call>summary{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-10);color:var(--text);text-align:left}
 .conversation-widget .call-icon{display:grid;place-items:center;width:22px;height:22px;flex:0 0 22px;background:transparent;color:var(--muted);border-radius:var(--radius-sm)}
@@ -217,7 +295,6 @@
 .conversation-widget .inline-plan summary>span:last-child{font-size:calc(10px * var(--type-scale, 1))}
 .conversation-widget .inline-plan li strong{font-size:calc(12px * var(--type-scale, 1))}.conversation-widget .inline-plan li small{font-size:calc(11px * var(--type-scale, 1))}
 .conversation-widget .inline-call>summary{min-height:44px;padding:var(--space-8);gap:var(--space-7)}
-.conversation-widget.message-thinking>.message-thinking-summary{min-height:44px;display:flex;align-items:center}
 .conversation-widget .call-name strong{font-size:calc(12px * var(--type-scale, 1))}.conversation-widget .call-icon{width:24px;height:24px;flex-basis:24px}
 .conversation-widget .call-body{padding:var(--space-10)}
 .conversation-widget .inline-call-warning{padding-left:var(--space-42)}

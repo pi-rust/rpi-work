@@ -188,6 +188,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 /* Reading mode removes workspace chrome without unmounting the conversation. */
 .app-shell.conversation-focus { grid-template-columns: minmax(0, 1fr); }
 .app-shell.conversation-focus > .sidebar,
+.app-shell.conversation-focus > .sidebar-resize-handle,
 .app-shell.conversation-focus > .inspector,
 .app-shell.conversation-focus > .main-column > .app-header { display: none; }
 .app-shell.conversation-focus > .main-column { grid-column: 1; }
@@ -888,9 +889,9 @@ small, .meta { font-size: var(--font-assist); }
 @media(min-width:1101px){
   /* Keep the drawer control above the wide-screen inspector so it remains usable for closing it. */
   .app-shell:not(.context-hidden) > .main-column > .app-header .context-toggle { position: fixed; z-index: 31; top: var(--app-safe-top); right: var(--app-safe-right); }
-  .app-shell:not(.context-hidden):not(.btw-open){grid-template-columns:var(--sidebar-width) minmax(0,1fr)}
+  .app-shell:not(.context-hidden):not(.btw-open):not(.conversation-focus){grid-template-columns:var(--sidebar-width) minmax(0,1fr)}
   .app-shell:not(.context-hidden):not(.btw-open)>.inspector{position:absolute;z-index:30;top:0;right:0;bottom:0;width:min(360px,calc(100% - var(--sidebar-width) - 32px));border-left:1px solid var(--line);box-shadow:-12px 0 32px var(--shadow-color)}
-  .app-shell:not(.context-hidden):not(.btw-open)>.main-column{grid-column:2}
+  .app-shell:not(.context-hidden):not(.btw-open):not(.conversation-focus)>.main-column{grid-column:2}
 }
 
 /* Canonical UI normalization: keep the workbench quiet, readable and touch-safe. */

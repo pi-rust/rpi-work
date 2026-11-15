@@ -1,6 +1,8 @@
 mod catalog;
 pub(crate) mod center;
 pub(crate) mod detail;
+pub(crate) mod install_handoff;
+mod install_target;
 pub(crate) mod library;
 pub(crate) mod native;
 pub(crate) mod packages;

@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 pub(crate) struct FileLink {
     pub path: String,
     pub lines: Option<(usize, usize)>,
+    pub directory: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -113,7 +114,11 @@ pub(crate) fn resolve_file(root: &str, target: &str) -> Option<FileLink> {
     if path.is_empty() {
         return None;
     }
-    Some(FileLink { path, lines })
+    Some(FileLink {
+        path,
+        lines,
+        directory: relative.ends_with('/'),
+    })
 }
 
 pub(crate) fn looks_like_file(target: &str) -> bool {
@@ -123,6 +128,15 @@ pub(crate) fn looks_like_file(target: &str) -> bool {
     let Some((path, _)) = location(&decoded) else {
         return false;
     };
+    if path.contains(['→', '(', ')', '{', '}', '\n', '\t'])
+        || path
+            .split_whitespace()
+            .filter(|part| part.contains('/'))
+            .count()
+            > 1
+    {
+        return false;
+    }
     path.contains('/')
         || path.contains('\\')
         || path.rsplit('.').next().is_some_and(|ext| {
@@ -202,7 +216,7 @@ pub(crate) fn MessageFileLink(label: String, target: String, code: bool) -> Elem
             .map(|file| (ctx, ctx.scope.read().clone(), file))
     });
     if let Some((context, scope, file)) = resolved {
-        rsx! { button { class: "message-file-link", r#type: "button", title: "在项目内只读预览", "data-file-path": "{file.path}", onclick: move |_| context.onopen.call((scope.clone(), file.clone())),
+        rsx! { button { class: "message-file-link", r#type: "button", title: if file.directory { "在项目文件树中打开目录" } else { "在项目内只读预览" }, "data-file-path": "{file.path}", onclick: move |_| context.onopen.call((scope.clone(), file.clone())),
             if code { code { "{label}" } } else { "{label}" }
         } }
     } else if code {
@@ -298,5 +312,14 @@ mod tests {
         }
         assert!(looks_like_file("src/main.rs:12"));
         assert!(!looks_like_file("not a path"));
+        for prose in [
+            "telemetry → ai → agent → tools/runtime → harness/durable",
+            "StreamFn → Provider → HTTP/SSE",
+            "architecture/ agent/ guides/ debugging/",
+        ] {
+            assert!(!looks_like_file(prose), "{prose}");
+        }
+        assert!(resolve_file("/work/demo", "crates/").unwrap().directory);
+        assert!(!resolve_file("/work/demo", "src/main.rs").unwrap().directory);
     }
 }

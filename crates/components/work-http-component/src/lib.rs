@@ -47,6 +47,13 @@ pub fn bundle() -> Result<Bundle, String> {
                         local_only: true,
                     },
                 ),
+                (
+                    "set-web-enabled".into(),
+                    Action {
+                        capability: "node.web.write".into(),
+                        local_only: true,
+                    },
+                ),
             ]),
         },
         BTreeMap::from([("index.html".into(), include_str!("../ui/index.html").into())]),
@@ -70,9 +77,19 @@ pub struct Snapshot {
     #[serde(default)]
     pub web_hosted: bool,
     #[serde(default)]
+    pub web: WebAccess,
+    #[serde(default)]
     pub configuration: Option<Configuration>,
     #[serde(default)]
     pub restart_required: bool,
+}
+#[derive(Clone, Default, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WebAccess {
+    pub listening: bool,
+    pub enabled: bool,
+    pub url: String,
+    pub status: String,
 }
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -108,6 +125,9 @@ pub struct Authorization {
 pub trait RemoteAccessOwner: Send + Sync {
     fn snapshot(&self) -> Snapshot;
     fn set_enabled(&self, enabled: bool) -> Result<(), String>;
+    fn set_web_enabled(&self, _enabled: bool) -> Result<(), String> {
+        Err("当前节点尚未提供独立 Web 访问控制，请升级节点。".into())
+    }
     fn configure(&self, _request: Configure) -> Result<(), String> {
         Err("Configuration is unavailable".into())
     }
@@ -123,6 +143,24 @@ pub fn register(
     let read = owner.clone();
     let authorize = owner.clone();
     let configure = owner.clone();
+    let web = owner.clone();
+    host.register_capability(
+        "node.web.write",
+        true,
+        std::sync::Arc::new(move |args, local| {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Set {
+                enabled: bool,
+            }
+            let request: Set =
+                serde_json::from_value(args).map_err(|_| "Expected enabled boolean")?;
+            web.set_web_enabled(request.enabled)?;
+            let mut snapshot = web.snapshot();
+            snapshot.can_configure = local;
+            serde_json::to_value(snapshot).map_err(|e| e.to_string())
+        }),
+    )?;
     host.register_capability(
         "node.sharing.configure",
         true,

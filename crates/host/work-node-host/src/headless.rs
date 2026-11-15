@@ -3,12 +3,15 @@ use std::io::Read;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)] // Compatibility flags for two independent entrances.
 struct ReadyStatus {
     ready: bool,
     address: String,
     node_id: String,
     sharing_enabled: bool,
     web_hosted: bool,
+    web_enabled: bool,
+    web_url: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     warning: String,
 }
@@ -27,6 +30,8 @@ impl ReadyStatus {
             node_id: info.node_id.clone(),
             sharing_enabled: info.enabled,
             web_hosted: info.web_hosted,
+            web_enabled: info.web.enabled,
+            web_url: info.web.url.clone(),
             // Do not serialize arbitrary diagnostic text or the Sharing object.
             // GUI callers retain the original warning in HTTP info.
             warning: if info.warning.is_empty() {
@@ -217,7 +222,7 @@ mod tests {
         assert!(!line.contains("NEVER-PRINT"));
         assert!(!line.contains("other.example"));
         let json: serde_json::Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(json.as_object().unwrap().len(), 5);
+        assert_eq!(json.as_object().unwrap().len(), 7);
         assert_eq!(json["ready"], true);
         assert_eq!(json["address"], "http://127.0.0.1:45678/");
         assert_eq!(json["nodeId"], "stable-id");
@@ -254,7 +259,9 @@ mod tests {
                 "ready",
                 "sharingEnabled",
                 "warning",
-                "webHosted"
+                "webEnabled",
+                "webHosted",
+                "webUrl",
             ]
         );
         assert_eq!(

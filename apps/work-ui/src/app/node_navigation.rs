@@ -6,6 +6,31 @@ use dioxus::prelude::*;
 pub(crate) struct NodeNavigation {
     pub home_address: Signal<String>,
     pub navigate: EventHandler<String>,
+    pub install: EventHandler<(String, Vec<work_core::api::PackageRef>)>,
+}
+
+#[cfg(target_arch = "wasm32")]
+fn navigate_browser(target: &serde_json::Value) {
+    // Navigation carries public resource identities only. Target entry owns login.
+    document::eval(&format!(
+        r#"
+        const target = {target};
+        const url = new URL(target.address + '/');
+        const marker = new URLSearchParams({{'rpi-entry': target.home}});
+        if (target.install) marker.set('rpi-install', JSON.stringify(target.install));
+        url.hash = marker.toString();
+        if (url.origin === location.origin) {{
+            history.replaceState(history.state, '', url.href);
+            location.reload();
+        }} else {{
+            const link = document.createElement('a');
+            link.href = url.href;
+            link.referrerPolicy = 'no-referrer';
+            link.rel = 'noreferrer';
+            link.click();
+        }}
+        "#
+    ));
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -65,28 +90,21 @@ pub(super) fn use_navigation(current: String, mut warning: Signal<String>) {
                     return;
                 }
             };
-            // No cross-origin fetch, API discovery, password forwarding, or owner proxy.
-            // Suppress Referer so the current session URL is not disclosed to the target.
-            document::eval(&format!(
-                r#"
-                const target = {target};
-                const url = new URL(target.address + '/');
-                url.hash = new URLSearchParams({{'rpi-entry': target.home}}).toString();
-                if (url.origin === location.origin) {{
-                    // A hash-only link would not remount HostedEntry after expiry.
-                    // Explicit same-node recovery must revalidate discovery and auth.
-                    history.replaceState(history.state, '', url.href);
-                    location.reload();
-                }} else {{
-                    const link = document.createElement('a');
-                    link.href = url.href;
-                    link.referrerPolicy = 'no-referrer';
-                    link.rel = 'noreferrer';
-                    link.click();
-                }}
-            "#
-            ));
+            navigate_browser(&target);
         }),
+        install: EventHandler::new(
+            move |(address, packages): (String, Vec<work_core::api::PackageRef>)| {
+                let mut target = match destination(&address, &home.peek()) {
+                    Ok(target) => target,
+                    Err(error) => {
+                        warning.set(error);
+                        return;
+                    }
+                };
+                target["install"] = serde_json::json!(packages);
+                navigate_browser(&target);
+            },
+        ),
     });
 }
 

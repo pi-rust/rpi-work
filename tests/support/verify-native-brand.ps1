@@ -15,47 +15,57 @@ public static class WorkBrandIcon {
 }
 '@
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$expected = [System.Drawing.Bitmap]::new((Join-Path $root 'assets/branding/rpi-256.png'))
 function Test-BrandBitmap([System.Drawing.Bitmap]$Bitmap) {
-    # Samples are well inside the three Web brand bars and its cream backdrop,
-    # not antialiased boundaries. Shell extraction may select a 16/32/48px frame.
-    foreach ($point in @(@(4,16), @(8,20), @(16,12), @(24,21))) {
-        $a = $Bitmap.GetPixel([Math]::Min($Bitmap.Width-1,[int][Math]::Floor($point[0]*$Bitmap.Width/32)), [Math]::Min($Bitmap.Height-1,[int][Math]::Floor($point[1]*$Bitmap.Height/32)))
-        $b = $expected.GetPixel($point[0]*8,$point[1]*8)
-        if ([Math]::Abs([int]$a.R-$b.R) -gt 8 -or [Math]::Abs([int]$a.G-$b.G) -gt 8 -or [Math]::Abs([int]$a.B-$b.B) -gt 8 -or $a.A -lt 240) {
-            throw 'Native icon differs from the Web brand samples.'
-        }
-    }
-    return @{ width=$Bitmap.Width; height=$Bitmap.Height; brandSamplesMatch=$true }
-}
-try {
-    $fileIcon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path -LiteralPath $Executable).Path)
-    if (!$fileIcon) { throw 'No executable shell icon.' }
+    # Compare every pixel with the corresponding committed ICO frame, including
+    # the gear's negative spaces. Shell extraction chooses its own frame size.
+    $referenceIcon = [System.Drawing.Icon]::new((Join-Path $root 'assets/branding/rpi.ico'), $Bitmap.Width, $Bitmap.Height)
+    $expected = $referenceIcon.ToBitmap()
+    $maxDifference = 0
     try {
-        $bitmap = $fileIcon.ToBitmap()
-        try { $result = @{ executable = (Test-BrandBitmap $bitmap) } } finally { $bitmap.Dispose() }
-    } finally { $fileIcon.Dispose() }
-    if ($WindowProcessId -gt 0) {
-        $deadline = [DateTime]::UtcNow.AddSeconds(10)
-        do {
-            $process = Get-Process -Id $WindowProcessId
-            $handle = $process.MainWindowHandle
-            if ($handle -ne [IntPtr]::Zero) { break }
-            Start-Sleep -Milliseconds 150
-        } while ([DateTime]::UtcNow -lt $deadline)
-        if ($handle -eq [IntPtr]::Zero) { throw 'Owned desktop window unavailable.' }
-        [uint32]$owner = 0
-        $null = [WorkBrandIcon]::GetWindowThreadProcessId($handle,[ref]$owner)
-        if ($owner -ne $WindowProcessId) { throw 'Window process identity mismatch.' }
-        [IntPtr]$iconHandle = [IntPtr]::Zero
-        $response = [WorkBrandIcon]::SendMessageTimeoutW($handle,0x7F,[IntPtr]1,[IntPtr]::Zero,2,2000,[ref]$iconHandle)
-        if ($response -eq [IntPtr]::Zero -or $iconHandle -eq [IntPtr]::Zero) { throw 'Window did not return its application icon.' }
-        # Borrow the window-owned HICON; do not call DestroyIcon on that handle.
-        $windowIcon = [System.Drawing.Icon]::FromHandle($iconHandle)
-        try {
-            $bitmap = $windowIcon.ToBitmap()
-            try { $result.window = Test-BrandBitmap $bitmap } finally { $bitmap.Dispose() }
-        } finally { $windowIcon.Dispose() }
+        for ($y = 0; $y -lt $Bitmap.Height; $y++) {
+            for ($x = 0; $x -lt $Bitmap.Width; $x++) {
+                $actualPixel = $Bitmap.GetPixel($x, $y)
+                $expectedPixel = $expected.GetPixel($x, $y)
+                if ($actualPixel.A -eq 0 -and $expectedPixel.A -eq 0) { continue }
+                foreach ($channel in @('R','G','B','A')) {
+                    $difference = [Math]::Abs([int]$actualPixel.$channel - [int]$expectedPixel.$channel)
+                    $maxDifference = [Math]::Max($maxDifference, $difference)
+                }
+            }
+        }
+        if ($maxDifference -gt 8) { throw 'Native icon differs from the supplied gear logo.' }
+        return @{ width=$Bitmap.Width; height=$Bitmap.Height; brandSamplesMatch=$true; maxDifference=$maxDifference }
+    } finally {
+        $expected.Dispose()
+        $referenceIcon.Dispose()
     }
-    $result | ConvertTo-Json -Depth 4 -Compress
-} finally { $expected.Dispose() }
+}
+$fileIcon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path -LiteralPath $Executable).Path)
+if (!$fileIcon) { throw 'No executable shell icon.' }
+try {
+    $bitmap = $fileIcon.ToBitmap()
+    try { $result = @{ executable = (Test-BrandBitmap $bitmap) } } finally { $bitmap.Dispose() }
+} finally { $fileIcon.Dispose() }
+if ($WindowProcessId -gt 0) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        $process = Get-Process -Id $WindowProcessId
+        $handle = $process.MainWindowHandle
+        if ($handle -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 150
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($handle -eq [IntPtr]::Zero) { throw 'Owned desktop window unavailable.' }
+    [uint32]$owner = 0
+    $null = [WorkBrandIcon]::GetWindowThreadProcessId($handle,[ref]$owner)
+    if ($owner -ne $WindowProcessId) { throw 'Window process identity mismatch.' }
+    [IntPtr]$iconHandle = [IntPtr]::Zero
+    $response = [WorkBrandIcon]::SendMessageTimeoutW($handle,0x7F,[IntPtr]1,[IntPtr]::Zero,2,2000,[ref]$iconHandle)
+    if ($response -eq [IntPtr]::Zero -or $iconHandle -eq [IntPtr]::Zero) { throw 'Window did not return its application icon.' }
+    # Borrow the window-owned HICON; do not call DestroyIcon on that handle.
+    $windowIcon = [System.Drawing.Icon]::FromHandle($iconHandle)
+    try {
+        $bitmap = $windowIcon.ToBitmap()
+        try { $result.window = Test-BrandBitmap $bitmap } finally { $bitmap.Dispose() }
+    } finally { $windowIcon.Dispose() }
+}
+$result | ConvertTo-Json -Depth 4 -Compress

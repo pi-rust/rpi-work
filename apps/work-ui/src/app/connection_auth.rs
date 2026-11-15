@@ -5,13 +5,13 @@ use super::connections::{NodePassword, normalize_address, with_timeout};
 use work_client::{AuthState, WorkspaceClient};
 
 // No Clone, Debug or Serialize: an attempt consumes its bound password once.
-pub(super) struct ManualAttempt {
+pub(crate) struct ManualAttempt {
     pub address: String,
     client: WorkspaceClient,
     secret: String,
 }
 
-pub(super) fn manual_prepare(
+pub(crate) fn manual_prepare(
     address: &str,
     mut password: NodePassword,
 ) -> Result<ManualAttempt, String> {

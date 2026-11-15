@@ -1,3 +1,4 @@
+pub(crate) mod file_lookup;
 pub(crate) mod management;
 pub(crate) mod node_info;
 pub(crate) mod preview;

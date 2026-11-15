@@ -25,6 +25,7 @@ impl work_http_component::RemoteAccessOwner for SharingOwner {
             address_hint: String::new(),
             node_id: "component-test".into(),
             web_hosted: false,
+            web: work_http_component::WebAccess::default(),
             configuration: None,
             restart_required: false,
         }

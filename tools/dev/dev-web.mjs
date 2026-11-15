@@ -17,7 +17,7 @@ const staticRoot = process.env.RPI_UI_ASSETS
   : path.join(buildOutputRoot, 'parity-web');
 const port = Number(process.env.PORT || 14180);
 const apiHost = process.env.RPI_API_HOST || '127.0.0.1';
-const apiPort = Number(process.env.RPI_API_PORT || 13031);
+const apiPort = Number(process.env.RPI_API_PORT || 13032);
 const listenHost = process.env.RPI_UI_HOST || '0.0.0.0';
 const entryMode = process.env.RPI_UI_ENTRY_MODE || 'hosted';
 if (!['hosted', 'standalone'].includes(entryMode)) {

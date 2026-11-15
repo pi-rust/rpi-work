@@ -62,7 +62,7 @@ jobs:
 
   desktop:
     name: Desktop / ${{ matrix.target }}
-    needs: checks
+    needs: [checks, web]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -104,8 +104,18 @@ jobs:
         with:
           shared-key: desktop-${{ matrix.target }}
           cache-on-failure: true
-      - name: Compile release UI and CLI
+      - uses: actions/download-artifact@v7
+        with:
+          name: rpi-work-builtin-web
+          path: target/parity-web
+      - name: Compile release UI and CLI with built-in Web
+        env:
+          RPI_WORK_BUILTIN_WEB_DIR: ${{ github.workspace }}/target/parity-web
         run: cargo build --locked --release --target ${{ matrix.target }} -p work-ui -p work-cli
+      - name: Verify embedded Web resources
+        env:
+          RPI_WORK_BUILTIN_WEB_DIR: ${{ github.workspace }}/target/parity-web
+        run: cargo test --locked --release --target ${{ matrix.target }} -p work-node-host --lib web_assets::tests
       - name: Package binaries and checksums
         run: ./scripts/ci/package-build.ps1 -Target '${{ matrix.target }}'
       - uses: actions/upload-artifact@v7
@@ -236,6 +246,12 @@ jobs:
         run: ./scripts/ci/install-wasm-bindgen.ps1
       - name: Compile release browser application
         run: ./tools/dev/build-ui-web.ps1 -BindgenPath (Get-Command wasm-bindgen -ErrorAction Stop).Source
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rpi-work-builtin-web
+          path: target/parity-web/
+          if-no-files-found: error
+          retention-days: 14
       - name: Package standalone and rpi-web assets
         run: ./scripts/ci/package-build.ps1 -Target wasm32-unknown-unknown
       - uses: actions/upload-artifact@v7

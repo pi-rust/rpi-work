@@ -5,28 +5,29 @@ const http=require('node:http');
 const fs=require('node:fs');
 const path=require('node:path');
 const assert=require('node:assert/strict');
-const source=path.resolve(process.env.RPI_COMPONENTS_SOURCE||'crates');
+const source=path.resolve(process.env.RPI_COMPONENTS_SOURCE||'crates/components');
 const ui=fs.readFileSync(path.join(source,'work-http-component/ui/index.html'),'utf8');
 const bridge=fs.readFileSync(path.join(source,'work-component-api/ui-host/bridge.js'),'utf8');
 const literal=x=>JSON.stringify(x).replace(/</g,'\\u003c');
-let enabled=true,reads=0,writes=0;
+let enabled=true,webEnabled=false,reads=0,writes=0;
 let configuration={bind:'0.0.0.0',port:13031,publicUrl:''},configurationWrites=0;
 const server=http.createServer((req,res)=>{
     if(req.url==='/call'){
         let body='';req.on('data',c=>body+=c);req.on('end',()=>{
             const request=JSON.parse(body);
-            if(request.action==='set-enabled'){writes++;enabled=request.arguments.enabled;}
+            if(request.action==='set-web-enabled'){webEnabled=request.arguments.enabled;}
+            else if(request.action==='set-enabled'){writes++;enabled=request.arguments.enabled;}
             else if(request.action==='configure'){configurationWrites++;configuration=request.arguments.configuration;assert.equal(request.arguments.newPassword,'isolated-panel-password');}
             else reads++;
             res.setHeader('Content-Type','application/json');
-            res.end(JSON.stringify({id:request.id,value:{listening:true,enabled,status:enabled?'HTTP 服务运行中':'远程访问已关闭',warning:'',publicUrl:'http://192.0.2.10:13031/',canConfigure:true,configuration,restartRequired:configurationWrites>0}}));
+            res.end(JSON.stringify({id:request.id,value:{listening:true,enabled,status:enabled?'HTTP 服务运行中':'远程访问已关闭',warning:'',publicUrl:'http://192.0.2.10:13031/',canConfigure:true,web:{listening:true,enabled:webEnabled,url:'http://192.0.2.10:13032/',status:''},configuration,restartRequired:configurationWrites>0}}));
         });return;
     }
     res.setHeader('Content-Type','text/html; charset=utf-8');
     res.end(`<!doctype html><html style="--canvas:#faf9f6;--card:#fff;--text:#262722;--muted:#777970;--line:#e6e7df;--accent:#54794d"><head><link rel="icon" href="data:,"></head><body style="margin:24px"><button id="open">打开组件</button><main></main><script>
         const replies=[],waiters=[];window.dioxus={send:async data=>{const r=await fetch('/call',{method:'POST',body:JSON.stringify(data)});const value=await r.json();if(waiters.length)waiters.shift()(value);else replies.push(value);},recv:()=>replies.length?Promise.resolve(replies.shift()):new Promise(r=>waiters.push(r))};
         ${bridge}
-        document.getElementById('open').onclick=()=>{document.querySelector('main').innerHTML='<iframe id="component" title="扩展面板" sandbox="allow-scripts" style="width:100%;height:650px;border:0"></iframe>';mountComponentPanel('component',${literal(ui)},['status','set-enabled','configure']);};
+        document.getElementById('open').onclick=()=>{document.querySelector('main').innerHTML='<iframe id="component" title="扩展面板" sandbox="allow-scripts" style="width:100%;height:650px;border:0"></iframe>';mountComponentPanel('component',${literal(ui)},['status','set-enabled','set-web-enabled','configure']);};
         </script></body></html>`);
 });
 (async()=>{
@@ -43,10 +44,14 @@ const server=http.createServer((req,res)=>{
         await frame.getByText('正在共享',{exact:true}).waitFor();
         assert.equal(await frame.getByLabel('访问地址').inputValue(),'http://192.0.2.10:13031/');
         assert.equal(await page.locator('#component').getAttribute('sandbox'),'allow-scripts');
-        await frame.getByRole('switch').click();
+        await frame.getByRole('switch',{name:'允许远程协作',exact:true}).click();
         await frame.getByText('已关闭',{exact:true}).waitFor();
         assert.equal(enabled,false);assert.equal(writes,1);
-        await frame.getByRole('switch').click();await frame.getByText('正在共享',{exact:true}).waitFor();
+        await frame.getByRole('switch',{name:'允许远程协作',exact:true}).click();await frame.getByText('正在共享',{exact:true}).waitFor();
+        await frame.getByRole('switch',{name:'允许 Web 访问',exact:true}).click();
+        await frame.locator('#web-toggle[aria-checked=true]').waitFor();
+        await frame.getByLabel('Web 地址',{exact:true}).inputValue().then(value=>assert.equal(value,'http://192.0.2.10:13032/'));
+        assert.equal(enabled,true);assert.equal(webEnabled,true);
         await frame.locator('summary').filter({hasText:'连接设置'}).click();
         await frame.getByLabel('监听 IP',{exact:true}).fill('127.0.0.1');
         await frame.getByLabel('监听端口',{exact:true}).fill('14321');
@@ -55,6 +60,7 @@ const server=http.createServer((req,res)=>{
         await frame.getByRole('button',{name:'保存，下次启动生效',exact:true}).click();
         await frame.getByText('设置已保存，下次启动生效。当前连接和任务继续运行。',{exact:true}).waitFor({timeout:5000}).catch(error=>{throw new Error(`Configuration UI did not save (${configurationWrites} calls): ${consoleErrors.join('; ')}; ${error.message}`)});
         assert.equal(configurationWrites,1);assert.equal(configuration.port,14321);assert.equal(configuration.bind,'127.0.0.1');
+        assert.equal(await frame.getByRole('switch',{name:'允许 Web 访问',exact:true}).isEnabled(),true);
         assert.equal(await frame.getByLabel('节点新密码',{exact:true}).inputValue(),'');
         fs.mkdirSync('artifacts/component-panels',{recursive:true});
         await page.locator('#component').evaluate(el=>el.style.height='1000px');

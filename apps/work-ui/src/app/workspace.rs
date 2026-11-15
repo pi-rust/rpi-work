@@ -40,7 +40,7 @@ use crate::{
         },
         meta_agent,
         observability::{runtime_stats, traces},
-        projects::{management, node_info, project_files, project_picker},
+        projects::{file_lookup, management, node_info, project_files, project_picker},
         resources::{library as resources, session_config},
         settings::{self as settings, updates},
     },
@@ -215,6 +215,9 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     let mut files = use_signal(|| None::<FileListing>);
     let mut file_content = use_signal(|| None::<work_client::FileContent>);
     let mut file_image = use_signal(|| None::<Result<message_image::ImageBlock, String>>);
+    let mut file_candidates = use_signal(Vec::<String>::new);
+    let mut file_from_message = use_signal(|| false);
+    let mut reveal_directory = use_signal(|| None::<String>);
     let mut git_status = use_signal(|| None::<GitStatus>);
     let mut git_loading = use_signal(|| false);
     let mut git_error = use_signal(|| None::<String>);
@@ -654,6 +657,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
             "workspace".to_owned()
         }
     });
+    crate::features::resources::install_handoff::use_install_draft(active_page);
     // Leaving the composer abandons automatic navigation for this attempt.
     // Returning before its response arrives must not restore that intent.
     use_effect(move || {
@@ -672,6 +676,15 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     let mut session_settings_tab = use_signal(|| "details".to_owned());
     let mut timeline_visible = use_signal(|| false);
     let mut conversation_focus = use_signal(|| false);
+    let mut conversation_focus_return = use_signal(|| ".workspace-view-menu > summary");
+    let mut close_conversation_focus = move || {
+        conversation_focus.set(false);
+        let selector =
+            serde_json::to_string(&*conversation_focus_return.peek()).unwrap_or_default();
+        let _ = document::eval(&format!(
+            "setTimeout(() => document.querySelector({selector})?.focus({{preventScroll:true}}), 0);"
+        ));
+    };
     management::use_menu_behaviour();
     let mut archived_projects = management::use_archived_projects();
     let mut archive_open = use_signal(|| false);
@@ -2661,7 +2674,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
         }
     });
 
-    let mut load_file = move |path: String, reset_view: bool| {
+    let mut load_file = move |path: String, reset_view: bool, from_message: bool| {
         let Some(project_id) = selected_project.read().clone() else {
             return;
         };
@@ -2675,10 +2688,13 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
             ));
             return;
         }
-        let client_result = shared_client
-            .read()
-            .clone()
-            .ok_or_else(|| work_client::ClientError::Protocol("请先连接有效节点".into()));
+        let Some(client) = shared_client.read().clone() else {
+            status.set("请先连接有效节点".into());
+            return;
+        };
+        file_from_message.set(from_message);
+        file_candidates.set(Vec::new());
+        reveal_directory.set(None);
         {
             let mut tabs = project_open_tabs.write();
             if !tabs.iter().any(|tab| tab.path == path) {
@@ -2704,62 +2720,76 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
         file_image.set(None);
         status.set("正在加载文件内容…".into());
         state::scoped_spawn(requests, async move {
-            match client_result {
-                Ok(client) => match if project_file_kind(&path) == "image" {
-                    client.image(&project_id, &path).await.map(|image| {
-                        (
-                            work_client::FileContent {
-                                path,
-                                content: String::new(),
-                            },
-                            Some(message_image::project_image(image)),
-                        )
-                    })
-                } else {
-                    client
-                        .file(&project_id, &path)
+            let result = connections::with_timeout(async {
+                if project_file_kind(&path) == "image" {
+                    NodeApi::image(&client, &project_id, &path)
                         .await
-                        .map(|content| (content, None))
-                } {
-                    Ok((content, image)) if *preview_generation.read() == generation => {
-                        file_loading.set(false);
-                        file_content.set(Some(content));
-                        file_image.set(image);
-                        status.set("文件内容已加载".into());
-                    }
-                    Err(error) if *preview_generation.read() == generation => {
-                        file_loading.set(false);
-                        let message = match &error {
-                            ClientError::Api { status, .. } if status.as_u16() == 404 => {
-                                "文件不存在，或当前节点尚未提供文件内容接口；请刷新文件树后重试。"
-                                    .to_owned()
-                            }
-                            _ => error.to_string(),
-                        };
-                        file_error.set(Some(message.clone()));
-                        status.set(format!("读取文件失败：{message}"));
-                    }
-                    _ => {}
-                },
-                Err(error) if *preview_generation.read() == generation => {
-                    file_loading.set(false);
-                    let message = match &error {
-                        ClientError::Api { status, .. } if status.as_u16() == 404 => {
-                            "文件不存在，或当前节点尚未提供文件内容接口；请刷新文件树后重试。"
-                                .to_owned()
-                        }
-                        _ => error.to_string(),
-                    };
-                    file_error.set(Some(message.clone()));
-                    status.set(format!("地址无效：{message}"));
+                        .map(|image| {
+                            (
+                                file_lookup::Located::File(work_client::FileContent {
+                                    path: path.clone(),
+                                    content: String::new(),
+                                }),
+                                Some(message_image::project_image(image)),
+                            )
+                        })
+                } else {
+                    file_lookup::read(&client, &project_id, &path, from_message)
+                        .await
+                        .map(|found| (found, None))
                 }
-                _ => {}
+            })
+            .await
+            .unwrap_or_else(|_| {
+                Err(work_core::api::NodeError::new(
+                    NodeErrorKind::Timeout,
+                    "文件读取超时",
+                ))
+            });
+            if *preview_generation.peek() != generation {
+                return;
+            }
+            file_loading.set(false);
+            match result {
+                Ok((file_lookup::Located::File(content), image)) => {
+                    selected_project_file.set(Some(content.path.clone()));
+                    if content.path != path {
+                        project_open_tabs.with_mut(|tabs| {
+                            tabs.retain(|tab| tab.path != path);
+                            if !tabs.iter().any(|tab| tab.path == content.path) {
+                                tabs.push(ProjectOpenTab {
+                                    path: content.path.clone(),
+                                    kind: ProjectOpenTabKind::File,
+                                });
+                            }
+                        });
+                    }
+                    file_content.set(Some(content));
+                    file_image.set(image);
+                    status.set("文件内容已加载".into());
+                }
+                Ok((file_lookup::Located::Directory(directory), _)) => {
+                    project_file_preview.set(false);
+                    project_open_tabs.with_mut(|tabs| tabs.retain(|tab| tab.path != path));
+                    reveal_directory.set(Some(directory));
+                    status.set("已在文件树中打开目录".into());
+                }
+                Ok((file_lookup::Located::Candidates(candidates), _)) => {
+                    file_candidates.set(candidates);
+                    status.set("找到多个匹配文件，请选择完整路径".into());
+                }
+                Err(error) => {
+                    let message = file_lookup::error_message(&error);
+                    file_error.set(Some(message.clone()));
+                    status.set(format!("读取文件失败：{message}"));
+                }
             }
         });
     };
-    let mut open_file = move |path: String| load_file(path, true);
+    let mut open_file = move |path: String| load_file(path, true, false);
     let open_file_handler = EventHandler::new(move |path: String| open_file(path));
-    let message_open_file_handler = open_file_handler.clone();
+    let message_open_file_handler =
+        EventHandler::new(move |path: String| load_file(path, true, true));
 
     let message_link_scope = use_memo(move || {
         format!(
@@ -2785,6 +2815,14 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                 status.set("当前节点不支持项目文件预览".into());
                 return;
             }
+            if file.directory {
+                project_files_open.set(true);
+                project_file_tab.set("files".into());
+                project_file_preview.set(false);
+                change_mobile_preview.set(false);
+                reveal_directory.set(Some(file.path));
+                return;
+            }
             let image = project_file_kind(&file.path) == "image";
             message_open_file_handler.call(file.path);
             project_file_lines.set(if image { None } else { file.lines });
@@ -2797,6 +2835,8 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
         project_files_open.set(false);
         project_file_preview.set(false);
         project_open_tabs.set(Vec::new());
+        file_candidates.set(Vec::new());
+        reveal_directory.set(None);
         project_file_lines.set(None);
         preview_generation += 1;
         file_content.set(None);
@@ -4674,8 +4714,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                         }
                     }
                 } else if event.key() == Key::Escape && conversation_focus() {
-                    conversation_focus.set(false);
-                    let _ = document::eval("setTimeout(() => document.querySelector('.workspace-view-menu summary')?.focus(), 0);");
+                    close_conversation_focus();
                 } else if event.key() == Key::Escape && *sidebar_open.read() {
                     sidebar_open.set(false);
                 }
@@ -5026,6 +5065,8 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                             workspace_home::Fullscreen { labelled: true }
                                             button { class: "button conversation-focus-toggle", r#type: "button", onclick: move |_| {
                                                 let _ = document::eval("document.querySelector('.workspace-view-menu')?.removeAttribute('open')");
+                                                sidebar_open.set(false);
+                                                conversation_focus_return.set(".workspace-view-menu > summary");
                                                 conversation_focus.set(true);
                                             }, Icon { name: "panel" } "专注阅读" }
                                         }
@@ -5158,9 +5199,12 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                     section { class: "conversation-panel",
                         if conversation_focus() {
                             div { class: "conversation-focus-toolbar", role: "toolbar", aria_label: "专注阅读",
-                                button { class: "icon-button", r#type: "button", aria_label: "退出专注阅读", title: "退出专注阅读（Esc）", onclick: move |_| {
-                                    conversation_focus.set(false);
-                                    let _ = document::eval("setTimeout(() => document.querySelector('.workspace-view-menu summary')?.focus(), 0);");
+                                button { id: "conversation-focus-exit", class: "icon-button", r#type: "button", aria_label: "退出专注阅读", title: "退出专注阅读（Esc）",
+                                    onmounted: move |_| {
+                                        let _ = document::eval("document.getElementById('conversation-focus-exit')?.focus({preventScroll:true})");
+                                    },
+                                    onclick: move |_| {
+                                    close_conversation_focus();
                                 },
                                     Icon { name: "fullscreen-exit" }
                                 }
@@ -5525,7 +5569,19 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                 }
                 }
                 aside { class: if *inspector_open.read() { "inspector visible" } else { "inspector" },
-                        h3 { "任务上下文" button { class: "inspector-close", aria_label: "关闭任务上下文", onclick: move |_| { inspector_preference_user_changed.set(true); inspector_open.set(false); }, Icon { name: "close".to_owned() } } }
+                        h3 { "任务上下文"
+                            if workspace_page && !showing_home {
+                                button { class: "icon-button inspector-focus-toggle", r#type: "button", aria_label: "专注阅读", title: "专注阅读消息",
+                                    onclick: move |_| {
+                                        sidebar_open.set(false);
+                                        conversation_focus_return.set(".inspector-focus-toggle");
+                                        conversation_focus.set(true);
+                                    },
+                                    Icon { name: "fullscreen" }
+                                }
+                            }
+                            button { class: "inspector-close", aria_label: "关闭任务上下文", onclick: move |_| { inspector_preference_user_changed.set(true); inspector_open.set(false); }, Icon { name: "close".to_owned() } }
+                        }
                         div { class: "inspector-content",
                         if let Some(session_id) = selected_session.read().as_ref() {
                             section { class: "inspector-card tool-program-inspector-card", aria_label: "Tool Program 工作台",
@@ -5835,6 +5891,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                         if let (Some(_client), Some(project)) = (shared_client.read().clone(), selected_project.read().clone()) {
                                             project_files::Browser { key: "{node_url}-{project}", client: shared_client, project: project.clone(), scope: format!("{node_url}\u{1f}{project}"),
                                                 selected: selected_project_file.read().clone(),
+                                                reveal: reveal_directory.read().clone(),
                                                 onselect: open_file_handler.clone(),
                                                 oninitial: move |_| {},
                                                 onreported: { let scope = format!("{node_url}\u{1f}{project}"); move |entries| reported_files.set((scope.clone(), entries)) },
@@ -5875,7 +5932,15 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                     if *file_loading.read() {
                                         div { class: "project-preview-empty", "正在加载文件内容…" }
                                     } else if let Some(error) = file_error.read().as_ref() {
-                                        div { class: "project-preview-empty error-text", strong { "文件内容读取失败" } p { "{error}" } button { onclick: move |_| { let path = selected_project_file.peek().clone(); if let Some(path) = path { load_file(path, false); } }, "重试读取文件" } }
+                                        div { class: "project-preview-empty error-text", strong { "文件内容读取失败" } p { "{error}" } button { onclick: move |_| { let path = selected_project_file.peek().clone(); if let Some(path) = path { let from_message = *file_from_message.peek(); load_file(path, false, from_message); } }, "重试读取文件" } }
+                                    } else if !file_candidates.read().is_empty() {
+                                        div { class: "project-preview-empty",
+                                            strong { "请选择要查看的文件" }
+                                            p { "消息中的路径对应多个文件。" }
+                                            for path in file_candidates.read().clone() {
+                                                button { class: "button", onclick: move |_| load_file(path.clone(), false, false), "{path}" }
+                                            }
+                                        }
                                     } else if let Some(content) = file_content.read().as_ref() {
                                         div { class: "project-preview-heading",
                                             div { class: "project-preview-title", strong { "{content.path.rsplit('/').next().unwrap_or(&content.path)}" } small { "{content.path}" } }

@@ -1,6 +1,8 @@
 {
   "source": "rpi.svg",
-  "sourceSha256": "67f5fd2e2791443e3dace12dc02219a387248f4948e2bd840bf34c88bba36744",
+  "sourceSha256": "a60025a491fc46adebd04e00f79076476782bff83f1ca64d16770f9d9e697a38",
+  "markSource": "rpi-gear.png",
+  "markSourceSha256": "182645f4ef3e4f893134ad0d0ca6ecf3ee0e52c44a4ba7bf4f599991e0b45535",
   "generator": "tools/dev/generate-brand-icons.cjs",
   "windowsSizes": [
     16,
@@ -18,9 +20,9 @@
     1024
   ],
   "hashes": {
-    "rpi-256.png": "cef58fab873f3b06114a15355826d9286887574c162c82fa1b0572f048ab68e2",
-    "rpi-512.png": "fbe5ea2a0916c842e485a1f24883ddf5e6b810329a28a642caf45604e29083cf",
-    "rpi.ico": "88a9992c8b80cf73d3ea5a899f2dd9827826a961aac9ff6651bdf7fedb3d1d3f",
-    "rpi.icns": "c4ad7810651b09f66081ec4ebe763f6eb889ea011e7b4bb2a1c5a28a63625e44"
+    "rpi-256.png": "0f0d7529361778c928b79e9637cc8db2b31a07bed20b6fb1748533fba90e2dea",
+    "rpi-512.png": "90e0a95eb463de86c3d90c90f7f6bf8d93728db6a13ed331555f62c844a86195",
+    "rpi.ico": "f99b25fbb4a9d75a6393fb9cb048d9ea2df6881c4f7779bd59d05e8ca571cda2",
+    "rpi.icns": "cdc67a337e65921b658949adc02d363cc941b8ed92c0d39e7f5a8e7189ee2da0"
   }
 }

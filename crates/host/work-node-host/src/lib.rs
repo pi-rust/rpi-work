@@ -18,6 +18,7 @@ mod headless;
 pub mod http;
 mod ready_output;
 mod shutdown;
+mod web_assets;
 pub use headless::{run_headless, run_headless_with};
 pub use ready_output::report_error;
 
@@ -37,7 +38,7 @@ static STARTUP_ERROR: OnceLock<String> = OnceLock::new();
 #[must_use = "retain this guard until application shutdown"]
 pub struct LocalGuard {
     lock: Option<LocalRuntime>,
-    http: Option<work_node_service::HttpServer>,
+    http: Vec<work_node_service::HttpServer>,
     client: NodeConnection,
     node_id: String,
 }
@@ -93,7 +94,7 @@ fn start_claimed(options: LaunchOverrides) -> Result<LocalGuard, String> {
     );
     let mut guard = LocalGuard {
         lock: Some(runtime),
-        http: None,
+        http: Vec::new(),
         client,
         node_id,
     };
@@ -139,7 +140,10 @@ impl LocalGuard {
                 .build()
                 .map_err(|_| "Unable to create shutdown executor; data lock retained until exit")?;
             runtime.block_on(async {
-                if let Some(server) = guard.http.as_mut() {
+                for server in &mut guard.http {
+                    server.begin_shutdown();
+                }
+                for server in &mut guard.http {
                     server.drain().await?;
                 }
                 guard.client.shutdown().await;
@@ -147,7 +151,7 @@ impl LocalGuard {
             })?;
             // Do not drop the HTTP runtime while workspace children can still
             // depend on tasks running there. On drain failure retain both.
-            drop(guard.http.take());
+            drop(std::mem::take(&mut guard.http));
             drop(runtime);
             drop(guard.lock.take());
             http::mark_stopped();
@@ -161,7 +165,7 @@ impl Drop for LocalGuard {
         if let Some(lock) = self.lock.take() {
             Self {
                 lock: Some(lock),
-                http: self.http.take(),
+                http: std::mem::take(&mut self.http),
                 client: self.client.clone(),
                 node_id: self.node_id.clone(),
             }

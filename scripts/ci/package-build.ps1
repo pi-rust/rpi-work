@@ -43,6 +43,12 @@ configured reverse proxy. A static file server alone does not provide the API.
 This archive does not contain an Android APK or an iOS IPA.
 '@
     } else {
+        $webBundle = Join-Path $repoRoot 'target/parity-web'
+        if (-not (Test-Path -LiteralPath (Join-Path $webBundle 'index.html') -PathType Leaf)) {
+            throw 'The built-in Work Web bundle is missing. Build tools/dev/build-ui-web.ps1 before packaging.'
+        }
+        $webBuild = Get-Content -LiteralPath (Join-Path $webBundle 'build.json') -Raw | ConvertFrom-Json
+        if ($webBuild.profile -ne $Profile) { throw 'Desktop and built-in Web build profiles differ.' }
         $binaryRoot = Join-Path $metadata.target_directory "$Target/$Profile"
         $extension = if ($Target -like '*windows*') { '.exe' } else { '' }
         $ui = Join-Path $binaryRoot "work-ui$extension"
@@ -56,6 +62,7 @@ This archive does not contain an Android APK or an iOS IPA.
             New-Item -ItemType Directory -Force -Path $macOs, (Join-Path $contents 'Resources') | Out-Null
             Copy-Item -LiteralPath (Join-Path $repoRoot 'assets/branding/rpi.icns') -Destination (Join-Path $contents 'Resources/rpi.icns')
             Copy-Item -LiteralPath $ui -Destination (Join-Path $macOs 'work-ui')
+            Copy-Item -LiteralPath $webBundle -Destination (Join-Path $contents 'Resources/web') -Recurse
             $bundleVersion = ($version -split '-')[0]
             $plist = @"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -78,6 +85,7 @@ This archive does not contain an Android APK or an iOS IPA.
             $runtimeNote = 'Unsigned macOS application bundle. Apple signing/notarization is not configured.'
         } else {
             Copy-Item -LiteralPath $ui -Destination $packageRoot
+            Copy-Item -LiteralPath $webBundle -Destination (Join-Path $packageRoot 'web') -Recurse
             if ($Target -like '*linux*') {
                 & chmod 755 (Join-Path $packageRoot 'work-ui')
                 if ($LASTEXITCODE -ne 0) { throw 'Setting Linux executable permissions failed.' }

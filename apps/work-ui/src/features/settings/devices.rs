@@ -130,6 +130,17 @@ struct DesktopSharing {
     public_url: String,
     app_url: String,
     address_hint: String,
+    status: String,
+    warning: String,
+    web: DesktopWeb,
+}
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+#[derive(Clone, Default)]
+struct DesktopWeb {
+    listening: bool,
+    enabled: bool,
+    url: String,
+    status: String,
 }
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 type DesktopSharing = crate::app::local_http::Sharing;
@@ -144,16 +155,132 @@ async fn desktop_sharing() -> DesktopSharing {
     }
 }
 
-async fn set_desktop_sharing(enabled: bool) -> Result<(), String> {
+async fn set_desktop_access(web: bool, enabled: bool) -> Result<(), String> {
     let client = crate::app::local_node::client().ok_or("本机节点尚未准备好".to_owned())?;
-    client
-        .component_capability(
-            "node.sharing.write",
-            serde_json::json!({"enabled": enabled}),
-        )
-        .await
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+    crate::app::connections::with_timeout(client.component_capability(
+        if web {
+            "node.web.write"
+        } else {
+            "node.sharing.write"
+        },
+        serde_json::json!({"enabled": enabled}),
+    ))
+    .await?
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+#[component]
+fn LocalAccessCards(
+    mut sharing: Signal<DesktopSharing>,
+    available: bool,
+    onshare: EventHandler<()>,
+) -> Element {
+    let mut busy = use_signal(|| false);
+    let mut error = use_signal(String::new);
+    let mut guide = use_signal(|| false);
+    let snapshot = sharing.read().clone();
+    let mut change = move |web: bool| {
+        if *busy.peek() || !available {
+            return;
+        }
+        let enabled = if web {
+            !sharing.peek().web.enabled
+        } else {
+            !sharing.peek().enabled
+        };
+        busy.set(true);
+        error.set(String::new());
+        spawn(async move {
+            if let Err(message) = set_desktop_access(web, enabled).await {
+                error.set(message);
+            }
+            sharing.set(desktop_sharing().await);
+            busy.set(false);
+        });
+    };
+    rsx! {
+        section { class: "collaboration-action-card assist-card", aria_label: "允许远程协作",
+            div { class: "collaboration-action-heading",
+                span { class: "collaboration-action-icon assist", Icon { name: "shield" } }
+                div { h2 { "允许远程协作" } p { "授权其他设备连接这台电脑，继续处理项目、会话和任务。" } }
+                button {
+                    class: if snapshot.enabled { "sharing-switch enabled" } else { "sharing-switch" },
+                    role: "switch", aria_label: "允许远程协作", aria_checked: snapshot.enabled,
+                    disabled: !available || !snapshot.listening || *busy.read(),
+                    onclick: move |_| change(false),
+                    span { class: "sharing-switch-track", span {} }
+                    span { if snapshot.enabled { "已开启" } else { "未开启" } }
+                }
+            }
+            if !available {
+                p { class: "connection-help", "请在拥有该工作节点的电脑上管理远程协作。" }
+            } else if !snapshot.listening {
+                p { class: "connection-form-error", role: "alert", "{snapshot.status}" }
+            } else {
+                div { class: "sharing-ready",
+                    Icon { name: if snapshot.enabled { "check" } else { "info" } }
+                    span { if snapshot.enabled { "远程协作已开启，可以分享连接信息。" } else { "节点入口已就绪，开启后可授权其他设备。" } }
+                }
+                if snapshot.enabled {
+                    button { class: "button", onclick: move |_| onshare.call(()), "分享连接信息" }
+                }
+            }
+            if !snapshot.warning.is_empty() {
+                p { class: "connection-form-error", role: "alert", "{snapshot.warning}" }
+            }
+        }
+        section { class: "collaboration-action-card web-access-card", aria_label: "允许 Web 访问",
+            div { class: "collaboration-action-heading",
+                span { class: "collaboration-action-icon", Icon { name: "server" } }
+                div { h2 { "允许 Web 访问" } p { "使用 Work 自带的网页界面，在浏览器中处理同一节点的工作。" } }
+                button {
+                    class: if snapshot.web.enabled { "sharing-switch enabled" } else { "sharing-switch" },
+                    role: "switch", aria_label: "允许 Web 访问", aria_checked: snapshot.web.enabled,
+                    disabled: !available || !snapshot.web.listening || *busy.read(),
+                    onclick: move |_| change(true),
+                    span { class: "sharing-switch-track", span {} }
+                    span { if snapshot.web.enabled { "已开启" } else { "未开启" } }
+                }
+            }
+            if available {
+                if !snapshot.web.listening {
+                    p { class: "connection-form-error", role: "alert", "{snapshot.web.status}" }
+                    button { class: "button", onclick: move |_| guide.toggle(), if *guide.read() { "收起指引" } else { "查看准备指引" } }
+                    if *guide.read() {
+                        p { class: "connection-help", "安装包含 Web 资源的完整 Work 桌面包，或将 Work Web 文件放在程序旁的 web 目录，然后重新启动 Work。自定义部署可通过 RPI_WORK_HTTP_ASSETS 指定目录。" }
+                    }
+                } else {
+                    p { class: "connection-help", if snapshot.web.enabled { "Web 访问已开启，浏览器仍需登录节点。" } else { "Web 入口已就绪，开启后可使用浏览器访问。" } }
+                    if snapshot.web.enabled && !snapshot.web.url.is_empty() {
+                        a { class: "button", href: "{snapshot.web.url}", target: "_blank", rel: "noopener noreferrer", "打开 Web 入口" }
+                        code { class: "web-entry-address", "{snapshot.web.url}" }
+                    }
+                    if !snapshot.web.status.is_empty() {
+                        p { class: "connection-form-error", role: "alert", "{snapshot.web.status}" }
+                    }
+                }
+            } else {
+                p { class: "connection-help", "请在拥有该工作节点的电脑上管理 Web 访问。" }
+            }
+        }
+        if available {
+            div { class: "collaboration-host-actions",
+                button { class: "button", disabled: *busy.read(), onclick: move |_| {
+                    busy.set(true);
+                    error.set(String::new());
+                    spawn(async move {
+                        sharing.set(desktop_sharing().await);
+                        busy.set(false);
+                    });
+                }, Icon { name: "refresh" } "重新检测入口" }
+                crate::app::desktop_background::BackgroundRunButton {}
+                if !error.read().is_empty() {
+                    p { class: "connection-form-error", role: "alert", "{error}" }
+                }
+            }
+        }
+    }
 }
 
 fn phone_share_address(value: &str, owned_local: bool) -> Result<String, String> {
@@ -264,8 +391,6 @@ pub fn DevicesPage(
     let mut qr_open = use_signal(|| false);
     let mut pairing = use_context::<PairingControl>();
     let mut remote_open = use_signal(|| false);
-    let mut plugin_help_open = use_signal(|| false);
-    let mut plugin_check_busy = use_signal(|| false);
     let mut manual_open = use_signal(|| true);
     let mut manual_address = use_signal(String::new);
     let mut phone_address = use_signal(String::new);
@@ -277,7 +402,7 @@ pub fn DevicesPage(
     let mut share_error = use_signal(String::new);
     let mut share_epoch = use_signal(|| 0u64);
     let local_sharing = pairing.sharing;
-    let mut sharing_state = local_sharing;
+    let sharing_state = local_sharing;
     let sharing = local_sharing.read().clone();
     let owns_desktop = crate::app::local_node::client().is_some();
     let current_address = connection.address.read().clone();
@@ -622,78 +747,11 @@ pub fn DevicesPage(
                                 }
                             }
                         }
-                        section { class: "collaboration-action-card assist-card", aria_label: "允许远程协助",
-                            div { class: "collaboration-action-heading",
-                                span { class: "collaboration-action-icon assist", Icon { name: "shield" } }
-                                div { h2 { "允许远程协助" } p { "开启后，可信设备可以访问当前电脑上的项目、会话和运行任务。" } }
-                                button {
-                                    class: if sharing.enabled { "sharing-switch enabled" } else { "sharing-switch" },
-                                    role: "switch", aria_checked: sharing.enabled, disabled: !sharing.listening || !online,
-                                    onclick: move |_| {
-                                        let next = !sharing_state.peek().enabled;
-                                        spawn(async move {
-                                            if set_desktop_sharing(next).await.is_ok() {
-                                                sharing_state.with_mut(|state| state.enabled = next);
-                                            }
-                                        });
-                                    },
-                                    span { class: "sharing-switch-track", span {} }
-                                    span { if sharing.enabled { "已开启" } else { "未开启" } }
-                                }
-                            }
-                            if !sharing.listening {
-                                div { class: "plugin-guide", role: "status",
-                                    Icon { name: "info" }
-                                    div { strong { "需要先安装协同插件" } p { "安装 rpi-http-extension 后，才能开启远程协助。" } }
-                                    button { class: "button", onclick: move |_| plugin_help_open.toggle(), if *plugin_help_open.read() { "收起指引" } else { "查看安装指引" } }
-                                }
-                                if *plugin_help_open.read() {
-                                    div { class: "plugin-guide-steps",
-                                        div { b { "1" } span { strong { "安装 rpi-http-extension" } small { "为当前节点提供 HTTP / WebSocket 远程入口。" } } }
-                                        div { b { "2" } span { strong { "重启 Work 或节点" } small { "让宿主重新加载插件能力。" } } }
-                                        div { b { "3" } span { strong { "重新检查插件" } small { "确认后即可使用远程协助开关。" } } }
-                                        button { class: "button primary", disabled: *plugin_check_busy.read(), onclick: move |_| {
-                                            plugin_check_busy.set(true);
-                                            spawn(async move {
-                                                sharing_state.set(desktop_sharing().await);
-                                                plugin_check_busy.set(false);
-                                            });
-                                        }, if *plugin_check_busy.read() { "正在检查…" } else { "重新检查插件" } }
-                                    }
-                                }
-                            } else {
-                                if !owned_local && auth_state.read().as_ref().is_some_and(|auth| auth.required && !auth.authenticated) {
-                                    div { class: "form-field", label { r#for: "current-node-password", "节点密码" }
-                                        input { id: "current-node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "输入节点密码", oninput: move |event| password.set(NodePassword::new(event.value(), &connection.address.read())) }
-                                    }
-                                    button { class: "button primary", disabled: busy || password.read().is_empty(), onclick: move |_| onlogin.call(()), if busy { "正在登录…" } else { "登录当前节点" } }
-                                }
-                                div { class: if sharing.enabled { "sharing-ready" } else { "sharing-ready disabled" },
-                                    Icon { name: if sharing.enabled { "check" } else { "info" } }
-                                    span { if sharing.enabled { "远程协助已开启，可以分享连接信息。" } else { "插件已安装，开启开关后允许其他设备访问。" } }
-                                }
-                                if sharing.enabled {
-                                    button { class: "button", disabled: !online, onclick: move |_| { pairing.request.with_mut(authorization_offer::Request::show); }, "分享连接信息" }
-                                }
-                            }
+                        LocalAccessCards {
+                            sharing: sharing_state,
+                            available: owns_desktop && owned_local,
+                            onshare: move |()| pairing.request.with_mut(authorization_offer::Request::show),
                         }
-                    section { class: "collaboration-action-card web-access-card", aria_label: "允许 Web 访问",
-                        div { class: "collaboration-action-heading",
-                            span { class: "collaboration-action-icon", Icon { name: "server" } }
-                            div { h2 { "允许 Web 访问" } p { "通过浏览器访问当前工作节点的项目、会话和任务。" } }
-                            span { class: "neutral-pill", if owned_local && sharing.enabled && sharing.listening && !sharing.app_url.is_empty() { "已开启" } else { "未开启" } }
-                        }
-                        div { class: "plugin-guide",
-                            Icon { name: "shield" }
-                            div {
-                                strong { "与远程入口共用访问设置" }
-                                p { "Web 访问随当前电脑的远程入口启停，仍需节点鉴权。" }
-                            }
-                            if owned_local && sharing.enabled && sharing.listening && !sharing.app_url.is_empty() {
-                                a { class: "button", href: "{sharing.app_url}", target: "_blank", rel: "noopener noreferrer", "打开 Web 入口" }
-                            }
-                        }
-                    }
                     }
                     div { class: "collaboration-lists",
                         section { class: "collaboration-list-panel", aria_label: "最近连接",
@@ -730,25 +788,7 @@ pub fn DevicesPage(
                         p { "查看当前连接的工作节点，或切换到其他设备。" }
                     }
                     if owned_local {
-                        if !sharing.listening {
-                            p { class: "connection-form-error", role: "alert", "未检测到 rpi-http-extension，暂时无法开启远程协作。请先安装或启用宿主扩展。" }
-                        }
-                        button {
-                            class: "sharing-switch",
-                            role: "switch",
-                            aria_checked: sharing.enabled,
-                            disabled: !sharing.listening,
-                            onclick: move |_| {
-                                let next = !sharing_state.peek().enabled;
-                                spawn(async move {
-                                    if set_desktop_sharing(next).await.is_ok() {
-                                        sharing_state.with_mut(|state| state.enabled = next);
-                                    }
-                                });
-                            },
-                            span { class: "sharing-switch-track", span {} }
-                            span { if sharing.enabled { "允许手机访问" } else { "禁止手机访问" } }
-                        }
+                        span { class: "neutral-pill", if sharing.enabled { "远程协作已开启" } else { "远程协作已关闭" } }
                     }
                 }
                 section { class: "device-auth-entry",

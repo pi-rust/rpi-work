@@ -55,7 +55,28 @@ impl HttpServer {
     /// # Errors
     /// Returns an error for invalid configuration, unavailable assets or bind failure.
     pub fn start(workspace: Arc<LocalWorkspace>, config: ServerConfig) -> Result<Self, String> {
-        Self::start_inner(workspace, config, None, None)
+        Self::start_inner(workspace, config, None, None, false)
+    }
+    /// A separately controlled browser entrance over the same workspace owner.
+    /// Disabled Web access also blocks static assets and hosted-entry discovery.
+    /// # Errors
+    /// Returns an error when assets or listener configuration are unavailable.
+    pub fn start_web(
+        workspace: Arc<LocalWorkspace>,
+        config: ServerConfig,
+        digest: Option<[u8; 32]>,
+    ) -> Result<Self, String> {
+        if config.assets.is_none() && !config.web_proxy {
+            return Err("Work Web 资源尚未准备好".into());
+        }
+        if config
+            .assets
+            .as_ref()
+            .is_some_and(|root| !root.join("index.html").is_file())
+        {
+            return Err("Work Web 资源不完整，缺少 index.html".into());
+        }
+        Self::start_inner(workspace, config, None, digest, true)
     }
     /// Start public transport using a saved password verifier.
     ///
@@ -66,7 +87,7 @@ impl HttpServer {
         config: ServerConfig,
         digest: [u8; 32],
     ) -> Result<Self, String> {
-        Self::start_inner(workspace, config, None, Some(digest))
+        Self::start_inner(workspace, config, None, Some(digest), false)
     }
     /// Private parent/client entrance to the SAME owner. Public sharing policy
     /// cannot disable this listener or grant its component privileges.
@@ -82,7 +103,7 @@ impl HttpServer {
         if !config.bind.ip().is_loopback() || config.assets.is_some() || config.web_proxy {
             return Err("Local control must bind loopback without Web assets".into());
         }
-        Self::start_inner(workspace, config, Some(capability), None)
+        Self::start_inner(workspace, config, Some(capability), None, false)
     }
     #[allow(clippy::too_many_lines)] // Listener setup retains one cleanup owner.
     fn start_inner(
@@ -90,6 +111,7 @@ impl HttpServer {
         mut config: ServerConfig,
         control: Option<String>,
         password_digest: Option<[u8; 32]>,
+        web_entrance: bool,
     ) -> Result<Self, String> {
         if config.password.is_empty() && password_digest.is_none() {
             return Err("HTTP password must not be empty".into());
@@ -164,6 +186,7 @@ impl HttpServer {
                 let app=routes::router(state.access.clone())
                     .layer(CompressionLayer::new().br(true).gzip(true))
                     .layer(axum::middleware::from_fn_with_state(state.access.clone(),security::guard))
+                    .layer(axum::middleware::from_fn_with_state((web_entrance,state.access.clone()),web_access))
                     .with_state(state);
                 let serving=tokio::spawn(async move {
                     let mut stopped=stopped;
@@ -254,6 +277,23 @@ impl HttpServer {
         .await
         .map_err(|_| "HTTP drain timeout".to_string())?
     }
+}
+async fn web_access(
+    axum::extract::State((web, state)): axum::extract::State<(bool, Arc<access::AccessState>)>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    // The separate listener makes this policy independent of client headers.
+    if web && !state.sharing.enabled() {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            "Web 访问已关闭，请在节点桌面开启。",
+        )
+            .into_response();
+    }
+    next.run(request).await
 }
 impl Drop for HttpServer {
     fn drop(&mut self) {

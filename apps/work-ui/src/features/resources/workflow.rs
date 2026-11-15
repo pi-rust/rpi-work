@@ -18,6 +18,7 @@ async fn install_choice(
     project: &str,
     choice: &ResourceChoice,
     scope: NativeScope,
+    same_node: bool,
 ) -> Result<(), String> {
     // Reread first on every explicit attempt, including recovery from a lost receipt.
     let catalog = NodeApi::native_catalog(client, project)
@@ -59,6 +60,12 @@ async fn install_choice(
             .map_err(|e| e.to_string())?
         }
         ResourceChoice::Installed(resource) => {
+            let resource = if same_node {
+                resource
+            } else {
+                catalog.resources.iter().find(|candidate| choice.matches(candidate))
+                    .ok_or("目标节点没有此资源的匹配来源，请先在目标节点导入资源，或从公共库选择后安装。")?
+            };
             let source = resource.facts["source"]
                 .as_str()
                 .filter(|source| !source.trim().is_empty())
@@ -99,16 +106,21 @@ pub(super) fn InstallDialog(
     choices: Vec<ResourceChoice>,
     project: String,
     projects: Vec<(String, String)>,
-    node_label: String,
     shared_client: Signal<Option<WorkspaceClient>>,
     connection_epoch: Signal<u64>,
     session_generation: Signal<u64>,
     online: bool,
     #[props(default)] fixed_project: bool,
-    oncomplete: EventHandler<(String, NativeScope)>,
+    oncomplete: EventHandler<(String, String, NativeScope)>,
     onclose: EventHandler<()>,
 ) -> Element {
     let mut target_project = use_signal(|| project);
+    let target = super::install_target::use_install_target(projects.clone(), shared_client, online);
+    let current_address = super::install_target::current_address();
+    let same_node = target.read().address == current_address;
+    let target_ready = target.read().ready();
+    let navigation = use_hook(try_consume_context::<crate::app::node_navigation::NodeNavigation>);
+    let handoff = navigation.is_some() && !same_node;
     let mut scope = use_signal(|| None::<NativeScope>);
     let mut trusted = use_signal(|| false);
     let mut busy = use_signal(|| false);
@@ -117,14 +129,18 @@ pub(super) fn InstallDialog(
     let mut complete = use_signal(|| false);
     let choices_submit = choices.clone();
     let submit = Callback::new(move |read_only: bool| {
-        if *busy.peek() || !online || (!read_only && !*trusted.peek()) {
+        if *busy.peek() || !target.peek().ready() || (!read_only && !*trusted.peek()) {
             return;
         }
-        let (Some(scope), Some(client)) = (*scope.peek(), shared_client.peek().clone()) else {
+        let (Some(scope), Some(client)) = (*scope.peek(), target.peek().client.clone()) else {
             return;
         };
         let project = target_project.peek().clone();
         if project.is_empty() {
+            return;
+        }
+        if !target.peek().projects.iter().any(|(id, _)| id == &project) {
+            error.set("请选择目标节点上的项目。".into());
             return;
         }
         let choices = choices_submit.clone();
@@ -156,7 +172,7 @@ pub(super) fn InstallDialog(
                             ));
                         }
                     } else {
-                        install_choice(&client, &project, choice, scope).await?;
+                        install_choice(&client, &project, choice, scope, same_node).await?;
                     }
                     progress
                         .write()
@@ -176,11 +192,18 @@ pub(super) fn InstallDialog(
             }
         });
     });
-    let project_label = projects
+    let project_label = target
+        .read()
+        .projects
         .iter()
         .find(|(id, _)| id == &target_project())
         .map(|(_, label)| label.clone())
         .unwrap_or_else(|| target_project());
+    let location_label = if scope() == Some(NativeScope::Global) {
+        "节点全局".to_owned()
+    } else {
+        project_label
+    };
     rsx! {
         Modal { id: "resource-install", title: "选择安装范围", class: "resource-flow-dialog", trap_focus: true, onclose,
             div { class: "resource-flow-body",
@@ -191,8 +214,36 @@ pub(super) fn InstallDialog(
                         p { "{choice.name()} · v{choice.version()} · {kind_label(choice.kind())}" }
                     }
                 }
-                p { "安装节点 · {node_label}" }
-                fieldset { class: "resource-install-choices", disabled: busy() || complete() || !online,
+                super::install_target::TargetPicker {
+                    target, project: target_project, current_projects: projects, shared_client, online,
+                    disabled: busy() || complete(), fixed: fixed_project,
+                    onchanged: move |()| {
+                        scope.set(None); trusted.set(false); complete.set(false);
+                        progress.set(vec![]); error.set(String::new());
+                    },
+                }
+                if handoff {
+                    p { class: "resource-flow-note", "进入目标节点后读取项目，并重新确认安装范围与授权。" }
+                    button { class: "button primary",
+                        disabled: choices.iter().any(|choice| matches!(choice, ResourceChoice::Installed(_))),
+                        onclick: {
+                            let choices = choices.clone();
+                            move |_| {
+                                if let Some(navigation) = navigation {
+                                    let packages = choices.iter().filter_map(|choice| match choice {
+                                        ResourceChoice::Public(offer) => Some(super::packages::reference(offer)),
+                                        ResourceChoice::Installed(_) => None,
+                                    }).collect();
+                                    navigation.install.call((target.peek().address.clone(), packages));
+                                }
+                            }
+                        }, "进入目标节点继续安装"
+                    }
+                    if choices.iter().any(|choice| matches!(choice, ResourceChoice::Installed(_))) {
+                        p { class: "resource-flow-note", "此资源来自原节点目录，请在目标节点导入资源，或从公共库选择后安装。" }
+                    }
+                }
+                fieldset { class: "resource-install-choices", disabled: busy() || complete() || !target_ready,
                     legend { "安装到哪里？" }
                     for (value, label, description) in [
                         (NativeScope::Global, "节点全局", "此节点上的所有项目都可使用。"),
@@ -200,40 +251,39 @@ pub(super) fn InstallDialog(
                     ] {
                         label { class: "resource-install-choice",
                             input { r#type: "radio", name: "install-scope", value: if value == NativeScope::Global { "global" } else { "project" }, checked: scope() == Some(value),
-                                onchange: move |_| { scope.set(Some(value)); trusted.set(false); error.set(String::new()); } }
+                                onchange: move |_| { scope.set(Some(value)); trusted.set(false); error.set(String::new()); progress.set(vec![]); } }
                             span { strong { "{label}" } small { "{description}" } }
                         }
                     }
                 }
                 if scope() == Some(NativeScope::Project) {
                     label { class: "resource-flow-field", "安装项目"
-                        select { aria_label: "安装项目", value: "{target_project}", disabled: busy() || complete() || fixed_project,
-                            onchange: move |event| { target_project.set(event.value()); trusted.set(false); error.set(String::new()); },
-                            for (id, label) in &projects { option { value: "{id}", "{label}" } }
+                        select { aria_label: "安装项目", value: "{target_project}", disabled: busy() || complete() || fixed_project || !target_ready,
+                            onchange: move |event| { target_project.set(event.value()); trusted.set(false); error.set(String::new()); progress.set(vec![]); },
+                            for (id, label) in &target.read().projects { option { value: "{id}", "{label}" } }
                         }
                     }
                 }
                 if !complete() {
                     label { class: "resource-flow-trust",
-                        input { r#type: "checkbox", checked: trusted(), disabled: busy() || !online, onchange: move |event| trusted.set(event.checked()) }
+                        input { r#type: "checkbox", checked: trusted(), disabled: busy() || !target_ready, onchange: move |event| trusted.set(event.checked()) }
                         span { "我已核对来源与使用要求，授权在所选范围安装。" }
                     }
                     p { class: "resource-flow-note", "安装过程会获取缺少的资源并回读节点目录。安装完成后可继续选择工作组合。" }
                 }
-                if !online { p { role: "status", "节点离线，请重新连接后继续。" } }
                 for entry in progress() { p { role: "status", class: "resource-flow-note", "{entry}" } }
                 if !error().is_empty() { p { role: "alert", class: "resource-error", "{error}" } }
                 if busy() { p { role: "status", "正在安装并核对结果，关闭弹窗后请重新读取目录。" } }
-                if complete() { p { role: "status", "安装已由节点目录确认 · {project_label}" } }
+                if complete() { p { role: "status", "安装已由节点目录确认 · {target.read().address} · {location_label}" } }
                 div { class: "resource-flow-actions",
                     button { class: "button", onclick: move |_| onclose.call(()), if fixed_project { "返回工作设置" } else { "取消" } }
                     if !error().is_empty() {
-                        button { class: "button", disabled: busy() || !online, onclick: move |_| submit.call(true), "仅回读安装结果" }
+                        button { class: "button", disabled: busy() || !target_ready, onclick: move |_| submit.call(true), "仅回读安装结果" }
                     }
                     if complete() {
-                        button { class: "button primary", onclick: move |_| { if let Some(scope) = scope() { oncomplete.call((target_project(), scope)); } }, if fixed_project { "继续工作准备" } else { "完成安装" } }
+                        button { class: "button primary", onclick: move |_| { if let Some(scope) = scope() { oncomplete.call((target.peek().address.clone(), target_project(), scope)); } }, if fixed_project { "继续工作准备" } else { "完成安装" } }
                     } else {
-                        button { class: "button primary", disabled: busy() || !online || scope().is_none() || !trusted() || target_project().is_empty(),
+                        button { class: "button primary", disabled: busy() || !target_ready || scope().is_none() || !trusted() || target_project().is_empty(),
                             onclick: move |_| submit.call(false), "确认安装" }
                     }
                 }
@@ -543,7 +593,7 @@ pub(super) fn WorkDialog(
                 }
             }
         } else {
-            InstallDialog { choices: missing(), project: target_project(), projects, node_label,
+            InstallDialog { choices: missing(), project: target_project(), projects,
                 fixed_project: true, shared_client, connection_epoch, session_generation, online,
                 oncomplete: move |_| { missing.set(vec![]); onchanged.call(()); },
                 onclose: move |()| missing.set(vec![]),

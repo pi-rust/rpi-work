@@ -29,6 +29,10 @@ function Set-WorkAndroidBrand {
     if ($metadata.source -ne 'rpi.svg' -or $metadata.sourceSha256 -ne $sourceHash) {
         throw 'Android brand source changed; run tools/dev/generate-brand-icons.cjs.'
     }
+    $markHash = (Get-FileHash -LiteralPath (Join-Path $BrandRoot 'rpi-gear.png') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($metadata.markSource -ne 'rpi-gear.png' -or $metadata.markSourceSha256 -ne $markHash) {
+        throw 'Android gear logo changed; run tools/dev/generate-brand-icons.cjs.'
+    }
     # Fixed paths, not arbitrary metadata-controlled copy/delete targets.
     $files = @('mipmap-mdpi/ic_launcher.png','mipmap-hdpi/ic_launcher.png',
         'mipmap-xhdpi/ic_launcher.png','mipmap-xxhdpi/ic_launcher.png','mipmap-xxxhdpi/ic_launcher.png',

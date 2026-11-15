@@ -1,4 +1,4 @@
-// Rasterize the single Web brand SVG locally; never downloads images.
+// Generate packaging icons from the same supplied gear PNG embedded in the UI.
 // Usage: node tools/dev/generate-brand-icons.cjs
 'use strict';
 const fs = require('node:fs');
@@ -8,7 +8,13 @@ const { chromium } = require('../../tests/support/browser.cjs');
 const root = path.resolve(__dirname, '../..');
 const folder = path.join(root, 'assets/branding');
 (async () => {
-  const source = fs.readFileSync(path.join(folder, 'rpi.svg'));
+  const mark = fs.readFileSync(path.join(folder, 'rpi-gear.png'));
+  const source = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="rpi">
+  <rect width="32" height="32" rx="6" fill="#f4f1e9" />
+  <image x="3" y="3" width="26" height="26" href="data:image/png;base64,${mark.toString('base64')}" />
+</svg>
+`);
+  fs.writeFileSync(path.join(folder, 'rpi.svg'), source);
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
   const frames = new Map();
   let foreground;
@@ -18,7 +24,8 @@ const folder = path.join(root, 'assets/branding');
     for (const size of [16, 24, 32, 48, 64, 72, 96, 128, 144, 192, 256, 512, 1024]) {
       const png = await page.evaluate(async ({ svg, size }) => {
         const image = new Image();
-        image.src = `data:image/svg+xml;base64,${svg}`;
+        const sized = atob(svg).replace('<svg ', `<svg width="${size}" height="${size}" `);
+        image.src = `data:image/svg+xml;base64,${btoa(sized)}`;
         await image.decode();
         const canvas = document.createElement('canvas');
         canvas.width = canvas.height = size;
@@ -28,9 +35,10 @@ const folder = path.join(root, 'assets/branding');
       frames.set(size, Buffer.from(png, 'base64'));
     }
     // Android adaptive icons have a 108dp layer. Keep the entire official mark
-    // in a centered 64dp box so launcher masks cannot crop the three brand bars.
+    // in a centered 64dp box so launcher masks retain the entire gear.
     foreground = Buffer.from(await page.evaluate(async svg => {
-      const image = new Image(); image.src = `data:image/svg+xml;base64,${svg}`;
+      const sized = atob(svg).replace('<svg ', '<svg width="256" height="256" ');
+      const image = new Image(); image.src = `data:image/svg+xml;base64,${btoa(sized)}`;
       await image.decode();
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 432;
       canvas.getContext('2d').drawImage(image, 88, 88, 256, 256);
@@ -52,6 +60,7 @@ const folder = path.join(root, 'assets/branding');
   }
   fs.writeFileSync(path.join(folder, 'android-icons.json'), JSON.stringify({
     source: 'rpi.svg', sourceSha256: createHash('sha256').update(source).digest('hex'),
+    markSource: 'rpi-gear.png', markSourceSha256: createHash('sha256').update(mark).digest('hex'),
     generator: 'tools/dev/generate-brand-icons.cjs', adaptive: { layerPixels: 432, markPixels: 256, insetPixels: 88 },
     hashes: androidHashes,
   }, null, 2) + '\n');
@@ -82,8 +91,9 @@ const folder = path.join(root, 'assets/branding');
   }
   fs.writeFileSync(path.join(folder, 'native-icons.json'), JSON.stringify({
     source: 'rpi.svg', sourceSha256: createHash('sha256').update(source).digest('hex'),
+    markSource: 'rpi-gear.png', markSourceSha256: createHash('sha256').update(mark).digest('hex'),
     generator: 'tools/dev/generate-brand-icons.cjs', windowsSizes: sizes,
     macosSizes: [128, 256, 512, 1024], hashes,
   }, null, 2) + '\n');
-  console.log('PASS generated native PNG / multi-resolution ICO / ICNS and Android legacy/adaptive icons from the canonical Web SVG; zero network requests');
+  console.log('PASS generated native PNG / multi-resolution ICO / ICNS and Android legacy/adaptive icons from the supplied gear logo; zero network requests');
 })().catch(error => { console.error(error); process.exitCode = 1; });

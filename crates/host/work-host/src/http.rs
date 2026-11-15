@@ -23,11 +23,16 @@ struct SharingView {
     node_id: String,
     #[serde(default)]
     web_hosted: bool,
+    #[serde(default)]
+    web: work_node_host::http::WebAccess,
 }
 /// Compatibility projection for pairing. Policy lives in the extension.
 pub async fn sharing() -> Sharing {
     let Some(client) = crate::client() else {
-        return Sharing::default();
+        return Sharing {
+            status: "本机节点尚未准备好".into(),
+            ..Sharing::default()
+        };
     };
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -39,7 +44,10 @@ pub async fn sharing() -> Sharing {
         .and_then(Result::ok)
         .and_then(|v| serde_json::from_value::<SharingView>(v).ok())
     else {
-        return Sharing::default();
+        return Sharing {
+            status: "读取节点状态失败，请重新检查。".into(),
+            ..Sharing::default()
+        };
     };
     Sharing {
         listening: snapshot.listening,
@@ -52,6 +60,7 @@ pub async fn sharing() -> Sharing {
         address: snapshot.address,
         node_id: snapshot.node_id,
         web_hosted: snapshot.web_hosted,
+        web: snapshot.web,
         ..Sharing::default()
     }
 }

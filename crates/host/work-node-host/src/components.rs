@@ -18,12 +18,16 @@ impl work_http_component::RemoteAccessOwner for RemoteAccess {
             address_hint: s.address_hint,
             node_id: s.node_id,
             web_hosted: s.web_hosted,
+            web: s.web,
             configuration,
             restart_required,
         }
     }
     fn set_enabled(&self, enabled: bool) -> Result<(), String> {
         crate::http::set_shared(enabled).map(|_| ())
+    }
+    fn set_web_enabled(&self, enabled: bool) -> Result<(), String> {
+        crate::http::set_web_enabled(enabled).map(|_| ())
     }
     fn configure(&self, request: work_http_component::Configure) -> Result<(), String> {
         crate::http::configure(request)

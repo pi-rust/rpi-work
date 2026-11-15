@@ -8,6 +8,8 @@
 
 const MAX_SOURCE_BYTES: usize = 64 * 1024;
 const MAX_TOKENS: usize = 4096;
+const MAX_FILE_SOURCE_BYTES: usize = 1024 * 1024;
+const MAX_FILE_TOKENS: usize = 65_536;
 const KEYWORD: &str = "code-token-keyword";
 const STRING: &str = "code-token-string";
 const COMMENT: &str = "code-token-comment";
@@ -15,7 +17,7 @@ const NUMBER: &str = "code-token-number";
 const LITERAL: &str = "code-token-literal";
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Token<'a> {
+pub(crate) struct Token<'a> {
     pub class: &'static str,
     pub text: &'a str,
 }
@@ -27,6 +29,10 @@ enum Language {
     Python,
     Json,
     Shell,
+    Html,
+    Css,
+    Toml,
+    Yaml,
 }
 
 impl Language {
@@ -40,11 +46,24 @@ impl Language {
             (Self::Rust, &["rust", "rs"][..]),
             (
                 Self::JavaScript,
-                &["js", "javascript", "jsx", "ts", "typescript", "tsx"][..],
+                &[
+                    "js",
+                    "javascript",
+                    "jsx",
+                    "ts",
+                    "typescript",
+                    "tsx",
+                    "mjs",
+                    "cjs",
+                ][..],
             ),
             (Self::Python, &["python", "py"][..]),
             (Self::Json, &["json"][..]),
             (Self::Shell, &["shell", "bash", "sh", "zsh"][..]),
+            (Self::Html, &["html", "htm", "xml", "svg"][..]),
+            (Self::Css, &["css", "scss"][..]),
+            (Self::Toml, &["toml"][..]),
+            (Self::Yaml, &["yaml", "yml"][..]),
         ]
         .into_iter()
         .find_map(|(language, aliases)| {
@@ -61,6 +80,9 @@ impl Language {
             Self::JavaScript => matches!(word, "true" | "false" | "null" | "undefined"),
             Self::Python => matches!(word, "True" | "False" | "None"),
             Self::Json => matches!(word, "true" | "false" | "null"),
+            Self::Toml => matches!(word, "true" | "false" | "inf" | "nan"),
+            Self::Yaml => matches!(word, "true" | "false" | "null" | "yes" | "no"),
+            Self::Html | Self::Css => false,
         };
         if literal {
             return LITERAL;
@@ -221,17 +243,26 @@ impl Language {
                     | "break"
                     | "continue"
             ),
-            Self::Json => false,
+            Self::Json | Self::Html | Self::Css | Self::Toml | Self::Yaml => false,
         };
         if keyword { KEYWORD } else { "" }
     }
 }
 
-pub(super) fn tokenize<'a>(source: &'a str, language: &str) -> Vec<Token<'a>> {
+pub(crate) fn tokenize<'a>(source: &'a str, language: &str) -> Vec<Token<'a>> {
+    tokenize_bounded(source, language, MAX_SOURCE_BYTES, MAX_TOKENS)
+}
+
+fn tokenize_bounded<'a>(
+    source: &'a str,
+    language: &str,
+    max_source_bytes: usize,
+    max_tokens: usize,
+) -> Vec<Token<'a>> {
     if source.is_empty() {
         return Vec::new();
     }
-    if source.len() > MAX_SOURCE_BYTES {
+    if source.len() > max_source_bytes {
         return plain(source);
     }
     let Some(language) = Language::from_alias(language) else {
@@ -249,18 +280,54 @@ pub(super) fn tokenize<'a>(source: &'a str, language: &str) -> Vec<Token<'a>> {
         if class.is_empty() {
             continue;
         }
-        if plain_start < start && !push(&mut tokens, "", &source[plain_start..start]) {
+        if plain_start < start && !push(&mut tokens, "", &source[plain_start..start], max_tokens) {
             return plain(source);
         }
-        if !push(&mut tokens, class, &source[start..end]) {
+        if !push(&mut tokens, class, &source[start..end], max_tokens) {
             return plain(source);
         }
         plain_start = end;
     }
-    if plain_start < source.len() && !push(&mut tokens, "", &source[plain_start..]) {
+    if plain_start < source.len() && !push(&mut tokens, "", &source[plain_start..], max_tokens) {
         return plain(source);
     }
     tokens
+}
+
+/// Color the complete file before splitting rows, preserving multiline tokens.
+pub(crate) fn tokenize_file<'a>(source: &'a str, path: &str) -> Vec<Vec<Token<'a>>> {
+    if source.is_empty() {
+        return Vec::new();
+    }
+    let language = std::path::Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default();
+    let mut lines = vec![Vec::new()];
+    for token in tokenize_bounded(source, language, MAX_FILE_SOURCE_BYTES, MAX_FILE_TOKENS) {
+        for fragment in token.text.split_inclusive('\n') {
+            let newline = fragment.ends_with('\n');
+            let text = if newline {
+                let line = fragment.strip_suffix('\n').unwrap_or(fragment);
+                line.strip_suffix('\r').unwrap_or(line)
+            } else {
+                fragment
+            };
+            if !text.is_empty() {
+                lines.last_mut().unwrap().push(Token {
+                    class: token.class,
+                    text,
+                });
+            }
+            if newline {
+                lines.push(Vec::new());
+            }
+        }
+    }
+    if source.ends_with('\n') {
+        lines.pop();
+    }
+    lines
 }
 
 fn plain(source: &str) -> Vec<Token<'_>> {
@@ -270,8 +337,8 @@ fn plain(source: &str) -> Vec<Token<'_>> {
     }]
 }
 
-fn push<'a>(tokens: &mut Vec<Token<'a>>, class: &'static str, text: &'a str) -> bool {
-    if tokens.len() == MAX_TOKENS {
+fn push<'a>(tokens: &mut Vec<Token<'a>>, class: &'static str, text: &'a str, limit: usize) -> bool {
+    if tokens.len() == limit {
         return false;
     }
     tokens.push(Token { class, text });
@@ -283,8 +350,29 @@ fn scan(source: &str, start: usize, language: Language) -> (usize, &'static str)
     let byte = b[start];
     let tail = &b[start..];
     let c_family = matches!(language, Language::Rust | Language::JavaScript);
+    if language == Language::Html && tail.starts_with(b"<!--") {
+        let end = source[start + 4..]
+            .find("-->")
+            .map_or(source.len(), |end| start + 4 + end + 3);
+        return (end, COMMENT);
+    }
+    if language == Language::Html && byte == b'<' {
+        let mut end = start + 1;
+        if b.get(end) == Some(&b'/') {
+            end += 1;
+        }
+        if b.get(end).is_some_and(u8::is_ascii_alphabetic) {
+            while b
+                .get(end)
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b':'))
+            {
+                end += 1;
+            }
+            return (end, KEYWORD);
+        }
+    }
     if (c_family && tail.starts_with(b"//"))
-        || (language == Language::Python && byte == b'#')
+        || (matches!(language, Language::Python | Language::Toml | Language::Yaml) && byte == b'#')
         || (language == Language::Shell && byte == b'#' && shell_word_start(b, start))
     {
         let mut end = start;
@@ -293,7 +381,7 @@ fn scan(source: &str, start: usize, language: Language) -> (usize, &'static str)
         }
         return (end, COMMENT);
     }
-    if c_family && tail.starts_with(b"/*") {
+    if (c_family || language == Language::Css) && tail.starts_with(b"/*") {
         return (block_comment(b, start, language == Language::Rust), COMMENT);
     }
     if language == Language::Rust && byte == b'r' {
@@ -305,8 +393,8 @@ fn scan(source: &str, start: usize, language: Language) -> (usize, &'static str)
         || (byte == b'\'' && !matches!(language, Language::Json | Language::Rust))
         || (byte == b'`' && matches!(language, Language::JavaScript | Language::Shell))
     {
-        let triple =
-            language == Language::Python && b.get(start..start + 3) == Some(&[byte, byte, byte]);
+        let triple = matches!(language, Language::Python | Language::Toml)
+            && b.get(start..start + 3) == Some(&[byte, byte, byte]);
         let escapes = !(language == Language::Shell && byte == b'\'');
         return (quoted(b, start, byte, triple, escapes), STRING);
     }
@@ -327,10 +415,32 @@ fn scan(source: &str, start: usize, language: Language) -> (usize, &'static str)
     }
     if ident_start(byte) {
         let mut end = start + 1;
-        while end < b.len() && ident_continue(b[end]) {
+        while end < b.len()
+            && (ident_continue(b[end])
+                || (b[end] == b'-'
+                    && matches!(
+                        language,
+                        Language::Html | Language::Css | Language::Toml | Language::Yaml
+                    )))
+        {
             end += 1;
         }
-        return (end, language.word_class(&source[start..end]));
+        let separator = match language {
+            Language::Html | Language::Toml => Some(b'='),
+            Language::Css | Language::Yaml => Some(b':'),
+            _ => None,
+        };
+        let property = separator.is_some_and(|separator| {
+            b[end..].iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&separator)
+        });
+        return (
+            end,
+            if property {
+                KEYWORD
+            } else {
+                language.word_class(&source[start..end])
+            },
+        );
     }
     (next_char(source, start), "")
 }
@@ -556,6 +666,63 @@ mod tests {
     }
 
     #[test]
+    fn file_rows_preserve_text_and_multiline_syntax() {
+        let source = "/* first\r\n第二行 */\r\nconst name = \"value\";\r\n\r\n";
+        let rows = tokenize_file(source, "src/example.JS");
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.iter().map(|token| token.text).collect::<String>())
+                .collect::<Vec<_>>(),
+            source.lines().collect::<Vec<_>>()
+        );
+        assert!(has(&rows[0], COMMENT, "/* first"));
+        assert!(has(&rows[1], COMMENT, "第二行 */"));
+        assert!(has(&rows[2], KEYWORD, "const"));
+        assert_eq!(rows[3], Vec::<Token<'_>>::new());
+        assert_eq!(tokenize_file("", "empty.rs"), Vec::<Vec<Token<'_>>>::new());
+        let source = "const text = \"<script>中文</script>\";\r";
+        let rows = tokenize_file(source, "unknown.log");
+        assert_eq!(rows[0][0].text, source);
+        assert_eq!(rows[0][0].class, "");
+    }
+
+    #[test]
+    fn large_files_have_their_own_bounded_coloring_budget() {
+        let source = "const name = \"work\"; // source file\n".repeat(2500);
+        assert!(source.len() > MAX_SOURCE_BYTES);
+        assert_eq!(tokenize(&source, "rust"), plain(&source));
+        let rows = tokenize_file(&source, "workspace.rs");
+        assert_eq!(rows.len(), 2500);
+        assert!(has(&rows[0], KEYWORD, "const"));
+        assert!(has(&rows[2499], STRING, "\"work\""));
+    }
+
+    #[test]
+    fn markup_styles_and_configuration_use_explicit_language_coloring() {
+        let tokens = checked("<!-- 注释 -->\n<div data-label=\"safe\">内容</div>", "html");
+        assert!(has(&tokens, COMMENT, "<!-- 注释 -->"));
+        assert!(has(&tokens, KEYWORD, "<div"));
+        assert!(has(&tokens, KEYWORD, "data-label"));
+        assert!(has(&tokens, STRING, "\"safe\""));
+        let tokens = checked(
+            "/* style */ .view { margin-top: 12px; content: '中'; }",
+            "css",
+        );
+        assert!(has(&tokens, KEYWORD, "margin-top"));
+        assert!(has(&tokens, NUMBER, "12"));
+        assert!(has(&tokens, STRING, "'中'"));
+        for (language, source) in [
+            ("toml", "name = \"work\"\nenabled = true # note"),
+            ("yaml", "name: \"work\"\nenabled: true # note"),
+        ] {
+            let tokens = checked(source, language);
+            assert!(has(&tokens, KEYWORD, "name"));
+            assert!(has(&tokens, LITERAL, "true"));
+            assert!(has(&tokens, COMMENT, "# note"));
+        }
+    }
+
+    #[test]
     fn javascript_and_typescript_aliases() {
         for alias in ["js", "javascript", "jsx", "ts", "typescript", "tsx", " TS "] {
             let tokens = checked("const x = `hi ${name}`; /* c */ return null;", alias);
@@ -642,8 +809,8 @@ mod tests {
         for alias in [
             "",
             "text",
-            "html",
-            "css",
+            "unknown",
+            "lua",
             "rust extra",
             "{.rust}",
             "rust\" onclick=x",

@@ -83,6 +83,8 @@ fn ResourceCenterState(
     onback: EventHandler<()>,
 ) -> Element {
     let mut view = use_signal(|| "public".to_owned());
+    let connection = use_context::<crate::app::connections::ConnectionStore>();
+    let mut install_draft = use_context::<super::install_handoff::InstallDraft>().0;
     let mut kind = use_signal(|| {
         if initial_kind == "resources" {
             "all".into()
@@ -97,6 +99,16 @@ fn ResourceCenterState(
             .or_else(|| projects.first().map(|(id, _)| id.clone()))
             .unwrap_or_default()
     });
+    use_effect(use_reactive!(|projects| {
+        if !projects.iter().any(|(id, _)| id == &*work_project.peek()) {
+            work_project.set(
+                projects
+                    .first()
+                    .map(|(id, _)| id.clone())
+                    .unwrap_or_default(),
+            );
+        }
+    }));
     let mut browse_scope = use_signal(|| "global".to_owned());
     let mut native = use_signal(|| None::<NativeCatalog>);
     let mut public = use_signal(|| None::<PackageCatalog>);
@@ -120,6 +132,31 @@ fn ResourceCenterState(
     let mut manage_error = use_signal(String::new);
     let mut managing = use_signal(|| false);
     let session_project = use_signal(|| project);
+    use_effect(move || {
+        let Some(draft) = install_draft.read().clone() else {
+            return;
+        };
+        let Some(catalog) = public.read().clone() else {
+            return;
+        };
+        let found = draft
+            .iter()
+            .map(|package| {
+                catalog
+                    .packages
+                    .iter()
+                    .find(|offer| super::packages::reference(offer) == *package)
+                    .cloned()
+                    .map(ResourceChoice::Public)
+            })
+            .collect::<Option<Vec<_>>>();
+        install_draft.set(None);
+        if let Some(choices) = found {
+            installing.set(choices);
+        } else {
+            receipt.set("目标节点公共库缺少所选版本或摘要，请核对资源后重新选择。".into());
+        }
+    });
     use_effect(move || {
         let _ = revision.read();
         let target = if view() == "installed" && browse_scope() != "global" {
@@ -349,6 +386,7 @@ fn ResourceCenterState(
                     button { class: "button", disabled: !online || work_project().is_empty(), onclick: move |_| authoring_open.set(true), Icon { name: "code" } "开发工具" }
                 }
             }
+            if !receipt().is_empty() { p { class: "resource-flow-note", role: "status", "{receipt}" } }
             div { class: "resource-library-toolbar",
                 nav { class: "resource-center-views", aria_label: "资源视图",
                     for (id, name) in [("public", "公共库"), ("installed", "已安装"), ("design", "本地设计")] {
@@ -468,7 +506,7 @@ fn ResourceCenterState(
                             }
                         }
                         div { class: "resource-center-footer",
-                            p { if view() == "public" { "目录数量与工作项目独立。点击安装后选择全局或指定项目。" } else { "每行标明安装来源。目录中的安装状态未知项可在“节点管理”中核对。" } }
+                            p { if view() == "public" { "目录数量与工作项目独立。安装时选择节点，再选择全局或指定项目。" } else { "每行标明安装来源。目录中的安装状态未知项可在“节点管理”中核对。" } }
                             button { class: "resource-text-button", disabled: work_project().is_empty(), onclick: move |_| management_open.set(true), "节点管理" }
                             button { class: "resource-text-button", disabled: session.is_none(), onclick: move |_| onconfigure.call(()), "会话资源设置" }
                         }
@@ -511,9 +549,17 @@ fn ResourceCenterState(
                     oninstall: move |choice| { offer_detail.set(None); installing.set(vec![choice]); }, onchanged: move |()| revision += 1, onclose: move |()| offer_detail.set(None) }
             }
             if !installing().is_empty() {
-                InstallDialog { choices: installing(), project: if view() == "installed" && !global { browse_scope() } else { work_project() }, projects: projects.clone(), node_label: node_label.clone(),
+                InstallDialog { choices: installing(), project: if view() == "installed" && !global { browse_scope() } else { work_project() }, projects: projects.clone(),
                     shared_client, connection_epoch, session_generation, online,
-                    oncomplete: move |(project, scope)| { installing.set(vec![]); browse_scope.set(if scope == NativeScope::Global { "global".into() } else { project }); view.set("installed".into()); revision += 1; },
+                    oncomplete: move |(node, project, scope)| {
+                        installing.set(vec![]);
+                        if node == connection.address.peek().trim_end_matches('/') {
+                            browse_scope.set(if scope == NativeScope::Global { "global".into() } else { project });
+                            view.set("installed".into());
+                        }
+                        receipt.set(format!("安装已确认 · {node}"));
+                        revision += 1;
+                    },
                     onclose: move |()| { installing.set(vec![]); revision += 1; } }
             }
             if let Some(defaults) = working() {

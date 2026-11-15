@@ -196,7 +196,7 @@ pub(crate) fn ChangesPanel(props: ChangesPanelProps) -> Element {
                                             code { "{path}" }
                                             span { class: "diff-count", b { "+{added}" } em { "−{deleted}" } }
                                         }
-                                        {render_diff(&patch.patch)}
+                                        {render_diff(&patch.patch, &patch.path)}
                                         p { class: "project-file-diff-note", Icon { name: "shield".to_owned() } "只读预览，不会提交或修改真实文件。" }
                                     }
                                 }

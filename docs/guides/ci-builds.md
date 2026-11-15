@@ -34,7 +34,7 @@ Actions制品名称为 `rpi-work-android-arm64-apk`，包含 `rpi-work-<version>
 
 `scripts/ci/build-android.ps1` 只从新的输出目录收集APK，并执行 `apksigner verify`，缺少APK或签名无效都会使任务失败。
 
-Android 启动器图标使用 `assets/branding/rpi.svg`（与官方 Web favicon 相同）。运行 `node tools/dev/generate-brand-icons.cjs` 可离线生成五档普通 PNG 和带安全留白的自适应前景/背景资源，源哈希及资源哈希保存在 `assets/branding/android-icons.json`。Dioxus 0.7.10 会写入默认 Android 图标，不能只依赖 `bundle.icon`；构建脚本在重复生成前只清除上次覆盖的五档 launcher PNG，避免与 Dioxus 再次生成的 WebP 重名，再在最终 Gradle release 打包前调用 `scripts/ci/android-brand.ps1` 校验并覆盖这些资源。普通及圆形启动器引用同一官方图标。
+Android 启动器图标使用用户提供的 `assets/branding/rpi-gear.png`，与界面和 favicon 使用同一齿轮图。运行 `node tools/dev/generate-brand-icons.cjs` 可离线生成带浅色底的 `rpi.svg`、五档普通 PNG 和带安全留白的自适应前景/背景资源，原始 logo、派生 SVG 及资源哈希保存在 `assets/branding/android-icons.json`。Dioxus 0.7.10 会写入默认 Android 图标，构建脚本在重复生成前清除上次覆盖的五档 launcher PNG，避免与 Dioxus 再次生成的 WebP 重名，再在最终 Gradle release 打包前调用 `scripts/ci/android-brand.ps1` 校验并覆盖这些资源。普通及圆形启动器引用同一官方图标。
 
 专项检查：`tests/structure/android-brand.ps1` 验证覆盖、重复执行、非图标资源保留和损坏资源拒绝；`node tests/e2e/verify-brand-assets.cjs` 验证源 SVG 栅格一致性；`node tests/e2e/verify-android-brand.cjs <APK路径>` 在 SDK 35、Python 和仓库浏览器测试依赖可用时检查编译后 manifest、六个实际图像资源、自适应引用及 ARM64 ELF。最新专项记录位于 `artifacts/android-official-icon-*.json`；这些不代替实体手机安装和启动器显示验收。
 

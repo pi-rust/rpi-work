@@ -124,16 +124,24 @@ pub(crate) fn render_project_file_at(
             div { class: "project-html-frame", dangerous_inner_html: iframe }
         };
     }
-    let lines = content
-        .content
-        .lines()
-        .enumerate()
-        .map(|(index, line)| (index + 1, line.to_owned()))
-        .collect::<Vec<_>>();
+    let lines =
+        crate::features::conversation::code_tokens::tokenize_file(&content.content, &content.path);
     rsx! {
         pre { class: if wrap { "project-code wrap-lines" } else { "project-code" },
-            for (number, line) in lines {
-                span { class: "project-code-line", "data-line": "{number}", style: if selected_lines.is_some_and(|(start, end)| number >= start && number <= end) { "background:rgba(235,180,50,.22);outline:1px solid rgba(235,180,50,.3)" } else { "" }, i { "{number}" } code { "{line}" } }
+            for (index, tokens) in lines.iter().enumerate() {
+                {
+                    let number = index + 1;
+                    rsx! {
+                        span { key: "line-{number}", class: "project-code-line", "data-line": "{number}", style: if selected_lines.is_some_and(|(start, end)| number >= start && number <= end) { "background:rgba(235,180,50,.22);outline:1px solid rgba(235,180,50,.3)" } else { "" },
+                            i { "{number}" }
+                            code {
+                                for (index, token) in tokens.iter().enumerate() {
+                                    span { key: "token-{index}", class: token.class, "{token.text}" }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -14,6 +14,7 @@ mod address;
 mod configuration;
 #[path = "sharing_preference.rs"]
 mod preference;
+pub use work_http_component::WebAccess;
 use work_http_component::{Configuration, Configure};
 
 /// Extension startup overrides; never serialize or log the password.
@@ -42,12 +43,15 @@ pub struct Sharing {
     pub node_id: String,
     /// Static assets or an explicitly configured same-origin Web proxy.
     pub web_hosted: bool,
+    pub web: WebAccess,
 }
 type QrIssuer = Arc<dyn Fn() -> Result<work_node_service::QrAuthorization, String> + Send + Sync>;
 struct OwnedSharing {
     info: Sharing,
     issuer: Option<QrIssuer>,
     control: Option<SharingControl>,
+    web_control: Option<SharingControl>,
+    web_preference: PathBuf,
     preference: Option<PathBuf>,
     configuration_file: PathBuf,
     configuration: Configuration,
@@ -99,6 +103,21 @@ pub fn set_shared(enabled: bool) -> Result<Sharing, String> {
     state.info.warning.clear();
     Ok(state.info.clone())
 }
+pub fn set_web_enabled(enabled: bool) -> Result<Sharing, String> {
+    let mut state = SHARING
+        .get()
+        .ok_or("节点尚未准备好")?
+        .lock()
+        .map_err(|_| "Web 状态不可用")?;
+    let control = state
+        .web_control
+        .clone()
+        .ok_or_else(|| format!("Web 入口不可用。{}", state.info.web.status))?;
+    preference::save(&state.web_preference, enabled)?;
+    control.set_enabled(enabled);
+    state.info.web.enabled = control.enabled();
+    Ok(state.info.clone())
+}
 
 /// Explicit desktop-owner delegation; never exported as an HTTP policy handle.
 pub fn issue_qr_authorization() -> Result<work_node_service::QrAuthorization, String> {
@@ -117,29 +136,47 @@ pub(crate) fn start(
     client: &NodeConnection,
     data: &Path,
     options: &LaunchOverrides,
-) -> Option<HttpServer> {
+) -> Vec<HttpServer> {
     let result = prepare(client, data, options);
     match result {
-        Ok((server, info, preference, configuration)) => {
-            let control = Some(server.sharing_control());
+        Ok((servers, info, preference, configuration)) => {
+            let control = servers
+                .first()
+                .filter(|_| info.listening)
+                .map(HttpServer::sharing_control);
+            let web_control = servers
+                .last()
+                .filter(|_| info.web.listening)
+                .map(HttpServer::sharing_control);
             let _ = SHARING.set(Mutex::new(OwnedSharing {
-                issuer: Some(server.qr_authorization_issuer()),
+                issuer: servers
+                    .first()
+                    .filter(|_| info.listening)
+                    .map(HttpServer::qr_authorization_issuer),
                 info,
                 control,
+                web_control,
+                web_preference: data.join("web-sharing.json"),
                 preference: Some(preference),
                 configuration_file: data.join("http-component.json"),
                 configuration,
                 restart_required: false,
             }));
-            Some(server)
+            servers
         }
         Err(error) => {
             let _ = SHARING.set(Mutex::new(OwnedSharing {
                 info: Sharing {
-                    status: error,
+                    status: error.clone(),
+                    web: work_http_component::WebAccess {
+                        status: error,
+                        ..Default::default()
+                    },
                     ..Sharing::default()
                 },
                 control: None,
+                web_control: None,
+                web_preference: data.join("web-sharing.json"),
                 issuer: None,
                 preference: None,
                 configuration_file: data.join("http-component.json"),
@@ -150,7 +187,7 @@ pub(crate) fn start(
                     .unwrap_or_default(),
                 restart_required: false,
             }));
-            None
+            Vec::new()
         }
     }
 }
@@ -178,7 +215,7 @@ fn prepare(
     client: &NodeConnection,
     data: &Path,
     options: &LaunchOverrides,
-) -> Result<(HttpServer, Sharing, PathBuf, Configuration), String> {
+) -> Result<(Vec<HttpServer>, Sharing, PathBuf, Configuration), String> {
     let workspace = client;
     let saved = configuration::load(&data.join("http-component.json"))?;
     let bind = options
@@ -242,10 +279,18 @@ fn prepare(
         Ok(enabled) => (enabled, String::new()),
         Err(warning) => (false, warning),
     };
-    let assets = options
+    let selected_assets = options
         .assets
         .clone()
-        .or_else(|| std::env::var_os("RPI_WORK_HTTP_ASSETS").map(std::path::PathBuf::from));
+        .or_else(|| std::env::var_os("RPI_WORK_HTTP_ASSETS").map(PathBuf::from));
+    let (assets, asset_error) = if selected_assets.is_some() {
+        (selected_assets, None)
+    } else {
+        match crate::web_assets::prepare(data) {
+            Ok(assets) => (assets.or_else(bundled_web_assets), None),
+            Err(error) => (None, Some(error)),
+        }
+    };
     let web_port = match std::env::var("RPI_WORK_HTTP_WEB_PORT") {
         Ok(value) if !value.trim().is_empty() => Some(
             value
@@ -257,23 +302,13 @@ fn prepare(
         _ => None,
     };
     let routed_ip = address::routed_lan_ipv4();
-    let suggestion = address::suggest(
-        (!public_url.is_empty()).then_some(public_url.as_str()),
-        SocketAddr::new(bind, port),
-        assets.is_some(),
-        web_port,
-        routed_ip,
-    )?;
     let app_address = address::suggest_app(
         (!public_url.is_empty()).then_some(public_url.as_str()),
         SocketAddr::new(bind, port),
-        web_port,
+        None,
         routed_ip,
     )?;
-    for host in [&suggestion.direct_host, &app_address.direct_host]
-        .into_iter()
-        .flatten()
-    {
+    if let Some(host) = &app_address.direct_host {
         allowed_hosts.push(host.clone());
     }
     if bind.is_unspecified() && bind.is_ipv4() {
@@ -282,69 +317,85 @@ fn prepare(
         allowed_hosts.push(format!("127.0.0.1:{port}"));
         allowed_hosts.push(format!("localhost:{port}"));
     }
-    let address_hint = if !app_address.url.is_empty() && suggestion.url.is_empty() {
-        "已提供局域网 App 授权入口。使用 Android App 扫描一次性授权码；浏览器入口需另配 Web 资源或同源代理。不会自动修改防火墙，多网卡可显式配置分享地址。".into()
-    } else {
-        suggestion.hint.clone()
-    };
+    let address_hint = format!(
+        "{} App 授权连接远程协作入口，浏览器使用独立的 Web 入口。",
+        app_address.hint
+    );
     let web_hosted = assets.is_some() || web_port.is_some();
-    let config = ServerConfig {
+    let web_config = ServerConfig {
         bind: SocketAddr::new(bind, port),
         password: password.clone(),
         allowed_hosts,
         node_id: node_id.clone(),
-        assets,
+        assets: assets.clone(),
         web_proxy: web_port.is_some(),
         allow_sharing: enabled,
     };
+    let mut config = web_config.clone();
+    config.assets = None;
+    config.web_proxy = false;
     let password_digest = saved
         .as_ref()
         .and_then(|s| s.password_digest)
         .filter(|_| options.password.is_none());
-    let server = if let Some(digest) = password_digest {
-        HttpServer::start_with_password_digest(workspace.clone(), config, digest)?
+    let remote = if let Some(digest) = password_digest {
+        HttpServer::start_with_password_digest(workspace.clone(), config, digest)
     } else {
-        HttpServer::start(workspace.clone(), config)?
+        HttpServer::start(workspace.clone(), config)
     };
-    let (suggestion, app_address) = if port == 0 {
-        let bound = SocketAddr::new(bind, server.address().port());
-        (
-            address::suggest(
-                (!public_url.is_empty()).then_some(public_url.as_str()),
-                bound,
-                web_hosted && web_port.is_none(),
-                web_port,
-                routed_ip,
-            )?,
-            address::suggest_app(
-                (!public_url.is_empty()).then_some(public_url.as_str()),
-                bound,
-                web_port,
-                routed_ip,
-            )?,
-        )
+    let app_address = if let Ok(server) = &remote
+        && port == 0
+    {
+        address::suggest_app(
+            (!public_url.is_empty()).then_some(public_url.as_str()),
+            SocketAddr::new(bind, server.address().port()),
+            None,
+            routed_ip,
+        )?
     } else {
-        (suggestion, app_address)
+        app_address
     };
-    let status = format!(
-        "桌面 HTTP · {} · 与本机 RPC 共用会话和运行任务",
-        server.address()
-    );
-    let bound_address = format!("http://{}/", server.address());
+    let listening = remote.is_ok();
+    let (status, bound_address) = match &remote {
+        Ok(server) => (
+            format!(
+                "桌面 HTTP · {} · 与本机 RPC 共用会话和运行任务",
+                server.address()
+            ),
+            format!("http://{}/", server.address()),
+        ),
+        Err(error) => (error.clone(), String::new()),
+    };
+    let mut servers: Vec<_> = remote.into_iter().collect();
+    let web_result = match asset_error {
+        Some(error) => Err(error),
+        None => prepare_web(client, data, web_config, password_digest, web_port),
+    };
+    let web = match web_result {
+        Ok((server, web)) => {
+            servers.push(server);
+            web
+        }
+        Err(status) => WebAccess {
+            status,
+            ..WebAccess::default()
+        },
+    };
     Ok((
-        server,
+        servers,
         Sharing {
-            listening: true,
-            enabled,
+            listening,
+            enabled: listening && enabled,
             status,
             warning: preference_warning,
-            public_url: suggestion.url,
+            public_url: app_address.url.clone(),
             app_url: app_address.url,
             address_hint,
             password,
             address: bound_address,
             node_id,
             web_hosted,
+            web,
         },
         preference_file,
         Configuration {
@@ -355,14 +406,96 @@ fn prepare(
     ))
 }
 
+fn bundled_web_assets() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    [parent.join("web"), parent.join("../Resources/web")]
+        .into_iter()
+        .find(|path| path.join("index.html").is_file())
+}
+
+fn prepare_web(
+    client: &NodeConnection,
+    data: &Path,
+    mut config: ServerConfig,
+    digest: Option<[u8; 32]>,
+    proxy_port: Option<u16>,
+) -> Result<(HttpServer, work_http_component::WebAccess), String> {
+    let port = match std::env::var("RPI_WORK_WEB_LISTEN_PORT") {
+        Ok(port) => port
+            .parse::<u16>()
+            .map_err(|_| "RPI_WORK_WEB_LISTEN_PORT 无效")?,
+        Err(_) if config.bind.port() == 0 => 0,
+        Err(_) => config
+            .bind
+            .port()
+            .checked_add(1)
+            .ok_or("Web 端口超出范围，请配置 RPI_WORK_WEB_LISTEN_PORT")?,
+    };
+    config.bind.set_port(port);
+    // Each entrance has its own origin allowlist and authentication epoch.
+    config.allowed_hosts = vec![format!("localhost:{port}"), format!("127.0.0.1:{port}")];
+    let public_url = std::env::var("RPI_WORK_WEB_PUBLIC_URL").ok();
+    let suggestion = address::suggest(
+        public_url.as_deref(),
+        config.bind,
+        config.assets.is_some(),
+        proxy_port,
+        address::routed_lan_ipv4(),
+    )?;
+    if let Some(host) = &suggestion.direct_host {
+        config.allowed_hosts.push(host.clone());
+    }
+    if let Some(url) = &public_url {
+        config
+            .allowed_hosts
+            .push(work_node_service::public_address(url)?.1);
+    }
+    let (enabled, warning) = match preference::load(&data.join("web-sharing.json")) {
+        Ok(value) => (value, String::new()),
+        Err(error) => (false, error),
+    };
+    config.allow_sharing = enabled;
+    let bind = config.bind;
+    let server = HttpServer::start_web(client.clone(), config, digest)?;
+    let url = if proxy_port.is_some() || public_url.is_some() {
+        suggestion.url
+    } else if bind.ip().is_loopback() {
+        format!("http://{}/", server.address())
+    } else if port == 0 {
+        address::suggest(
+            None,
+            server.address(),
+            true,
+            None,
+            address::routed_lan_ipv4(),
+        )?
+        .url
+    } else {
+        suggestion.url
+    };
+    Ok((
+        server,
+        work_http_component::WebAccess {
+            listening: true,
+            enabled,
+            url,
+            status: warning,
+        },
+    ))
+}
+
 /// Clear published liveness only after the executor and workspace stopped.
 pub(crate) fn mark_stopped() {
     if let Some(state) = SHARING.get() {
         if let Ok(mut state) = state.lock() {
             state.info.listening = false;
             state.info.enabled = false;
+            state.info.web.enabled = false;
+            state.info.web.listening = false;
             state.info.status = "HTTP and workspace stopped".into();
             state.control = None;
+            state.web_control = None;
             state.issuer = None;
         }
     }

@@ -8,6 +8,7 @@ const path = require('node:path');
 const { chromium } = require('../support/browser.cjs');
 const { startFixture } = require('../fixtures/ui-fixture.cjs');
 const root = path.resolve(__dirname, '../..');
+const bundle = path.resolve(process.env.WORK_UI_BUNDLE || path.join(root, 'target/parity-web'));
 const CODE = 'const escaped = "<script>window.__conversationXss = true</script>"; // ' + 'long-code-'.repeat(100);
 const DRAFT = '保留本地草稿，不发送。';
 const near = (a, b, label) => assert(Math.abs(a - b) <= 1, `${label}: ${a} != ${b}`);
@@ -26,7 +27,7 @@ const near = (a, b, label) => assert(Math.abs(a - b) <= 1, `${label}: ${a} != ${
       if (!['GET', 'HEAD'].includes(request.method)) { response.writeHead(405); response.end(); return; }
       const url = new URL(request.url, 'http://localhost');
       const reference = url.pathname.startsWith('/reference/');
-      const base = path.join(root, reference ? 'design/clarity-workbench' : 'target/parity-web');
+      const base = reference ? path.join(root, 'design/clarity-workbench') : bundle;
       const relative = decodeURIComponent(url.pathname.slice(reference ? '/reference/'.length : '/app/'.length));
       const file = path.resolve(base, relative || 'index.html');
       if (!file.startsWith(base + path.sep)) { response.writeHead(403); response.end(); return; }

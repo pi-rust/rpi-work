@@ -4,7 +4,7 @@ tasks:
   # Optimized Web/headless workflow. It builds the release WASM bundle, prepares
   # hashed immutable assets, then starts the same owner used by desktop/CLI.
   dev:
-    desc: 一键启动优化版无头 Web（release WASM、压缩、缓存、13031）
+    desc: 一键启动优化版无头 Web（release WASM、压缩、缓存、Web 13032）
     dir: '{{.TASKFILE_DIR}}'
     dotenv: ['{{.TASKFILE_DIR}}/.env.local']
     deps:
@@ -12,6 +12,7 @@ tasks:
     env:
       RPI_WORK_HTTP_BIND: '{{.RPI_WORK_HTTP_BIND | default "0.0.0.0"}}'
       RPI_WORK_HTTP_PORT: '{{.RPI_WORK_HTTP_PORT | default "13031"}}'
+      RPI_WORK_WEB_LISTEN_PORT: '{{.RPI_WORK_WEB_LISTEN_PORT | default "13032"}}'
       # Keep the release bundle separate from debug/hot-reload output and any
       # currently served legacy directory.
       RPI_WORK_HTTP_ASSETS: '{{.RPI_WORK_HTTP_ASSETS | default "target/web-release/parity-web"}}'
@@ -54,7 +55,7 @@ tasks:
     dotenv: ['{{.TASKFILE_DIR}}/.env.local']
     env:
       PORT: '{{.PORT | default "14180"}}'
-      RPI_API_PORT: '{{.RPI_WORK_HTTP_PORT | default "13031"}}'
+      RPI_API_PORT: '{{.RPI_WORK_WEB_LISTEN_PORT | default "13032"}}'
       RPI_UI_ENTRY_MODE: hosted
       # Keep debug hot-reload output away from the release bundle used by task dev.
       RPI_UI_BUILD_OUTPUT_ROOT: '{{.RPI_UI_BUILD_OUTPUT_ROOT | default "target/parity-web-debug"}}'

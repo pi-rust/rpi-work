@@ -215,7 +215,7 @@ fn rename_metadata(patch: &str) -> Option<Vec<String>> {
     (!metadata.is_empty()).then_some(metadata)
 }
 
-pub(crate) fn render_diff(patch: &str) -> Element {
+pub(crate) fn render_diff(patch: &str, file_path: &str) -> Element {
     let binary = is_binary_patch(patch);
     let lines = parse_unified_diff(patch);
     if binary {
@@ -246,6 +246,14 @@ pub(crate) fn render_diff(patch: &str) -> Element {
             }
         };
     }
+    let source = lines
+        .iter()
+        .filter(|line| line.kind != "hunk")
+        .map(|line| line.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut highlighted =
+        crate::features::conversation::code_tokens::tokenize_file(&source, file_path).into_iter();
     rsx! {
         div { class: "diff-lines",
             for line in lines {
@@ -256,12 +264,17 @@ pub(crate) fn render_diff(patch: &str) -> Element {
                         let old_number = line.old.map_or_else(String::new, |number| number.to_string());
                         let new_number = line.new.map_or_else(String::new, |number| number.to_string());
                         let marker = if line.kind == "add" { "+" } else if line.kind == "del" { "−" } else { " " };
+                        let tokens = highlighted.next().unwrap_or_default();
                         rsx! {
                             div { class: "diff-line {line.kind}",
                                 span { class: "line-number", "{old_number}" }
                                 span { class: "line-number", "{new_number}" }
                                 span { class: "diff-marker", "{marker}" }
-                                span { "{line.text}" }
+                                span { class: "diff-source",
+                                    for (index, token) in tokens.iter().enumerate() {
+                                        span { key: "token-{index}", class: token.class, "{token.text}" }
+                                    }
+                                }
                             }
                         }
                     }

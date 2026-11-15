@@ -1,6 +1,8 @@
 {
   "source": "rpi.svg",
-  "sourceSha256": "67f5fd2e2791443e3dace12dc02219a387248f4948e2bd840bf34c88bba36744",
+  "sourceSha256": "a60025a491fc46adebd04e00f79076476782bff83f1ca64d16770f9d9e697a38",
+  "markSource": "rpi-gear.png",
+  "markSourceSha256": "182645f4ef3e4f893134ad0d0ca6ecf3ee0e52c44a4ba7bf4f599991e0b45535",
   "generator": "tools/dev/generate-brand-icons.cjs",
   "adaptive": {
     "layerPixels": 432,
@@ -8,12 +10,12 @@
     "insetPixels": 88
   },
   "hashes": {
-    "mipmap-mdpi/ic_launcher.png": "9a56300e725476238c9ae872d179f74f329dd393e845a7764f676b59aed1f92e",
-    "mipmap-hdpi/ic_launcher.png": "d6e9e1ceb227a07dc95c420f332d8551755103b08b51cdc131a35a54f65e222d",
-    "mipmap-xhdpi/ic_launcher.png": "9378cbacf42cda61feb2bce7db17d0f1f716c46ad26cd1f5e69702c7856a375d",
-    "mipmap-xxhdpi/ic_launcher.png": "988653e62b636798686a557958bb3217ef520be1e0e42a34ba613dd5fe9f6aaa",
-    "mipmap-xxxhdpi/ic_launcher.png": "b45723da3689e1528a99f206703f4fc49fb1e74881a21a2a738b68f5d86ffdb0",
-    "drawable-nodpi/rpi_launcher_foreground.png": "11c8e3920435af816472e9bea9a75ec9391083a40b1b9432aa18eb0cd01ccdcb",
+    "mipmap-mdpi/ic_launcher.png": "d88e02e5289894043e0dfc9193afa1bbb54a8fc2022a8612ba5ab979fe4be5ab",
+    "mipmap-hdpi/ic_launcher.png": "d75ae653b37d80919cbc0d5c9ad000d02c3cf96cf9dbbf6d15e7d26cb532f3e2",
+    "mipmap-xhdpi/ic_launcher.png": "b6b27996e105f451ef40c642283a2503aca0034eb6cf11ce4068f47a88856322",
+    "mipmap-xxhdpi/ic_launcher.png": "43d75706cc2ceb31b69dd0913a96fceb7abedb3d358b9ae2bad9a27a151f0135",
+    "mipmap-xxxhdpi/ic_launcher.png": "9e1e9bd5c7d972117f4e520be6b917be761c14256ec2ddd20d9bd12c9b111e6b",
+    "drawable-nodpi/rpi_launcher_foreground.png": "57488b873e512fd5cec8c273172692060d9ef2d4fe3c24aeb32dc9cf9bb029f1",
     "values/rpi_launcher.xml": "2e3cf973038e4fb4d709d044f54fe3fa943fd00d56ab05eb66af522e313b1dde",
     "mipmap-anydpi-v26/ic_launcher.xml": "b7586ee1b60d828b523390778f937a49edfebf57a9b5308c8191a4eedee4ff82"
   }

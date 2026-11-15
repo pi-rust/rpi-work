@@ -76,6 +76,7 @@ pub fn launch() {
             .with_cfg(
                 dioxus::desktop::Config::new()
                     .with_window(window)
+                    .with_tray_icon_show_window_on_click(false)
                     .with_custom_event_handler(move |event, _| {
                         // Tao's event loop exits the process without unwinding
                         // the launch stack. Release the owned node before that.

@@ -13,7 +13,7 @@ struct Tree {
     revisions: BTreeMap<String, u64>,
 }
 
-fn valid_child(parent: &str, entry: &FileEntry) -> bool {
+pub(super) fn valid_child(parent: &str, entry: &FileEntry) -> bool {
     let path = entry.path.as_str();
     if path.is_empty()
         || path.contains(['\\', ':'])
@@ -32,6 +32,7 @@ pub fn Browser(
     project: String,
     scope: String,
     selected: Option<String>,
+    #[props(default)] reveal: Option<String>,
     onselect: EventHandler<String>,
     oninitial: EventHandler<String>,
     onreported: EventHandler<Vec<FileEntry>>,
@@ -139,6 +140,20 @@ pub fn Browser(
     let mut initial_load = load;
     use_effect(use_reactive((&scope_for_load,), move |(_scope,)| {
         initial_load(String::new());
+    }));
+    let mut reveal_load = load;
+    use_effect(use_reactive((&reveal,), move |(directory,)| {
+        let Some(directory) = directory else { return };
+        query.set(String::new());
+        let mut parent = String::new();
+        for segment in directory.split('/') {
+            if !parent.is_empty() {
+                parent.push('/');
+            }
+            parent.push_str(segment);
+            tree.write().expanded.insert(parent.clone());
+            reveal_load(parent.clone());
+        }
     }));
     let snapshot = tree.read().clone();
     let filter = query.read().trim().to_ascii_lowercase();

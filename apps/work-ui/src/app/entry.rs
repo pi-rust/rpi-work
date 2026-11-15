@@ -33,6 +33,8 @@ pub(crate) fn AuthorizedWorkspace(node: EntryNode) -> Element {
 
 #[component]
 pub(super) fn Root() -> Element {
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    super::desktop_background::use_background();
     let mut app_settings = use_signal(crate::shared::app_settings::AppSettingsState::default);
     use_context_provider(|| app_settings);
     use_effect(move || {

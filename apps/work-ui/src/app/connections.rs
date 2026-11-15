@@ -496,7 +496,7 @@ pub async fn open(
     .await?
 }
 
-pub(super) async fn with_timeout<T>(future: impl Future<Output = T>) -> Result<T, String> {
+pub(crate) async fn with_timeout<T>(future: impl Future<Output = T>) -> Result<T, String> {
     let mut future = pin!(future);
     let mut timer = pin!(async {
         #[cfg(target_arch = "wasm32")]

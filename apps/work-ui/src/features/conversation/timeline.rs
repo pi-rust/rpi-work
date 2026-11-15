@@ -155,8 +155,15 @@ fn history_parts(content: &Value) -> Vec<HistoryPart> {
 fn render_thinking(text: &str) -> Element {
     rsx! {
         details { class: "conversation-widget message-thinking", aria_label: "模型思考过程",
-            summary { class: "message-thinking-summary", "思考过程" }
-            div { class: "message-thinking-body", {markdown_view(text)} }
+            summary { class: "message-thinking-summary",
+                span { "思考过程" }
+                span { class: "message-thinking-chevron", aria_hidden: "true",
+                    Icon { name: "chevron-right" }
+                }
+            }
+            div { class: "message-thinking-body", tabindex: "0", aria_label: "思考内容",
+                {markdown_view(text)}
+            }
         }
     }
 }
