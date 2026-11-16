@@ -410,7 +410,7 @@ impl RunProjection {
             Some(MessageBlock::Thinking { text: current, .. }) => *current = text,
             Some(_) => {}
             None => {
-                self.insert_ordered_message_block(MessageBlock::Thinking { id: block_id, text })
+                self.insert_ordered_message_block(MessageBlock::Thinking { id: block_id, text });
             }
         }
     }
