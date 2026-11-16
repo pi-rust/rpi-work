@@ -106,25 +106,6 @@ fn recovery_admission(state: &NativeSessionResources) -> (bool, bool) {
         && latest.is_some_and(|op| op.status == NativeOperationStatus::Blocked);
     (retry, correct)
 }
-fn display_resource_name(name: &str) -> String {
-    let Some(marker) = name.rfind("-v") else {
-        return name.to_owned();
-    };
-    let suffix = &name[marker + 2..];
-    let Some((version, digest)) = suffix.split_once('-') else {
-        return name.to_owned();
-    };
-    let valid_version = version.matches('.').count() >= 1
-        && !version.is_empty()
-        && version.chars().all(|ch| ch.is_ascii_digit() || ch == '.');
-    let valid_digest = digest.len() >= 8 && digest.chars().all(|ch| ch.is_ascii_hexdigit());
-    if valid_version && valid_digest {
-        name[..marker].to_owned()
-    } else {
-        name.to_owned()
-    }
-}
-
 fn resource_matches(resource: &NativeResource, kind: &str, query: &str, scope: &str) -> bool {
     let category = match resource.kind {
         NativeKind::Package => "package",
@@ -630,7 +611,7 @@ pub fn NativeResources(
                         }
                         div { class: "native-resource-list",
                             for resource in resources {
-                                { let open_resource = resource.clone(); let display_name = display_resource_name(&resource.name); let selected = current.as_ref().and_then(|s| s.configuration.as_ref()).map(|c| c.desired.main_package.as_ref().is_some_and(|r| r.reference.as_deref() == Some(resource.reference.as_str())) || c.desired.skills.iter().chain(&c.desired.extensions).any(|r| r.reference.as_deref() == Some(resource.reference.as_str()))); let installation = super::detail::installation_label(&resource.facts); let selection_text = match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" }; let install_class = match resource.facts["installed"].as_bool() { Some(true) => "installed", Some(false) => "not-installed", None => "unknown" }; let selection_class = match selected { Some(true) => "selected", Some(false) => "not-selected", None => "unknown" }; rsx! {
+                                { let open_resource = resource.clone(); let display_name = super::catalog::display_name(&resource.name); let selected = current.as_ref().and_then(|s| s.configuration.as_ref()).map(|c| c.desired.main_package.as_ref().is_some_and(|r| r.reference.as_deref() == Some(resource.reference.as_str())) || c.desired.skills.iter().chain(&c.desired.extensions).any(|r| r.reference.as_deref() == Some(resource.reference.as_str()))); let installation = super::detail::installation_label(&resource.facts); let selection_text = match selected { Some(true) => "本会话配置已选择", Some(false) => "本会话配置未选择", None => "会话选择未核实" }; let install_class = match resource.facts["installed"].as_bool() { Some(true) => "installed", Some(false) => "not-installed", None => "unknown" }; let selection_class = match selected { Some(true) => "selected", Some(false) => "not-selected", None => "unknown" }; rsx! {
                                     article { key: "{resource.reference}", class: "native-resource-card",
                                         if expanded_list {
                                             span { class: "native-resource-icon", Icon { name: match resource.kind { NativeKind::Package => "blocks", NativeKind::Skill => "skills", NativeKind::Extension => "tool" } } }
@@ -704,12 +685,14 @@ pub fn NativeResources(
                     fieldset { disabled: busy() || loading() || !online || (!idle && !correction),
                         legend { if session.is_some() { "会话资源选择" } else { "项目默认资源选择" } }
                         label { "主 Package" select { aria_label: "会话主 Package", value: "{value.main_package}", onchange: move |e| { if let Some(v) = editor.write().as_mut() { v.main_package = e.value(); } dirty.set(true); },
-                            if let Some(c) = catalog.read().as_ref() { for r in c.resources.iter().filter(|r| r.kind == NativeKind::Package) { option { value: "{r.reference}", "{r.name} · {r.scope:?}" } } }
+                            if let Some(c) = catalog.read().as_ref() { for r in c.resources.iter().filter(|r| r.kind == NativeKind::Package) {
+                                { let display_name = super::catalog::display_name(&r.name); rsx! { option { value: "{r.reference}", "{display_name} · {r.scope:?}" } } }
+                            } }
                         } }
                         label { "Package 持续指令路径（每行一项）" textarea { aria_label: "Package 指令映射", value: value.package_instructions.join("\n"), oninput: move |e| { if let Some(v) = editor.write().as_mut() { v.package_instructions = e.value().lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); } dirty.set(true); } } }
                         if let Some(c) = catalog.read().as_ref() { for r in c.resources.iter().filter(|r| r.kind != NativeKind::Package) {
-                            { let reference = r.reference.clone(); let is_skill = r.kind == NativeKind::Skill; let checked = if is_skill { value.skills.contains(&reference) } else { value.extensions.contains(&reference) }; rsx! {
-                                label { input { r#type: "checkbox", checked, onchange: move |e| { if let Some(v) = editor.write().as_mut() { let items = if is_skill { &mut v.skills } else { &mut v.extensions }; items.retain(|r| r != &reference); if e.checked() { items.push(reference.clone()); } } dirty.set(true); } } "{r.kind:?}: {r.name} · {r.scope:?}" }
+                            { let reference = r.reference.clone(); let is_skill = r.kind == NativeKind::Skill; let checked = if is_skill { value.skills.contains(&reference) } else { value.extensions.contains(&reference) }; let display_name = super::catalog::display_name(&r.name); rsx! {
+                                label { input { r#type: "checkbox", checked, onchange: move |e| { if let Some(v) = editor.write().as_mut() { let items = if is_skill { &mut v.skills } else { &mut v.extensions }; items.retain(|r| r != &reference); if e.checked() { items.push(reference.clone()); } } dirty.set(true); } } "{r.kind:?}: {display_name} · {r.scope:?}" }
                             } }
                         } }
                         label { "工具策略" select { aria_label: "会话工具策略", value: match value.tools { NativeTools::Default {} => "default", NativeTools::Only { .. } => "only", NativeTools::None {} => "none" }, onchange: move |e| { if let Some(v) = editor.write().as_mut() { v.tools = match e.value().as_str() { "none" => NativeTools::None {}, "only" => NativeTools::Only { names: vec![] }, _ => NativeTools::Default {} }; } dirty.set(true); }, option { value: "default", "default" } option { value: "only", "only" } option { value: "none", "none（零模型工具）" } } }
@@ -748,19 +731,6 @@ pub fn NativeResources(
 mod presentation_tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn display_name_hides_version_and_digest_suffix_only() {
-        assert_eq!(
-            display_resource_name("rpi_acp-v0.2.13-37410c15e8a849f2aaeebce774f156d4"),
-            "rpi_acp"
-        );
-        assert_eq!(display_resource_name("rpi_ask_user"), "rpi_ask_user");
-        assert_eq!(
-            display_resource_name("custom-vnext-not-a-digest"),
-            "custom-vnext-not-a-digest"
-        );
-    }
 
     #[test]
     fn extension_list_preserves_versions_and_prefers_installed_project_duplicate() {

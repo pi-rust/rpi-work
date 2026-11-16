@@ -21,10 +21,10 @@ impl ResourceChoice {
         }
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> String {
         match self {
-            Self::Installed(resource) => &resource.name,
-            Self::Public(offer) => &offer.manifest.title,
+            Self::Installed(resource) => display_name(&resource.name),
+            Self::Public(offer) => offer.manifest.title.clone(),
         }
     }
 
@@ -68,6 +68,66 @@ impl ResourceChoice {
                 }
             }
     }
+}
+
+fn valid_version(version: &str) -> bool {
+    !version.is_empty()
+        && version.matches('.').count() >= 1
+        && version.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+}
+
+fn is_hex(value: &str, minimum: usize) -> bool {
+    value.len() >= minimum && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn is_uuid(value: &str) -> bool {
+    let parts = value.split('-').collect::<Vec<_>>();
+    parts.len() == 5
+        && parts[0].len() == 8
+        && parts[1..4].iter().all(|part| part.len() == 4)
+        && parts[4].len() == 12
+        && parts.iter().all(|part| is_hex(part, 1))
+}
+
+fn looks_like_digest(value: &str, minimum: usize) -> bool {
+    is_uuid(value) || is_hex(value, minimum)
+}
+
+fn strip_uuid_suffix(name: &str) -> Option<&str> {
+    let start = name.len().checked_sub(36)?;
+    if start == 0 || !name[start - 1..].starts_with('-') || !is_uuid(&name[start..]) {
+        return None;
+    }
+    Some(&name[..start - 1])
+}
+
+/// Installed names may carry a native version/digest suffix such as
+/// `rpi_acp-v0.2.13-<digest>` or `librpi_acp-v0.2.17`. Keep the raw name for
+/// management and matching; only show the stable identity in the UI.
+pub(super) fn display_name(name: &str) -> String {
+    if let Some(marker) = name.rfind("-v") {
+        if marker > 0 {
+            let suffix = &name[marker + 2..];
+            let (version, digest) = suffix
+                .split_once('-')
+                .map_or((suffix, None), |(version, digest)| (version, Some(digest)));
+            if valid_version(version)
+                && digest.is_none_or(|digest| digest.is_empty() || looks_like_digest(digest, 8))
+            {
+                return name[..marker].to_owned();
+            }
+        }
+    }
+    if let Some(base) = strip_uuid_suffix(name) {
+        return base.to_owned();
+    }
+    if let Some(marker) = name.rfind('-') {
+        let suffix = &name[marker + 1..];
+        if marker > 0 && looks_like_digest(suffix, 16) {
+            return name[..marker].to_owned();
+        }
+    }
+    name.to_owned()
 }
 
 pub(super) fn kind_key(kind: NativeKind) -> &'static str {
@@ -153,6 +213,28 @@ pub(super) fn installation_origin(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn display_name_hides_native_version_and_digest_suffixes() {
+        assert_eq!(
+            display_name("rpi_acp-v0.2.13-37410c15e8a849f2aaeebce774f156d4"),
+            "rpi_acp"
+        );
+        assert_eq!(display_name("librpi_acp-v0.2.17"), "librpi_acp");
+        assert_eq!(
+            display_name("review-01a1da59-9401-7673-860c-e386f83b5a0f"),
+            "review"
+        );
+        assert_eq!(
+            display_name("review-37410c15e8a849f2aaeebce774f156d4"),
+            "review"
+        );
+        assert_eq!(display_name("rpi_ask_user"), "rpi_ask_user");
+        assert_eq!(
+            display_name("custom-vnext-not-a-digest"),
+            "custom-vnext-not-a-digest"
+        );
+    }
 
     fn resource(scope: NativeScope, version: &str, installed: Option<bool>) -> NativeResource {
         NativeResource {

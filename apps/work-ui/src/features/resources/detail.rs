@@ -46,12 +46,13 @@ pub(super) fn ResourceDetail(
     let installable = facts["installed"] == false && !source.peek().trim().is_empty();
     let install_state = installation_label(&facts);
     let scope_text = scope_label(scope);
+    let display_name = super::catalog::display_name(&name);
     rsx! {
-        Modal { id: "node-resource-detail", title: "资源详情", subtitle: Some(name.clone()),
+        Modal { id: "node-resource-detail", title: "资源详情", subtitle: Some(display_name.clone()),
             class: "native-resource-detail", trap_focus: true, onclose,
             div { class: "native-detail-body",
             div { class: "native-detail-summary",
-                strong { "{name}" }
+                strong { "{display_name}" }
                 p { "{scope_text} · {install_state}" }
                 p { "安装不代表本会话已选择或实际加载；请在会话资源设置中核对。" }
             }
@@ -98,7 +99,7 @@ pub(super) fn ResourceDetail(
             if action() == "update" || action() == "reinstall" {
                 fieldset { disabled: blocked, class: "native-detail-authorization",
                     legend { if action() == "update" { "授权更新此资源" } else { "授权重装此资源" } }
-                    p { "目标：{name} · {scope_text}。仅作用于此资源，不自动应用会话配置。" }
+                    p { "目标：{display_name} · {scope_text}。仅作用于此资源，不自动应用会话配置。" }
                     label { "节点来源（授权项目内路径）"
                         input { aria_label: "此资源的节点来源", value: "{source}", oninput: move |e| { source.set(e.value()); trusted.set(false); } }
                     }
@@ -126,7 +127,7 @@ pub(super) fn ResourceDetail(
             }
             if action() == "remove" {
                 section { class: "native-remove-confirm", aria_label: "移除确认",
-                    p { "确认从{scope_text}移除「{name}」？此操作由节点检查占用情况，不会自动释放会话。" }
+                    p { "确认从{scope_text}移除「{display_name}」？此操作由节点检查占用情况，不会自动释放会话。" }
                     div { class: "native-actions",
                         button { class: "button danger", disabled: blocked, onclick: { let reference=target.clone(); move |_| { action.set("view".into()); onmanage.call(NativeManagement::Remove { reference: reference.clone() }); } }, "确认移除" }
                         button { class: "button", disabled: busy, onclick: move |_| action.set("view".into()), "取消" }

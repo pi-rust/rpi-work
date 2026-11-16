@@ -489,10 +489,10 @@ fn ResourceCenterState(
                                 }
                             } else {
                                 for resource in installed_list {
-                                    { let choice = ResourceChoice::Installed(resource.clone()); let is_selected = selected.iter().any(|entry| entry.key() == choice.key()); let origin = native.read().as_ref().map(|catalog| installation_origin(&resource, catalog)).unwrap_or("安装来源待核对"); let open_resource = resource.clone(); let install_choice = choice.clone(); rsx! {
+                                    { let choice = ResourceChoice::Installed(resource.clone()); let display_name = choice.name(); let is_selected = selected.iter().any(|entry| entry.key() == choice.key()); let origin = native.read().as_ref().map(|catalog| installation_origin(&resource, catalog)).unwrap_or("安装来源待核对"); let open_resource = resource.clone(); let install_choice = choice.clone(); rsx! {
                                         article { class: "resource-workbench-row native-resource-card", "data-resource-kind": kind_key(resource.kind),
                                             span { class: "resource-row-icon", Icon { name: kind_icon(resource.kind) } }
-                                            div { class: "resource-row-heading", h2 { "{resource.name}" span { "{kind_label(resource.kind)}" } } p { "v{choice.version()}" } }
+                                            div { class: "resource-row-heading", h2 { "{display_name}" span { "{kind_label(resource.kind)}" } } p { "v{choice.version()}" } }
                                             if let Some(description) = resource.facts["description"].as_str() { p { class: "resource-row-description", "{description}" } }
                                             div { class: "resource-row-meta", span { "{origin}" } }
                                             div { class: "resource-row-actions", span { "已安装" }
