@@ -35,6 +35,7 @@ work-ui --headless
 
 - 无头模式**必须有显式非空密码**：`RPI_WORK_HTTP_PASSWORD` 优先，未设置时兼容 `RPI_HTTP_PASSWORD`。不接受命令行密码，不生成一个无人可查看的随机密码；缺失时在创建数据目录前失败。GUI 原有随机密码行为不变。
 - `RPI_WORK_RPI_BIN` 指定执行宿主；未指定时按应用可执行文件旁、PATH、macOS Homebrew 前缀（`/opt/homebrew/bin`、`/usr/local/bin`）、RPI Work 自动安装目录和 Cargo 用户目录依次查找。无头模式找不到时会输出已检查的候选路径；未指定时不会自动下载。`RPI_WORK_DATA_DIR` 沿用原平台目录，**不新增 headless 专用数据库**。对同一 data 使用同一 `<data>/node.lock`、`rpc/`、`node-id` 和 `sharing.json`。
+- `RPI_WORK_PROJECTS_ROOT` 指定项目浏览和不指定路径的新建项目使用的根目录，必须是绝对路径；未设置时沿用 `<data>/managed-projects`。显式无效值会使启动失败，不回退到默认目录。`folders [PATH]` 仍可浏览显式路径。
 - HTTP 配置复用 [桌面 HTTP 配置](desktop-http.md#配置)。默认仍是 `0.0.0.0:13031`，首次没有偏好时关闭远程协作和 Web 访问；这是既有桌面策略，不是无头新增的宽松模式。仅本机使用建议显式 `RPI_WORK_HTTP_BIND=127.0.0.1`；远程明文 HTTP 仅用于可信网络，公网配置 HTTPS 同源入口。
 - 不自动配置防火墙、代理或 Web assets。API-only 不等于可直接用浏览器打开；需 `RPI_WORK_HTTP_ASSETS` 或已配置的同源 Web 代理声明。`RPI_WORK_HTTP_WEB_PORT` 只声明既有代理，不启动代理进程。
 - HTTP 绑定/配置失败时，无头模式清理 owner 并以非零状态退出；不会输出成功 ready，也不会连接占用端口的其他服务。GUI 仍保留 HTTP 失败而本机 RPC 可用的既有行为。
@@ -49,7 +50,7 @@ work-ui --headless
 
 Ready 发布使用原生非阻塞管道写入，准备/重试/部分写入都受同一个停止信号与 **15 秒发布期限**监督；不创建后台 writer，也不使用 Tokio 的阻塞 stdout worker。消费者必须等待完整 LF 行，取消/超时留下的前缀不能视为 ready。偏好损坏时可额外包含固定、非秘密的 `warning` 字段，不依赖 stderr 警告。
 
-发布失败后先清理 owner 再以非零状态退出；致命 stderr 诊断只做一次尽力非阻塞写入，满/关闭的 stderr 可以丢失诊断，但不能阻止退出。普通文件/设备的同步 I/O 卡顿不属于此管道背压保证。
+发布失败后先清理 owner 再以非零状态退出；致命 stderr 诊断只做一次尽力非阻塞写入，满/关闭的 stderr 可以丢失诊断，但不能阻止退出。普通文件/设备的同步 I/O 卡顿不属于此管道背压保证。启动阶段的运行时缺失、显式路径无效或数据锁占用会以一行 JSON 报告 `kind`、`message`、可选 `searched` 和 `canInstall`；不包含密码或其他凭据。
 
 ## 正常停止
 

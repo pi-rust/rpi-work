@@ -113,7 +113,7 @@ fn setup_worker() {
             })
             .err()
             .unwrap();
-            assert!(error.contains("RPI_WORK_RPI_BIN"), "{error}");
+            assert!(error.to_string().contains("RPI_WORK_RPI_BIN"), "{error}");
         }
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -192,7 +192,10 @@ fn setup_worker() {
             })
             .err()
             .unwrap();
-            assert!(error.contains("only be started once"), "{error}");
+            assert!(
+                error.to_string().contains("only be started once"),
+                "{error}"
+            );
             setup.shutdown();
             assert!(client.health().await.is_err());
         }

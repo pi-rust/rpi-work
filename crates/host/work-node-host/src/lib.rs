@@ -18,9 +18,11 @@ mod headless;
 pub mod http;
 mod ready_output;
 mod shutdown;
+mod startup;
 mod web_assets;
 pub use headless::{run_headless, run_headless_with};
 pub use ready_output::report_error;
+pub use startup::{StartupFailure, StartupFailureKind};
 
 /// Explicit launch configuration; credentials are intentionally not Debug/Serialize.
 #[derive(Default)]
@@ -32,7 +34,7 @@ pub struct LaunchOverrides {
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 static CONNECTION: OnceLock<NodeConnection> = OnceLock::new();
-static STARTUP_ERROR: OnceLock<String> = OnceLock::new();
+static STARTUP_FAILURE: OnceLock<StartupFailure> = OnceLock::new();
 
 /// Owns the data lock and HTTP executor for exactly one local workspace.
 #[must_use = "retain this guard until application shutdown"]
@@ -60,11 +62,13 @@ pub fn start() -> Option<LocalGuard> {
 }
 
 pub fn start_with(options: LaunchOverrides) -> Option<LocalGuard> {
-    let result = claim_start(&STARTED).and_then(|()| start_claimed(options));
+    let result = claim_start(&STARTED)
+        .map_err(StartupFailure::internal)
+        .and_then(|()| start_claimed(options));
     match result {
         Ok(guard) => Some(guard),
         Err(error) => {
-            let _ = STARTUP_ERROR.set(error);
+            let _ = STARTUP_FAILURE.set(error);
             None
         }
     }
@@ -73,8 +77,8 @@ pub fn start_with(options: LaunchOverrides) -> Option<LocalGuard> {
 /// Desktop preparation may fail before publishing an owner. Only that failure
 /// releases the startup claim, so repairing a path or a lock can be retried.
 /// A successfully published owner still consumes the process's single lifetime.
-pub fn try_start_with(options: LaunchOverrides) -> Result<LocalGuard, String> {
-    claim_start(&STARTED)?;
+pub fn try_start_with(options: LaunchOverrides) -> Result<LocalGuard, StartupFailure> {
+    claim_start(&STARTED).map_err(StartupFailure::internal)?;
     let result = start_claimed(options);
     if result.is_err() {
         STARTED.store(false, Ordering::Release);
@@ -82,16 +86,16 @@ pub fn try_start_with(options: LaunchOverrides) -> Result<LocalGuard, String> {
     result
 }
 
-fn start_claimed(options: LaunchOverrides) -> Result<LocalGuard, String> {
+fn start_claimed(options: LaunchOverrides) -> Result<LocalGuard, StartupFailure> {
     let runtime = LocalRuntime::prepare_with(options.rpi_bin, options.data)
-        .map_err(|error| error.to_string())?;
+        .map_err(StartupFailure::from_prepare)?;
     let data = runtime.data.clone();
     // Finish fallible preparation before creating HTTP executors or publishing
     // the owner. A returned error leaves no live child or background service.
-    let node_id = http::node_identity(&data)?;
+    let node_id = http::node_identity(&data).map_err(StartupFailure::internal)?;
     let client = Arc::new(
         LocalWorkspace::new(runtime.rpi.clone(), runtime.data.clone())
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| StartupFailure::internal(error.to_string()))?,
     );
     let mut guard = LocalGuard {
         lock: Some(runtime),
@@ -112,8 +116,14 @@ pub fn client() -> Option<NodeConnection> {
     CONNECTION.get().cloned()
 }
 
+#[must_use]
+pub fn startup_failure() -> Option<&'static StartupFailure> {
+    STARTUP_FAILURE.get()
+}
+
+#[must_use]
 pub fn startup_error() -> Option<&'static str> {
-    STARTUP_ERROR.get().map(String::as_str)
+    startup_failure().map(|failure| failure.message.as_str())
 }
 
 impl LocalGuard {

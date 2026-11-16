@@ -61,17 +61,6 @@ pub(crate) fn startup_error() -> Option<&'static str> {
     }
 }
 
-pub(crate) fn needs_runtime_install() -> bool {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    if matches!(
-        setup().snapshot().phase,
-        work_host::setup::Phase::Failed | work_host::setup::Phase::Cancelled
-    ) {
-        return true;
-    }
-    startup_error().is_some_and(|error| error.starts_with("未找到 rpi 执行宿主"))
-}
-
 #[cfg(test)]
 mod tests {
     #[test]

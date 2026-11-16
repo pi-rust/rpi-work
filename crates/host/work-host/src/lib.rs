@@ -1,6 +1,7 @@
 //! Work owns its local workspace; HTTP is an optional transport over that owner.
 pub use work_node_host::{
-    LaunchOverrides, LocalGuard, report_error, run_headless, start, startup_error, try_start_with,
+    LaunchOverrides, LocalGuard, StartupFailure, StartupFailureKind, report_error, run_headless,
+    start, startup_error, startup_failure, try_start_with,
 };
 pub mod http;
 pub mod setup;

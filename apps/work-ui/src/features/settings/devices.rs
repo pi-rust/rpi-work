@@ -350,21 +350,6 @@ fn album_script(native_picker: bool) -> String {
 }
 
 #[component]
-fn RuntimeInstallActions() -> Element {
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    {
-        let control = use_context::<crate::app::desktop_setup::SetupControl>();
-        let status = control.status.read().clone();
-        return rsx! {
-            p { class: "runtime-install-status", role: "status", "{status.message}" }
-            button { class: "button primary", onclick: move |_| control.resume.call(()), "准备本机运行环境" }
-        };
-    }
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    rsx! {}
-}
-
-#[component]
 pub fn DevicesPage(
     shared_client: Signal<Option<WorkspaceClient>>,
     requests: Signal<Vec<Task>>,
@@ -378,16 +363,6 @@ pub fn DevicesPage(
     mobile_client: bool,
 ) -> Element {
     let mut connection = use_context::<ConnectionStore>();
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-    let setup_needed =
-        try_use_context::<crate::app::desktop_setup::SetupControl>().is_some_and(|control| {
-            matches!(
-                control.status.read().phase,
-                work_host::setup::Phase::Failed | work_host::setup::Phase::Cancelled
-            )
-        });
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    let setup_needed = false;
     let mut qr_open = use_signal(|| false);
     let mut pairing = use_context::<PairingControl>();
     let mut remote_open = use_signal(|| false);
@@ -813,16 +788,6 @@ pub fn DevicesPage(
                             span { class: "connection-node-icon", Icon { name: "monitor".to_owned() } }
                             div { h2 { if owned_local { "这台电脑" } else { "当前执行节点" } } p { if owned_local { "本机工作空间 · RPC" } else { "远程执行节点 · HTTP/WebSocket" } } }
                             span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if owned_local { if online { "运行中" } else if busy { "准备中" } else { "未就绪" } } else if online { "已连接" } else if busy { "连接中" } else { "未连接" } }
-                        }
-                        if setup_needed || crate::app::local_node::needs_runtime_install() {
-                            div { class: "runtime-install-guide", role: "alert",
-                                div { class: "runtime-install-heading",
-                                    Icon { name: "download" }
-                                    strong { "准备本机运行环境" }
-                                }
-                                p { "自动检查 rpi，缺少时下载并安装；准备完成后会在当前窗口继续连接。" }
-                                RuntimeInstallActions {}
-                            }
                         }
                         div { class: "connection-topology",
                             if owned_local {

@@ -91,6 +91,14 @@ impl Failure {
         }
     }
 
+    fn from_startup(error: crate::StartupFailure) -> Self {
+        Self {
+            message: error.message,
+            can_install: error.can_install,
+            cancelled: false,
+        }
+    }
+
     fn cancelled() -> Self {
         Self {
             message: "已暂停准备运行环境，可随时重试或连接远程节点。".into(),
@@ -297,7 +305,7 @@ impl DesktopSetup {
             rpi_bin: Some(path.clone()),
             ..Default::default()
         })
-        .map_err(Failure::startup)?;
+        .map_err(Failure::from_startup)?;
         if !matches!(selection, Selection::Automatic) {
             // Failure to save a preference must never discard a live owner.
             if let Err(error) = save_preference(&path) {

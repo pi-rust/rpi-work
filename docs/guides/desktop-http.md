@@ -73,6 +73,7 @@ Web 的跨节点适配是同源页面导航，不是跨源 API 直连或凭据�
 | `RPI_WORK_HTTP_PORT` | `13031`；`task dev` 将同值传给 Web 代理 |
 | `RPI_WORK_HTTP_PASSWORD` | HTTP 登录密码；未设置时兼容 `RPI_HTTP_PASSWORD`；GUI 两者均无时生成随机密码，无头必须显式非空；显式空值拒绝启动 HTTP |
 | `RPI_WORK_HTTP_ALLOWED_HOSTS` | 额外允许的 Host authority，逗号分隔，非默认端口必须包含端口 |
+| `RPI_WORK_PROJECTS_ROOT` | 可选，项目浏览与不指定路径的新建项目使用的根目录；必须是绝对路径。未设置时使用 `<data>/managed-projects`；无效配置启动失败，不回退 |
 | `RPI_WORK_HTTP_PUBLIC_URL` | 可选，手机可达的 HTTP(S) origin；优先作为二维码地址，自动加入 Host 白名单，不含密码/参数/片段 |
 | `RPI_WORK_HTTP_WEB_PORT` | 可选，已配置同源 Web 代理的端口；`task dev` 自动传入 Web 端口（默认 `14180`），用于生成局域网二维码；不启动代理或改变监听 |
 | `RPI_WORK_HTTP_ASSETS` | 可选，已构建 Web bundle 目录（含 `index.html`）；与 API 同源提供资源，目录须存在 |

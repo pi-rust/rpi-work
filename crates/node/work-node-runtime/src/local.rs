@@ -17,6 +17,10 @@ use std::{
 pub enum PrepareError {
     #[error("{0}")]
     Runtime(#[from] RuntimeLookup),
+    #[error(
+        "本机节点已由另一个 RPI Work 宿主使用（桌面或无头进程）；请返回原窗口，或用 --connect <节点地址> 连接并独立登录。"
+    )]
+    Locked,
     #[error("{0}")]
     Message(String),
 }
@@ -92,11 +96,8 @@ impl LocalRuntime {
             .write(true)
             .open(data.join("node.lock"))
             .map_err(|_| PrepareError::Message("无法打开本机节点锁。".into()))?;
-        lock.try_lock_exclusive().map_err(|_| {
-            PrepareError::Message(
-                "本机节点已由另一个 RPI Work 宿主使用（桌面或无头进程）；请返回原窗口，或用 --connect <节点地址> 连接并独立登录。".into(),
-            )
-        })?;
+        lock.try_lock_exclusive()
+            .map_err(|_| PrepareError::Locked)?;
         Ok(Self {
             rpi,
             data,

@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use std::pin::Pin;
 use std::{
     collections::HashMap,
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -100,6 +101,7 @@ struct Inner {
     executable: PathBuf,
     data: PathBuf,
     control_root: PathBuf,
+    projects_root: PathBuf,
     state: Mutex<State>,
     // Separate from Alias so existing catalogs and legacy migration stay compatible.
     project_cache: Mutex<HashMap<PathBuf, Project>>,
@@ -164,6 +166,28 @@ fn alias_name(name: &str) -> Result<String, LocalError> {
     }
     Ok(name.to_owned())
 }
+
+/// Resolve the default directory for project browsing and new projects.
+/// An explicit override is authoritative: an invalid value fails startup rather
+/// than silently falling back to the application data directory.
+fn resolve_projects_root(data: &Path, configured: Option<OsString>) -> Result<PathBuf, LocalError> {
+    let Some(configured) = configured else {
+        return Ok(data.join("managed-projects"));
+    };
+    if configured.is_empty() {
+        return Err(LocalError::InvalidInput(
+            "RPI_WORK_PROJECTS_ROOT must not be empty".into(),
+        ));
+    }
+    let path = PathBuf::from(configured);
+    if !path.is_absolute() {
+        return Err(LocalError::InvalidInput(
+            "RPI_WORK_PROJECTS_ROOT must be an absolute directory".into(),
+        ));
+    }
+    std::fs::create_dir_all(&path)?;
+    std::fs::canonicalize(path).map_err(LocalError::from)
+}
 fn public_project(alias: &Alias) -> Result<Project, LocalError> {
     let core = workspace::Project::new(&alias.path)?;
     Ok(Project {
@@ -203,11 +227,26 @@ impl LocalWorkspace {
         data: PathBuf,
         session_dir: Option<PathBuf>,
     ) -> Result<Self, WorkspaceError> {
+        Self::with_session_dir_and_projects_root(
+            executable,
+            data,
+            session_dir,
+            std::env::var_os("RPI_WORK_PROJECTS_ROOT"),
+        )
+    }
+
+    fn with_session_dir_and_projects_root(
+        executable: PathBuf,
+        data: PathBuf,
+        session_dir: Option<PathBuf>,
+        projects_root: Option<OsString>,
+    ) -> Result<Self, WorkspaceError> {
         local((|| {
             std::fs::create_dir_all(&data)?;
             let data = std::fs::canonicalize(data)?;
             std::fs::create_dir_all(data.join("rpc"))?;
             let aliases = load_aliases(&data)?;
+            let projects_root = resolve_projects_root(&data, projects_root)?;
             let mut project_cache: HashMap<PathBuf, Project> =
                 match std::fs::read(data.join("rpc/project-cache.json")) {
                     Ok(bytes) => serde_json::from_slice(&bytes)?,
@@ -237,6 +276,7 @@ impl LocalWorkspace {
                     executable,
                     data,
                     control_root,
+                    projects_root,
                     state: Mutex::new(State {
                         aliases,
                         services: HashMap::new(),
@@ -313,7 +353,7 @@ impl LocalWorkspace {
         let config = BackendConfig {
             project: project.root,
             projects: Vec::new(),
-            projects_root: Some(self.inner.data.join("managed-projects")),
+            projects_root: Some(self.inner.projects_root.clone()),
             rpi_bin: self.inner.executable.clone(),
             session_dir: self.inner.session_dir.clone(),
             registry,
@@ -437,7 +477,7 @@ impl LocalWorkspace {
                 "new project name must be a single directory name".into(),
             )));
         }
-        let root = self.inner.data.join("managed-projects");
+        let root = self.inner.projects_root.clone();
         local(std::fs::create_dir_all(&root).map_err(LocalError::from))?;
         self.create_project_directory(&name, &root.join(&name), init_git)
             .await
@@ -536,11 +576,11 @@ impl LocalWorkspace {
             Ok(project)
         })())
     }
-    /// Browse an explicit directory; empty selects the managed-projects directory.
+    /// Browse an explicit directory; empty selects the configured projects root.
     pub async fn project_folders(&self, path: &str) -> Result<ProjectFolders, WorkspaceError> {
         local((|| {
             let root = if path.is_empty() {
-                self.inner.data.join("managed-projects")
+                self.inner.projects_root.clone()
             } else {
                 PathBuf::from(path)
             };
@@ -1637,6 +1677,44 @@ mod tests {
         );
         assert_eq!(run(client.projects()).unwrap().len(), 1);
     }
+    #[test]
+    fn configured_projects_root_scopes_browse_and_default_creation() {
+        let fixture = Fixture::new();
+        let projects = fixture.0.join("user-work");
+        std::fs::create_dir_all(projects.join("visible")).unwrap();
+        let client = LocalWorkspace::with_session_dir_and_projects_root(
+            "not-started-by-project-tests".into(),
+            fixture.0.join("data"),
+            None,
+            Some(projects.clone().into_os_string()),
+        )
+        .unwrap();
+        let listing = run(client.project_folders("")).unwrap();
+        let canonical = std::fs::canonicalize(&projects).unwrap();
+        assert_eq!(Path::new(&listing.root), canonical.as_path());
+        assert_eq!(listing.folders.len(), 1);
+        assert_eq!(listing.folders[0].name, "visible");
+        let created = run(client.create_project("New project", None, false)).unwrap();
+        assert_eq!(Path::new(&created.path), canonical.join("New project"));
+    }
+
+    #[test]
+    fn invalid_projects_root_is_rejected_without_fallback() {
+        let data = Path::new("/tmp/rpi-work-test-data");
+        assert!(
+            resolve_projects_root(data, Some(OsString::from("relative-work"))).is_err(),
+            "relative projects root must fail"
+        );
+        assert!(
+            resolve_projects_root(data, Some(OsString::new())).is_err(),
+            "empty projects root must fail"
+        );
+        assert_eq!(
+            resolve_projects_root(data, None).unwrap(),
+            data.join("managed-projects")
+        );
+    }
+
     #[test]
     fn explicit_creation_and_managed_creation_are_distinct_from_open() {
         let fixture = Fixture::new();

@@ -37,7 +37,12 @@ async fn main() -> ExitCode {
     match Box::pin(run(cli)).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            work_host::report_error(&error);
+            // Startup failures carry typed diagnostics (searched runtime paths,
+            // whether installation can help) without exposing credentials.
+            let message = work_host::startup_failure()
+                .and_then(|failure| serde_json::to_string(failure).ok())
+                .unwrap_or(error);
+            work_host::report_error(&message);
             ExitCode::FAILURE
         }
     }

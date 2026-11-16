@@ -6,12 +6,6 @@ use crate::shared::{
 use dioxus::prelude::*;
 use work_host::setup::{Phase, Selection};
 
-#[derive(Clone, Copy)]
-pub(crate) struct SetupControl {
-    pub resume: EventHandler<()>,
-    pub status: Signal<work_host::setup::Status>,
-}
-
 #[component]
 pub(super) fn DesktopEntry() -> Element {
     let setup = use_hook(super::local_node::setup);
@@ -22,17 +16,6 @@ pub(super) fn DesktopEntry() -> Element {
     let mut selection = use_signal(|| Selection::Automatic);
     let mut choosing_file = use_signal(|| false);
     let appearance = use_appearance();
-    use_context_provider({
-        let setup = setup.clone();
-        move || SetupControl {
-            status,
-            resume: EventHandler::new(move |()| {
-                bypass.set(false);
-                selection.set(Selection::Automatic);
-                setup.begin(Selection::Automatic);
-            }),
-        }
-    });
     use_effect({
         let setup = setup.clone();
         move || {
