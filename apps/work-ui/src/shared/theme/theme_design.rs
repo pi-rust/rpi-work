@@ -52,11 +52,17 @@ impl FontFamily {
         }
     }
     pub fn stack(self) -> &'static str {
+        // Host-provided fonts only: macOS must not fall through Windows-only
+        // families to Helvetica/Menlo and lose CJK glyphs or 550/600 weights.
         match self {
-            Self::System => "\"Segoe UI\",\"Microsoft YaHei\",sans-serif",
-            Self::Humanist => "\"Inter\",\"Segoe UI\",\"Microsoft YaHei\",sans-serif",
+            Self::System => {
+                "system-ui,-apple-system,\"Segoe UI\",\"PingFang SC\",\"Hiragino Sans GB\",\"Microsoft YaHei\",sans-serif"
+            }
+            Self::Humanist => {
+                "\"Inter\",system-ui,-apple-system,\"Segoe UI\",\"PingFang SC\",\"Hiragino Sans GB\",\"Microsoft YaHei\",sans-serif"
+            }
             Self::Code => {
-                "\"Cascadia Code\",\"SFMono-Regular\",Consolas,\"Microsoft YaHei\",monospace"
+                "\"Cascadia Code\",\"SFMono-Regular\",Menlo,Consolas,\"PingFang SC\",\"Microsoft YaHei\",monospace"
             }
             Self::Serif => "Georgia,\"Noto Serif SC\",\"Songti SC\",SimSun,serif",
         }
@@ -360,6 +366,20 @@ mod tests {
             design
         );
     }
+    #[test]
+    fn font_stacks_resolve_chinese_on_each_native_host() {
+        for stack in [
+            FontFamily::System.stack(),
+            FontFamily::Humanist.stack(),
+            FontFamily::Code.stack(),
+            FontFamily::Serif.stack(),
+        ] {
+            assert!(stack.contains("PingFang SC") || stack.contains("Songti SC"));
+        }
+        assert!(FontFamily::System.stack().contains("-apple-system"));
+        assert!(FontFamily::Code.stack().contains("Menlo"));
+    }
+
     #[test]
     fn rejects_unknown_fields_external_fonts_and_out_of_range_values() {
         let original =

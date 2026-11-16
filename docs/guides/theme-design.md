@@ -60,7 +60,7 @@
 
 `scale` 与角色字号相乘。其他已有组件的小字号经 `--type-scale` 统一缩放；独立业务语义强调（例如 Markdown strong）不强行变成正文或标题字重。
 
-字体栈为宿主固定值：`system` 使用系统 UI 字体；`humanist` 优先本机 Inter；`code` 优先 Cascadia Code / SFMono / Consolas；`serif` 优先 Georgia / 本机中文衬线字体。不能填写任意 font-family 字符串或字体 URL。
+字体栈为宿主固定值：`system` 使用系统 UI 字体（`system-ui` / macOS `-apple-system`）；`humanist` 优先本机 Inter；`code` 优先 Cascadia Code / SFMono / Menlo / Consolas；`serif` 优先 Georgia / 本机中文衬线字体。各栈均包含 PingFang SC / 微软雅黑等本机中文字体，Windows、macOS、Linux 均无需下载字体。不能填写任意 font-family 字符串或字体 URL。
 
 ### geometry
 

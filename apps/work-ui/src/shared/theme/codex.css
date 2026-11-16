@@ -34,7 +34,7 @@
   --font-assist: calc(12px * var(--type-scale));
   --font-body: calc(15px * var(--type-scale));
   --font-code: calc(12px * var(--type-scale));
-  --font-heading: "Segoe UI","Microsoft YaHei",sans-serif;
+  --font-heading: system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --font-message: calc(15px * var(--type-scale));
   --font-nav: calc(14px * var(--type-scale));
   --font-title: calc(16px * var(--type-scale));
@@ -48,7 +48,7 @@
   --line: #e5e5e5;
   --line-strong: #bfbfbf;
   --message-line-height: 1.95;
-  --mono: "Cascadia Code","SFMono-Regular",Consolas,"Microsoft YaHei",monospace;
+  --mono: "Cascadia Code","SFMono-Regular",Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace;
   --motion-fast: 140ms;
   --motion-normal: 200ms;
   --muted: #666666;
@@ -65,7 +65,7 @@
   --radius-xl: 20px;
   --radius-xs: 4px;
   --reading-line-height: 1.7;
-  --sans: "Segoe UI","Microsoft YaHei",sans-serif;
+  --sans: system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --selected-bg: #eaeaea;
   --selected-text: #1f1f1f;
   --shadow: 0 2px 8px var(--shadow-color);
@@ -206,7 +206,7 @@
   --font-assist: calc(12px * var(--type-scale));
   --font-body: calc(15px * var(--type-scale));
   --font-code: calc(12px * var(--type-scale));
-  --font-heading: "Segoe UI","Microsoft YaHei",sans-serif;
+  --font-heading: system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --font-message: calc(15px * var(--type-scale));
   --font-nav: calc(14px * var(--type-scale));
   --font-title: calc(16px * var(--type-scale));
@@ -220,7 +220,7 @@
   --line: #424242;
   --line-strong: #636363;
   --message-line-height: 1.95;
-  --mono: "Cascadia Code","SFMono-Regular",Consolas,"Microsoft YaHei",monospace;
+  --mono: "Cascadia Code","SFMono-Regular",Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace;
   --motion-fast: 140ms;
   --motion-normal: 200ms;
   --muted: #b0b0b0;
@@ -237,7 +237,7 @@
   --radius-xl: 20px;
   --radius-xs: 4px;
   --reading-line-height: 1.7;
-  --sans: "Segoe UI","Microsoft YaHei",sans-serif;
+  --sans: system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --selected-bg: #383838;
   --selected-text: #ececec;
   --shadow: 0 2px 8px var(--shadow-color);
@@ -379,7 +379,7 @@
   --font-assist: calc(12px * var(--type-scale));
   --font-body: calc(15px * var(--type-scale));
   --font-code: calc(12px * var(--type-scale));
-  --font-heading: "Segoe UI","Microsoft YaHei",sans-serif;
+  --font-heading: system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --font-message: calc(15px * var(--type-scale));
   --font-nav: calc(14px * var(--type-scale));
   --font-title: calc(16px * var(--type-scale));
@@ -393,7 +393,7 @@
   --line: #424242;
   --line-strong: #636363;
   --message-line-height: 1.95;
-  --mono: "Cascadia Code","SFMono-Regular",Consolas,"Microsoft YaHei",monospace;
+  --mono: "Cascadia Code","SFMono-Regular",Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace;
   --motion-fast: 140ms;
   --motion-normal: 200ms;
   --muted: #b0b0b0;
@@ -410,7 +410,7 @@
   --radius-xl: 20px;
   --radius-xs: 4px;
   --reading-line-height: 1.7;
-  --sans: "Segoe UI","Microsoft YaHei",sans-serif;
+  --sans: system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --selected-bg: #383838;
   --selected-text: #ececec;
   --shadow: 0 2px 8px var(--shadow-color);

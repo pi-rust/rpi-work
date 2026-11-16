@@ -63,7 +63,7 @@ custom.theme.design.shadow = 'none';
     }
     pass('external fonts, arbitrary CSS, invalid geometry and oversized numeric values reject atomically');
     await page.getByRole('button',{name:'返回会话',exact:true}).click(); await dialog().waitFor({state:'hidden'}); await active('codex');
-    near(await computed('body','font-size'),15); assert.match(await computed('body','font-family'),/Segoe UI/);
+    near(await computed('body','font-size'),15); assert.match(await computed('body','font-family'),/system-ui|-apple-system/);
     assert.equal(await page.locator('.composer textarea').inputValue(),'视觉规格切换不能丢失这份草稿');
     pass('cancel restores every visual group and preserves the active draft');
 
@@ -73,7 +73,7 @@ custom.theme.design.shadow = 'none';
     await dialog().getByRole('button',{name:'保存',exact:true}).click(); await dialog().waitFor({state:'hidden'});
     if (await page.getByRole('button',{name:'返回会话',exact:true}).count()) await page.getByRole('button',{name:'返回会话',exact:true}).click();
     assert.match(await computed('body','font-family'),/Georgia/);
-    assert.match(await computed('.app-header h1','font-family'),/Segoe UI/);
+    assert.match(await computed('.app-header h1','font-family'),/system-ui|-apple-system/);
     assert.match(await computed('.conversation-code pre','font-family'),/Cascadia Code/);
     near(await computed('body','font-size'),17.6);
     near(await computed('.conversation-user-text','font-size'),17.6);
@@ -137,7 +137,7 @@ custom.theme.design.shadow = 'none';
     pass('maximum 64px touch targets stay outside the scrolling modal body at both phone widths');
     await page.setViewportSize({width:1440,height:1000});
     await dialog().locator('.theme-preset').filter({hasText:'Codex 黑白'}).click(); await active('codex');
-    near(await computed('body','font-size'),15); assert.match(await computed('body','font-family'),/Segoe UI/);
+    near(await computed('body','font-size'),15); assert.match(await computed('body','font-family'),/system-ui|-apple-system/);
     assert.equal(await computed('#appearance','border-radius'),'16px'); assert.equal(await computed('#appearance','border-top-width'),'1px');
     assert.notEqual(await computed('#appearance','box-shadow'),'none');
     assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--bg')),'');

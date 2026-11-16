@@ -18,7 +18,7 @@
   min-height: 100%;
   padding: 40px 28px 110px;
   color: var(--home-ink);
-  font-family: Inter, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--sans, system-ui, sans-serif);
   font-size: calc(14px * var(--type-scale, 1));
   line-height: 1.6;
 }
@@ -201,14 +201,14 @@
 .app-shell.sidebar-collapsed { --sidebar-width: 0px; }
 .app-shell.sidebar-collapsed > :is(.sidebar, .sidebar-resize-handle) { display: none; }
 .app-shell.sidebar-collapsed:not(.conversation-focus) > .main-column { grid-column: 2; }
-.home-nav kbd { margin-left: auto; font: 11px var(--sans); color: var(--muted); }
+.home-nav kbd { margin-left: auto; font: 11px var(--sans, system-ui, sans-serif); color: var(--muted); }
 .app-shell .sidebar { padding: 20px 10px 12px; background: var(--bg); font-size: calc(14px * var(--type-scale, 1)); line-height: 1.6; }
 .app-shell .sidebar .brand { min-height: 29px; padding-inline: 8px; gap: 10px; margin-bottom: 24px; }
 .app-shell .sidebar .brand > strong { font-size: 23px; line-height: 1; letter-spacing: -1.1px; }
 .app-shell .sidebar .brand > strong > span { margin-left: 3px; }
 .app-shell .sidebar .brand-mark { width: 29px; height: 29px; }
 .app-shell .sidebar .search-trigger { margin-bottom: 10px; min-height: 36px; border: 0; border-radius: 7px; padding: 8px 9px; gap: 8px; background: var(--panel); font-size: 13px; line-height: 1.6; }
-.app-shell .sidebar .search-trigger kbd { font: 11px var(--sans); }
+.app-shell .sidebar .search-trigger kbd { font: 11px var(--sans, system-ui, sans-serif); }
 @media (min-width: 768px) {
   .app-shell:has(.home-content) .sidebar { background: var(--canvas); }
   .app-shell:has(.home-content) .sidebar .search-trigger { background: transparent; }
