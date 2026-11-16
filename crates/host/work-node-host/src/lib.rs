@@ -83,7 +83,8 @@ pub fn try_start_with(options: LaunchOverrides) -> Result<LocalGuard, String> {
 }
 
 fn start_claimed(options: LaunchOverrides) -> Result<LocalGuard, String> {
-    let runtime = LocalRuntime::prepare_with(options.rpi_bin, options.data)?;
+    let runtime = LocalRuntime::prepare_with(options.rpi_bin, options.data)
+        .map_err(|error| error.to_string())?;
     let data = runtime.data.clone();
     // Finish fallible preparation before creating HTTP executors or publishing
     // the owner. A returned error leaves no live child or background service.

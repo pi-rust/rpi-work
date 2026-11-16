@@ -113,7 +113,7 @@ fn setup_worker() {
             })
             .err()
             .unwrap();
-            assert!(error.contains("未找到 rpi"), "{error}");
+            assert!(error.contains("RPI_WORK_RPI_BIN"), "{error}");
         }
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -171,10 +171,20 @@ fn setup_worker() {
                 assert!(
                     semver::Version::parse(setup.snapshot().version.as_deref().unwrap()).is_ok()
                 );
-                assert!(root.join("rpi-work/runtime/selection.json").exists());
+                assert!(
+                    work_update::native::rpi_runtime::install_dir()
+                        .unwrap()
+                        .join("selection.json")
+                        .exists()
+                );
             } else {
                 assert_eq!(setup.snapshot().version.as_deref(), Some("0.24.0"));
-                assert!(root.join("rpi-work/runtime/selection.json").exists());
+                assert!(
+                    work_update::native::rpi_runtime::install_dir()
+                        .unwrap()
+                        .join("selection.json")
+                        .exists()
+                );
             }
             let error = work_host::try_start_with(work_host::LaunchOverrides {
                 rpi_bin: Some(executable),

@@ -30,9 +30,11 @@ fn main() {
     );
     assert_eq!(std::env::var("RPI_OFFLINE").as_deref(), Ok("1"));
     let directory = std::env::current_dir().unwrap();
+    let coding_agent_dir =
+        std::fs::canonicalize(std::env::var_os("RPI_CODING_AGENT_DIR").unwrap()).unwrap();
     assert_eq!(
-        std::env::var_os("RPI_CODING_AGENT_DIR").unwrap(),
-        directory.join("agent")
+        coding_agent_dir,
+        std::fs::canonicalize(directory.join("agent")).unwrap()
     );
     assert!(directory.join("agent/models.json").is_file());
     if let Ok(marker) = std::env::var("RPI_SETUP_FIXTURE_MARKER") {

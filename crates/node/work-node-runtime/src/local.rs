@@ -5,7 +5,7 @@
 //! client have shut down. Dropping it earlier releases the workspace lock while
 //! those children may still be using the data directory.
 
-use crate::desktop::find_runtime;
+use crate::desktop::{RuntimeLookup, resolve_runtime};
 use fs2::FileExt;
 use std::{
     ffi::OsString,
@@ -13,8 +13,13 @@ use std::{
     path::PathBuf,
 };
 
-const MISSING_RPI: &str =
-    "未找到 rpi 执行宿主。请安装 rpi 或将其放在 RPI Work 可执行文件旁，然后重新启动。";
+#[derive(Debug, thiserror::Error)]
+pub enum PrepareError {
+    #[error("{0}")]
+    Runtime(#[from] RuntimeLookup),
+    #[error("{0}")]
+    Message(String),
+}
 
 /// Resolved native runtime paths and an exclusive application-data lock.
 ///
@@ -31,7 +36,7 @@ pub struct LocalRuntime {
 impl LocalRuntime {
     /// Resolve the application sibling/PATH runtime and platform data directory.
     /// `RPI_WORK_RPI_BIN`, when present, is authoritative even if missing.
-    pub fn prepare() -> Result<Self, String> {
+    pub fn prepare() -> Result<Self, PrepareError> {
         Self::prepare_with(None, None)
     }
 
@@ -40,18 +45,22 @@ impl LocalRuntime {
     pub fn prepare_with(
         rpi_override: Option<PathBuf>,
         data_override: Option<PathBuf>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, PrepareError> {
         let application = std::env::current_exe()
-            .map_err(|_| "无法定位应用目录。")?
+            .map_err(|_| PrepareError::Message("无法定位应用目录。".into()))?
             .parent()
-            .ok_or("无法定位应用目录。")?
+            .ok_or_else(|| PrepareError::Message("无法定位应用目录。".into()))?
             .to_owned();
-        let rpi = find_runtime(
+        let lookup = resolve_runtime(
             "rpi",
             rpi_override.or_else(|| std::env::var_os("RPI_WORK_RPI_BIN").map(PathBuf::from)),
             &application,
-        )
-        .ok_or(MISSING_RPI)?;
+            std::env::var_os("PATH"),
+        );
+        let rpi = match lookup {
+            RuntimeLookup::Found { path, .. } => path,
+            failure => return Err(PrepareError::Runtime(failure)),
+        };
         let data = data_directory(|name| {
             if name == "RPI_WORK_DATA_DIR" {
                 data_override
@@ -61,26 +70,33 @@ impl LocalRuntime {
             } else {
                 std::env::var_os(name)
             }
-        })?;
+        })
+        .map_err(PrepareError::Message)?;
         Self::from_paths(rpi, data)
     }
 
     /// Validate an already-resolved runtime and lock the supplied data directory.
     /// No process is started. A missing runtime never falls back to PATH.
-    pub fn from_paths(rpi: PathBuf, data: PathBuf) -> Result<Self, String> {
+    pub fn from_paths(rpi: PathBuf, data: PathBuf) -> Result<Self, PrepareError> {
         if !rpi.is_file() {
-            return Err(MISSING_RPI.into());
+            return Err(PrepareError::Runtime(RuntimeLookup::InvalidOverride {
+                path: rpi,
+            }));
         }
-        std::fs::create_dir_all(&data).map_err(|_| "无法创建本机节点数据目录。")?;
+        std::fs::create_dir_all(&data)
+            .map_err(|_| PrepareError::Message("无法创建本机节点数据目录。".into()))?;
         let lock = OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
             .open(data.join("node.lock"))
-            .map_err(|_| "无法打开本机节点锁。")?;
-        lock.try_lock_exclusive()
-            .map_err(|_| "本机节点已由另一个 RPI Work 宿主使用（桌面或无头进程）；请返回原窗口，或用 --connect <节点地址> 连接并独立登录。")?;
+            .map_err(|_| PrepareError::Message("无法打开本机节点锁。".into()))?;
+        lock.try_lock_exclusive().map_err(|_| {
+            PrepareError::Message(
+                "本机节点已由另一个 RPI Work 宿主使用（桌面或无头进程）；请返回原窗口，或用 --connect <节点地址> 连接并独立登录。".into(),
+            )
+        })?;
         Ok(Self {
             rpi,
             data,
@@ -153,7 +169,7 @@ mod tests {
         let data = temp.path().join("data");
         let error =
             LocalRuntime::from_paths(temp.path().join("missing"), data.clone()).unwrap_err();
-        assert_eq!(error, MISSING_RPI);
+        assert!(error.to_string().contains("RPI_WORK_RPI_BIN"));
         assert!(!data.exists());
         assert!(LocalRuntime::from_paths(temp.path().to_owned(), data).is_err());
     }
@@ -169,7 +185,7 @@ mod tests {
         assert!(data.join("node.lock").is_file());
         assert!(!data.join("rpc").exists());
         let error = LocalRuntime::from_paths(rpi.clone(), data.clone()).unwrap_err();
-        assert!(error.contains("另一个 RPI Work 宿主"));
+        assert!(error.to_string().contains("另一个 RPI Work 宿主"));
         // Compatibility mode and RPC use the very same lock file.
         let competing = OpenOptions::new()
             .read(true)
