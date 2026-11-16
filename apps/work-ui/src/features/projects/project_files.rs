@@ -206,8 +206,12 @@ pub fn Browser(
                                     else { tree.write().expanded.insert(path.clone()); if !tree.peek().children.contains_key(&path) && !tree.peek().loading.contains(&path) { expand_load(path.clone()); } }
                                 } else { onselect.call(path.clone()) },
                                 if directory { span { class: "project-tree-chevron", if expanded { "⌄" } else { "›" } } }
-                                Icon { name: if directory { "folder" } else { "file" } } span { "{entry.name}" }
-                                if directory && expanded { small { "{snapshot.children.get(&entry.path).map_or(0, Vec::len)} 项" } }
+                                Icon { name: if directory { "folder" } else { "file" } }
+                                span { class: "project-file-label",
+                                    span { class: "project-file-name", "{entry.name}" }
+                                    if !filter.is_empty() { small { class: "project-file-path", title: "{entry.path}", "{entry.path}" } }
+                                }
+                                if directory && expanded { small { class: "project-file-count", "{snapshot.children.get(&entry.path).map_or(0, Vec::len)} 项" } }
                             }
                             if expanded && snapshot.loading.contains(&entry.path) { p { class: "project-tree-feedback", role: "status", "正在加载目录…" } }
                             if expanded { if let Some(error) = snapshot.errors.get(&entry.path) { div { class: "project-tree-feedback", role: "alert", "{error}" button { onclick: move |_| retry(retry_path.clone()), "重试读取目录" } } } }

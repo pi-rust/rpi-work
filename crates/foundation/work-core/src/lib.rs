@@ -256,7 +256,7 @@ impl RunProjection {
                 match self.find_block_mut(&block_id) {
                     Some(MessageBlock::Text { text, .. }) => text.push_str(&delta),
                     Some(_) => {}
-                    None => self.blocks.push(MessageBlock::Text {
+                    None => self.insert_ordered_message_block(MessageBlock::Text {
                         id: block_id,
                         text: delta,
                     }),
@@ -271,7 +271,7 @@ impl RunProjection {
                 match self.find_block_mut(&block_id) {
                     Some(MessageBlock::Thinking { text, .. }) => text.push_str(&delta),
                     Some(_) => {}
-                    None => self.blocks.push(MessageBlock::Thinking {
+                    None => self.insert_ordered_message_block(MessageBlock::Thinking {
                         id: block_id,
                         text: delta,
                     }),
@@ -401,7 +401,7 @@ impl RunProjection {
         match self.find_block_mut(&block_id) {
             Some(MessageBlock::Text { text: current, .. }) => *current = text,
             Some(_) => {}
-            None => self.blocks.push(MessageBlock::Text { id: block_id, text }),
+            None => self.insert_ordered_message_block(MessageBlock::Text { id: block_id, text }),
         }
     }
 
@@ -409,9 +409,42 @@ impl RunProjection {
         match self.find_block_mut(&block_id) {
             Some(MessageBlock::Thinking { text: current, .. }) => *current = text,
             Some(_) => {}
-            None => self
-                .blocks
-                .push(MessageBlock::Thinking { id: block_id, text }),
+            None => {
+                self.insert_ordered_message_block(MessageBlock::Thinking { id: block_id, text })
+            }
+        }
+    }
+
+    /// Stream transports may deliver a public snapshot before its reasoning
+    /// snapshot. Keep the projection in content order rather than appending
+    /// thinking after the final answer merely because it arrived later.
+    fn insert_ordered_message_block(&mut self, block: MessageBlock) {
+        let empty = matches!(
+            &block,
+            MessageBlock::Text { text, .. } | MessageBlock::Thinking { text, .. }
+                if text.is_empty()
+        );
+        if empty {
+            self.blocks.push(block);
+            return;
+        }
+        let Some((message_id, index, kind)) = projected_block_position(block.id()) else {
+            self.blocks.push(block);
+            return;
+        };
+        let position = self.blocks.iter().position(|existing| {
+            let Some((existing_message, existing_index, existing_kind)) =
+                projected_block_position(existing.id())
+            else {
+                return false;
+            };
+            existing_message == message_id
+                && (existing_index > index || (existing_index == index && existing_kind > kind))
+        });
+        if let Some(position) = position {
+            self.blocks.insert(position, block);
+        } else {
+            self.blocks.push(block);
         }
     }
 
@@ -441,6 +474,17 @@ impl RunProjection {
 /// Component package protocol, separate from inert Agent extension designs.
 pub use work_component_api as components;
 
+/// Return the owner message, content index and kind for streamed assistant
+/// blocks. Thinking sorts before public text at the same content index.
+fn projected_block_position(id: &str) -> Option<(&str, usize, u8)> {
+    [("-thinking-", 0), ("-text-", 1)]
+        .iter()
+        .find_map(|(suffix, kind)| {
+            let (owner, index) = id.rsplit_once(suffix)?;
+            Some((owner, index.parse().ok()?, *kind))
+        })
+}
+
 /// Extract a trailing content-array index such as `m-text-2`; unindexed IDs sort last.
 fn content_index(block_id: &str) -> usize {
     block_id
@@ -466,6 +510,40 @@ mod tests {
             seq: Some(seq),
             kind,
         }
+    }
+
+    #[test]
+    fn thinking_stays_before_public_text_when_streamed_late() {
+        let mut run = RunProjection::new("run-1");
+        run.apply(event(
+            1,
+            "text",
+            EventKind::TextDelta {
+                block_id: "answer-text-0".into(),
+                delta: "answer".into(),
+            },
+        ));
+        run.apply(event(
+            2,
+            "thinking",
+            EventKind::ThinkingDelta {
+                block_id: "answer-thinking-0".into(),
+                delta: "reasoning".into(),
+            },
+        ));
+        assert_eq!(
+            run.blocks,
+            vec![
+                MessageBlock::Thinking {
+                    id: "answer-thinking-0".into(),
+                    text: "reasoning".into(),
+                },
+                MessageBlock::Text {
+                    id: "answer-text-0".into(),
+                    text: "answer".into(),
+                },
+            ]
+        );
     }
 
     #[test]

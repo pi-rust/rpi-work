@@ -58,12 +58,24 @@ fn duplicate_ids(models: &[ModelDescriptor]) -> BTreeSet<&str> {
         .collect()
 }
 
-/// Some nodes qualify catalog ids but report a bare runtime model id. Only
-/// remove an exact provider prefix when the authoritative provider agrees.
+/// Nodes are inconsistent about whether the provider is included in the
+/// reported model ID. Compare both wire forms, but only within the reported
+/// provider so the same model ID cannot silently select another provider.
+pub(crate) fn matches_provider_model(
+    model_provider: &str,
+    model_id: &str,
+    provider: &str,
+    id: &str,
+) -> bool {
+    (provider.is_empty() || model_provider == provider)
+        && (model_id == id
+            || (!provider.is_empty()
+                && (model_id.strip_prefix(&format!("{provider}/")) == Some(id)
+                    || id.strip_prefix(&format!("{provider}/")) == Some(model_id))))
+}
+
 pub(crate) fn matches_model(model: &ModelDescriptor, provider: &str, id: &str) -> bool {
-    (provider.is_empty() || model.provider == provider)
-        && (model.id == id
-            || (!provider.is_empty() && model.id.strip_prefix(&format!("{provider}/")) == Some(id)))
+    matches_provider_model(&model.provider, &model.id, provider, id)
 }
 
 fn is_current(
@@ -637,12 +649,22 @@ mod tests {
 
     #[test]
     fn qualified_catalog_and_bare_runtime_ids_require_provider_agreement() {
-        let model = model("alpha", "alpha/family/model-v1");
-        assert!(matches_model(&model, "alpha", "family/model-v1"));
-        assert!(matches_model(&model, "alpha", "alpha/family/model-v1"));
-        assert!(!matches_model(&model, "beta", "family/model-v1"));
-        assert!(!matches_model(&model, "", "family/model-v1"));
-        assert!(!matches_model(&model, "alpha", "model-v1"));
+        let qualified_model = model("alpha", "alpha/family/model-v1");
+        assert!(matches_model(&qualified_model, "alpha", "family/model-v1"));
+        assert!(matches_model(
+            &qualified_model,
+            "alpha",
+            "alpha/family/model-v1"
+        ));
+        let bare_catalog = model("alpha", "family/model-v1");
+        assert!(matches_model(
+            &bare_catalog,
+            "alpha",
+            "alpha/family/model-v1"
+        ));
+        assert!(!matches_model(&qualified_model, "beta", "family/model-v1"));
+        assert!(!matches_model(&qualified_model, "", "family/model-v1"));
+        assert!(!matches_model(&qualified_model, "alpha", "model-v1"));
     }
 
     #[test]

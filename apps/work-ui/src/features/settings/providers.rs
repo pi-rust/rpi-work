@@ -1,7 +1,10 @@
 //! Node-wide saved-file management. No control host, remote probe or raw commands.
-use crate::shared::{
-    app_settings,
-    components::{Icon, Modal},
+use crate::{
+    features::conversation::model_picker,
+    shared::{
+        app_settings,
+        components::{Icon, Modal},
+    },
 };
 use dioxus::prelude::*;
 use work_client::WorkspaceClient;
@@ -778,9 +781,12 @@ fn ProviderSettingsState(
             discovery_busy.set(None);
             match result {
                 Ok(state)
-                    if state.model_id.as_deref() == Some(model_id.as_str())
-                        && (provider.is_empty()
-                            || state.provider.as_deref() == Some(provider.as_str())) =>
+                    if model_picker::matches_provider_model(
+                        &provider,
+                        &model_id,
+                        state.provider.as_deref().unwrap_or_default(),
+                        state.model_id.as_deref().unwrap_or_default(),
+                    ) =>
                 {
                     notice.set(format!(
                         "已将当前会话切换到模型「{model_id}」。API Key 仍只由节点按其凭据来源读取。"

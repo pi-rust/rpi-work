@@ -2494,8 +2494,8 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                             )
                             .await
                             .err();
-                        } else if let Some((_, model)) = default_model {
-                            let _ = client.set_model(&id, &model).await;
+                        } else if let Some((provider, model)) = default_model {
+                            let _ = client.set_model_with_provider(&id, &model, &provider).await;
                         }
                         Ok(client
                             .get_session(&id)
@@ -5853,6 +5853,22 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                 if *project_files_open.read() {
                     Modal { id: "project-files", title: "项目文件", subtitle: format!("{} · {}", workspace_label, selected_project_name.read().as_deref().unwrap_or("项目")), class: if *project_file_preview.read() { "project-files-modal show-preview" } else if *change_mobile_preview.read() { "project-files-modal show-diff" } else { "project-files-modal" }, onclose: move |()| { project_files_open.set(false); project_file_preview.set(false); change_mobile_preview.set(false); },
                         div { class: "project-files-scope", Icon { name: "folder".to_owned() } span { "当前项目工作区" } span { class: "neutral-pill", "只读预览" } }
+                        if !*project_file_preview.read() && !*change_mobile_preview.read() {
+                            nav { class: "project-files-tabs", role: "tablist", aria_label: "项目文件视图",
+                                button {
+                                    class: if project_file_tab.read().as_str() == "files" { "active" } else { "" },
+                                    role: "tab", aria_selected: project_file_tab.read().as_str() == "files", aria_controls: "project-files-list",
+                                    onclick: move |_| { project_file_tab.set("files".into()); change_list_open.set(false); },
+                                    Icon { name: "folder" } "文件"
+                                }
+                                button {
+                                    class: if project_file_tab.read().as_str() == "changes" { "active" } else { "" },
+                                    role: "tab", aria_selected: project_file_tab.read().as_str() == "changes", aria_controls: "changes-panel",
+                                    onclick: move |_| { project_file_tab.set("changes".into()); change_list_open.set(true); project_file_preview.set(false); change_mobile_preview.set(false); },
+                                    Icon { name: "git" } "变更" span { class: "tab-count", "{change_count}" }
+                                }
+                            }
+                        }
                         if *project_file_preview.read() || *change_mobile_preview.read() {
                             nav { class: "project-file-open-tabs", role: "tablist", aria_label: "已打开文件",
                                 for tab in project_open_tabs.read().iter() {
@@ -5884,7 +5900,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                             }
                         }
                         if project_file_tab.read().as_str() == "files" {
-                            div { class: "project-files-layout",
+                            div { id: "project-files-list", class: "project-files-layout",
                                 div { class: "project-files-list-view",
                                     div { class: "project-file-browser-shell",
                                         div { class: "project-files-section-title", strong { "项目目录" } span { "节点目录" } }

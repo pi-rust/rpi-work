@@ -363,7 +363,7 @@ async function until(test) {
       };
     });
     await page.reload(); await reconnect(false);
-    await page.getByRole('status').filter({ hasText: '输入法保护未就绪' }).waitFor();
+    await page.waitForFunction(() => document.querySelector('.composer textarea')?.dataset.imeReady === 'false');
     await field().fill('保护失败时保留输入');
     const noGuardBefore = commands().length;
     await field().press('Enter'); await delay(80);

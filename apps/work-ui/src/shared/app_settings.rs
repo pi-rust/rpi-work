@@ -76,10 +76,9 @@ pub fn default_provider_model(document: &Value) -> Option<(String, String)> {
     let value = document
         .get(ids::storage::DEFAULT_PROVIDER)
         .and_then(Value::as_object)?;
-    Some((
-        value.get("provider")?.as_str()?.to_owned(),
-        value.get("model")?.as_str()?.to_owned(),
-    ))
+    let provider = value.get("provider")?.as_str()?.trim();
+    let model = value.get("model")?.as_str()?.trim();
+    (!provider.is_empty() && !model.is_empty()).then(|| (provider.to_owned(), model.to_owned()))
 }
 
 pub fn update_default_provider(
@@ -543,6 +542,9 @@ mod tests {
         );
         let incomplete = parse(r#"{"version":1,"defaultProvider":{"provider":"openai"}}"#).unwrap();
         assert_eq!(default_provider_model(&incomplete), None);
+        let blank =
+            parse(r#"{"version":1,"defaultProvider":{"provider":"  ","model":"gpt-4o"}}"#).unwrap();
+        assert_eq!(default_provider_model(&blank), None);
     }
 
     #[test]

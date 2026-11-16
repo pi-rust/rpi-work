@@ -13,12 +13,30 @@ pub(crate) fn history_id(message: &Value, index: usize) -> String {
 
 pub(crate) fn history_has_block(messages: &[Value], block: &MessageBlock) -> bool {
     messages.iter().any(|message| {
-        if let Some(id) = message_id(message) {
-            if block.id() == id || block.id().starts_with(&format!("{id}-text-")) {
-                return true;
-            }
-        }
-        message.get("toolCallId").and_then(Value::as_str) == Some(block.id())
+        let owned_message_block = message_id(message).is_some_and(|id| {
+            block.id() == id
+                || block.id().starts_with(&format!("{id}-text-"))
+                || block.id().starts_with(&format!("{id}-thinking-"))
+        });
+        owned_message_block
+            || message.get("toolCallId").and_then(Value::as_str) == Some(block.id())
             || conversation::message_has_tool_call(message, block.id())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::history_has_block;
+    use serde_json::json;
+    use work_core::MessageBlock;
+
+    #[test]
+    fn canonical_assistant_message_owns_thinking_projection_blocks() {
+        let message = json!({"entryId":"answer-1","role":"assistant","content":"answer"});
+        let block = MessageBlock::Thinking {
+            id: "answer-1-thinking-0".into(),
+            text: "private".into(),
+        };
+        assert!(history_has_block(std::slice::from_ref(&message), &block));
+    }
 }

@@ -93,8 +93,5 @@ fn ComposerField(
             },
             "{initial_text}"
         }
-        if *ime_guard_ready.read() == Some(false) {
-            small { class: "meta", role: "status", "输入法保护未就绪，请用发送按钮提交。当前文字仍可编辑。" }
-        }
     }
 }

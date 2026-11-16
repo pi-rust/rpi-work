@@ -213,7 +213,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .tab-count { padding: 1px 5px; border-radius: var(--radius-xs); background: var(--code); color: var(--muted); font: calc(9px * var(--type-scale, 1)) var(--mono); }
 
 /* Conversation scrolls independently; composer and queue remain at its foot. */
-.transcript { flex: 1; min-height: 0; padding: var(--space-28) var(--conversation-gutter) var(--space-25); overflow-y: auto; overflow-wrap: anywhere; white-space: normal; font-size: calc(14px * var(--type-scale, 1)); line-height: 1.6; }
+.transcript { flex: 1; min-height: 0; padding: var(--space-28) var(--conversation-gutter) var(--space-25); overflow-y: auto; overflow-wrap: anywhere; white-space: normal; font-size: calc(14px * var(--type-scale, 1)); line-height: 1.6; scroll-padding-block-end: var(--space-20); }
 .transcript > :first-child { margin-top: 0; }
 .timeline-line { max-width: min(100%, var(--conversation-content-max)); margin: 0 0 var(--space-18); padding: var(--space-12) var(--space-14); border: var(--border-width, 1px) solid var(--line); border-radius: var(--radius-md); color: var(--muted); }
 .tool-line { border-left: 3px solid var(--warning-line); background: var(--warning-bg); }
@@ -456,9 +456,16 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .project-file-search { display: flex; align-items: center; gap: var(--space-7); margin-bottom: var(--space-10); padding: 0 var(--space-8); border: var(--border-width, 1px) solid var(--line); border-radius: var(--radius-sm); background: var(--card); color: var(--muted); }
 .project-file-search input { width: 100%; height: 34px; padding: 0; border: 0; background: transparent; font-size: calc(11px * var(--type-scale, 1)); }
 .project-file-caption { display: flex; justify-content: space-between; padding: 0 var(--space-6) var(--space-8); color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); }
-.project-file-row { display: flex; justify-content: flex-start; width: 100%; min-height: 36px; gap: var(--space-7); padding: var(--space-6) var(--space-8); overflow: hidden; text-align: left; font-size: calc(11px * var(--type-scale, 1)); }
+.project-file-row { display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: 36px; gap: var(--space-7); padding: var(--space-6) var(--space-8); overflow: hidden; text-align: left; font-size: calc(11px * var(--type-scale, 1)); }
 .project-file-row:hover, .project-file-row.selected { color: var(--accent); background: var(--accent-bg); }
-.project-file-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-file-row > .icon { flex: 0 0 auto; }
+.project-file-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-file-row > .project-file-label { min-width: 0; flex: 1 1 auto; }
+.project-file-label { display: grid; gap: 1px; overflow: hidden; }
+.project-file-name, .project-file-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-file-name { color: var(--text); }
+.project-file-path { color: var(--muted); font: calc(9px * var(--type-scale, 1)) var(--mono); }
+.project-file-count { flex: 0 0 auto; margin-left: auto; color: var(--muted); font: calc(9px * var(--type-scale, 1)) var(--mono); white-space: nowrap; }
 .project-file-preview { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--bg); }
 .project-preview-tools { display: flex; align-items: center; gap: var(--space-7); padding: var(--space-8) var(--space-12); border-bottom: var(--border-width, 1px) solid var(--line); background: var(--panel); }
 .project-preview-tools button { min-height: 30px; padding: 0 var(--space-8); color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); }
@@ -870,7 +877,7 @@ small, .meta { font-size: var(--font-assist); }
 .app-shell .composer-main:focus-within .composer{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg),0 4px 18px var(--shadow-color)}
 .app-shell:has(.settings-page) .context-toggle{display:none}
 @media(max-width:767px){
-  .app-shell .transcript{padding-top:22px;padding-bottom:12px}
+  .app-shell .transcript{padding-top:22px;padding-bottom:36px;scroll-padding-block-end:36px}
   .app-shell .composer-main{padding:10px max(12px,var(--app-safe-right)) max(12px,var(--app-safe-bottom)) max(12px,var(--app-safe-left))}
   .app-shell .composer-main .composer{padding:10px 8px 6px;border-radius:14px}
   .app-shell .composer-main .composer textarea{min-height:48px;max-height:120px;padding:1px 5px 6px;line-height:1.5}
@@ -1042,7 +1049,8 @@ small, .meta { font-size: var(--font-assist); }
   flex: 0 0 auto;
 }
 .app-shell[data-device-mode="mobile"] .transcript {
-  padding: 22px var(--conversation-gutter) 12px var(--conversation-gutter-left,var(--conversation-gutter));
+  padding: 22px var(--conversation-gutter) 36px var(--conversation-gutter-left,var(--conversation-gutter));
+  scroll-padding-block-end: 36px;
 }
 .app-shell[data-device-mode="mobile"] .composer-main {
   padding: 10px max(12px,var(--app-safe-right)) max(12px,var(--app-safe-bottom)) max(12px,var(--app-safe-left));
@@ -1132,6 +1140,9 @@ small, .meta { font-size: var(--font-assist); }
   .project-files-tabs { padding-inline: var(--space-10); }
   .project-files-tabs button { min-height: 44px; padding-inline: var(--space-8); }
   .project-files-modal > #changes-panel { padding: var(--space-8) 0 0; }
+  .project-files-modal .project-file-row { min-height: 44px; padding-block: var(--space-8); }
+  .project-files-modal .project-file-label { gap: 2px; }
+  .project-files-modal .project-file-count { font-size: calc(10px * var(--type-scale, 1)) !important; }
 }
 
 /* Persistence failures stay local and cannot be overwritten by connection updates. */

@@ -72,7 +72,7 @@ pub(super) fn HistoricalReader(
                         onload.call(MessageWindowQuery { after_id: after.clone(), leaf_id: leaf.clone(), ..MessageWindowQuery::default() });
                     }, "更晚的历史消息" }
                 }
-                if current.busy { p { role: "status", "正在读取目标附近的消息…" } }
+                if current.busy && current.page.is_some() { p { role: "status", "正在读取目标附近的消息…" } }
                 if let Some(error) = current.error {
                     p { role: "alert", "{error}" }
                     button { class: "button", disabled: current.busy, onclick: move |_| {
@@ -88,6 +88,10 @@ pub(super) fn HistoricalReader(
                             }
                             } }
                         }
+                    } else if current.busy {
+                        p { class: "timeline-history-empty", role: "status", "正在读取目标附近的消息…" }
+                    } else {
+                        p { class: "timeline-history-empty", "暂无可显示的历史消息。" }
                     }
                 }
             }
