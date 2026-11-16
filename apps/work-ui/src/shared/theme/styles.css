@@ -1346,3 +1346,18 @@ dialog.project-files-modal #changes-panel .change-workspace.show-diff .change-pr
 }
 
 .composer-draft-heading { min-height: 34px; padding: var(--space-8) var(--space-4) var(--space-6); color: var(--text); font-size: var(--font-body); font-weight: 500; }
+
+/* Keep the composer footer flush with the conversation panel and use a compact
+   send/stop control without changing the larger attachment hit target. */
+.app-shell .conversation-panel > .composer-main { margin-top: auto; padding-bottom: 0; }
+.app-shell .conversation-panel .composer-actions .send-button { width: 36px; height: 36px; min-width: 36px; min-height: 36px; }
+
+/* Session tracing belongs with the other workspace actions, not below the editor. */
+.app-shell .app-header .top-actions .session-trace-trigger { margin-left: 0; min-height: 32px; }
+@media (max-width: 767px) {
+  .app-shell .conversation-panel > .composer-main { padding-bottom: 0; }
+  .app-shell .app-header .top-actions .session-trace-trigger {
+    width: 32px; min-width: 32px; height: 32px; padding: 0;
+  }
+  .app-shell .app-header .top-actions .session-trace-trigger span { display: none; }
+}

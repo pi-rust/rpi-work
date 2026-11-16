@@ -253,7 +253,7 @@ fn LocalAccessCards(
                 } else {
                     p { class: "connection-help", if snapshot.web.enabled { "Web 访问已开启，浏览器仍需登录节点。" } else { "Web 入口已就绪，开启后可使用浏览器访问。" } }
                     if snapshot.web.enabled && !snapshot.web.url.is_empty() {
-                        a { class: "button", href: "{snapshot.web.url}", target: "_blank", rel: "noopener noreferrer", "打开 Web 入口" }
+                        a { class: "button web-entry-button", href: "{snapshot.web.url}", target: "_blank", rel: "noopener noreferrer", aria_label: "打开 Web 入口", title: "在浏览器中打开 Web 入口", "打开 Web 入口" }
                         code { class: "web-entry-address", "{snapshot.web.url}" }
                     }
                     if !snapshot.web.status.is_empty() {

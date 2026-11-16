@@ -18,8 +18,8 @@ use super::{
     identity::{node_origin, project_scope_key, session_scope_key},
     runtime::{
         InteractionState, SessionObservation, conversation_title, default_node_url,
-        extension_config_locked, interaction_state, phase_label, projection_status,
-        resource_snapshot, sync_sidebar_session, transport_online,
+        extension_config_locked, interaction_state, projection_status, resource_snapshot,
+        sync_sidebar_session, transport_online,
     },
     transcript_order::{RowSource, TranscriptOrder},
     workspace_changes, workspace_connection, workspace_home, workspace_protocol,
@@ -843,10 +843,6 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                     .any(|session| &session.session_id == id)
             });
             auth_state.set(Some(workspace.auth));
-            let transport_label = format!(
-                "{} / {}",
-                workspace.transport.identity.protocol, workspace.transport.identity.transport
-            );
             transport_descriptor.set(Some(workspace.transport));
             capabilities.set(Some(workspace.capabilities));
             sessions.set(workspace.sessions);
@@ -857,11 +853,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                 .write()
                 .remember_with_identity(&url, node_id.as_deref());
             node_connection.phase.set(connections::Phase::Online);
-            status.set(if super::local_node::is_local(&url) {
-                format!("本机已就绪 · 可打开项目或开始任务 · {transport_label}")
-            } else {
-                format!("在线 · 可选择会话或项目 · {transport_label}")
-            });
+            status.set(String::new());
             if let Some(id) = requested {
                 if can_open {
                     if automatic {
@@ -1855,7 +1847,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                 history_supported,
                             );
                             transcript.set(connection.messages().to_vec());
-                            status.set(format!("会话在线 · {} 已连接", protocol.to_uppercase()));
+                            status.set(String::new());
                             // Publish the snapshot and consume live events immediately.
                             // Optional metadata must not gate either path. Each task is
                             // scoped, and cannot overwrite a newer refresh/live result.
@@ -2084,10 +2076,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                             compact_revision += 1;
                                         }
                                         if event_type == "agent_settled" {
-                                            status.set(format!(
-                                                "{} · 会话在线",
-                                                phase_label(&connection.projection().phase)
-                                            ));
+                                            status.set(String::new());
                                             let usage = event
                                                 .wire
                                                 .data
@@ -5049,6 +5038,11 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                     Icon { name: "clock" }
                                 }
                                 }
+                                if workspace_page && !showing_home {
+                                    if let Some(session_id) = selected_session.read().as_ref() {
+                                        traces::TraceEntry { scope: session_scope_key(&node_url.read(), session_id), store: traces }
+                                    }
+                                }
                                 if (workspace_page && !showing_home) || selected_project.read().is_some() {
                                 button { class: "project-files-trigger", r#type: "button", aria_label: "打开项目文件", title: "项目文件与变更", aria_expanded: *project_files_open.read(), onclick: move |_| {
                                     home_requested.set(false);
@@ -5380,7 +5374,15 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                 scope: selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),
                                 drafts,
                                 disabled: !*drafts_ready.read() || selected_session.read().is_none() || projection.read().is_none(),
-                                placeholder: if *new_session_busy.read() && selected_session.read().is_none() { "正在准备新会话…" } else { "继续描述你的想法，或输入 / 使用命令…" },
+                                placeholder: if *new_session_busy.read() && selected_session.read().is_none() {
+                                    "正在准备新会话…"
+                                } else if composer_continue.is_some() {
+                                    "Enter 继续 · 输入内容后发送新消息"
+                                } else if interaction.can_queue() {
+                                    "Enter 加入队列 · Shift + Enter 换行"
+                                } else {
+                                    "Enter 发送 · Shift + Enter 换行"
+                                },
                                 onenter: move |()| {
                                     if composer_cancelling() {
                                         return;
@@ -5550,13 +5552,10 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                             if let Some(message) = draft_storage_error.read().as_ref() {
                                 p { class: "draft-storage-error", role: "alert", "{message}" }
                             }
-                            div { class: "composer-foot",
-                                span { role: "status", class: "connection-status", span { class: "status-dot" } "{node_connection.phase.read().label()}" }
-                                span { class: "operation-status", role: "status", "{status}" }
-                                if let Some(session_id) = selected_session.read().as_ref() {
-                                    traces::TraceEntry { scope: session_scope_key(&node_url.read(), session_id), store: traces }
+                            if !status.read().is_empty() {
+                                div { class: "composer-foot",
+                                    span { class: "operation-status", role: "status", "{status}" }
                                 }
-                                span { if composer_continue.is_some() { "Enter 继续 · 输入内容后发送新消息" } else if interaction.can_queue() { "Enter 加入队列 · Shift + Enter 换行" } else { "Enter 发送 · Shift + Enter 换行" } }
                             }
                             runtime_stats::RuntimeFooter {
                                 scope: selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),

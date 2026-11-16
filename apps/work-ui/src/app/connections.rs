@@ -272,7 +272,7 @@ impl Phase {
             Self::Connecting => "正在连接…",
             Self::Authenticating => "正在登录并加载项目…",
             Self::PasswordRequired => "需要节点密码",
-            Self::Online => "在线 · 可选择会话或项目",
+            Self::Online => "在线",
             Self::Failed(message) => message,
         }
     }

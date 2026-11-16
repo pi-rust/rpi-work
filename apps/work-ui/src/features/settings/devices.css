@@ -114,4 +114,21 @@
 @media(max-width:700px){.runtime-install-guide{padding:14px}.runtime-install-actions{display:grid}.runtime-install-actions .button{width:100%;min-height:44px}}
 .collaboration-host-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; grid-column: 1 / -1; }
 .collaboration-host-actions .connection-form-error { flex-basis: 100%; }
+.web-access-card .web-entry-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    max-width: 100%;
+    color: var(--text);
+    text-decoration: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.web-access-card .web-entry-button:hover,
+.web-access-card .web-entry-button:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent-line);
+    background: var(--accent-bg);
+}
 .web-entry-address { display: block; margin-top: 12px; overflow-wrap: anywhere; font-size: 12px; }

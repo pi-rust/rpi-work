@@ -267,13 +267,31 @@
   background: transparent;
 }
 @media (max-width: 767px) {
-  .app-shell dialog.project-files-modal {
-    width: min(370px, calc(100vw - 12px - var(--app-safe-left) - var(--app-safe-right)));
-    padding: 16px 16px 24px;
-    border-radius: 24px 0 0 24px;
-  }
+  /* Match the approved prototype: mobile treats project files as a full-screen
+     workspace instead of a narrow side drawer. */
+  .app-shell dialog.project-files-modal,
   .app-shell dialog.project-files-modal.show-preview,
-  .app-shell dialog.project-files-modal.show-diff { width: calc(100vw - 12px - var(--app-safe-left) - var(--app-safe-right)); }
+  .app-shell dialog.project-files-modal.show-diff {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    box-sizing: border-box;
+    padding: calc(16px + var(--app-safe-top))
+      calc(16px + var(--app-safe-right))
+      calc(24px + var(--app-safe-bottom))
+      calc(16px + var(--app-safe-left));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: hidden;
+  }
+  .app-shell dialog.project-files-modal::backdrop {
+    background: color-mix(in srgb, var(--bg) 58%, transparent);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
   .app-shell dialog.project-files-modal .modal-header { padding-bottom: 14px; }
   .app-shell dialog.project-files-modal .modal-header .icon-button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .app-shell dialog.project-files-modal .project-files-section-title { padding-top: 13px; }

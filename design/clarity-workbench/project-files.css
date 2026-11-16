@@ -106,13 +106,31 @@
     box-shadow:none;
   }
   .app-shell.project-files-open .sidebar> :not(.project-files-panel) { display:none; }
+  /* Mobile uses the project browser as a full-screen workspace instead of a
+     narrow drawer, so directory browsing and Diff preview get the full width. */
   .project-files-panel {
-    top:56px;
-    bottom:0;
-    width:min(370px,calc(100vw - 12px));
-    padding:16px 16px 24px;
-    border-radius:24px 0 0 24px;
-    box-shadow:-20px 0 60px rgba(25,38,58,.2);
+    inset:0;
+    width:100vw;
+    height:100dvh;
+    box-sizing:border-box;
+    padding:calc(16px + env(safe-area-inset-top))
+      calc(16px + env(safe-area-inset-right))
+      calc(24px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
+    border:0;
+    border-radius:0;
+    box-shadow:none;
+    overflow:hidden;
+  }
+  .project-files-panel .project-tree,
+  .project-files-panel .project-changes,
+  .project-files-panel .project-file-diff {
+    overflow:auto;
+  }
+  .app-shell.project-files-open .scrim {
+    background:rgba(25,38,58,.2);
+    -webkit-backdrop-filter:blur(4px);
+    backdrop-filter:blur(4px);
   }
 }
 /* Codex-like file viewer: a wide inspector with persistent open-file tabs. */

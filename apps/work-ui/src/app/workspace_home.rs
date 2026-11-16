@@ -253,7 +253,7 @@ pub(super) fn Home(
                         }
                         composer_input::ComposerInput {
                             scope: scope.clone(), drafts, disabled: busy || !ready,
-                            placeholder: "有什么想法？尽管告诉 rpi…".to_string(), onenter: submit,
+                            placeholder: "有什么想法？Enter 发送 · Shift + Enter 换行".to_string(), onenter: submit,
                         }
                         div { class: "home-tools",
                             button { class: "home-more icon-button", r#type: "button", aria_label: "附件与更多",
