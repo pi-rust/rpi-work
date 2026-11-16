@@ -17,6 +17,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.webkit.WebView
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.net.URI
@@ -50,6 +51,14 @@ class MainActivity : WryActivity() {
             WindowInsetsCompat.CONSUMED
         }
         ViewCompat.requestApplyInsets(content)
+    }
+
+    // Dioxus enables WebView debugging when the context menu is enabled. Mobile
+    // needs that native text-selection toolbar for paste, but release builds must
+    // not expose remote WebView inspection.
+    override fun onWebViewCreate(webView: WebView) {
+        super.onWebViewCreate(webView)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
     }
 
     @androidx.annotation.Keep

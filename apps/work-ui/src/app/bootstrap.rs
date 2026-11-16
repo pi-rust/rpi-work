@@ -95,7 +95,17 @@ pub fn launch() {
             )
             .launch(super::entry::Root);
     }
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+    #[cfg(target_os = "android")]
+    {
+        // Dioxus 0.7 disables the context menu in release WebViews. On Android,
+        // that same initialization script suppresses the native text-selection
+        // toolbar, so long-press paste cannot reach any input (including passwords).
+        // MainActivity.onWebViewCreate re-disables WebView debugging in release.
+        dioxus::LaunchBuilder::mobile()
+            .with_cfg(dioxus::mobile::Config::new().with_disable_context_menu(false))
+            .launch(super::entry::Root);
+    }
+    #[cfg(target_arch = "wasm32")]
     dioxus::launch(super::entry::Root);
 }
 
@@ -123,6 +133,23 @@ fn desktop_window() -> dioxus::desktop::WindowBuilder {
 
 #[cfg(all(test, not(any(target_arch = "wasm32", target_os = "android"))))]
 mod tests {
+    #[test]
+    fn mobile_launch_keeps_native_text_selection_toolbar_available() {
+        let source = include_str!("bootstrap.rs")
+            .split("#[cfg(target_os = \"android\")]")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(target_arch = \"wasm32\")]")
+            .next()
+            .unwrap();
+        assert!(source.contains("LaunchBuilder::mobile()"));
+        assert!(source.contains("with_disable_context_menu(false)"));
+        assert!(!source.contains("dioxus::launch("));
+        let activity = include_str!("../../android/MainActivity.kt");
+        assert!(activity.contains("override fun onWebViewCreate(webView: WebView)"));
+        assert!(activity.contains("WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)"));
+    }
+
     #[test]
     fn desktop_startup_overrides_stale_debug_window_geometry() {
         let window = super::desktop_window().window;
