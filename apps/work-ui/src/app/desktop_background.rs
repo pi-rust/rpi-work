@@ -27,11 +27,16 @@ pub(super) fn use_background() {
         let tray = (|| {
             menu.append_items(&[&restore, &exit])
                 .map_err(|e| e.to_string())?;
-            let icon = icon_from_memory(include_bytes!("../../../../assets/branding/rpi-256.png"))
-                .map_err(|e| e.to_string())?;
+            let icon = icon_from_memory(if cfg!(target_os = "macos") {
+                include_bytes!("../../../../assets/branding/rpi-gear.png")
+            } else {
+                include_bytes!("../../../../assets/branding/rpi-256.png")
+            })
+            .map_err(|e| e.to_string())?;
             TrayIconBuilder::new()
                 .with_tooltip("RPI Work · 点击托盘图标恢复窗口")
                 .with_icon(icon)
+                .with_icon_as_template(cfg!(target_os = "macos"))
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
                 .build()
@@ -75,13 +80,9 @@ pub(super) fn use_background() {
                 error.set("本机节点尚未准备好，暂时无法转入后台。".into());
                 return;
             }
-            // Keep drafts, dialogs and in-flight owner requests in their scopes.
-            // Hiding WebView pauses visibility-aware catalog and queue timers.
+            // Hide the native window only. Keeping the WebView mounted avoids a
+            // macOS race where restoring a hidden WebView leaves the window blank.
             error.set(String::new());
-            if let Err(message) = desktop.webview.set_visible(false) {
-                error.set(format!("无法隐藏工作窗口。{message}"));
-                return;
-            }
             desktop.set_visible(false);
             memory_level(&desktop, true);
         }),
@@ -90,10 +91,12 @@ pub(super) fn use_background() {
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn restore_window(desktop: &dioxus::desktop::DesktopContext) {
-    let _ = desktop.webview.set_visible(true);
     memory_level(desktop, false);
-    desktop.set_visible(true);
+    // Deminiaturize before ordering front; on macOS ordering a miniaturized
+    // window first can leave it hidden behind the Dock/other Spaces.
     desktop.set_minimized(false);
+    desktop.set_visible(true);
+    let _ = desktop.webview.set_visible(true);
     desktop.set_focus();
 }
 
