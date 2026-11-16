@@ -91,6 +91,7 @@ mod native {
 
     #[component]
     pub(crate) fn MobileEntry() -> Element {
+        let mut connection_history = crate::app::connections::use_connections("");
         let pending = use_hook(|| Rc::new(RefCell::new(None::<AuthorizationCode>)));
         let epoch = use_hook(|| Rc::new(Cell::new(0_u64)));
         let mut task = use_signal(|| None::<dioxus::core::Task>);
@@ -157,6 +158,10 @@ mod native {
             busy,
         });
         let mut remember = move |node: &EntryNode, node_id: Option<String>| {
+            connection_history
+                .history
+                .write()
+                .remember_with_identity(&node.address, node_id.as_deref());
             remembered_address.set(node.address.clone());
             let saved = connection_memory::encode(node, node_id, now());
             let (saved_ok, has_session) = saved.map_or((false, false), |(payload, has_session)| {
@@ -226,6 +231,7 @@ mod native {
                         Ok(node) => {
                             status.set(String::new());
                             memory_warning.set(String::new());
+                            connection_history.history.write().select(&node.address);
                             // Never recapture/extend a restored session's local expiry.
                             authorized.set(Some(node));
                         }
@@ -463,6 +469,16 @@ mod native {
                 })));
             }
         };
+        let select_history = {
+            let mut invalidate = cancel.clone();
+            move |history_address: String| {
+                invalidate();
+                manual.set(true);
+                address.set(history_address);
+                password.set(NodePassword::default());
+                status.set(String::new());
+            }
+        };
         if let Some(node) = authorized.read().clone() {
             return rsx! { AuthorizedWorkspace { node } };
         }
@@ -482,6 +498,8 @@ mod native {
                 ConnectionScreen {
                     manual: manual(), address: address(),
                     password: password.read().value.clone(),
+                    history: connection_history.history.read().recent.clone(),
+                    onhistory: Some(EventHandler::new(select_history)),
                     busy: busy(), error: status(), warning: memory_warning(),
                     help: "成功连接后会记住电脑地址，并用系统密钥库加密保存登录状态；不会保存密码。登录过期或电脑重启后需重新验证。".to_owned(),
                     onaddress, onpassword, onsubmit, onchange,

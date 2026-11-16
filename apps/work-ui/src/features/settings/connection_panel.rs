@@ -26,6 +26,8 @@ pub(crate) fn ConnectionScreen(
     #[props(default)] current_status: String,
     #[props(default = false)] authenticated: bool,
     #[props(default)] warning: String,
+    #[props(default)] history: Vec<String>,
+    #[props(default)] onhistory: Option<EventHandler<String>>,
     #[props(default)] help: Option<String>,
     #[props(default = "电脑节点密码".to_owned())] password_label: String,
     #[props(default = "连接电脑".to_owned())] submit_label: String,
@@ -109,6 +111,9 @@ pub(crate) fn ConnectionScreen(
                 p { class: "meta", role: "status", "{current_status}" }
             }
             if show_form {
+                if !history.is_empty() {
+                    ConnectionHistory { entries: history, onselect: onhistory }
+                }
                 if !fixed_target {
                     if let Some(action) = onchange { ConnectionTabs { manual, onchange: action } }
                 }
@@ -196,6 +201,30 @@ pub(crate) fn ConnectionTabs(manual: bool, onchange: EventHandler<bool>) -> Elem
                 r#type: "button", class: if !manual { "active" } else { "" },
                 aria_pressed: !manual, onclick: move |_| onchange.call(false),
                 Icon { name: "image" } "扫码连接"
+            }
+        }
+    }
+}
+
+#[component]
+fn ConnectionHistory(entries: Vec<String>, onselect: Option<EventHandler<String>>) -> Element {
+    rsx! {
+        section { class: "connection-history", aria_label: "历史连接",
+            div { class: "connection-history-heading",
+                strong { "历史连接" }
+                span { "最近使用的电脑节点" }
+            }
+            div { class: "connection-history-list",
+                if let Some(action) = onselect {
+                    for address in entries {
+                        button {
+                            key: "{address}", r#type: "button", class: "connection-history-item",
+                            disabled: false,
+                            onclick: move |_| action.call(address.clone()),
+                            code { "{address}" }
+                        }
+                    }
+                }
             }
         }
     }
