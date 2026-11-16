@@ -22,7 +22,7 @@ pub(super) fn use_background() {
     let mut error = use_signal(String::new);
     let (restore_id, exit_id, tray) = use_hook(|| {
         let menu = Menu::new();
-        let restore = MenuItem::new("打开 RPI Work", true, None);
+        let restore = MenuItem::new("恢复工作窗口", true, None);
         let exit = MenuItem::new("退出并停止节点", true, None);
         let tray = (|| {
             menu.append_items(&[&restore, &exit])
@@ -30,7 +30,7 @@ pub(super) fn use_background() {
             let icon = icon_from_memory(include_bytes!("../../../../assets/branding/rpi-256.png"))
                 .map_err(|e| e.to_string())?;
             TrayIconBuilder::new()
-                .with_tooltip("RPI Work · 点击打开窗口")
+                .with_tooltip("RPI Work · 点击托盘图标恢复窗口")
                 .with_icon(icon)
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
@@ -119,7 +119,7 @@ pub(crate) fn BackgroundRunButton() -> Element {
     {
         let control = use_context::<BackgroundControl>();
         return rsx! {
-            button { class: "button", title: "隐藏窗口并降低界面占用，节点和任务继续运行。点击系统托盘可恢复。",
+            button { class: "button", title: "隐藏窗口并降低界面占用，节点和任务继续运行。需要恢复时，点击系统托盘图标或托盘菜单中的“恢复工作窗口”。",
                 onclick: move |_| control.enter.call(()),
                 crate::shared::components::Icon { name: "monitor" }
                 "一键后台运行"
