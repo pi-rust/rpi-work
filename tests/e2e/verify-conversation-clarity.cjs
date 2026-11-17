@@ -121,6 +121,18 @@ const near = (a, b, label) => assert(Math.abs(a - b) <= 1, `${label}: ${a} != ${
     ]) await compareStyles(actual, expected, properties, 1440);
     near((await page.locator('.sidebar-recent .session-entry').first().boundingBox()).x,
       (await reference.locator('.sidebar-recent .sidebar-session-entry').first().boundingBox()).x, 'recent sessions have the canonical left edge');
+    const recentToggle = page.locator('.sidebar-recent-label .sidebar-recent-toggle');
+    assert.equal(await recentToggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(await recentToggle.getAttribute('aria-controls'), 'sidebar-recent-sessions');
+    await recentToggle.click();
+    assert.equal(await recentToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.locator('#sidebar-recent-sessions .session-entry').count(), 0);
+    assert.equal(await page.locator('.sidebar-session-divider').count(), 0);
+    assert.equal(await recentToggle.evaluate(element => document.activeElement === element), true);
+    await recentToggle.click();
+    assert.equal(await recentToggle.getAttribute('aria-expanded'), 'true');
+    assert((await page.locator('#sidebar-recent-sessions .session-entry').count()) > 0);
+    console.log('PASS sidebar recent sessions collapse retains its label, focus and project navigation');
     for (const [width, height] of [[1440, 1000], [1024, 768], [768, 768], [390, 844], [320, 740], [320, 420]]) {
       await setWidth(width);
       await page.setViewportSize({ width, height });

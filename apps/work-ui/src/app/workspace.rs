@@ -690,6 +690,9 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     let mut archive_open = use_signal(|| false);
     let mut expanded_projects = management::use_expanded_projects();
     let mut node_tree_expanded = use_signal(|| true);
+    // The recent-session shelf is independently collapsible so the project tree
+    // can stay reachable on short sidebars without changing its own state.
+    let mut recent_sessions_expanded = use_signal(|| true);
     let mut full_project_sessions = use_signal(std::collections::HashSet::<String>::new);
     let sidebar_now = management::use_sidebar_clock();
     let mut session_action_busy = use_signal(std::collections::HashSet::<String>::new);
@@ -4732,31 +4735,47 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                     div { class: "sidebar-projects", role: "navigation", aria_label: "项目与会话", "data-session-display-mode": session_display_mode.key(),
                     if !recent_sessions.is_empty() {
                         div { class: "sidebar-recent", aria_label: "最近的会话",
-                            div { class: "section-label sidebar-recent-label", "最近的会话" }
-                            div { class: "sidebar-sessions recent-sessions",
-                                for session in recent_sessions.iter() {
-                                    {
-                                        let id = session.session_id.clone();
-                                        let selected = selected_session.read().as_ref() == Some(&id);
-                                        let project_label = session.project_id.as_ref().and_then(|project_id| {
-                                            projects.read().iter().find(|project| &project.id == project_id).map(|project| project.name.clone())
-                                        }).unwrap_or_else(|| "无项目".to_owned());
-                                        let recent_context = format!("项目：{project_label} · 节点：{node_display_label}");
-                                        rsx! {
-                                            management::SidebarSession {
-                                                key: "recent-sidebar-session-{id}", session: session.clone(), selected,
-                                                activity: sidebar_activity(session), context: Some(recent_context),
-                                                busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
-                                                now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
-                                                onnodeinfo: { let project_id=session.project_id.clone(); move |()| show_node_info(project_id.clone()) },
+                            div { class: "section-label sidebar-recent-label",
+                                button {
+                                    class: if *recent_sessions_expanded.read() { "sidebar-recent-toggle expanded" } else { "sidebar-recent-toggle" },
+                                    r#type: "button",
+                                    aria_label: format!("{}最近的会话", if *recent_sessions_expanded.read() { "收起" } else { "展开" }),
+                                    aria_expanded: recent_sessions_expanded.to_string(),
+                                    aria_controls: "sidebar-recent-sessions",
+                                    title: "展开或收起最近的会话",
+                                    onclick: move |_| recent_sessions_expanded.toggle(),
+                                    Icon { name: "chevron-right" }
+                                    span { "最近的会话" }
+                                }
+                            }
+                            div { id: "sidebar-recent-sessions", class: "sidebar-sessions recent-sessions",
+                                if *recent_sessions_expanded.read() {
+                                    for session in recent_sessions.iter() {
+                                        {
+                                            let id = session.session_id.clone();
+                                            let selected = selected_session.read().as_ref() == Some(&id);
+                                            let project_label = session.project_id.as_ref().and_then(|project_id| {
+                                                projects.read().iter().find(|project| &project.id == project_id).map(|project| project.name.clone())
+                                            }).unwrap_or_else(|| "无项目".to_owned());
+                                            let recent_context = format!("项目：{project_label} · 节点：{node_display_label}");
+                                            rsx! {
+                                                management::SidebarSession {
+                                                    key: "recent-sidebar-session-{id}", session: session.clone(), selected,
+                                                    activity: sidebar_activity(session), context: Some(recent_context),
+                                                    busy: session_action_busy.read().contains(&session_scope_key(&node_url.read(), &id)),
+                                                    now: *sidebar_now.read(), onopen: open_session, onaction: session_action,
+                                                    onnodeinfo: { let project_id=session.project_id.clone(); move |()| show_node_info(project_id.clone()) },
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        div { class: "sidebar-session-divider", role: "separator", aria_label: "当前项目与会话",
-                            span { "当前项目与会话" }
+                        if *recent_sessions_expanded.read() {
+                            div { class: "sidebar-session-divider", role: "separator", aria_label: "当前项目与会话",
+                                span { "当前项目与会话" }
+                            }
                         }
                     }
                     div { class: "section-label",

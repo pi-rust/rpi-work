@@ -237,6 +237,13 @@
 .app-shell .sidebar .settings-entry > .icon:last-child { margin-left: auto; --icon-size: 12px; }
 .app-shell .sidebar-projects { padding-inline: 2px; }
 .app-shell .sidebar-recent-label { margin: 0; padding: 0 6px 8px; line-height: 1.6; }
+.app-shell .sidebar .sidebar-recent-toggle { display: flex; flex: 1; align-items: center; justify-content: flex-start; gap: 6px; width: auto; height: auto; min-width: 0; min-height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; line-height: inherit; text-align: left; cursor: pointer; }
+.app-shell .sidebar .sidebar-recent-toggle > .icon { width: 12px; height: 12px; flex: 0 0 12px; transition: transform var(--motion-fast); }
+.app-shell .sidebar .sidebar-recent-toggle.expanded > .icon { transform: rotate(90deg); }
+.app-shell .sidebar .sidebar-recent-toggle > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell .sidebar .sidebar-recent-toggle:hover,
+.app-shell .sidebar .sidebar-recent-toggle:focus-visible { background: var(--selected-bg); color: var(--text); }
+.app-shell .sidebar .sidebar-recent-toggle:focus-visible { outline: 2px solid var(--focus-color, var(--accent)); outline-offset: 1px; }
 .app-shell .sidebar .recent-sessions { margin: 0; gap: 0; }
 .app-shell .sidebar .session-entry { grid-template-columns: minmax(0, 1fr) 24px; border-radius: 6px; }
 .app-shell .sidebar .session-item { min-height: 34px; padding: 6px 8px; gap: 8px; border-radius: 6px; font-size: calc(12px * var(--type-scale, 1)); font-weight: 400; line-height: 1.6; }
@@ -277,6 +284,8 @@
   .app-shell .sidebar .session-entry { grid-template-columns: minmax(0, 1fr) 44px; }
   .app-shell .sidebar .session-item { min-height: 44px; font-size: calc(13px * var(--type-scale, 1)); }
   .app-shell .sidebar-recent .session-item { min-height: 58px; }
+  .app-shell .sidebar .sidebar-recent-toggle { min-height: 44px; }
+  .app-shell .sidebar .sidebar-recent-toggle > .icon { width: 14px; height: 14px; flex-basis: 14px; }
   .app-shell .sidebar .session-row-menu { width: 44px; height: 44px; }
   .app-shell .sidebar .project-entry { grid-template-columns: 17px minmax(0, 1fr) 44px 44px; }
   .app-shell .sidebar :is(.project-row, .project-toggle, .project-new-session, .project-row-menu) { min-height: 44px; height: 44px; }
