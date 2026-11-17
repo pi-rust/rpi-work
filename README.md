@@ -6,7 +6,7 @@
 
 当前版本：**RPI Work 0.1.20**。项目由个人维护，持续开发中；部分 API 和功能仍可能变化。
 
-> 项目法律和商业状态已移至[单独说明](docs/legal/licensing.md)，不在本 README 中展开。
+> 本项目采用 [MIT License](LICENSE)。个人商业计划、官方服务和商业支持方案仍在规划中；MIT 授权本身允许商业使用，完整说明见[法律与商业状态](docs/legal/licensing.md)。
 
 ## 功能概览
 

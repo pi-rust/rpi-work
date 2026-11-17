@@ -1,34 +1,46 @@
-# 项目权利与商业状态 / Project rights and commercial status
+# 项目许可与商业状态 / Project license and commercial status
 
-本文件记录 RPI Work 当前的项目级许可状态。它不授予超出下述范围的权利，也不替代第三方依赖、资源或平台组件各自的许可证。
+## 项目许可证 / Project license
 
-This document records the current project-level licensing status of RPI Work. It does not grant rights beyond the scope below and does not replace the separate licenses of third-party dependencies, assets, or platform components.
+RPI Work 当前采用 [MIT License](../../LICENSE)。该许可证适用于本项目拥有版权的源代码和相关项目内容；第三方依赖、字体、图标、图片、示例及 `assets/vendor` 中的资源仍以各自的上游许可证、版权声明和使用条件为准。
 
-## 当前状态 / Current status
+RPI Work is currently released under the [MIT License](../../LICENSE). The license applies to project source code and related project content for which this project holds copyright. Third-party dependencies, fonts, icons, images, examples, and resources under `assets/vendor` remain governed by their own upstream licenses, copyright notices, and conditions.
 
-RPI Work 由个人维护。当前尚未选择或授予项目级开源许可证，也没有项目级 `LICENSE` 文件。
+## 商业使用 / Commercial use
 
-RPI Work is personally maintained. No project-level open-source license has been selected or granted yet, and there is currently no project-level `LICENSE` file.
+MIT License 允许复制、修改、再分发、再授权和商业使用，但必须保留版权声明和许可证声明。任何人都可以按照 MIT 条款使用本项目；项目维护者不能通过后续商业计划撤销已经授予的 MIT 权利。
 
-在正式许可证或书面授权公布前，项目源代码、文档、图片、Logo、名称和其他原创内容均保留所有权利。未经版权持有人书面许可，不应复制、修改、再分发、打包发布、集成或将项目用于商业用途。
+The MIT License permits copying, modification, redistribution, sublicensing, and commercial use, provided that the copyright and license notices are retained. Anyone may use the project under the MIT terms; later commercial plans cannot revoke rights already granted under MIT.
 
-Until a formal license or written authorization is published, copyright in the project's source code, documentation, images, logo, name, and other original content is reserved. Do not copy, modify, redistribute, package, publish, integrate, or use the project commercially without written permission from the copyright holder.
+官方商业产品、托管服务、SLA、付费技术支持、官方发行版和品牌合作方案目前仍在规划中。这些服务可以单独收费，但收费服务不改变 MIT 对项目代码已经授予的权利。
 
-## 第三方内容 / Third-party content
+Official commercial products, hosted services, SLAs, paid technical support, official distributions, and branding partnerships are still being planned. These services may be charged separately, but paid services do not change the rights already granted by MIT for the project code.
 
-第三方依赖、字体、图标、图片、示例和 `assets/vendor` 中的资源，仍以各自的上游许可证、版权声明和使用条件为准。它们存在于本仓库中，不表示 RPI Work 本身采用相同许可证，也不表示项目维护者可以替代上游权利人授予额外权利。
+## 商业授权与双重授权 / Commercial and dual licensing
 
-Third-party dependencies, fonts, icons, images, examples, and resources under `assets/vendor` remain governed by their own upstream licenses, copyright notices, and conditions. Their presence in this repository does not mean that RPI Work uses the same license, nor that the maintainer can grant rights on behalf of upstream owners.
+如果版权持有人拥有相关代码的完整版权，可以针对额外权利提供商业授权或双重授权，例如：
 
-## 商业计划 / Commercial plans
+- 私有模块、未公开代码或定制版本；
+- 商业支持、SLA、培训和集成服务；
+- RPI Work 名称、Logo 和品牌的单独商标或品牌授权；
+- 与 MIT 许可无关的专有插件、托管服务或发行版权益。
 
-官方商业产品、托管服务、SLA、付费技术支持、官方再分发计划和品牌合作方案目前均为待定。该状态不构成任何商业授权；如需复制、修改、再分发、集成或商用许可，请先通过 GitHub Issue 或私下联系维护者确认。
+Such additional commercial offerings may include:
 
-Official commercial products, hosted services, SLAs, paid technical support, official redistribution programs, and branding partnerships are currently undecided. This status is not a commercial authorization. If you need permission to copy, modify, redistribute, integrate, or use RPI Work commercially, contact the maintainer through a GitHub Issue or privately first.
+- private modules, unreleased code, or customized versions;
+- commercial support, SLAs, training, and integration services;
+- separate trademark or brand authorization for the RPI Work name and logo;
+- proprietary plugins, hosted services, or distribution rights outside the MIT grant.
 
-本状态可能在未来通过单独的开源许可证、商业许可证或书面授权协议调整；任何调整以正式发布的文本为准。
+商业授权不能禁止既有 MIT 版本的合法商业使用，也不能替代第三方依赖的许可证。项目包含其他贡献者代码时，商业双重授权还必须获得相应版权人的授权。
 
-This status may change in the future through a separate open-source license, commercial license, or written authorization agreement. Any change is governed by the formally published text.
+A commercial license cannot prohibit lawful commercial use of an existing MIT version and cannot replace third-party licenses. If the project contains contributions from other copyright holders, any dual licensing also requires the appropriate authorization from those holders.
+
+## 免责声明 / Disclaimer
+
+软件按 MIT License 中的 “AS IS” 条款提供，不提供任何明示或默示担保。使用者应自行核对第三方依赖、打包资源、平台组件和目标部署环境的许可与安全要求。
+
+The software is provided under the “AS IS” terms in the MIT License, without warranty. Users are responsible for reviewing the licenses and security requirements of third-party dependencies, bundled assets, platform components, and their deployment environment.
 
 ## 联系 / Contact
 

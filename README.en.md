@@ -6,7 +6,7 @@
 
 Current version: **RPI Work 0.1.20**. This is a personally maintained project under active development; some APIs and features may change.
 
-> Project legal and commercial status is maintained in a [separate document](docs/legal/licensing.md), not in this README.
+> This project is released under the [MIT License](LICENSE). Commercial plans, official services, and paid support are still being planned; the MIT grant itself permits commercial use. See the [legal and commercial status](docs/legal/licensing.md) for details.
 
 ## What it does
 
