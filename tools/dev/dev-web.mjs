@@ -317,19 +317,27 @@ function startBuild() {
   }
   buildRunning = true;
   log('source change detected; rebuilding Web bundle');
-  const buildArgs = [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    path.join(repoRoot, 'tools', 'dev', 'build-ui-web.ps1'),
-    ...(debugBuild ? ['-DebugBuild'] : []),
-  ];
+  const windowsBuild = process.platform === 'win32';
+  const buildCommand = windowsBuild ? 'powershell.exe' : process.execPath;
+  const buildArgs = windowsBuild
+    ? [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        path.join(repoRoot, 'tools', 'dev', 'build-ui-web.ps1'),
+        ...(debugBuild ? ['-DebugBuild'] : []),
+      ]
+    : [
+        path.join(repoRoot, 'tools', 'dev', 'build-ui-web.mjs'),
+        ...(debugBuild ? ['--debug-build'] : []),
+      ];
   if (process.env.RPI_UI_BUILD_OUTPUT_ROOT) {
-    buildArgs.push('-OutputRoot', process.env.RPI_UI_BUILD_OUTPUT_ROOT);
+    if (windowsBuild) buildArgs.push('-OutputRoot', process.env.RPI_UI_BUILD_OUTPUT_ROOT);
+    else buildArgs.push('--output-root', process.env.RPI_UI_BUILD_OUTPUT_ROOT);
   }
   const child = spawn(
-    'powershell.exe',
+    buildCommand,
     buildArgs,
     { cwd: repoRoot, stdio: 'inherit', windowsHide: true },
   );
