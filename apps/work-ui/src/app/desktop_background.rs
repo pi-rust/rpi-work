@@ -27,16 +27,16 @@ pub(super) fn use_background() {
         let tray = (|| {
             menu.append_items(&[&restore, &exit])
                 .map_err(|e| e.to_string())?;
-            let icon = icon_from_memory(if cfg!(target_os = "macos") {
-                include_bytes!("../../../../assets/branding/rpi-gear.png")
-            } else {
-                include_bytes!("../../../../assets/branding/rpi-256.png")
-            })
-            .map_err(|e| e.to_string())?;
+            let icon = icon_from_memory(include_bytes!("../../../../assets/branding/rpi-256.png"))
+                .map_err(|e| e.to_string())?;
             TrayIconBuilder::new()
                 .with_tooltip("RPI Work · 点击托盘图标恢复窗口")
                 .with_icon(icon)
-                .with_icon_as_template(cfg!(target_os = "macos"))
+                // macOS template images intentionally discard their colors and
+                // transparent pixels become the status item's background. Use
+                // the generated branded icon here so the menu-bar icon keeps
+                // its cream background instead of appearing transparent.
+                .with_icon_as_template(false)
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
                 .build()
