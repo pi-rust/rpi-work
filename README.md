@@ -1,175 +1,254 @@
 # RPI Work
 
-用 Rust + Dioxus 构建的个人 Agent 工作台。在桌面和手机上访问同一个执行节点，围绕项目完成对话、工具执行、文件预览和代码审阅。
+> 个人维护的跨平台 Agent 工作台：用 Rust + Dioxus 连接本机或远程执行节点，在桌面、浏览器和 Android 上管理项目、会话、工具运行、文件预览与代码审阅。
+>
+> A personal, cross-platform Agent workbench built with Rust and Dioxus. Connect to a local or remote execution node from desktop, browser, or Android, and manage projects, sessions, tool runs, file previews, and code review in one workspace.
 
-[下载最新版](https://github.com/pi-rust/rpi-work/releases/latest) · [全部版本](https://github.com/pi-rust/rpi-work/releases) · [构建状态](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [开发与设计文档](#文档)
+[下载最新版 / Latest release](https://github.com/pi-rust/rpi-work/releases/latest) · [全部版本 / All releases](https://github.com/pi-rust/rpi-work/releases) · [构建状态 / CI](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [文档 / Documentation](#文档--documentation)
 
-## 下载与安装
+## 当前状态 / Status
 
-在 [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest) 的 **Assets** 中选择对应平台：
+- 最新版本 / Latest release: **RPI Work 0.1.20**
+- 项目类型 / Project type: **个人项目 / Personal project**
+- 维护状态 / Maintenance: 持续开发中，部分能力仍在演进 / Actively developed; some APIs and features are still evolving
+- 当前发布平台 / Current platforms: Windows、macOS、Linux、Android ARM64 和 Web / Windows, macOS, Linux, Android ARM64, and Web
 
-| 平台 | 架构 | 安装包与启动方式 |
+## 功能概览 / What it does
+
+### 中文
+
+- 桌面端使用本机 Work owner，也可以连接远程节点。
+- 浏览器 Web 入口与桌面共享同一个节点的项目、会话和运行状态。
+- Android 通过一次性授权二维码连接可信电脑节点。
+- 支持项目与会话管理、流式对话、工具调用、队列、停止与断线恢复。
+- 支持文件树、文件预览、Git 状态、Diff、搜索和移动端布局。
+- 支持模型供应商、会话配置、资源包、Skills、扩展和运行时信息管理。
+- 节点无法连接时显示可操作的恢复提示，而不是空白工作区。
+- 桌面工作协同页面可以发现局域网节点，并在确认连接前展示节点身份和健康状态。
+
+### English
+
+- Use a local Work owner on desktop or connect to a remote node.
+- The browser Web entry shares the node's projects, sessions, and runtime state.
+- Android connects to a trusted computer node through a one-time authorization QR code.
+- Manage projects and sessions, stream conversations, run tools, queue work, stop runs, and recover after disconnects.
+- Browse files, preview content, inspect Git status, review diffs, search, and use mobile layouts.
+- Manage model providers, session configuration, packages, Skills, extensions, and runtime details.
+- When a node is unavailable, the UI shows an actionable recovery state instead of a blank workspace.
+- Desktop collaboration can discover LAN nodes and show their identity and health before connection confirmation.
+
+## 下载与安装 / Download and install
+
+从 [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest) 的 **Assets** 中选择对应平台的文件。每个安装包都有对应的 `.sha256` 校验文件。
+
+Choose the package for your platform from the **Assets** section of [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest). Every package is accompanied by a `.sha256` checksum file.
+
+| 平台 / Platform | 架构 / Architecture | 说明 / Notes |
 | --- | --- | --- |
-| Windows | x64 / ARM64 | 解压 ZIP，运行 work-ui.exe；需要 WebView2 Runtime |
-| macOS | Intel / Apple Silicon | 解压 tar.gz，打开 RPI Work.app；当前未配置 Apple 签名与公证 |
-| Linux | x64 / ARM64 | 解压 tar.gz，运行 work-ui；基于 Ubuntu 24.04，依赖 GTK 3 / WebKitGTK 4.1 / libxdo |
-| Android | ARM64 | 安装 APK；最低 Android 7.0，使用固定签名以支持后续覆盖升级 |
-| Web | WASM | 解压 Web ZIP，由静态服务器或兼容的 rpi-web 托管 |
+| Windows | x64 / ARM64 | 解压 ZIP，运行 `work-ui.exe`；需要 WebView2 Runtime / Extract the ZIP and run `work-ui.exe`; WebView2 Runtime is required |
+| macOS | Intel / Apple Silicon | 解压后打开 `RPI Work.app`；当前未配置 Apple 签名与公证 / Open `RPI Work.app`; Apple signing and notarization are not configured |
+| Linux | x64 / ARM64 | 解压 tar.gz，运行 `work-ui`；需要 GTK 3、WebKitGTK 4.1 和 libxdo / Extract the archive and run `work-ui`; GTK 3, WebKitGTK 4.1, and libxdo are required |
+| Android | ARM64 | 安装 APK；使用固定签名支持后续覆盖升级 / Install the APK; the persistent signing key supports upgrades |
+| Web | WASM | 由静态服务器或兼容的 `rpi-web` 托管；必须使用 HTTP(S)，不能直接打开 `file://` / Serve with a static server or compatible `rpi-web`; HTTP(S) is required, not `file://` |
 
-每个平台提供 SHA-256 校验文件；Release 另含供客户端验证的 update.json 和 update.json.sig。桌面包同时包含 work-cli。详细依赖与打包方式见 [多平台编译说明](docs/guides/ci-builds.md)。
+桌面包同时包含 `work-cli`。Release 还会提供 `update.json` 和 `update.json.sig`，供客户端验证更新包。详细的平台依赖和打包规则见[多平台编译说明](docs/guides/ci-builds.md)。
 
-Android 0.1.0 使用临时开发签名，首次迁移到固定签名版需要卸载重装，手机本地偏好会清除；电脑节点上的项目和会话保留。iOS 尚未提供安装包。
+Desktop packages also include `work-cli`. Releases also contain `update.json` and `update.json.sig` for client-side update verification. See the [multi-platform build guide](docs/guides/ci-builds.md) for packaging details.
 
-## 快速开始
+## 快速开始 / Quick start
 
-### 1. 桌面使用本机；Web 默认是同一桌面的入口
+### 桌面端 / Desktop
 
-当前源码的原生桌面在进程内使用 Work owner，由锁定 Git revision 的 `rpi-extcore` Service 通过 stdio `rpi --mode rpc` 执行 Agent 与控制操作；依赖细节见[架构总览](docs/architecture/overview.md)。桌面不需要、也不会启动 `rpi-http`，没有本机 HTTP 登录步骤。桌面窗口打开后自动检查 `rpi`。缺少时从 rpi 官方 GitHub Release 下载对应平台的稳定版本，校验 SHA-256、验证版本与 RPC 能力后安装并直接启动本机工作空间。已有程序可位于应用可执行文件旁、PATH、macOS Homebrew 的 `/opt/homebrew/bin` 或 `/usr/local/bin`、RPI Work 自动安装目录或 Cargo 用户目录，也可用 `RPI_WORK_RPI_BIN` 指定。无效路径、下载失败和工作区占用均提供恢复入口，可选择已有程序或连接远程节点。环境就绪后，欢迎页按实际配置引导添加模型和打开项目，模型凭据保存在执行节点。源码后续改动不会自动升级已安装的应用；请通过 Release 或应用更新安装对应版本。
+```bash
+# 下载并启动对应平台的 RPI Work 包
+# Download and launch the RPI Work package for your platform
+```
 
-当前源码的 Web 默认使用桌面同一个 owner 的项目、会话与运行状态：打开桌面提供的 Web 地址，有效登录直接进入，否则只输入宿主密码；不用填写节点地址或点击连接。Android 原生 App 通过桌面的一次性授权二维码进入。源码变化不自动替换已安装／正在运行的旧版本，详见下方桌面 HTTP 入口。
+1. 启动 RPI Work；桌面端默认使用本机工作空间。
+2. 打开或添加项目，配置模型供应商，然后创建会话。
+3. 需要使用其他电脑时，进入 **设置 → 工作协同**，输入地址、扫码或选择发现到的局域网节点。
+4. 节点离线时，首页会显示错误原因和 **打开连接设置** 操作。
 
-`rpi-http` 是独立的 rpi API 服务；以下命令不创建 Work 桌面 owner，也不是默认 Work Web/桌面的启动前置。其与 Work 协议的兼容须按具体版本核验：
+1. Launch RPI Work; desktop defaults to the local workspace.
+2. Open or add a project, configure a model provider, and create a session.
+3. To use another computer, open **Settings → Collaboration**, enter its address, scan a code, or select a discovered LAN node.
+4. If the node is unavailable, the home screen shows the reason and an **Open connection settings** action.
 
-~~~shell
-rpi-http --project . --rpi-bin rpi --port 13030
-~~~
+本机 Agent 执行需要兼容的 `rpi` 可执行文件。桌面启动时会检查本机环境；如果缺少运行时，应用会提供检测、安装或选择已有程序的入口。模型凭据保存在执行节点，不写入安装包。
 
-从源码启动节点时，在 rpi-package 仓库执行：
+Local Agent execution requires a compatible `rpi` executable. Desktop startup checks the local environment and provides detection, installation, or file-selection recovery when it is missing. Model credentials stay on the execution node and are not bundled with the application.
 
-~~~shell
-cargo run --locked -p rpi-http -- --project <项目目录> --rpi-bin <rpi可执行文件> --port 13030
-~~~
+### Web 端 / Web
 
-也可使用兼容的 rpi-web 服务；模型 Provider、凭据和工具在执行节点配置。
+Web 入口必须由节点提供可用的 Web assets，或者配置同源 Web proxy。普通 API/协作端口不等于 Web UI 入口；浏览器需要从同源获取页面、静态资源和 `/api/v1/*` 请求。
 
-### 2. 连接并打开项目
+The Web entry requires either usable Web assets served by the node or a configured same-origin Web proxy. An API/collaboration port alone is not a Web UI entry; the browser needs the page, static assets, and `/api/v1/*` requests from the same origin.
 
-1. 桌面端启动 RPI Work，自动使用本机原生工作空间（本机入口 `rpi-work://local`，不是跨设备 node ID）。
-2. 需要远程执行时，进入 **设置 → 执行节点 → 连接其他节点**；可随时切回本机。
-3. 打开或添加已有项目，可通过原生目录选择器选择任意当前用户可访问的目录，或输入路径；新建目录按所填完整路径创建，不受远程节点项目根目录限制。可自定义显示名称；点击项目右侧的 **＋** 直接新建会话并输入需求，无须先填写标题。全局 **新建任务** 和 `/new` 沿用当前项目；首条消息发送成功后自动生成标题，之后仍可重命名。
+开发环境可使用：
 
-宿主提供的 Web（包括手机浏览器）默认使用当前入口节点：有效 Cookie 直接进入，否则输入宿主密码，再自动加载同一份项目、会话和任务；不会被其他节点历史覆盖。认证后在 **设置 → 执行节点／连接我的电脑 → 连接其他电脑** 输入目标 Web 入口，进入目标节点自己的页面独立登录，并可 **返回入口节点**。目标需提供 hosted 声明和 Web assets／同源代理；这不是跨源 API 直连或同页面多节点同时在线。独立 Web 入口保留原节点选择与认证流程。详见[宿主 Web 切换节点](docs/guides/node-connection.md#宿主-web-切换节点)。
+```bash
+task dev
+```
 
-Android 原生 App 则必须扫描宿主桌面或已登录 Web 生成的 **手机 App 扫码授权**，核对目标后免密进入；授权码 120 秒有效、单次兑换，不含长期密码，不能用普通地址二维码代替。节点需正确配置监听、Host 和认证；暂不提供设备审批、逐设备权限或项目 ACL。详见[节点连接交互](docs/guides/node-connection.md)。
+默认地址通常为 `http://127.0.0.1:13031/`。修改 UI 并需要热刷新时使用：
 
-项目及会话的 **…** 菜单提供重命名、归档、恢复和分支操作；会话支持置顶、Fork 与 Clone。项目归档只收纳本设备侧栏，会话归档保存到节点，均不删除文件或历史。等待回复显示 loading；在底部时跟随流式输出，上翻后暂停，点击“最新消息”恢复。详见[项目、会话与消息交互](docs/guides/codex-interactions.md)。
+```bash
+task dev:desktop
+```
 
-源码当前新增桌面同 owner 的认证 HTTP/WebSocket：`rpi-work://local` 与内嵌 `work-node-service` 持有同一个工作空间，不再以桌面改连独立 HTTP 代替共享。默认监听 `0.0.0.0:13031`，仅首次缺少共享偏好时默认开启；已保存的关闭选择及无效偏好仍保持关闭。允许共享时，浏览器使用可达的同源 Web/代理地址及密码登录，Android 原生 App 使用专用一次性授权码。关闭共享不停止本机任务，也不影响桌面访问其他节点。右侧执行环境与会话导航明确区分本机/远程工作空间。已发布或正在运行的旧二进制不会因此动态增加 listener。详见[桌面 HTTP 入口](docs/guides/desktop-http.md)。
+开发路径通常使用 `14180` Web 入口和 `13031` owner/API 端口。不要在同一个数据目录下同时启动多个 owner。
 
-桌面可显式连接其他节点，并保留历史选择；`task desktop` 默认明确选择本机。切换视图不停止节点或任务，退出才清理 children 和数据锁。独立 standalone `rpi-http` 与旧迁移副本保持原状，不自动倒回或合并。
+The default development URL is usually `http://127.0.0.1:13031/`. For UI hot reload, use `task dev:desktop`; it normally uses Web port `14180` and owner/API port `13031`. Do not start multiple owners against the same data directory.
 
-开发启动：在 Git ignored `.env.local` 配置 `RPI_WORK_HTTP_PASSWORD`（兼容 `RPI_HTTP_PASSWORD`）。**`task dev`** 构建 release Web，以无头 owner 在 `http://127.0.0.1:13031/` 直接托管，有压缩/内容哈希缓存，不热刷新。修改 UI 时使用 **`task dev:desktop`**，并行启动桌面 owner 与 `14180` debug Web 构建监听/刷新，API 代理到 `13031`。两条路径二选一，相同 data 不可另开第二个 owner。热刷新端口用 `PORT`，owner 端口用 `RPI_WORK_HTTP_PORT`。只需兼容 rpi，无需相邻源码；`task node` 才启动独立 rpi HTTP 服务。详见[开发入口](docs/guides/live-chat.md)。
+常用配置 / Common configuration:
 
-### 3. 更新客户端
+```dotenv
+RPI_WORK_HTTP_BIND=0.0.0.0
+RPI_WORK_HTTP_PORT=13031
+RPI_WORK_HTTP_PASSWORD=change-me
+RPI_WORK_HTTP_ASSETS=target/web-release/parity-web
+# RPI_WORK_HTTP_WEB_PORT=      # 使用同源静态 assets 时留空 / leave empty for direct same-origin assets
+```
 
-**设置 → 应用更新** 默认在启动时及每 6 小时检查最新稳定 Release，可关闭自动检查或手动检查。下载后验证清单签名、文件大小和 SHA-256：
+不要把密码提交到仓库、命令行参数或公开日志中。公网部署应使用 HTTPS 反向代理，并保留 Host、Origin 和认证校验。
 
-- 桌面：安装并重启，失败时尝试回滚。
-- Android：校验包名、版本和签名证书后，由系统确认安装。
-- Web：电脑服务端部署新版本后重新加载页面。
+Never commit the password or place it in command-line arguments or public logs. For public deployment, use an HTTPS reverse proxy and keep Host, Origin, and authentication checks enabled.
 
-会话运行中或保留未发送草稿、附件时暂停安装。详见 [自动更新与签名发布](docs/guides/automatic-updates.md)。
+### Android
 
-## 主要能力
+Android 原生 App 通过桌面或已登录 Web 入口生成的一次性授权二维码连接节点。授权码短期有效、只能兑换一次，不包含长期密码。首次连接失败时，可在连接页面手动输入地址、扫码或恢复上次连接；进入工作区后节点离线会从首页进入 **工作协同** 重新连接。
 
-- **项目与会话**：侧栏添加项目、项目「＋」或全局「新建任务」创建会话；支持显示名称、搜索、重命名、归档恢复、置顶、Fork / Clone 和历史恢复。
-- **对话与工具**：工作空间内流式回复、工具调用与输出、节点提供的计划和 ask 确认、停止与断线恢复；队列操作以节点支持及回读为准。消息中的 Mermaid 围栏可离线绘图，保留源码与复制。
-- **执行后端**：已接入桌面本机 RPI / Claude / Codex / OpenCode 与会话持久绑定，**入口为「会话配置 → 执行后端」Tab，聊天框内不显示后端菜单和 ACP 配置控件**；切换后端须确认另建会话，原会话和草稿保留。ACP 依赖本机 adapter 与登录，Web / 远程不启动本机 ACP；Claude 已完成短提示实测，Codex / OpenCode 尚仅通过握手和建会话，详见 [ACP 使用与验收](docs/guides/acp-backends.md)。
-- **BTW 旁问**：输入区打开独立普通会话，有独立历史与取消；发送前须确认节点 active tools 为空，不自动读取主对话，显式引用只写入主草稿。不是原生 BTW 插件加载。
-- **文件与变更**：工作空间「变更」和项目文件入口提供文件树、内容预览、Git 状态与 diff、多文件搜索和筛选、移动端列表与详情。
-- **运行信息**：任务上下文与会话追踪展示队列、上下文压缩、耗时，以及节点实际报告的 token、缓存和费用；请求已接受不等于任务已完成。
-- **原生资源与组件**：资源页管理原生 Package/Skill/扩展；会话资源配置使用精确选择、revision 应用、实际加载观察和恢复。设置中的节点组件支持下载/导入、自定义面板按需加载与能力授权。旧设计 pins 和静态预览仍是惰性数据，独立于 native applied，见[扩展架构](docs/architecture/extensions.md)。
-- **元Agent**：节点持久化源码草稿、结构校验、不可变测试快照、真实 exact 测试会话及结算证据；通过测试后发布节点本地不可变版本。开发会话可操作同一份源码，外部修改使旧验证资格失效。静态校验不编译源码扩展，本地发布不公开上传或自动启用，见[原生资源指南](docs/guides/native-resource-authoring.md)。
-- **附件预览**：输入区可选择并本地预览支持的图片 / 文本及显式文本引用；尚未接入附件上传或直接发送图片给模型。
-- **外观与设置**：顶部「外观与主题」提供 Codex 黑白及原四套主题，共五套预设，支持浅色 / 深色 / 跟随系统、密度和主题 JSON 导入导出；工具展示可跟随主题或选择简单 / 详情，默认简单。设置中可管理执行节点与应用更新。完整视觉参数通过 JSON 编辑，尚无逐字段可视化编辑器。
+The Android app connects through a one-time authorization QR code generated by the desktop or an authenticated Web entry. The code is short-lived, single-use, and does not contain a long-term password. If the first connection fails, use the connection screen to enter an address, scan again, or restore the previous connection. Once inside the workspace, an unavailable node can be repaired through **Collaboration** from the home screen.
 
-当前入口与能力边界见 [项目、会话与消息交互](docs/guides/codex-interactions.md)、[执行后端说明](docs/guides/acp-backends.md)及 [扩展架构](docs/architecture/extensions.md)。执行与资源能力由目标节点实际声明和回读；本机支持不能推定任意远程节点或 ACP 也支持原生资源配置。
+## 架构与连接边界 / Architecture and boundaries
 
-当前源码通过 `WorkspaceClient` 统一桌面本机原生工作空间与远程 HTTP/WebSocket：本机项目目录、目录索引、文件和 Git 由本地 Rust 服务提供，不虚构 RPC wire 方法；本机 RPI 执行与控制走 stdio RPC，所选本机 ACP 后端走隔离托管的 stdio ACP。Web、Android 与显式远程连接使用认证 HTTP 资源接口及 WebSocket。本机目录索引为 `<data>/rpc/projects.json`，会话注册表为 `<data>/rpc/projects/<id>/sessions.json`；旧应用目录索引与匹配项目的注册项可导入，源文件保留，不改写 transcript，不承诺全局原生历史发现。ACP 原生资源定制、逐设备权限、直接向模型发送图片等能力仍有缺口；附件本地预览不等于模型多模态输入。HTML 原型中的演示状态不代表后端已实现。历史功能边界见 [上游功能审阅](docs/archive/upstream-functional-review.md)，当前传输边界见 [transport 架构](docs/architecture/transport.md)。
+### 中文
 
-## 从源码运行
+- `work-ui`：Dioxus 桌面、Android 和 Web 客户端。
+- `work-client`：本机/远程 `WorkspaceClient`、HTTP/WebSocket、快照、实时流和恢复逻辑。
+- `work-node-runtime`：实际的 workspace owner、RPC/ACP、会话、项目、资源和文件服务。
+- `work-node-service` 与 `work-node-host`：同一个 owner 上的认证 HTTP/WebSocket、Web assets、共享和一次性授权。
+- `work-cli`：连接已运行节点或启动无头 owner 的 CLI。
 
-安装 stable Rust 和对应平台依赖，克隆仓库后执行：
+桌面本机和远程节点使用统一的客户端抽象，但数据所有权仍归节点。切换节点不会把一个节点的项目、会话或凭据混到另一个节点。Web/Android 使用认证 HTTP 接口和 WebSocket；本机 Agent 使用隔离的 stdio RPC/ACP 路径。
 
-~~~shell
+### English
+
+- `work-ui`: Dioxus desktop, Android, and Web clients.
+- `work-client`: local/remote `WorkspaceClient`, HTTP/WebSocket transport, snapshots, realtime streams, and recovery.
+- `work-node-runtime`: the actual workspace owner, RPC/ACP, sessions, projects, resources, and file services.
+- `work-node-service` and `work-node-host`: authenticated HTTP/WebSocket, Web assets, sharing, and one-time authorization on the same owner.
+- `work-cli`: CLI for connecting to an existing node or starting a headless owner.
+
+The client abstraction is shared across local and remote nodes, but data ownership remains node-scoped. Switching nodes does not mix projects, sessions, or credentials. Web/Android use authenticated HTTP and WebSocket paths; local Agent execution uses isolated stdio RPC/ACP paths.
+
+## 从源码运行 / Run from source
+
+需要 stable Rust、Node.js（开发和浏览器验证）以及对应平台的桌面依赖。
+
+You need stable Rust, Node.js for development/browser checks, and the desktop dependencies for your platform.
+
+```bash
 cargo run --locked -p work-ui
-~~~
+```
 
-检查代码：
+推荐检查命令 / Recommended checks:
 
-~~~shell
+```bash
 cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
-~~~
+```
 
-CLI 默认连接已运行的桌面／无头节点 `http://127.0.0.1:13031/`，不再默认启动独立 Agent。客户端密码从 `RPI_WORK_PASSWORD` 或 `--password-stdin` 读取，每次命令独立认证，不保存明文凭据或跨命令 Cookie：
+CLI 示例 / CLI examples:
 
-~~~shell
+```bash
 cargo run --locked -p work-cli -- --help
 cargo run --locked -p work-cli -- projects
 cargo run --locked -p work-cli -- sessions
 cargo run --locked -p work-cli -- watch SESSION_ID
-~~~
+```
 
-无头宿主先安全注入非空 `RPI_WORK_HTTP_PASSWORD`，再运行 `cargo run --locked -p work-cli -- serve`；桌面也支持 `work-ui --headless`。两者复用 GUI 的同一 owner、数据目录与锁，不创建第二套会话库。服务器只构建 `work-cli` 即可，不依赖 Dioxus/WebView。桌面连接已运行宿主用 `work-ui --connect http://127.0.0.1:13031/`，不再另建本机 owner。
+更多开发入口见 [`Taskfile.yml`](Taskfile.yml)、[本机构建步骤](docs/guides/ci-builds.md) 和 [测试与产物](docs/guides/testing-artifacts.md)。
 
-目标可由 `--url` / `--node` 或 `RPI_WORK_URL` 指定（独立旧节点13030须显式设置）。旧 RPC／ACP 直接启动诊断仅保留为显式 `RPI_WORK_TRANSPORT=rpc|acp` 模式。CLI 的 `prompt` 受理 ACK 不代表结算，退出客户端不停止 owner 任务；详见[无头节点与统一 CLI](docs/guides/headless-node.md)。Web 开发工具位于 `tools/dev/`，跨平台打包脚本位于 `scripts/ci/`，见 [本机构建步骤](docs/guides/ci-builds.md#本机复现)。
+See [`Taskfile.yml`](Taskfile.yml), the [local build guide](docs/guides/ci-builds.md), and [testing and artifacts](docs/guides/testing-artifacts.md) for more development workflows.
 
-复验入口与产物规则见 [测试说明](docs/guides/testing-artifacts.md)。此前会话分层迁移、Android 双 ABI 编译补验和视觉审阅的结果保存在 [历史记录](docs/archive/README.md)，只对应各次构建，不代表当前源码、已安装应用、原生 GUI 或真机自动通过。
+## 目录结构 / Repository layout
 
-### 代码结构
-
-| 目录 | 职责 |
+| 目录 / Directory | 作用 / Purpose |
 | --- | --- |
-| apps/work-ui | Dioxus 桌面、Android 与 Web 客户端 |
-| apps/work-ui/src/app | 启动、工作空间协调、连接生命周期和会话标识 |
-| apps/work-ui/src/features | 对话、项目、资源、元 Agent、设置和可观测性 |
-| apps/work-ui/src/shared | 公共组件、状态辅助与主题 |
-| apps/work-cli | 现有节点认证、typed 会话操作／订阅、无头宿主入口及显式原生诊断 |
-| crates/foundation/work-node-api | 共享 DTO、typed NodeApi、会话/资源/realtime 契约 |
-| crates/foundation/work-core | API 重导出、纯运行投影、事件规范化与惰性设计 |
-| crates/client/work-client | WorkspaceClient 本机/远程适配、HTTP/WebSocket、恢复与客户端投影 |
-| crates/node/work-node-runtime | 实际唯一 workspace owner、RPC/ACP、会话绑定、资源与源码服务 |
-| crates/components/work-component-api | 通用组件包契约、校验、目录/授权与隔离面板通信桥 |
-| crates/components/work-http-component | 远程访问专用面板与动作映射（监听 IP/端口、分享地址、新密码） |
-| crates/transport/work-http-runtime | HTTP 认证、Host/Origin、共享与一次性授权 |
-| crates/transport/work-node-service | 同 owner 的 HTTP/WebSocket、集成测试和 examples |
-| crates/host/work-node-host | GUI/无头共用的实际宿主、HTTP 配置、组件绑定与协作退出 |
-| crates/host/work-host | 宿主应用门面及本机 client 包装；无 Dioxus/WebView 依赖 |
-| crates/update/work-update | 更新发现、签名验证、下载与安装助手 |
-| assets/vendor | 正式客户端使用的二维码、Mermaid 库及许可证 |
-| design/prototype | 保留内容与校验基准的 HTML 设计参考 |
-| tests | 集成测试、原型测试、模块验证入口及 fixture |
-| tools/dev、tools/review | 本地开发、截图对照和诊断工具 |
-| docs/guides、docs/architecture、docs/design、docs/reviews、docs/archive | 当前指南、源码边界、设计、专题审查和历史记录 |
+| `apps/work-ui` | 桌面、Android、Web UI / desktop, Android, and Web UI |
+| `apps/work-cli` | CLI 与无头 owner 入口 / CLI and headless owner entry |
+| `crates/client/work-client` | 客户端传输、连接恢复与投影 / client transport, recovery, and projections |
+| `crates/node/work-node-runtime` | workspace owner 与执行运行时 / workspace owner and execution runtime |
+| `crates/transport/work-node-service` | HTTP/WebSocket 服务和协议路由 / HTTP/WebSocket service and routes |
+| `crates/host/work-node-host` | GUI/无头宿主、HTTP 配置与共享 / GUI/headless host, HTTP configuration, and sharing |
+| `crates/update/work-update` | 更新发现、签名验证和安装 / update discovery, signature verification, and installation |
+| `docs` | 指南、架构、设计和审查记录 / guides, architecture, design, and reviews |
+| `tests` | 集成测试、结构检查和 fixtures / integration tests, structure checks, and fixtures |
 
-目录职责、依赖边界和常用入口见 [项目结构](docs/guides/project-structure.md)。Node.js 与 `tools/package.json` 只用于开发和浏览器验证，不是客户端运行时依赖。
+## 安全与隐私 / Security and privacy
 
-## 构建与版本发布
+- 不要把节点密码、模型密钥、Android 签名材料或更新签名密钥提交到仓库。
+- 共享和 Web 监听默认应只用于可信网络；公网请使用 HTTPS 和额外的网络访问控制。
+- Android 授权二维码是一次性短期凭据，不应截图公开或重复使用。
+- 节点发现只提供候选地址；客户端仍会探测节点身份、协议和健康状态，发现本身不等于授权。
+- 第三方资源按照各自的上游许可证使用，见 [`assets/vendor`](assets/vendor) 中的清单。
+- 发现安全问题请不要公开发布可利用细节，优先通过 GitHub Security Advisories 或私下联系维护者。
 
-| 触发方式 | 结果 |
-| --- | --- |
-| 推送 main / master、PR、手动 Run workflow | 检查并构建八个平台制品，上传 **Actions → Artifacts**，保留 14 天 |
-| 推送与 UI 版本一致的 v* 标签 | 全部构建成功后，上传安装包、校验文件和签名清单到 **GitHub Release** |
+- Do not commit node passwords, model keys, Android signing material, or update-signing keys.
+- Treat sharing and Web listeners as trusted-network features; use HTTPS and additional network controls for public deployments.
+- Android authorization QR codes are short-lived, single-use credentials; do not publish screenshots of them.
+- Discovery only supplies candidate addresses; the client still verifies node identity, protocol, and health. Discovery is not authorization.
+- Third-party resources remain subject to their own upstream licenses; see the inventory in [`assets/vendor`](assets/vendor).
+- For security issues, avoid publishing exploitable details and prefer GitHub Security Advisories or private contact with the maintainer.
 
-主分支构建成功不会自动创建 Release。发布稳定版本时，先更新 apps/work-ui/Cargo.toml 和 docs/release-notes.md，提交后打标签：
+## 许可证与商业状态 / License and commercial status
 
-~~~shell
-git tag -a v0.1.9 -m "RPI Work v0.1.9"
-git push origin v0.1.9
-~~~
+### 开源许可证 / Open-source license
 
-标签中的版本必须与 UI 包版本一致。发布任务先创建草稿，上传完整制品并验证签名，最后公开 Release，供客户端下载和自动检查更新。签名配置、失败排查和密钥备份见 [发布说明](docs/guides/automatic-updates.md#发布流程)。
+本仓库由个人维护。除第三方资源另有许可证外，本项目源代码按 [MIT License](LICENSE) 发布。
 
-## 文档
+This is a personally maintained project. Unless a third-party asset states otherwise, the project source code is released under the [MIT License](LICENSE).
 
-- **产品与架构**：[产品范围](docs/design/product-design.md) · [架构总览](docs/architecture/overview.md) · [架构与传输](docs/architecture/transport.md) · [节点与会话归属](docs/design/node-session-ownership.md)
-- **使用与连接**：[对话、项目和文件审阅](docs/guides/codex-interactions.md) · [ACP 后端](docs/guides/acp-backends.md) · [节点连接与扫码](docs/guides/node-connection.md) · [主题视觉规格](docs/guides/theme-design.md)
-- **能力与扩展**：[Agent / UI 扩展边界](docs/architecture/extensions.md) · [开发 Demo](docs/guides/extension-demo.md) · [原生资源与源码开发](docs/guides/native-resource-authoring.md) · [组件组合](docs/architecture/component-composition.md)
-- **开发与验证**：[开发规范](docs/guides/development-standards.md) · [项目结构](docs/guides/project-structure.md) · [多平台编译](docs/guides/ci-builds.md) · [自动更新](docs/guides/automatic-updates.md) · [测试与产物](docs/guides/testing-artifacts.md)
-- **完整索引与历史**：[文档导航](docs/README.md) · [旧方案、迁移及验收归档](docs/archive/README.md)
+**重要说明 / Important:** MIT License 本身允许复制、修改、再分发和商业使用。下面的“商用待定”不撤销 MIT 已授予的代码权利，而是表示项目目前没有单独的商业产品、托管服务、SLA、技术支持、官方发行版品牌授权或商业合作方案。
 
-查看冻结的 HTML 原型：在仓库根目录运行 `python -m http.server 14173 --bind 127.0.0.1`，打开 <http://127.0.0.1:14173/design/prototype/>。原型使用示例数据，不是正式应用或已实现能力的证明。
+**Important:** The MIT License permits copying, modification, redistribution, and commercial use. “Commercial plans pending” does not revoke rights already granted by MIT; it means that this project currently has no separate commercial product, hosted service, SLA, paid support, official distribution program, or brand-partnership terms.
 
-节点组件的自定义界面、下载安装与组合边界见[组件组合架构](docs/architecture/component-composition.md)。物理边界：rpi 能力在 rpi/extcore，HTTP 适配在 rpi-http；Work 的节点管理、组件包和专用面板在 Work（`crates/components/work-component-api`、`crates/components/work-http-component`）。Work 的多项目 owner 不是 rpi-http 的实现；Work 不下载、选择或监督 rpi HTTP 扩展作为自己的宿主运行时，也不声称新的 rpi HTTP 插件已支持 Work 现有远程工作空间协议。
+- 代码 / Code: MIT，允许商业使用，但须保留版权和许可声明 / MIT; commercial use is allowed with the required notices.
+- RPI Work 名称、Logo 和品牌 / Name, logo, and branding: 不随 MIT 自动授权 / not automatically licensed by MIT.
+- 第三方依赖和 bundled assets / Third-party dependencies and bundled assets: 以各自许可证为准 / governed by their own licenses.
+- 官方商业服务、托管、支持和品牌合作 / Official commercial services, hosting, support, and branding partnerships: **待定 / TBD**.
+
+如果你需要把 RPI Work 集成到商业产品中，请先核对本仓库代码、第三方依赖和资源的许可证边界；不要把官方名称或 Logo 当作代码许可证的一部分。
+
+If you plan to integrate RPI Work into a commercial product, review the license boundaries for this repository, its dependencies, and bundled assets. Do not treat the official name or logo as part of the code license.
+
+## 贡献 / Contributing
+
+欢迎提交 Issue、文档改进和 Pull Request。提交代码前请运行格式检查、相关测试和 Clippy；涉及 Web、Android 或 UI 的改动应同时说明验证平台和未覆盖的边界。
+
+Issues, documentation improvements, and pull requests are welcome. Before submitting code, run formatting checks, relevant tests, and Clippy. For Web, Android, or UI changes, include the platforms you verified and any uncovered boundaries.
+
+- [开发规范 / Development standards](docs/guides/development-standards.md)
+- [项目结构 / Project structure](docs/guides/project-structure.md)
+- [架构总览 / Architecture overview](docs/architecture/overview.md)
+- [节点连接 / Node connection](docs/guides/node-connection.md)
+- [自动更新与发布 / Updates and releases](docs/guides/automatic-updates.md)
+
+## 文档 / Documentation
+
+- **产品与架构 / Product and architecture**: [产品范围](docs/design/product-design.md) · [架构总览](docs/architecture/overview.md) · [传输架构](docs/architecture/transport.md) · [节点与会话归属](docs/design/node-session-ownership.md)
+- **使用与连接 / Usage and connection**: [项目、会话与消息](docs/guides/codex-interactions.md) · [节点连接与扫码](docs/guides/node-connection.md) · [ACP 后端](docs/guides/acp-backends.md) · [主题视觉规格](docs/guides/theme-design.md)
+- **资源与扩展 / Resources and extensions**: [扩展架构](docs/architecture/extensions.md) · [原生资源开发](docs/guides/native-resource-authoring.md) · [组件组合](docs/architecture/component-composition.md)
+- **开发与验证 / Development and validation**: [多平台编译](docs/guides/ci-builds.md) · [自动更新](docs/guides/automatic-updates.md) · [测试与产物](docs/guides/testing-artifacts.md) · [历史记录](docs/archive/README.md)
+
+## 发布 / Releases
+
+稳定版本通过 `v*` 标签触发 GitHub Actions，构建多平台安装包，生成 SHA-256 校验文件，并创建签名更新清单。当前发布版本为 [`v0.1.20`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.20)。
+
+Stable releases are triggered by `v*` tags. GitHub Actions builds the platform packages, generates SHA-256 checksums, and creates a signed update manifest. The current release is [`v0.1.20`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.20).
+
+发布新版本时同步更新 `apps/work-ui/Cargo.toml`、`docs/release-notes.md` 和本 README 中的当前版本，再创建与 UI 包版本一致的标签。
+
+For a new release, update `apps/work-ui/Cargo.toml`, `docs/release-notes.md`, and the current-version reference in this README, then create a tag matching the UI package version.
