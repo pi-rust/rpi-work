@@ -994,16 +994,16 @@ pub fn DevicesPage(
                                 span { class: "collaboration-action-hint", "扫码或输入地址" }
                             }
                             if *remote_open.read() {
-                                div { class: "collaboration-connect-form",
+                                form { class: "collaboration-connect-form", method: "post", autocomplete: "on", onsubmit: move |event: FormEvent| event.prevent_default(),
                                     div { class: "form-field", label { r#for: "node-url", "节点地址" }
-                                        input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:{remote_port}/", oninput: move |event| { base_url.set(event.value()); preview_epoch += 1; preview.set(None); password.set(NodePassword::default()); } }
+                                        input { id: "node-url", name: "address", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:{remote_port}/", oninput: move |event| { base_url.set(event.value()); preview_epoch += 1; preview.set(None); password.set(NodePassword::default()); } }
                                     }
                                     div { class: "form-field", label { r#for: "node-password", "节点密码" }
-                                        input { id: "node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "连接时输入，不会保存", oninput: move |event| { password.set(NodePassword::new(event.value(), &base_url.read())) } }
+                                        input { id: "node-password", name: "password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "连接时输入，不会保存", oninput: move |event| { password.set(NodePassword::new(event.value(), &base_url.read())) } }
                                     }
                                     div { class: "collaboration-connect-actions",
-                                        button { class: "button", onclick: move |_| remote_open.set(false), "取消" }
-                                        button { class: "button primary", disabled: busy || *preview_busy.read(), onclick: move |_| {
+                                        button { class: "button", r#type: "button", onclick: move |_| remote_open.set(false), "取消" }
+                                        button { class: "button primary", r#type: "submit", disabled: busy || *preview_busy.read(), onclick: move |_| {
                                             let address_input = base_url.read().clone();
                                             match normalize_remote_address(&address_input, false, remote_port) {
                                                 Ok(address) => {
@@ -1135,16 +1135,16 @@ pub fn DevicesPage(
                         }
                         if owned_local { p { class: "connection-help", "本机 RPC 和桌面 HTTP 共用这一份工作空间；远程协作默认关闭。开启并保存后，手机可通过二维码访问相同会话和任务；共享开关与 HTTP 配置会记住，不会自动修改防火墙。" } }
                         if *remote_open.read() && !collaboration_hub {
-                            div { class: "remote-node-form",
+                            form { class: "remote-node-form", method: "post", autocomplete: "on", onsubmit: move |event: FormEvent| event.prevent_default(),
                                 div { class: "form-field",
                                     label { r#for: "node-url", "节点地址" }
-                                    input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:{remote_port}/", oninput: move |event| { base_url.set(event.value()); password.set(NodePassword::default()); } }
+                                    input { id: "node-url", name: "address", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:{remote_port}/", oninput: move |event| { base_url.set(event.value()); password.set(NodePassword::default()); } }
                                 }
                                 div { class: "form-field",
                                     label { r#for: "node-password", "节点密码" }
-                                    input { id: "node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "输入节点密码", oninput: move |event| password.set(NodePassword::new(event.value(), &base_url.read())) }
+                                    input { id: "node-password", name: "password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "输入节点密码", oninput: move |event| password.set(NodePassword::new(event.value(), &base_url.read())) }
                                 }
-                                button { class: "button primary", onclick: move |_| {
+                                button { class: "button primary", r#type: "submit", onclick: move |_| {
                                     let candidate = normalize_remote_address(&base_url.read(), false, remote_port);
                                     match candidate {
                                         Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(()); }
@@ -1158,7 +1158,7 @@ pub fn DevicesPage(
                         if let Some(auth) = auth_state.read().as_ref() {
                             if auth.required && !auth.authenticated {
                                 if !*remote_open.read() {
-                                    div { class: "form-field", label { r#for: "device-node-password", "节点密码" } input { id: "device-node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), oninput: move |event| password.set(NodePassword::new(event.value(), &connection.address.read())) } }
+                                    div { class: "form-field", label { r#for: "device-node-password", "节点密码" } input { id: "device-node-password", name: "password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), oninput: move |event| password.set(NodePassword::new(event.value(), &connection.address.read())) } }
                                 }
                                 button { class: "button primary", disabled: busy || password.read().is_empty(), onclick: move |_| onlogin.call(()), if busy { "正在登录…" } else { "登录" } }
                             } else if auth.authenticated && online { p { class: "meta", "节点已认证。" } }
@@ -1762,6 +1762,19 @@ mod tests {
         assert!(source.contains("onconnect: EventHandler<()>"));
         assert!(source.contains("onlogin: EventHandler<()>"));
         assert!(!source.contains("SerializedMouseData"));
+    }
+
+    #[test]
+    fn remote_connection_forms_are_password_manager_compatible() {
+        let source = include_str!("devices.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(source.contains("class: \"collaboration-connect-form\", method: \"post\""));
+        assert!(source.contains("class: \"remote-node-form\", method: \"post\""));
+        assert!(source.contains("name: \"address\""));
+        assert!(source.contains("name: \"password\""));
+        assert!(source.contains("autocomplete: \"current-password\""));
     }
 
     #[test]

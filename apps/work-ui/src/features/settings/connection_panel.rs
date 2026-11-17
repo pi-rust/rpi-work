@@ -249,7 +249,7 @@ pub(crate) fn PasswordConnectionForm(
     let disabled = busy || address.trim().is_empty();
     rsx! {
         form {
-            id: "phone-manual-connection", class: "mobile-manual-form", novalidate: true,
+            id: "phone-manual-connection", class: "mobile-manual-form", method: "post", autocomplete: "on", novalidate: true,
             "aria-busy": busy,
             onsubmit: move |event: FormEvent| {
                 event.prevent_default();
@@ -259,7 +259,7 @@ pub(crate) fn PasswordConnectionForm(
                 label { r#for: "phone-node-address", "电脑节点地址" }
                 input {
                     id: "phone-node-address", r#type: "url", inputmode: "url",
-                    autocomplete: "url", autocapitalize: "none", spellcheck: false,
+                    autocomplete: "url", name: "address", autocapitalize: "none", spellcheck: false,
                     required: true, readonly: fixed_address, disabled: busy,
                     placeholder: "https://work.example.com:13030",
                     aria_describedby: "phone-address-help", value: address,
@@ -270,7 +270,7 @@ pub(crate) fn PasswordConnectionForm(
                 div { class: "form-field",
                     label { r#for: "phone-node-password", "{password_label}" }
                     input {
-                        id: "phone-node-password", r#type: "password", autocomplete: "current-password",
+                        id: "phone-node-password", name: "password", r#type: "password", autocomplete: "current-password",
                         disabled: busy, value: password, placeholder: "输入电脑节点密码",
                         oninput: move |event| onpassword.call(event.value())
                     }
@@ -365,6 +365,10 @@ mod tests {
         assert!(form.contains("onsubmit: EventHandler<()>"));
         assert!(form.contains("event.prevent_default()"));
         assert!(form.contains("onsubmit.call(())"));
+        assert!(form.contains("method: \"post\""));
+        assert!(form.contains("autocomplete: \"on\""));
+        assert!(form.contains("name: \"address\""));
+        assert!(form.contains("name: \"password\""));
         assert!(!form.contains("onclick"));
         assert!(form.contains("busy || address.trim().is_empty()"));
         assert!(!form.contains("password.trim().is_empty()"));
