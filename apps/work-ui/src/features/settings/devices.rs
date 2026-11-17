@@ -365,6 +365,14 @@ fn LocalAccessCards(
     }
 }
 
+fn is_same_node_address(left: &str, right: &str) -> bool {
+    fn trim(value: &str) -> &str {
+        value.trim().trim_end_matches('/')
+    }
+    let (left, right) = (trim(left), trim(right));
+    !left.is_empty() && left.eq_ignore_ascii_case(right)
+}
+
 fn phone_share_address(value: &str, owned_local: bool) -> Result<String, String> {
     if value.trim().is_empty() {
         return Err("尚未配置可分享地址，无法生成二维码。请填写手机可达的完整 HTTP(S) 地址，并确认该入口已启动。".into());
@@ -840,10 +848,9 @@ pub fn DevicesPage(
     let session_control =
         use_hook(try_consume_context::<crate::app::entry::ConnectionSessionControl>);
     let scoped_entry = session_control.is_some();
-    // Desktop browser and native desktop share the collaboration surface. Mobile only
-    // exposes the connected-node list and the action for sharing the current node.
-    let mobile_collaboration = mobile_client && !scoped_entry;
-    let collaboration_hub = !mobile_client && !scoped_entry;
+    // Every mobile client gets the collaboration hub after authentication,
+    // including hosted and native entries that provide session controls.
+    // Unauthenticated entry screens keep their dedicated connection flow.
     let navigation = use_hook(try_consume_context::<crate::app::node_navigation::NodeNavigation>);
     let home_address = navigation
         .map(|nav| nav.home_address.read().clone())
@@ -858,6 +865,13 @@ pub fn DevicesPage(
             .read()
             .as_ref()
             .is_some_and(|auth| auth.authenticated);
+    // Hosted/native mobile entries expose a session control but still need the
+    // collaboration hub once their authenticated workspace is mounted. An
+    // authenticated native Android App has no HTTP auth-state snapshot, so its
+    // online entry node is authoritative.
+    let mobile_authorized_local = mobile_authorized || (scoped_entry && online);
+    let mobile_collaboration = mobile_client && online && mobile_authorized_local;
+    let collaboration_hub = !mobile_client && !scoped_entry;
     let reauthenticate = navigation.filter(|_| !mobile_authorized).map(|nav| {
         let address = current_address.clone();
         EventHandler::new(move |()| nav.navigate.call(address.clone()))
@@ -888,32 +902,42 @@ pub fn DevicesPage(
                         }
                         span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "当前节点已连接" } else if busy { "节点连接中" } else { "当前节点未连接" } }
                     }
-                    div { class: "collaboration-actions",
-                        section { class: "collaboration-action-card connect-card", aria_label: "分享当前节点",
-                            div { class: "collaboration-action-heading",
-                                span { class: "collaboration-action-icon", Icon { name: "cloud" } }
-                                div { h2 { "分享当前节点" } p { "让其他设备连接当前工作节点，继续项目、会话和 Agent 任务。" } }
-                            }
-                            div { class: "collaboration-action-footer",
-                                AuthorizationQrButton {
-                                    owned_local: false, target: current_address.clone(), available: online && mobile_authorized,
-                                    onopen: move |()| { qr_open.set(false); pairing.request.with_mut(authorization_offer::Request::show); },
-                                }
+                    section { class: "collaboration-current-node-card", aria_label: "当前连接",
+                        div { class: "collaboration-current-node-heading",
+                            span { class: "collaboration-action-icon", Icon { name: "cloud" } }
+                            div { h2 { "当前连接" } p { "当前工作节点与可分享地址" } }
+                            span { class: if online { "status-badge completed" } else { "status-badge" }, role: "status", i {}, if online { "已连接" } else { "未连接" } }
+                        }
+                        div { class: "collaboration-share-address", role: "group", aria_label: "当前节点地址",
+                            small { "节点地址" }
+                            code { if current_address.trim().is_empty() { "尚未连接工作节点" } else { "{current_address}" } }
+                            p { class: "collaboration-share-note", "分享只包含地址；接收方仍需节点密码，或通过 Android App 一次性授权。" }
+                        }
+                        div { class: "collaboration-share-actions",
+                            button { class: "button", r#type: "button", disabled: !share_available, aria_label: "分享当前节点连接", onclick: move |_| open_share(()), Icon { name: "phone" } "分享当前连接" }
+                            AuthorizationQrButton {
+                                owned_local: false, target: current_address.clone(), available: online && mobile_authorized,
+                                onopen: move |()| { qr_open.set(false); pairing.request.with_mut(authorization_offer::Request::show); },
                             }
                         }
                     }
                     section { class: "collaboration-list-panel", aria_label: "连接列表",
                         div { class: "collaboration-list-heading", div { h2 { "连接列表" } p { "本设备连接过的工作节点" } }
-                            if !connection.history.read().recent.is_empty() { button { class: "button ghost", onclick: move |_| connection.history.set(NodeHistory::default()), "清除记录" } }
+                            if !connection.history.read().recent.is_empty() { button { class: "button ghost", r#type: "button", onclick: move |_| connection.history.set(NodeHistory::default()), "清除记录" } }
                         }
                         if connection.history.read().recent.is_empty() {
                             div { class: "collaboration-empty", Icon { name: "clock" } strong { "还没有连接记录" } span { "连接工作节点后，会显示在这里。" } }
                         } else {
-                            for address in connection.history.read().recent.clone() {
-                                div { class: "collaboration-list-row",
-                                    span { class: "collaboration-device-icon", Icon { name: "monitor" } }
-                                    div { class: "collaboration-device-copy", strong { "{address}" } small { "工作节点" } }
-                                    button { class: "button", disabled: busy, aria_label: "连接 {address}", onclick: { let address = address.clone(); move |_| { base_url.set(format!("{address}/")); password.set(NodePassword::default()); error.set(String::new()); onconnect.call(()); } }, "连接" }
+                            div { class: "collaboration-node-list", role: "list",
+                                for address in connection.history.read().recent.clone() {
+                                    div { class: if is_same_node_address(&address, &current_address) { "collaboration-list-row current" } else { "collaboration-list-row" }, role: "listitem",
+                                        span { class: "collaboration-device-icon", Icon { name: "monitor" } }
+                                        div { class: "collaboration-device-copy",
+                                            code { "{address}" }
+                                            small { if is_same_node_address(&address, &current_address) { "当前连接 · 工作节点" } else { "工作节点" } }
+                                        }
+                                        button { class: "button", r#type: "button", disabled: busy, aria_label: "连接 {address}", onclick: { let address = address.clone(); move |_| { base_url.set(format!("{address}/")); password.set(NodePassword::default()); error.set(String::new()); onconnect.call(()); } }, "连接" }
+                                    }
                                 }
                             }
                         }
@@ -1803,6 +1827,19 @@ mod tests {
                 assert!(!error.contains("invalid public HTTP address"));
             }
         }
+    }
+
+    #[test]
+    fn mobile_current_address_matches_saved_history_after_normalization() {
+        assert!(is_same_node_address(
+            "HTTP://10.100.100.9:13031/",
+            "http://10.100.100.9:13031"
+        ));
+        assert!(!is_same_node_address(
+            "http://10.100.100.9:13031",
+            "http://10.100.100.10:13031"
+        ));
+        assert!(!is_same_node_address("", ""));
     }
 
     #[test]

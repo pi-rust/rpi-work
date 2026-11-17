@@ -113,6 +113,17 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     });
     let entry_address = use_signal(|| entry_node.as_ref().map(|node| node.address.clone()));
     let mut node_connection = connections::use_connections(&initial_node_url);
+    // A hosted Web/Android entry has already authenticated this exact owner.
+    // Seed history from that authoritative address without creating a second
+    // connection; the normal ready callback still records its stable node ID.
+    if let Some(address) = entry_node
+        .as_ref()
+        .map(|node| node.address.trim_end_matches('/'))
+    {
+        if !address.is_empty() {
+            node_connection.history.write().select(address);
+        }
+    }
     let connection_requests = use_signal(Vec::<Task>::new);
     let mut catalog_refresh = use_signal(super::workspace_sync::RefreshState::default);
     use_effect(move || {

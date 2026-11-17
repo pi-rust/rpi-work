@@ -151,3 +151,121 @@
 .collaboration-advanced-hint code{font:calc(11px * var(--type-scale,1)) var(--mono)}
 .collaboration-advanced-saved{margin:0;color:var(--success);font-size:calc(10px * var(--type-scale,1));line-height:1.8}
 @media(max-width:700px){.collaboration-advanced-row{flex-direction:column;align-items:stretch}.collaboration-port-control input{flex:1 1 100px;width:auto;font-size:16px;min-height:44px}.collaboration-port-control .button{flex:1 1 auto;min-height:44px}.collaboration-advanced>summary small{display:none}}
+
+/* Mobile collaboration keeps the current address and saved connections visible. */
+.mobile-collaboration-hub > .collaboration-current-node-card {
+  min-width: 0;
+  margin: 18px 0 20px;
+  padding: 16px;
+  border: var(--border-width, 1px) solid var(--accent-line);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent-bg) 55%, var(--card));
+  box-shadow: 0 2px 12px var(--shadow-color, #0001);
+}
+.collaboration-current-node-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.collaboration-current-node-heading > div { flex: 1; min-width: 0; }
+.collaboration-current-node-heading h2 {
+  margin: 0;
+  font-size: calc(14px * var(--type-scale, 1));
+  font-weight: 600;
+}
+.collaboration-current-node-heading p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+  line-height: 1.6;
+}
+.collaboration-current-node-heading .status-badge { flex: none; }
+.collaboration-share-address {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 14px;
+  padding: 12px;
+  border: var(--border-width, 1px) solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+.collaboration-share-address small {
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+}
+.collaboration-share-address code {
+  display: block;
+  min-width: 0;
+  color: var(--text);
+  font: calc(12px * var(--type-scale, 1))/1.6 var(--mono);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.collaboration-share-note {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+  line-height: 1.7;
+}
+.collaboration-share-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.collaboration-share-actions > .button,
+.collaboration-share-actions .connection-help { min-width: 0; }
+.collaboration-share-actions > .button {
+  min-height: 44px;
+  justify-content: center;
+  border: var(--border-width, 1px) solid var(--accent-line);
+  background: var(--card);
+  color: var(--accent);
+}
+.collaboration-share-actions > .button:hover:not(:disabled) { background: var(--accent-bg); }
+.collaboration-share-actions > .button > .icon { width: 16px; height: 16px; }
+.collaboration-share-actions .connection-help { margin: 0; }
+.mobile-collaboration-hub > .collaboration-list-panel { margin-top: 0; }
+.collaboration-node-list { display: grid; min-width: 0; }
+.mobile-collaboration-hub .collaboration-list-row {
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+.mobile-collaboration-hub .collaboration-list-row.current {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg);
+}
+.mobile-collaboration-hub .collaboration-device-copy { min-width: 0; }
+.mobile-collaboration-hub .collaboration-device-copy code {
+  display: block;
+  min-width: 0;
+  color: var(--text);
+  font: calc(11px * var(--type-scale, 1))/1.5 var(--mono);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.mobile-collaboration-hub .collaboration-device-copy small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: calc(9px * var(--type-scale, 1));
+  line-height: 1.5;
+}
+.mobile-collaboration-hub .collaboration-list-row > .button {
+  flex: 0 0 auto;
+  min-width: 64px;
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: calc(11px * var(--type-scale, 1));
+}
+@media (max-width: 359px) {
+  .mobile-collaboration-hub > .collaboration-current-node-card { padding: 12px; }
+  .collaboration-current-node-heading { align-items: flex-start; flex-wrap: wrap; }
+  .collaboration-current-node-heading .status-badge { margin-left: 50px; }
+  .mobile-collaboration-hub .collaboration-list-row { align-items: stretch; flex-wrap: wrap; }
+  .mobile-collaboration-hub .collaboration-device-copy { flex: 1 1 calc(100% - 50px); }
+  .mobile-collaboration-hub .collaboration-list-row > .button { width: 100%; }
+}

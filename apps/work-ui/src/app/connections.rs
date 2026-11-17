@@ -109,6 +109,26 @@ impl NodeHistory {
         }
     }
 
+    /// Merge persisted history after an authoritative entry address has already
+    /// been selected. The current selection and recent order remain authoritative;
+    /// older addresses are appended only up to the bounded history size.
+    pub fn merge_restore(&mut self, restored: Self) {
+        if let Some(selected) = self.selected.take() {
+            for address in restored.recent.iter().rev() {
+                if !self.recent.contains(address) && *address != selected {
+                    self.recent.push(address.clone());
+                }
+            }
+            self.recent.retain(|address| address != &selected);
+            self.recent.insert(0, selected.clone());
+            self.recent.truncate(8);
+            self.node_ids = restored.node_ids;
+            self.selected = Some(selected);
+        } else {
+            *self = restored;
+        }
+    }
+
     fn value(&self) -> Value {
         json!({"version":1,"recent":self.recent,"selected":self.selected,"nodeIds":self.node_ids})
     }
@@ -307,9 +327,11 @@ pub fn use_connections(initial_address: &str) -> ConnectionStore {
             #[cfg(any(target_arch = "wasm32", target_os = "android"))]
             let value = document::eval("try{dioxus.send(JSON.parse(localStorage.getItem('rpi-work-nodes-v1')||'null'));}catch(_){dioxus.send(null);}")
                 .recv::<Value>().await.ok();
-            store
-                .history
-                .set(value.as_ref().map(NodeHistory::restore).unwrap_or_default());
+            let restored = value.as_ref().map(NodeHistory::restore).unwrap_or_default();
+            // An authenticated hosted/native entry owns its exact address. Merge
+            // storage history without letting a late restore discard that owner.
+            let mut store = store;
+            store.history.write().merge_restore(restored);
             store.ready.set(true);
         });
     });
@@ -811,6 +833,35 @@ mod tests {
         let restored = NodeHistory::restore(&history.value());
         assert_eq!(restored.selected, history.selected);
         assert_eq!(restored.recent, history.recent);
+    }
+
+    #[test]
+    fn merge_restore_keeps_the_authoritative_entry_and_bounded_history() {
+        let mut current = NodeHistory::default();
+        current.select("https://entry.test:13031");
+        let restored = NodeHistory::restore(&json!({
+            "version": 1,
+            "recent": [
+                "https://entry.test:13031",
+                "https://old-a.test",
+                "https://old-b.test",
+                "https://old-c.test",
+                "https://old-d.test",
+                "https://old-e.test",
+                "https://old-f.test",
+                "https://old-g.test"
+            ],
+            "selected": "https://old-a.test",
+            "nodeIds": {}
+        }));
+        current.merge_restore(restored);
+        assert_eq!(
+            current.selected.as_deref(),
+            Some("https://entry.test:13031")
+        );
+        assert_eq!(current.recent[0], "https://entry.test:13031");
+        assert_eq!(current.recent.len(), 8);
+        assert!(current.recent.contains(&"https://old-a.test".to_string()));
     }
 
     #[test]
