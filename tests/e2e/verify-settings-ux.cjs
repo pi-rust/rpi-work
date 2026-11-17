@@ -68,6 +68,25 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
     await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
+    let failProjects = true;
+    await page.route('**/api/v1/projects', route => failProjects
+      ? route.fulfill({ status: 503, json: { error: 'fixture project API unavailable' } })
+      : route.continue());
+    const recentNode = page.locator('.collaboration-list-row').filter({ hasText: fixture.url.replace(/^http:\/\//, '').replace(/\/$/, '') }).first();
+    await recentNode.getByRole('button', { name: /^连接 / }).click();
+    const apiError = page.locator('.settings-operation-status.is-error');
+    await apiError.waitFor();
+    assert.match(await apiError.innerText(), /项目加载失败/);
+    assert.match(await apiError.innerText(), /fixture project API unavailable/);
+    const collaborationError = page.locator('.collaboration-connection-error');
+    await collaborationError.waitFor();
+    assert.match(await collaborationError.innerText(), /fixture project API unavailable/);
+    pass('settings and collaboration surface API failures instead of only showing an offline badge');
+    failProjects = false;
+    await recentNode.getByRole('button', { name: /^连接 / }).click();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
+    await apiError.waitFor({ state: 'hidden' });
+    pass('successful reconnect clears the API failure after the node is fully loaded');
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
     await page.locator('[data-session-id="dark"] .session-item').first().click();

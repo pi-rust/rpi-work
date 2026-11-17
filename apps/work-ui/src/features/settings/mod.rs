@@ -103,6 +103,13 @@ pub fn SettingsPage(
                     }
                 }
                 div { class: "settings-content",
+                    if !status.read().is_empty() {
+                        div {
+                            class: if status_is_error(&status.read()) { "settings-operation-status is-error" } else { "settings-operation-status" },
+                            role: if status_is_error(&status.read()) { "alert" } else { "status" },
+                            "{status}"
+                        }
+                    }
                     if current_category == "display" {
                         div { class: "settings-intro",
                             div { h2 { "界面与显示" } p { "打造一个愿意每天打开的工作台。" } }
@@ -166,6 +173,32 @@ pub fn SettingsPage(
     }
 }
 
+/// Connection and API failures share the composer status line. Settings has no
+/// composer, so surface the same message here instead of leaving only a badge.
+fn status_is_error(message: &str) -> bool {
+    [
+        "失败",
+        "错误",
+        "无法",
+        "超时",
+        "无效",
+        "拒绝",
+        "不可用",
+        "未授权",
+        "离线",
+        "断开",
+        "冲突",
+        "未提供",
+        "尚未连接",
+        "尚未确认",
+        "不支持",
+        "需要更新",
+        "请先",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
+}
+
 #[component]
 fn SessionDisplaySettings() -> Element {
     let store = use_context::<Signal<app_settings::AppSettingsState>>();
@@ -205,6 +238,21 @@ fn SessionDisplaySettings() -> Element {
             if !state.ready { p { role: "status", "正在读取本设备设置…" } }
             if let Some(error) = state.error.as_deref() { p { class: "app-settings-error", role: "alert", "{error}" } }
         }
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::status_is_error;
+
+    #[test]
+    fn api_and_connection_failures_are_errors_but_progress_is_not() {
+        assert!(status_is_error("发送失败：API returned HTTP 500"));
+        assert!(status_is_error("打开会话失败：节点未响应"));
+        assert!(status_is_error("当前会话不支持 prompt，或能力尚未确认"));
+        assert!(!status_is_error("连接中…"));
+        assert!(!status_is_error("指令已接收，等待事件流…"));
+        assert!(!status_is_error("上下文压缩已完成，摘要已更新。"));
     }
 }
 

@@ -1069,7 +1069,11 @@ impl WorkClient {
         .await?;
         let status = response.status();
         if !status.is_success() {
-            let message = response.text().await.unwrap_or_default();
+            let message = response
+                .text()
+                .await
+                .map(|body| api_response_message(&body))
+                .unwrap_or_default();
             return Err(ClientError::Api { status, message });
         }
         Ok(())
@@ -1120,7 +1124,11 @@ impl WorkClient {
     ) -> Result<T, ClientError> {
         let status = response.status();
         if !status.is_success() {
-            let message = response.text().await.unwrap_or_default();
+            let message = response
+                .text()
+                .await
+                .map(|body| api_response_message(&body))
+                .unwrap_or_default();
             return Err(ClientError::Api { status, message });
         }
         Ok(response.json().await?)
@@ -1129,6 +1137,24 @@ impl WorkClient {
     fn url(&self, path: &str) -> Result<Url, ClientError> {
         Ok(self.base_url.join(path)?)
     }
+}
+
+/// Keep HTTP failures actionable without dumping a raw JSON envelope into the
+/// UI. Bounded server text is retained; credentials are still redacted by the
+/// credential-specific call sites.
+fn api_response_message(body: &str) -> String {
+    let body = body.trim();
+    let extracted = serde_json::from_str::<Value>(body).ok().and_then(|value| {
+        ["error", "message", "detail"]
+            .into_iter()
+            .find_map(|key| value.get(key).and_then(Value::as_str))
+            .map(str::to_owned)
+    });
+    let message = extracted.as_deref().unwrap_or(body);
+    if message.is_empty() {
+        return "node returned an empty error response".into();
+    }
+    message.chars().take(2000).collect()
 }
 
 /// One live wire event and the result of applying it to the projection.
@@ -2324,6 +2350,27 @@ mod tests {
             requests
         });
         (format!("http://{address}/"), handle)
+    }
+
+    #[test]
+    fn api_error_bodies_become_bounded_actionable_messages() {
+        assert_eq!(
+            api_response_message(r#"{"error":"provider configuration is invalid"}"#),
+            "provider configuration is invalid"
+        );
+        assert_eq!(
+            api_response_message(r#"{"message":"session not found"}"#),
+            "session not found"
+        );
+        assert_eq!(api_response_message("plain text"), "plain text");
+        assert_eq!(
+            api_response_message(""),
+            "node returned an empty error response"
+        );
+        assert_eq!(
+            api_response_message(&"x".repeat(2500)).chars().count(),
+            2000
+        );
     }
 
     #[test]

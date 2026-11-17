@@ -234,3 +234,5 @@
   .settings-page .theme-preset > small { font-size:9px; }
   .appearance-modal .segmented { margin-left:0; }
 }
+.settings-operation-status{display:block;margin:0 0 var(--space-14);padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);color:var(--muted);font-size:calc(13px * var(--type-scale,1));line-height:1.7;overflow-wrap:anywhere}
+.settings-operation-status.is-error{border-color:var(--danger);background:var(--danger-bg);color:var(--danger)}

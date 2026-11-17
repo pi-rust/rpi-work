@@ -610,6 +610,7 @@ pub fn DevicesPage(
         "分享连接信息"
     };
     let share_address_valid = phone_share_address(&address, owned_local).is_ok();
+    let connection_failed = matches!(&phase, Phase::Failed(_));
     let connection_status = if owned_local {
         match &phase {
             Phase::Online => "本机运行中",
@@ -902,6 +903,9 @@ pub fn DevicesPage(
                         }
                         span { class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { "当前节点已连接" } else if busy { "节点连接中" } else { "当前节点未连接" } }
                     }
+                    if connection_failed {
+                        p { class: "connection-form-error collaboration-connection-error", role: "alert", "aria-live": "assertive", "{connection_status}" }
+                    }
                     section { class: "collaboration-current-node-card", aria_label: "当前连接",
                         div { class: "collaboration-current-node-heading",
                             span { class: "collaboration-action-icon", Icon { name: "cloud" } }
@@ -952,6 +956,9 @@ pub fn DevicesPage(
                             p { "连接其他设备，或允许可信设备访问这台电脑上的工作空间。" }
                         }
                         span { role: "status", class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { if owned_local { "本机节点在线" } else { "当前节点已连接" } } else if busy { "节点连接中" } else { "当前节点未连接" } }
+                    }
+                    if connection_failed {
+                        p { class: "connection-form-error collaboration-connection-error", role: "alert", "aria-live": "assertive", "{connection_status}" }
                     }
                     div { class: "collaboration-actions",
                         section { class: "collaboration-action-card discovery-card", aria_label: "发现局域网节点",
@@ -1194,7 +1201,7 @@ pub fn DevicesPage(
             } else if !mobile_collaboration && !collaboration_hub {
                 ConnectionScreen {
                     current_address: if mobile_authorized || scoped_entry { current_address.clone() } else { String::new() },
-                    current_status: connection_status,
+                    current_status: connection_status.clone(),
                     show_current_node: false,
                     show_connection_summary: false,
                     eyebrow: String::new(),
@@ -1209,7 +1216,8 @@ pub fn DevicesPage(
                     show_form: (!scoped_entry && !mobile_authorized) || *remote_open.read(),
                     manual: *manual_open.read(),
                     address: mobile_form_address.clone(),
-                    password: password.read().value.clone(), busy, error: error.read().clone(),
+                    password: password.read().value.clone(), busy,
+                    error: if !error.read().is_empty() { error.read().clone() } else if connection_failed { connection_status.clone() } else { String::new() },
                     fixed_address: login_current || !phone_address.read().is_empty(),
                     submit_label: if navigation.is_some() { "连接节点" } else if login_current { "登录" } else { "连接设备" },
                     onswitch: move |()| {
