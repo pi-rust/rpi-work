@@ -618,6 +618,45 @@ pub fn normalize_address(raw: &str, phone: bool) -> Result<String, String> {
     Ok(format!("{scheme}://{}", rest.to_ascii_lowercase()))
 }
 
+/// Complete a remote address that omits an explicit port with the configured
+/// default. Explicit ports always win, HTTPS keeps its scheme default (443),
+/// and inputs without a scheme are left unchanged so `normalize_address` can
+/// report a precise error.
+pub fn apply_default_port(raw: &str, port: u16) -> String {
+    let value = raw.trim();
+    if port == 0 {
+        return value.to_string();
+    }
+    let Some((scheme, rest)) = value.split_once("://") else {
+        return value.to_string();
+    };
+    if !scheme.eq_ignore_ascii_case("http") {
+        return value.to_string();
+    }
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.is_empty() {
+        return value.to_string();
+    }
+    let has_port = if let Some(after) = authority.strip_prefix('[') {
+        after
+            .split_once(']')
+            .is_some_and(|(_, suffix)| suffix.contains(':'))
+    } else {
+        authority.contains(':')
+    };
+    if has_port {
+        return value.to_string();
+    }
+    format!("{scheme}://{authority}:{port}{}", &rest[authority_end..])
+}
+
+/// Normalize a user-entered remote address, completing a missing HTTP port
+/// with the device-local `connection.remotePort` preference.
+pub fn normalize_remote_address(raw: &str, phone: bool, port: u16) -> Result<String, String> {
+    normalize_address(&apply_default_port(raw, port), phone)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -986,5 +1025,45 @@ mod tests {
             );
         }
         assert!(normalize_address("http://192.168.50.8:3030", true).is_ok());
+    }
+
+    #[test]
+    fn default_port_only_completes_plain_http_addresses() {
+        for (raw, expected) in [
+            ("http://10.100.100.9", "http://10.100.100.9:13031"),
+            ("  http://10.100.100.9/  ", "http://10.100.100.9:13031/"),
+            ("HTTP://PC.test", "HTTP://PC.test:13031"),
+            ("http://[2001:db8::1]", "http://[2001:db8::1]:13031"),
+            ("http://node.test:18443", "http://node.test:18443"),
+            ("http://[2001:db8::1]:18443", "http://[2001:db8::1]:18443"),
+            ("https://node.test", "https://node.test"),
+            ("192.168.3.125", "192.168.3.125"),
+            ("http://node.test/path", "http://node.test:13031/path"),
+            ("http://", "http://"),
+        ] {
+            assert_eq!(apply_default_port(raw, 13031), expected, "{raw}");
+        }
+        assert_eq!(
+            apply_default_port("http://node.test", 0),
+            "http://node.test"
+        );
+    }
+
+    #[test]
+    fn remote_address_applies_the_configured_port_before_normalization() {
+        assert_eq!(
+            normalize_remote_address("http://10.100.100.9", true, 18443).unwrap(),
+            "http://10.100.100.9:18443"
+        );
+        assert_eq!(
+            normalize_remote_address("http://10.100.100.9:13031/", true, 18443).unwrap(),
+            "http://10.100.100.9:13031"
+        );
+        assert_eq!(
+            normalize_remote_address("https://node.test", false, 18443).unwrap(),
+            "https://node.test"
+        );
+        assert!(normalize_remote_address("http://localhost", true, 13031).is_err());
+        assert!(normalize_remote_address("http://10.100.100.9/path", true, 13031).is_err());
     }
 }

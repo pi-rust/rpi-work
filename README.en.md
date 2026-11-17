@@ -39,7 +39,7 @@ Desktop packages also include `work-cli`. Releases also contain `update.json` an
 
 1. Launch RPI Work; desktop defaults to the local workspace.
 2. Open or add a project, configure a model provider, and create a session.
-3. To use another computer, open **Settings → Collaboration**, enter its address, scan a code, or select a discovered LAN node.
+3. To use another computer, open **Settings → Collaboration**, enter its address, scan a code, or select a discovered LAN node. Explicit ports always win; a plain HTTP address is completed with the remote port configured under **Collaboration → Advanced settings**.
 4. If the node is unavailable, the home screen shows the reason and an **Open connection settings** action.
 
 Local Agent execution requires a compatible `rpi` executable. Desktop startup checks the local environment and provides detection, installation, or file-selection recovery when it is missing. Model credentials stay on the execution node and are not bundled with the application.

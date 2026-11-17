@@ -24,6 +24,7 @@ pub mod ids {
 
     pub mod storage {
         pub const APPEARANCE: &str = "appearance";
+        pub const CONNECTION: &str = "connection";
         pub const FOOTER: &str = "footer";
         pub const SESSION_DISPLAY: &str = "sessionDisplay";
         pub const DEFAULT_PROVIDER: &str = "defaultProvider";
@@ -68,6 +69,35 @@ pub fn update_session_display_mode(
         json!({ "mode": mode.key() }),
     )
     .is_some()
+}
+
+/// Default port used for remote node addresses that omit an explicit port.
+pub const DEFAULT_REMOTE_PORT: u16 = 13031;
+
+/// Return the configured remote connection port, falling back to the built-in
+/// default for a missing, non-integer, zero or out-of-range value.
+#[must_use]
+pub fn remote_port(document: &Value) -> u16 {
+    document
+        .get(ids::storage::CONNECTION)
+        .and_then(Value::as_object)
+        .and_then(|entry| entry.get("remotePort"))
+        .and_then(Value::as_u64)
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|port| *port != 0)
+        .unwrap_or(DEFAULT_REMOTE_PORT)
+}
+
+/// Persist a device-local remote connection port and return the snapshot.
+pub fn update_remote_port(store: Signal<AppSettingsState>, port: u16) -> Option<Value> {
+    if port == 0 {
+        return None;
+    }
+    update_namespace(
+        store,
+        ids::storage::CONNECTION,
+        json!({ "remotePort": port }),
+    )
 }
 
 /// Return the provider/model pair used when creating a new session.
@@ -233,11 +263,23 @@ pub fn parse(text: &str) -> Result<Value, String> {
     if object.get("version").and_then(Value::as_u64) != Some(VERSION) {
         return Err(format!("全局设置版本必须是 {VERSION}。"));
     }
-    for key in ["menus", "contributions"] {
+    for key in ["menus", "contributions", ids::storage::CONNECTION] {
         if let Some(value) = object.get(key) {
             if !value.is_object() {
                 return Err(format!("全局设置字段 {key} 必须是 JSON 对象。"));
             }
+        }
+    }
+    if let Some(port) = object
+        .get(ids::storage::CONNECTION)
+        .and_then(|value| value.get("remotePort"))
+    {
+        let valid = port
+            .as_u64()
+            .and_then(|value| u16::try_from(value).ok())
+            .is_some_and(|value| value != 0);
+        if !valid {
+            return Err("connection.remotePort 必须是 1 到 65535 之间的整数。".into());
         }
     }
     Ok(value)
@@ -592,5 +634,47 @@ mod tests {
     fn known_containers_must_be_objects() {
         assert!(parse(r#"{"version":1,"menus":[]}"#).is_err());
         assert!(parse(r#"{"version":1,"contributions":"bad"}"#).is_err());
+        assert!(parse(r#"{"version":1,"connection":5}"#).is_err());
+    }
+
+    #[test]
+    fn remote_port_defaults_and_accepts_only_usable_ports() {
+        assert_eq!(remote_port(&default_value()), DEFAULT_REMOTE_PORT);
+        let value = parse(r#"{"version":1,"connection":{"remotePort":18443}}"#).unwrap();
+        assert_eq!(remote_port(&value), 18443);
+        // Invalid values are rejected by the parser; in-memory documents still
+        // fall back instead of routing traffic to a bogus port.
+        assert_eq!(remote_port(&serde_json::json!({})), DEFAULT_REMOTE_PORT);
+        assert_eq!(
+            remote_port(&serde_json::json!({"connection":{"remotePort":0}})),
+            DEFAULT_REMOTE_PORT
+        );
+        assert_eq!(
+            remote_port(&serde_json::json!({"connection":{"remotePort":70000}})),
+            DEFAULT_REMOTE_PORT
+        );
+        assert_eq!(
+            remote_port(&serde_json::json!({"connection":{"remotePort":"18443"}})),
+            DEFAULT_REMOTE_PORT
+        );
+    }
+
+    #[test]
+    fn invalid_remote_port_is_rejected_without_losing_other_fields() {
+        for text in [
+            r#"{"version":1,"connection":{"remotePort":0}}"#,
+            r#"{"version":1,"connection":{"remotePort":70000}}"#,
+            r#"{"version":1,"connection":{"remotePort":-1}}"#,
+            r#"{"version":1,"connection":{"remotePort":"18443"}}"#,
+        ] {
+            assert!(parse(text).is_err(), "{text}");
+        }
+        let value = parse(
+            r#"{"version":1,"connection":{"remotePort":18443,"future":true},"sessionDisplay":{"mode":"flat"}}"#,
+        )
+        .unwrap();
+        assert_eq!(remote_port(&value), 18443);
+        assert_eq!(value["connection"]["future"], true);
+        assert_eq!(session_display_mode(&value), SessionDisplayMode::Flat);
     }
 }

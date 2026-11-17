@@ -1,8 +1,11 @@
 use super::ConnectionScreen;
 use crate::app::connections::{
-    ConnectionStore, NodeHistory, NodePassword, Phase, normalize_address,
+    ConnectionStore, NodeHistory, NodePassword, Phase, normalize_address, normalize_remote_address,
 };
-use crate::shared::components::Icon;
+use crate::shared::{
+    app_settings::{self, AppSettingsState, DEFAULT_REMOTE_PORT},
+    components::Icon,
+};
 use dioxus::core::Task;
 use dioxus::prelude::*;
 use work_client::{AuthState, Capabilities, NodeProbe, WorkspaceClient};
@@ -98,7 +101,7 @@ const decodeFrame=source=>{
     return window.jsQR(pixels.data,width,height)?.data||'';
 };";
 
-fn connection_address(raw: &str) -> Result<String, String> {
+fn connection_address(raw: &str, port: u16) -> Result<String, String> {
     let raw = raw.trim();
     if raw.len() > 4096 {
         return Err("连接信息过长。".into());
@@ -113,12 +116,13 @@ fn connection_address(raw: &str) -> Result<String, String> {
         {
             return Err("二维码类型或版本不受支持，请扫描节点地址二维码。".into());
         }
-        normalize_address(
+        normalize_remote_address(
             value["address"].as_str().ok_or("二维码缺少节点地址。")?,
             true,
+            port,
         )
     } else {
-        normalize_address(raw, true)
+        normalize_remote_address(raw, true, port)
     }
 }
 
@@ -427,6 +431,102 @@ fn album_script(native_picker: bool) -> String {
     )
 }
 
+/// Device-collaboration advanced settings. The remote connection port is a
+/// device-local preference: it completes remote addresses that omit an HTTP
+/// port and can also be written directly as `connection.remotePort` in the
+/// client settings JSON.
+#[component]
+fn CollaborationAdvancedSettings(
+    store: Option<Signal<AppSettingsState>>,
+    default_port: u16,
+) -> Element {
+    let mut draft = use_signal(|| default_port.to_string());
+    let mut error = use_signal(String::new);
+    let mut saved = use_signal(|| false);
+    use_effect(use_reactive((&default_port,), move |(port,)| {
+        if draft.peek().trim() != port.to_string() {
+            draft.set(port.to_string());
+            saved.set(false);
+        }
+    }));
+    let editable = store.is_some();
+    let storage = app_settings::storage_label();
+    let apply = move |port: u16| -> Result<(), String> {
+        let Some(store) = store else {
+            return Err("此设备无法保存全局设置。".into());
+        };
+        if !store.peek().ready {
+            return Err("全局设置尚未加载完成，请稍后重试。".into());
+        }
+        if app_settings::update_remote_port(store, port).is_none() {
+            return Err("无法保存端口：请先在高级设置中修正全局 JSON。".into());
+        }
+        app_settings::request_write(store);
+        Ok(())
+    };
+    let mut commit = move |port: u16| match apply(port) {
+        Ok(()) => {
+            error.set(String::new());
+            saved.set(true);
+            draft.set(port.to_string());
+        }
+        Err(message) => {
+            saved.set(false);
+            error.set(message);
+        }
+    };
+    let mut save = move |(): ()| {
+        let raw = draft.read().trim().to_string();
+        match raw.parse::<u16>().ok().filter(|port| *port != 0) {
+            Some(port) => commit(port),
+            None => {
+                saved.set(false);
+                error.set("端口必须是 1 到 65535 之间的整数。".into());
+            }
+        }
+    };
+    let mut reset_default = move |(): ()| commit(app_settings::DEFAULT_REMOTE_PORT);
+    rsx! {
+        details { class: "collaboration-advanced", aria_label: "连接高级设置",
+            summary { Icon { name: "server" } span { "高级设置" } small { "远程连接端口" } }
+            div { class: "collaboration-advanced-body",
+                div { class: "collaboration-advanced-row",
+                    label { r#for: "remote-connection-port",
+                        strong { "远程连接默认端口" }
+                        small { "只补全未写端口的 HTTP 地址；已写端口或 HTTPS 地址保持不变。" }
+                    }
+                    div { class: "collaboration-port-control",
+                        input {
+                            id: "remote-connection-port",
+                            r#type: "number",
+                            min: "1",
+                            max: "65535",
+                            inputmode: "numeric",
+                            autocomplete: "off",
+                            value: "{draft}",
+                            disabled: !editable,
+                            oninput: move |event| { draft.set(event.value()); error.set(String::new()); saved.set(false); },
+                        }
+                        button { class: "button primary", r#type: "button", disabled: !editable, onclick: move |_| save(()), "保存端口" }
+                        button { class: "button", r#type: "button", disabled: !editable, onclick: move |_| reset_default(()), "恢复默认" }
+                    }
+                }
+                p { class: "collaboration-advanced-hint",
+                    "例如输入 http://10.100.100.9 会按当前设置补全为 http://10.100.100.9:{default_port}。"
+                }
+                p { class: "collaboration-advanced-hint",
+                    "也可直接编辑全局设置 JSON 的 "
+                    code { "connection.remotePort" }
+                    " · {storage}"
+                }
+                if !editable { p { class: "collaboration-advanced-hint", "当前布局无法读取本设备全局设置。" } }
+                if !error.read().is_empty() { p { class: "connection-form-error", role: "alert", "{error}" } }
+                if *saved.read() { p { class: "collaboration-advanced-saved", role: "status", "已保存远程连接端口 {draft}。" } }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn DevicesPage(
     shared_client: Signal<Option<WorkspaceClient>>,
@@ -441,6 +541,12 @@ pub fn DevicesPage(
     mobile_client: bool,
 ) -> Element {
     let mut connection = use_context::<ConnectionStore>();
+    // Device-collaboration advanced settings own the remote connection port.
+    let settings_store = use_hook(try_consume_context::<Signal<AppSettingsState>>);
+    let remote_port = settings_store.map_or(DEFAULT_REMOTE_PORT, |store| {
+        let state = store.read();
+        app_settings::remote_port(&state.value)
+    });
     let mut qr_open = use_signal(|| false);
     let mut pairing = use_context::<PairingControl>();
     let mut remote_open = use_signal(|| false);
@@ -601,7 +707,7 @@ pub fn DevicesPage(
     };
     let mut connect_address = move |(): ()| {
         let candidate = phone_address.read().clone();
-        match connection_address(&candidate) {
+        match connection_address(&candidate, remote_port) {
             Ok(value) => {
                 let endpoint = format!("{value}/");
                 preview_epoch += 1;
@@ -717,7 +823,7 @@ pub fn DevicesPage(
             }
             match result {
                 Ok(value) if value.starts_with("ERR:") => scanner_status.set(value[4..].to_owned()),
-                Ok(value) if !value.is_empty() => match connection_address(&value) {
+                Ok(value) if !value.is_empty() => match connection_address(&value, remote_port) {
                     Ok(address) => {
                         password.set(NodePassword::default());
                         phone_address.set(address);
@@ -859,7 +965,7 @@ pub fn DevicesPage(
                             if *remote_open.read() {
                                 div { class: "collaboration-connect-form",
                                     div { class: "form-field", label { r#for: "node-url", "节点地址" }
-                                        input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:13031/", oninput: move |event| { base_url.set(event.value()); preview_epoch += 1; preview.set(None); password.set(NodePassword::default()); } }
+                                        input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:{remote_port}/", oninput: move |event| { base_url.set(event.value()); preview_epoch += 1; preview.set(None); password.set(NodePassword::default()); } }
                                     }
                                     div { class: "form-field", label { r#for: "node-password", "节点密码" }
                                         input { id: "node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "连接时输入，不会保存", oninput: move |event| { password.set(NodePassword::new(event.value(), &base_url.read())) } }
@@ -868,7 +974,7 @@ pub fn DevicesPage(
                                         button { class: "button", onclick: move |_| remote_open.set(false), "取消" }
                                         button { class: "button primary", disabled: busy || *preview_busy.read(), onclick: move |_| {
                                             let address_input = base_url.read().clone();
-                                            match normalize_address(&address_input, false) {
+                                            match normalize_remote_address(&address_input, false, remote_port) {
                                                 Ok(address) => {
                                                     let endpoint = format!("{address}/");
                                                     preview_epoch += 1;
@@ -900,6 +1006,7 @@ pub fn DevicesPage(
                             onshare: move |()| pairing.request.with_mut(authorization_offer::Request::show),
                         }
                     }
+                    CollaborationAdvancedSettings { store: settings_store, default_port: remote_port }
                     div { class: "collaboration-lists",
                         section { class: "collaboration-list-panel", aria_label: "最近连接",
                             div { class: "collaboration-list-heading", div { h2 { "最近连接" } p { "本设备主动连接过的工作节点" } }
@@ -1000,14 +1107,14 @@ pub fn DevicesPage(
                             div { class: "remote-node-form",
                                 div { class: "form-field",
                                     label { r#for: "node-url", "节点地址" }
-                                    input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:13030/", oninput: move |event| { base_url.set(event.value()); password.set(NodePassword::default()); } }
+                                    input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:{remote_port}/", oninput: move |event| { base_url.set(event.value()); password.set(NodePassword::default()); } }
                                 }
                                 div { class: "form-field",
                                     label { r#for: "node-password", "节点密码" }
                                     input { id: "node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "输入节点密码", oninput: move |event| password.set(NodePassword::new(event.value(), &base_url.read())) }
                                 }
                                 button { class: "button primary", onclick: move |_| {
-                                    let candidate = normalize_address(&base_url.read(), false);
+                                    let candidate = normalize_remote_address(&base_url.read(), false, remote_port);
                                     match candidate {
                                         Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(()); }
                                         Err(message) => error.set(message),
@@ -1103,7 +1210,11 @@ pub fn DevicesPage(
                                         if !password.read().is_empty() { onlogin.call(()); }
                                     } else if !phone_address.read().is_empty() { connect_address(()); }
                                     else {
-                                        match normalize_address(&manual_address.read(), navigation.is_none()) {
+                                        match normalize_remote_address(
+                                        &manual_address.read(),
+                                        navigation.is_none(),
+                                        remote_port,
+                                    ) {
                                             Ok(address) => {
                                                 let endpoint = format!("{address}/");
                                                 preview_epoch += 1;
@@ -1147,7 +1258,7 @@ pub fn DevicesPage(
                                         scanning.set(false);
                                         match result {
                                             Ok(value) if value.starts_with("ERR:") => scanner_status.set(value[4..].to_owned()),
-                                            Ok(value) if !value.is_empty() => match connection_address(&value) {
+                                            Ok(value) if !value.is_empty() => match connection_address(&value, remote_port) {
                                                 Ok(address) => { password.set(NodePassword::default()); phone_address.set(address); scanner_status.set("已读取地址，请核对连接信息后连接。".into()); }
                                                 Err(message) => scanner_status.set(message),
                                             },
@@ -1642,7 +1753,7 @@ mod tests {
         assert_eq!(value["ticket"].as_str(), Some("test-only-ticket"));
         assert!(!raw.contains("password"));
         // Ordinary browser scanning must not treat an authorization as an address.
-        assert!(connection_address(&raw).is_err());
+        assert!(connection_address(&raw, DEFAULT_REMOTE_PORT).is_err());
     }
 
     #[test]
@@ -1714,7 +1825,7 @@ mod tests {
         assert_eq!(payload["address"], "https://example.test:3030");
         assert!(!qr_payload("https://example.test:3030").contains("password"));
         assert_eq!(
-            connection_address(&payload.to_string()).unwrap(),
+            connection_address(&payload.to_string(), DEFAULT_REMOTE_PORT).unwrap(),
             "https://example.test:3030"
         );
     }
@@ -1722,8 +1833,8 @@ mod tests {
     #[test]
     fn local_rpc_identity_is_not_a_shareable_node_address() {
         let local = crate::app::local_node::LOCAL_ADDRESS;
-        assert!(connection_address(local).is_err());
-        assert!(connection_address(&qr_payload(local)).is_err());
+        assert!(connection_address(local, DEFAULT_REMOTE_PORT).is_err());
+        assert!(connection_address(&qr_payload(local), DEFAULT_REMOTE_PORT).is_err());
     }
 
     #[test]
@@ -1741,11 +1852,38 @@ mod tests {
             "https://user@example.test/",
             "https://example.test/path",
         ] {
-            assert!(connection_address(raw).is_err(), "accepted {raw}");
+            assert!(
+                connection_address(raw, DEFAULT_REMOTE_PORT).is_err(),
+                "accepted {raw}"
+            );
         }
         assert_eq!(
-            connection_address("https://[2001:db8::1]:3030/").unwrap(),
+            connection_address("https://[2001:db8::1]:3030/", DEFAULT_REMOTE_PORT).unwrap(),
             "https://[2001:db8::1]:3030"
+        );
+    }
+
+    #[test]
+    fn configured_remote_port_completes_scanned_and_typed_addresses() {
+        assert_eq!(
+            connection_address("http://10.100.100.9", 18443).unwrap(),
+            "http://10.100.100.9:18443"
+        );
+        assert_eq!(
+            connection_address("http://10.100.100.9:13031", 18443).unwrap(),
+            "http://10.100.100.9:13031"
+        );
+        assert_eq!(
+            connection_address(&qr_payload("http://node.test"), 18443).unwrap(),
+            "http://node.test:18443"
+        );
+        assert_eq!(
+            connection_address("https://node.test", 18443).unwrap(),
+            "https://node.test"
+        );
+        assert_eq!(
+            connection_address("http://node.test", DEFAULT_REMOTE_PORT).unwrap(),
+            "http://node.test:13031"
         );
     }
 }
