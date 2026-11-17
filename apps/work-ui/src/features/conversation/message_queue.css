@@ -1,51 +1,212 @@
 /* Inline pending messages share the main composer's reading width. */
 .composer-main > .composer-queue-panel {
+  --queue-accent: var(--accent);
+  --queue-surface: color-mix(in srgb, var(--panel) 72%, var(--card));
   box-sizing: border-box;
   width: 100%;
   max-width: var(--conversation-content-max);
   min-width: 0;
-  margin: 0 auto 8px;
-  padding: 4px;
+  margin: 0 auto 10px;
+  padding: 0;
   flex: 0 0 auto;
+  overflow: hidden;
   color: var(--text);
-  font: var(--font-assist, 12px)/1.5 var(--sans);
-  border: 1px solid var(--line-strong);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  box-shadow: 0 2px 10px var(--shadow-color);
+  font: var(--font-assist, 12px)/1.6 var(--sans);
+  border: var(--border-width, 1px) solid var(--line-strong);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--queue-surface);
+  box-shadow: 0 3px 14px var(--shadow-color, #0001);
 }
 .composer-queue-panel * { box-sizing: border-box; min-width: 0; }
-.composer-queue-panel button { color: var(--muted); background: transparent; border: 0; border-radius: 6px; cursor: pointer; font: inherit; }
-.composer-queue-panel button:hover:not(:disabled), .composer-queue-panel summary:hover { color: var(--text); background: var(--panel); }
-.composer-queue-panel button:disabled { opacity: .4; cursor: not-allowed; }
-.composer-queue-panel button:focus-visible, .composer-queue-panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.composer-queue-heading { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 32px; padding: 3px 8px; text-align: left; }
-.composer-queue-count { color: var(--text); font: 11px var(--mono); }
-.composer-queue-preview { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-queue-chevron { margin-left: auto; transform: rotate(-90deg); }
+.composer-queue-panel > .composer-queue-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 11px;
+  border-radius: 0;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent-bg) 62%, transparent);
+  font-size: calc(12px * var(--type-scale, 1));
+  font-weight: 550;
+  letter-spacing: .01em;
+  text-align: left;
+}
+.composer-queue-panel > .composer-queue-heading > .icon:first-child {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  color: var(--queue-accent);
+}
+.composer-queue-count {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding-inline: 6px;
+  border: var(--border-width, 1px) solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--queue-accent);
+  font: 600 calc(11px * var(--type-scale, 1)) var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.composer-queue-label { color: var(--muted); font-weight: 450; }
+.composer-queue-preview {
+  flex: 1;
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-queue-chevron {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-left: auto;
+  color: var(--muted);
+  transform: rotate(-90deg);
+  transition: transform var(--motion-fast);
+}
+.composer-queue-chevron > .icon { width: 13px; height: 13px; flex-basis: 13px; }
 .composer-queue-heading[aria-expanded="true"] .composer-queue-chevron { transform: rotate(0); }
-.composer-queue-list { max-height: min(25dvh, 240px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.composer-queue-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 8px; border-bottom: 1px solid var(--line); }
-.composer-queue-item:last-child { border-bottom: 0; }
-.composer-queue-content { flex: 1; overflow: hidden; }
-.composer-queue-panel .queue-item-text { margin: 0; max-height: 6em; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--text); font: inherit; }
-.composer-queue-panel .queue-item-status { display: block; color: var(--muted); font-size: 10px; }
-.composer-queue-actions { display: flex; align-items: center; flex: 0 0 auto; gap: 2px; }
-.composer-queue-actions button { display: grid; place-items: center; width: 30px; height: 30px; padding: 6px; }
+.composer-queue-panel > .composer-queue-heading:hover:not(:disabled),
+.composer-queue-panel > .composer-queue-heading:focus-visible { background: var(--accent-bg); color: var(--text); }
+.composer-queue-panel > .queue-error {
+  margin: 8px 10px;
+  padding: 8px 10px;
+  border: var(--border-width, 1px) solid var(--danger-line, var(--danger));
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: calc(11px * var(--type-scale, 1));
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.composer-queue-list {
+  max-height: min(25dvh, 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 4px 8px 8px;
+}
+.composer-queue-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-6, 6px);
+  margin: 6px 0;
+  padding: 9px 9px 9px 11px;
+  border: var(--border-width, 1px) solid var(--line);
+  border-left: 2px solid var(--queue-accent);
+  border-radius: var(--radius-md, 10px);
+  background: var(--card);
+  box-shadow: 0 1px 5px var(--shadow-color, #0001);
+}
+.composer-queue-item:first-child { margin-top: 2px; }
+.composer-queue-item:last-child { margin-bottom: 0; }
+.composer-queue-content { min-width: 0; }
+.composer-queue-panel .queue-item-text {
+  display: -webkit-box;
+  margin: 0;
+  max-height: 5.2em;
+  overflow: hidden;
+  color: var(--body-text, var(--text));
+  font: 450 calc(12px * var(--type-scale, 1))/1.55 var(--sans);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.composer-queue-panel .queue-item-status {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 5px;
+  padding: 1px 7px;
+  border: var(--border-width, 1px) solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font: 500 calc(9px * var(--type-scale, 1))/1.6 var(--sans);
+  letter-spacing: .02em;
+}
+.composer-queue-panel .queue-item-status.status-queued {
+  border-color: var(--accent-line);
+  background: var(--accent-bg);
+  color: var(--queue-accent);
+}
+.composer-queue-panel .queue-item-status.status-claimed { border-color: var(--warning-line, var(--warning)); color: var(--warning, #946300); }
+.composer-queue-panel .queue-item-status.status-failed { border-color: var(--danger-line, var(--danger)); color: var(--danger); }
+.composer-queue-panel .queue-item-status.status-unknown { border-style: dashed; }
+.composer-queue-actions { display: flex; align-items: center; flex: 0 0 auto; gap: 3px; }
+.composer-queue-panel button {
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  font: inherit;
+  transition: color var(--motion-fast), background var(--motion-fast), border-color var(--motion-fast);
+}
+.composer-queue-panel button:hover:not(:disabled),
+.composer-queue-panel summary:hover { color: var(--text); background: var(--selected-bg); }
+.composer-queue-panel button:disabled { opacity: .35; cursor: not-allowed; }
+.composer-queue-panel button:focus-visible,
+.composer-queue-panel summary:focus-visible { outline: 2px solid var(--focus-color, var(--accent)); outline-offset: 2px; }
+.composer-queue-actions button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border: var(--border-width, 1px) solid transparent;
+}
+.composer-queue-actions button:hover:not(:disabled) { border-color: var(--line); background: var(--panel); }
+.composer-queue-actions .queue-send-now { color: var(--queue-accent); background: var(--accent-bg); border-color: var(--accent-line); }
+.composer-queue-actions .queue-remove:hover:not(:disabled) { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-line, var(--danger)); }
 .composer-queue-panel .icon { width: 14px; height: 14px; flex: 0 0 14px; }
-.composer-queue-panel .queue-error { margin: 4px 8px; padding: 6px 8px; border-left: 2px solid var(--danger); color: var(--danger); overflow-wrap: anywhere; }
-.composer-queue-panel .queue-options { margin-top: 3px; color: var(--muted); font-size: 11px; }
-.composer-queue-panel .queue-options summary { width: fit-content; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
-.composer-queue-panel .queue-options-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px; }
-.composer-queue-panel .queue-options-actions button { padding: 4px 8px; border: 1px solid var(--line); }
-.composer-queue-panel .queue-history { max-height: 160px; overflow: auto; padding-inline: 8px; }
-.composer-queue-panel .queue-history p { margin: 6px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.composer-queue-panel .queue-options {
+  margin: 0;
+  padding: 7px 10px 9px;
+  border-top: var(--border-width, 1px) solid var(--line);
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+}
+.composer-queue-panel .queue-options summary {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  list-style-position: inside;
+}
+.composer-queue-panel .queue-options-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 0 0; }
+.composer-queue-panel .queue-options-actions button {
+  padding: 5px 9px;
+  border: var(--border-width, 1px) solid var(--line);
+  background: var(--card);
+  font-size: calc(10px * var(--type-scale, 1));
+}
+.composer-queue-panel .queue-history {
+  max-height: 160px;
+  overflow: auto;
+  margin-top: 7px;
+  padding: 7px 9px;
+  border: var(--border-width, 1px) solid var(--line);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--panel);
+  color: var(--muted);
+}
+.composer-queue-panel .queue-history p { margin: 4px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.composer-queue-panel .queue-history small { color: var(--queue-accent); font-weight: 550; }
 @media (max-width: 767px), (pointer: coarse) {
-  .composer-queue-panel .composer-queue-heading, .composer-queue-panel .queue-options summary { min-height: 44px; }
+  .composer-queue-panel > .composer-queue-heading,
+  .composer-queue-panel .queue-options summary { min-height: 44px; }
   .composer-queue-panel .queue-options summary { display: flex; align-items: center; }
   .composer-queue-panel .composer-queue-item {
-    display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
     gap: var(--space-6);
@@ -58,8 +219,12 @@
     justify-content: flex-end;
     gap: var(--space-4);
     padding-top: var(--space-4);
-    border-top: 1px solid var(--line);
+    border-top: var(--border-width, 1px) solid var(--line);
   }
   .composer-queue-panel .composer-queue-actions button { width: 44px; height: 44px; }
   .composer-queue-panel .queue-options-actions button { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-queue-chevron { transition: none; }
+  .composer-queue-panel button { transition: none; }
 }

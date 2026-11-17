@@ -67,6 +67,11 @@ async function until(test, message = 'fixture operation did not arrive') {
     assert.equal(await row('unknown-fourth').getByRole('button', { name: '编辑排队消息', exact: true }).isDisabled(), true);
     assert.equal(await row('queued-first').getByRole('button', { name: '立即发送排队消息', exact: true }).isEnabled(), true);
     assert.equal(await panel().getByRole('button', { name: '收起队列', exact: true }).getAttribute('aria-expanded'), 'true');
+    assert.equal(await panel().locator('.composer-queue-label').textContent(), '条待处理消息');
+    assert.equal(await row('queued-first').locator('.queue-item-status.status-queued').textContent(), '待处理');
+    assert.equal(await row('claimed-third').locator('.queue-item-status.status-claimed').textContent(), '已领取');
+    assert.equal(await row('unknown-fourth').locator('.queue-item-status.status-unknown').textContent(), '状态未知');
+    assert.equal(await panel().locator('.queue-edit, .queue-remove, .queue-send-now').count(), 10);
     await panel().getByRole('button', { name: '收起队列', exact: true }).click();
     assert.equal(await panel().getByRole('button', { name: '展开队列', exact: true }).getAttribute('aria-expanded'), 'false');
     await panel().getByRole('button', { name: '展开队列', exact: true }).click();

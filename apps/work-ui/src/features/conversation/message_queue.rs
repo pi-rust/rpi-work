@@ -39,6 +39,17 @@ impl QueueStatus {
         }
     }
 
+    fn key(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Claimed => "claimed",
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
+    }
+
     pub fn can_cancel(self) -> bool {
         self == Self::Queued
     }
@@ -145,7 +156,7 @@ pub fn QueuePanel(
                 onclick: move |_| { let next = !*expanded.peek(); expanded.set(next); },
                 Icon { name: "message" }
                 span { class: "composer-queue-count", "{count}" }
-                if *expanded.read() { span { "条待处理消息" } }
+                if *expanded.read() { span { class: "composer-queue-label", "条待处理消息" } }
                 else { span { class: "composer-queue-preview", "{preview}" } }
                 span { class: "composer-queue-chevron", Icon { name: "chevron" } }
             }
@@ -160,14 +171,14 @@ pub fn QueuePanel(
                             div { key: "{item.entry_id}", class: "composer-queue-item", "data-entry-id": "{item.entry_id}",
                                 div { class: "composer-queue-content",
                                     p { class: "queue-item-text", if item.text.trim().is_empty() { "非文本消息" } else { "{item.text}" } }
-                                    if status != QueueStatus::Queued { small { class: "queue-item-status", "{status.label()}" } }
+                                    small { class: "queue-item-status status-{status.key()}", "{status.label()}" }
                                 }
                                 div { class: "composer-queue-actions",
                                     if can_send && status.can_cancel() && recoverable_text(item) {
-                                        button { r#type: "button", disabled: !editable, aria_label: "立即发送排队消息", title: "立即发送", onclick: move |_| onaction.call(QueueAction::SendNow(send.clone())), Icon { name: "play" } }
+                                        button { class: "queue-send-now", r#type: "button", disabled: !editable, aria_label: "立即发送排队消息", title: "立即发送", onclick: move |_| onaction.call(QueueAction::SendNow(send.clone())), Icon { name: "play" } }
                                     }
-                                    button { r#type: "button", disabled: !editable || !recoverable_text(item), aria_label: "编辑排队消息", title: "取回输入框编辑", onclick: move |_| onaction.call(QueueAction::Edit(edit.clone())), Icon { name: "edit" } }
-                                    button { r#type: "button", disabled: !editable, aria_label: "移除排队消息", title: "移除", onclick: move |_| onaction.call(QueueAction::Remove(remove.clone())), Icon { name: "close" } }
+                                    button { class: "queue-edit", r#type: "button", disabled: !editable || !recoverable_text(item), aria_label: "编辑排队消息", title: "取回输入框编辑", onclick: move |_| onaction.call(QueueAction::Edit(edit.clone())), Icon { name: "edit" } }
+                                    button { class: "queue-remove", r#type: "button", disabled: !editable, aria_label: "移除排队消息", title: "移除", onclick: move |_| onaction.call(QueueAction::Remove(remove.clone())), Icon { name: "close" } }
                                 }
                             }
                         } }
