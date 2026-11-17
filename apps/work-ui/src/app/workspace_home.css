@@ -48,6 +48,18 @@
 }
 .home-heading p { color: var(--home-muted); line-height: 1.8; margin-top: 12px; }
 .home-editor { width: min(100%, 760px); }
+.home-connection-state {
+  width: min(100%, 760px);
+  margin-bottom: 20px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--home-line));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--home-surface));
+}
+.home-connection-state h2 { margin: 0 0 8px; font-size: 16px; font-weight: 550; }
+.home-connection-state p { margin: 0 0 16px; color: var(--home-muted); line-height: 1.7; overflow-wrap: anywhere; }
+.home-connection-state[role="alert"] p { color: var(--danger); }
+.home-connection-state .button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; }
 .home-onboarding {
   width: min(100%, 760px);
   margin-bottom: 20px;

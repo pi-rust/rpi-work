@@ -156,6 +156,8 @@ pub(super) fn Home(
     online: bool,
     busy: bool,
     ready: bool,
+    connection_failed: bool,
+    connection_status: String,
     models: Vec<ModelDescriptor>,
     default_model: Option<(String, String)>,
     model_loading: bool,
@@ -213,6 +215,15 @@ pub(super) fn Home(
                     BrandMark { class: "home-mark" }
                     h1 { "今天，想做点什么？" }
                     p { "一个想法，一段代码，或者一个待解决的问题。" }
+                }
+                if !online {
+                    section { class: "home-connection-state", aria_label: "节点连接状态" , role: if connection_failed { "alert" } else { "status" },
+                        h2 { if connection_failed { "无法连接工作节点" } else { "尚未连接工作节点" } }
+                        p { if connection_status.is_empty() { "请先连接节点，连接成功后即可继续使用工作区。" } else { "{connection_status}" } }
+                        button { class: "button primary", r#type: "button", onclick: move |_| onconnect.call(()),
+                            Icon { name: "refresh" } "打开连接设置"
+                        }
+                    }
                 }
                 if online && (!models_ready || project.is_none()) {
                     section { class: "home-onboarding", aria_label: "首次使用引导",

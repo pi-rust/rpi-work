@@ -40,6 +40,8 @@ mod components;
 mod desktop_workspace;
 mod extensions;
 pub use components::download_component;
+#[cfg(not(target_arch = "wasm32"))]
+mod lan_discovery;
 mod message_page;
 mod message_queries;
 mod node_api;
@@ -54,6 +56,8 @@ mod session_configuration;
 mod tool_program;
 #[cfg(target_arch = "wasm32")]
 mod wasm_realtime_client;
+#[cfg(not(target_arch = "wasm32"))]
+pub use lan_discovery::{DiscoveredNode, discover_nodes};
 pub use message_page::{MESSAGE_PAGE_SIZE, MessagePage, MessagePageInfo};
 pub use message_queries::{
     MessageSummary, MessageSummaryPage, MessageSummaryQuery, MessageWindowPage, MessageWindowQuery,

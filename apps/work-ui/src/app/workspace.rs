@@ -5167,6 +5167,8 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                         project_id: home_project_id.clone(),
                         node: if node_display_local { "本机".to_string() } else { "节点".to_string() },
                         online, busy: *new_session_busy.read(), ready: *drafts_ready.read(),
+                        connection_failed: matches!(*node_connection.phase.read(), connections::Phase::Failed(_)),
+                        connection_status: status.read().clone(),
                         models: home_model_result.as_ref().and_then(|result| result.as_ref().ok()).cloned().unwrap_or_default(),
                         default_model: app_settings::default_provider_model(&app_settings_document),
                         model_loading: *home_models_loading.read() == Some(*node_connection.epoch.read()),

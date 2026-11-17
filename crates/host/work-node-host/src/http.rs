@@ -7,6 +7,8 @@ use std::{
 };
 use work_node_runtime::workspace::LocalWorkspace;
 type NodeConnection = Arc<LocalWorkspace>;
+use rpi_node::{MdnsAdvertisement, MdnsDiscoveryProvider};
+use rpi_node_core::NodeIdentity;
 use work_node_service::{HttpServer, ServerConfig, SharingControl};
 #[path = "local_http_address.rs"]
 mod address;
@@ -51,12 +53,58 @@ struct OwnedSharing {
     issuer: Option<QrIssuer>,
     control: Option<SharingControl>,
     web_control: Option<SharingControl>,
+    discovery: Option<MdnsState>,
     web_preference: PathBuf,
     preference: Option<PathBuf>,
     configuration_file: PathBuf,
     configuration: Configuration,
     restart_required: bool,
 }
+struct MdnsState {
+    provider: Option<MdnsDiscoveryProvider>,
+    advertisement: Option<MdnsAdvertisement>,
+    identity: NodeIdentity,
+    port: u16,
+}
+
+impl MdnsState {
+    fn new(node_id: String, owner_epoch: String, port: u16) -> Self {
+        Self {
+            provider: None,
+            advertisement: None,
+            identity: NodeIdentity {
+                node_id,
+                owner_epoch,
+            },
+            port,
+        }
+    }
+
+    fn set_enabled(&mut self, enabled: bool) -> Result<(), String> {
+        if enabled {
+            if self.provider.is_none() {
+                self.provider = Some(
+                    MdnsDiscoveryProvider::new()
+                        .map_err(|error| format!("无法启动节点发现：{error}"))?,
+                );
+            }
+            if self.advertisement.is_none() {
+                let provider = self.provider.as_ref().expect("provider initialized");
+                self.advertisement = Some(
+                    provider
+                        .publish_http(&self.identity, self.port)
+                        .map_err(|error| format!("无法发布节点发现：{error}"))?,
+                );
+            }
+        } else if let Some(advertisement) = self.advertisement.take() {
+            advertisement
+                .stop()
+                .map_err(|error| format!("无法停止节点发现：{error}"))?;
+        }
+        Ok(())
+    }
+}
+
 static SHARING: OnceLock<Mutex<OwnedSharing>> = OnceLock::new();
 pub fn sharing() -> Sharing {
     SHARING
@@ -101,6 +149,12 @@ pub fn set_shared(enabled: bool) -> Result<Sharing, String> {
     control.set_enabled(enabled);
     state.info.enabled = control.enabled();
     state.info.warning.clear();
+    let sharing_enabled = state.info.enabled;
+    if let Some(discovery) = state.discovery.as_mut()
+        && let Err(error) = discovery.set_enabled(sharing_enabled)
+    {
+        state.info.warning = format!("局域网节点发现不可用：{error}");
+    }
     Ok(state.info.clone())
 }
 pub fn set_web_enabled(enabled: bool) -> Result<Sharing, String> {
@@ -139,7 +193,7 @@ pub(crate) fn start(
 ) -> Vec<HttpServer> {
     let result = prepare(client, data, options);
     match result {
-        Ok((servers, info, preference, configuration)) => {
+        Ok((servers, mut info, preference, configuration)) => {
             let control = servers
                 .first()
                 .filter(|_| info.listening)
@@ -148,6 +202,18 @@ pub(crate) fn start(
                 .last()
                 .filter(|_| info.web.listening)
                 .map(HttpServer::sharing_control);
+            let mut discovery = servers.first().filter(|_| info.listening).map(|server| {
+                MdnsState::new(
+                    info.node_id.clone(),
+                    client.remote_operations().owner_epoch().to_owned(),
+                    server.address().port(),
+                )
+            });
+            if let Some(state) = discovery.as_mut()
+                && let Err(error) = state.set_enabled(info.enabled)
+            {
+                info.warning = format!("局域网节点发现不可用：{error}");
+            }
             let _ = SHARING.set(Mutex::new(OwnedSharing {
                 issuer: servers
                     .first()
@@ -156,6 +222,7 @@ pub(crate) fn start(
                 info,
                 control,
                 web_control,
+                discovery,
                 web_preference: data.join("web-sharing.json"),
                 preference: Some(preference),
                 configuration_file: data.join("http-component.json"),
@@ -176,6 +243,7 @@ pub(crate) fn start(
                 },
                 control: None,
                 web_control: None,
+                discovery: None,
                 web_preference: data.join("web-sharing.json"),
                 issuer: None,
                 preference: None,

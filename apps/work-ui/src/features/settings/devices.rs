@@ -5,7 +5,7 @@ use crate::app::connections::{
 use crate::shared::components::Icon;
 use dioxus::core::Task;
 use dioxus::prelude::*;
-use work_client::{AuthState, Capabilities, WorkspaceClient};
+use work_client::{AuthState, Capabilities, NodeProbe, WorkspaceClient};
 
 #[path = "authorization_offer.rs"]
 mod authorization_offer;
@@ -120,6 +120,84 @@ fn connection_address(raw: &str) -> Result<String, String> {
     } else {
         normalize_address(raw, true)
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NodePreview {
+    endpoint: String,
+    node_id: String,
+    protocol: String,
+    version: u32,
+    health: String,
+    authentication: String,
+    transports: String,
+}
+
+impl NodePreview {
+    fn from_probe(probe: NodeProbe) -> Self {
+        let transports = probe
+            .discovery
+            .bindings
+            .iter()
+            .map(|binding| {
+                format!(
+                    "{:?} {}",
+                    binding.transport.kind,
+                    binding.transport.path.as_deref().unwrap_or("/")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" · ");
+        let node_id = probe.node_id().to_owned();
+        Self {
+            endpoint: probe.endpoint,
+            node_id,
+            protocol: probe.discovery.protocol.to_string(),
+            version: probe.discovery.version,
+            health: if probe.health.ok {
+                "健康检查通过"
+            } else {
+                "节点报告异常"
+            }
+            .into(),
+            authentication: if probe.auth.required {
+                if probe.auth.authenticated {
+                    "已认证"
+                } else {
+                    "需要节点密码"
+                }
+            } else {
+                "无需密码"
+            }
+            .into(),
+            transports,
+        }
+    }
+}
+
+async fn probe_work_node(address: &str) -> Result<NodePreview, String> {
+    NodeProbe::probe(address)
+        .await
+        .map(NodePreview::from_probe)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn discover_work_nodes() -> Result<Vec<NodePreview>, String> {
+    work_client::discover_nodes()
+        .await
+        .map(|nodes| {
+            nodes
+                .into_iter()
+                .map(|node| NodePreview::from_probe(node.probe))
+                .collect()
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn discover_work_nodes() -> Result<Vec<NodePreview>, String> {
+    Err("浏览器无法直接发现局域网节点，请输入节点地址。".into())
 }
 
 #[cfg(any(target_arch = "wasm32", target_os = "android"))]
@@ -376,6 +454,12 @@ pub fn DevicesPage(
     let mut copy_status = use_signal(String::new);
     let mut share_error = use_signal(String::new);
     let mut share_epoch = use_signal(|| 0u64);
+    let mut discovery_results = use_signal(Vec::<NodePreview>::new);
+    let mut discovery_busy = use_signal(|| false);
+    let mut discovery_status = use_signal(String::new);
+    let mut preview = use_signal(|| None::<NodePreview>);
+    let mut preview_busy = use_signal(|| false);
+    let mut preview_epoch = use_signal(|| 0u64);
     let local_sharing = pairing.sharing;
     let sharing_state = local_sharing;
     let sharing = local_sharing.read().clone();
@@ -519,12 +603,61 @@ pub fn DevicesPage(
         let candidate = phone_address.read().clone();
         match connection_address(&candidate) {
             Ok(value) => {
-                base_url.set(format!("{value}/"));
+                let endpoint = format!("{value}/");
+                preview_epoch += 1;
+                let attempt = *preview_epoch.read();
+                preview_busy.set(true);
+                preview.set(None);
                 error.set(String::new());
-                onconnect.call(());
+                scanner_status.set("正在读取节点信息…".into());
+                spawn(async move {
+                    let result = probe_work_node(&endpoint).await;
+                    if *preview_epoch.peek() != attempt {
+                        return;
+                    }
+                    preview_busy.set(false);
+                    match result {
+                        Ok(candidate) => {
+                            phone_address.set(candidate.endpoint.clone());
+                            preview.set(Some(candidate));
+                            scanner_status.set("已读取节点信息，请核对后确认连接。".into());
+                        }
+                        Err(message) => scanner_status.set(format!("无法读取节点信息：{message}")),
+                    }
+                });
             }
             Err(message) => error.set(message),
         }
+    };
+    let mut discover_lan = move |(): ()| {
+        if *discovery_busy.peek() {
+            return;
+        }
+        preview_epoch += 1;
+        discovery_busy.set(true);
+        discovery_status.set("正在搜索局域网节点…".into());
+        discovery_results.set(Vec::new());
+        let attempt = *preview_epoch.read();
+        spawn(async move {
+            let result = discover_work_nodes().await;
+            if *preview_epoch.peek() != attempt {
+                return;
+            }
+            discovery_busy.set(false);
+            match result {
+                Ok(nodes) if nodes.is_empty() => {
+                    discovery_status.set(
+                        "未发现可用节点。请确认节点已开启远程协作，并检查局域网或防火墙设置。"
+                            .into(),
+                    );
+                }
+                Ok(nodes) => {
+                    discovery_status.set(format!("发现 {} 个可用节点。", nodes.len()));
+                    discovery_results.set(nodes);
+                }
+                Err(message) => discovery_status.set(message),
+            }
+        });
     };
     use_drop(move || {
         let _ = document::eval(&format!(
@@ -691,6 +824,29 @@ pub fn DevicesPage(
                         span { role: "status", class: if online { "status-badge completed" } else { "status-badge" }, i {}, if online { if owned_local { "本机节点在线" } else { "当前节点已连接" } } else if busy { "节点连接中" } else { "当前节点未连接" } }
                     }
                     div { class: "collaboration-actions",
+                        section { class: "collaboration-action-card discovery-card", aria_label: "发现局域网节点",
+                            div { class: "collaboration-action-heading",
+                                span { class: "collaboration-action-icon", Icon { name: "search" } }
+                                div { h2 { "发现节点" } p { "搜索同一局域网中已开启远程协作的 Work 节点。发现后仍会读取节点信息并等待确认。" } }
+                            }
+                            div { class: "collaboration-action-footer",
+                                button { class: "button", disabled: *discovery_busy.read() || busy, onclick: move |_| discover_lan(()), if *discovery_busy.read() { "正在发现…" } else { "刷新局域网节点" } }
+                                if !discovery_status.read().is_empty() { span { class: "collaboration-action-hint", role: "status", "{discovery_status}" } }
+                            }
+                            if !discovery_results.read().is_empty() {
+                                div { class: "discovered-node-list",
+                                    for node in discovery_results.read().clone() {
+                                        div { class: "discovered-node-row",
+                                            div { class: "collaboration-device-copy",
+                                                strong { "{node.node_id}" }
+                                                small { "{node.endpoint} · {node.authentication}" }
+                                            }
+                                            button { class: "button", disabled: *preview_busy.read(), onclick: { let node = node.clone(); move |_| preview.set(Some(node.clone())) }, "查看信息" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         section { class: "collaboration-action-card connect-card", aria_label: "连接其他设备",
                             div { class: "collaboration-action-heading",
                                 span { class: "collaboration-action-icon", Icon { name: "cloud" } }
@@ -703,20 +859,36 @@ pub fn DevicesPage(
                             if *remote_open.read() {
                                 div { class: "collaboration-connect-form",
                                     div { class: "form-field", label { r#for: "node-url", "节点地址" }
-                                        input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:13031/", oninput: move |event| { base_url.set(event.value()); password.set(NodePassword::default()); } }
+                                        input { id: "node-url", r#type: "url", value: "{base_url}", autocomplete: "url", placeholder: "https://其他电脑地址:13031/", oninput: move |event| { base_url.set(event.value()); preview_epoch += 1; preview.set(None); password.set(NodePassword::default()); } }
                                     }
                                     div { class: "form-field", label { r#for: "node-password", "节点密码" }
                                         input { id: "node-password", r#type: "password", autocomplete: "current-password", value: password.read().value.clone(), placeholder: "连接时输入，不会保存", oninput: move |event| { password.set(NodePassword::new(event.value(), &base_url.read())) } }
                                     }
                                     div { class: "collaboration-connect-actions",
                                         button { class: "button", onclick: move |_| remote_open.set(false), "取消" }
-                                        button { class: "button primary", disabled: busy, onclick: move |_| {
+                                        button { class: "button primary", disabled: busy || *preview_busy.read(), onclick: move |_| {
                                             let address_input = base_url.read().clone();
                                             match normalize_address(&address_input, false) {
-                                                Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(()); }
+                                                Ok(address) => {
+                                                    let endpoint = format!("{address}/");
+                                                    preview_epoch += 1;
+                                                    let attempt = *preview_epoch.read();
+                                                    preview_busy.set(true);
+                                                    preview.set(None);
+                                                    error.set(String::new());
+                                                    spawn(async move {
+                                                        let result = probe_work_node(&endpoint).await;
+                                                        if *preview_epoch.peek() != attempt { return; }
+                                                        preview_busy.set(false);
+                                                        match result {
+                                                            Ok(node) => { base_url.set(node.endpoint.clone()); preview.set(Some(node)); }
+                                                            Err(message) => error.set(format!("无法读取节点信息：{message}")),
+                                                        }
+                                                    });
+                                                }
                                                 Err(message) => error.set(message),
                                             }
-                                        }, if busy { "正在连接…" } else { "连接节点" } }
+                                        }, if *preview_busy.read() { "正在检查…" } else { "检查节点" } }
                                     }
                                     if !error.read().is_empty() { p { class: "connection-form-error", role: "alert", "{error}" } }
                                 }
@@ -932,7 +1104,23 @@ pub fn DevicesPage(
                                     } else if !phone_address.read().is_empty() { connect_address(()); }
                                     else {
                                         match normalize_address(&manual_address.read(), navigation.is_none()) {
-                                            Ok(address) => { base_url.set(format!("{address}/")); error.set(String::new()); onconnect.call(()); }
+                                            Ok(address) => {
+                                                let endpoint = format!("{address}/");
+                                                preview_epoch += 1;
+                                                let attempt = *preview_epoch.read();
+                                                preview_busy.set(true);
+                                                preview.set(None);
+                                                error.set(String::new());
+                                                spawn(async move {
+                                                    let result = probe_work_node(&endpoint).await;
+                                                    if *preview_epoch.peek() != attempt { return; }
+                                                    preview_busy.set(false);
+                                                    match result {
+                                                        Ok(node) => { base_url.set(node.endpoint.clone()); preview.set(Some(node)); }
+                                                        Err(message) => error.set(format!("无法读取节点信息：{message}")),
+                                                    }
+                                                });
+                                            }
                                             Err(message) => error.set(message),
                                         }
                                     }
@@ -985,6 +1173,22 @@ pub fn DevicesPage(
                     }
                 }
             }
+            if let Some(node) = preview.read().clone() {
+                NodePreviewCard {
+                    preview: node.clone(),
+                    onconfirm: move |()| {
+                        base_url.set(node.endpoint.clone());
+                        preview.set(None);
+                        preview_busy.set(false);
+                        error.set(String::new());
+                        onconnect.call(());
+                    },
+                    oncancel: move |()| {
+                        preview.set(None);
+                        preview_busy.set(false);
+                    },
+                }
+            }
             if !connection.warning.read().is_empty() { p { class: "connection-form-error", role: "status", "{connection.warning}" } }
             if share_available && qr_open.read().to_owned() {
                 crate::shared::components::Modal { id: "device-address-qr", title: share_title, class: "device-address-dialog", onclose: move |()| { qr_open.set(false); share_epoch += 1; },
@@ -1017,6 +1221,36 @@ pub fn DevicesPage(
                     }
                     div { class: "modal-footer", button { class: "button", onclick: move |_| { qr_open.set(false); share_epoch += 1; }, "完成" } }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn NodePreviewCard(
+    preview: NodePreview,
+    onconfirm: EventHandler<()>,
+    oncancel: EventHandler<()>,
+) -> Element {
+    rsx! {
+        section { class: "node-discovery-preview", aria_label: "节点信息预览",
+            div { class: "node-discovery-preview-heading",
+                div { h3 { "节点信息" } p { "请核对节点身份和协议后再连接。" } }
+                span { class: "status-badge completed", "已验证" }
+            }
+            code { class: "node-discovery-endpoint", "{preview.endpoint}" }
+            div { class: "node-discovery-details",
+                div { small { "节点 ID" } strong { "{preview.node_id}" } }
+                div { small { "协议" } strong { "{preview.protocol} · v{preview.version}" } }
+                div { small { "健康状态" } strong { "{preview.health}" } }
+                div { small { "认证状态" } strong { "{preview.authentication}" } }
+            }
+            if !preview.transports.is_empty() {
+                p { class: "connection-help", "传输：{preview.transports}" }
+            }
+            div { class: "node-discovery-preview-actions",
+                button { class: "button", onclick: move |_| oncancel.call(()), "取消" }
+                button { class: "button primary", onclick: move |_| onconfirm.call(()), "确认连接" }
             }
         }
     }
