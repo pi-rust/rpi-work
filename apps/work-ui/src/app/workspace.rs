@@ -4689,6 +4689,14 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                     }
                 }
             }
+            if active_page.read().as_str() == "workspace" && !showing_home {
+                if let Some(session_id) = selected_session.read().clone() {
+                    // Keep the fixed jump control outside the size-contained,
+                    // overflow-hidden conversation panel so it can use viewport
+                    // coordinates on desktop as well as mobile.
+                    scroll_follow::ScrollFollow { scope: session_scope_key(&node_url.read(), &session_id), selector: ".transcript".to_owned() }
+                }
+            }
             main { class: format!("{}{}{}{}{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
                 ("settings", false) | ("workspace", false) => "app-shell context-hidden",
                 _ => "app-shell",
@@ -5252,9 +5260,6 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                             }
                         }
                         if active_page.read().as_str() == "workspace" {
-                            if let Some(session_id) = selected_session.read().clone() {
-                                scroll_follow::ScrollFollow { scope: session_scope_key(&node_url.read(), &session_id), selector: ".transcript".to_owned() }
-                            }
                             div { class: "transcript-frame",
                             div { id: "conversation-panel", role: "tabpanel", aria_label: "对话", class: "transcript", "data-session-scope": selected_session.read().as_ref().map(|id| session_scope_key(&node_url.read(), id)).unwrap_or_default(),
                                 if let Some(session_id) = selected_session.read().clone() {

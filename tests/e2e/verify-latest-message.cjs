@@ -53,6 +53,14 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     for (const [width, height] of [[1440, 1000], [390, 844], [320, 844]]) {
       await page.setViewportSize({ width, height });
       await bottom(); await top(); await shot(`before-${width}`);
+      assert.equal(await latest().evaluate(element => !element.closest('.conversation-panel')), true, 'Latest must stay outside the size-contained conversation panel');
+      const jump = await latest().boundingBox();
+      assert(jump && jump.x >= 0 && jump.y >= 0 && jump.x + jump.width <= width + 1 && jump.y + jump.height <= height + 1, 'Latest stays inside the viewport');
+      assert.equal(await latest().evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return !!hit && (hit === element || element.contains(hit));
+      }), true, 'Latest owns its visual center');
       if (width < 700) await latest().tap(); else await latest().click();
       await bottom(); await latest().waitFor({ state: 'hidden' });
       await shot(`after-${width}`);
