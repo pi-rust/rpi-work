@@ -205,25 +205,22 @@ See [`Taskfile.yml`](Taskfile.yml), the [local build guide](docs/guides/ci-build
 
 ## 许可证与商业状态 / License and commercial status
 
-### 开源许可证 / Open-source license
+本仓库由个人维护。当前**尚未选择或授予项目级开源许可证**，也没有发布项目级 `LICENSE` 文件。除明确标注为第三方许可证的依赖和资源外，源代码、文档、图片、Logo 和其他内容的著作权均予保留。
 
-本仓库由个人维护。除第三方资源另有许可证外，本项目源代码按 [MIT License](LICENSE) 发布。
+This is a personally maintained project. **No project-level open-source license has been selected or granted yet**, and there is currently no project-level `LICENSE` file. Except for dependencies and assets explicitly covered by third-party licenses, copyright in the source code, documentation, images, logo, and other project content is reserved.
 
-This is a personally maintained project. Unless a third-party asset states otherwise, the project source code is released under the [MIT License](LICENSE).
+在正式许可证公布前，未经版权持有人书面许可，不应复制、修改、再分发、打包发布或将本项目用于商业用途。第三方依赖和 bundled assets 仍以各自许可证为准，不能因为它们存在于本仓库中就推断整个项目采用相同许可证。
 
-**重要说明 / Important:** MIT License 本身允许复制、修改、再分发和商业使用。下面的“商用待定”不撤销 MIT 已授予的代码权利，而是表示项目目前没有单独的商业产品、托管服务、SLA、技术支持、官方发行版品牌授权或商业合作方案。
+Until a formal license is published, do not copy, modify, redistribute, package, publish, or use this project commercially without written permission from the copyright holder. Third-party dependencies and bundled assets remain governed by their own licenses; their presence in this repository does not imply a license for the project as a whole.
 
-**Important:** The MIT License permits copying, modification, redistribution, and commercial use. “Commercial plans pending” does not revoke rights already granted by MIT; it means that this project currently has no separate commercial product, hosted service, SLA, paid support, official distribution program, or brand-partnership terms.
-
-- 代码 / Code: MIT，允许商业使用，但须保留版权和许可声明 / MIT; commercial use is allowed with the required notices.
-- RPI Work 名称、Logo 和品牌 / Name, logo, and branding: 不随 MIT 自动授权 / not automatically licensed by MIT.
+- 项目源代码和文档 / Project source and documentation: **保留所有权利 / All rights reserved, pending a formal license**.
+- RPI Work 名称、Logo 和品牌 / Name, logo, and branding: **保留所有权利 / All rights reserved**.
 - 第三方依赖和 bundled assets / Third-party dependencies and bundled assets: 以各自许可证为准 / governed by their own licenses.
-- 官方商业服务、托管、支持和品牌合作 / Official commercial services, hosting, support, and branding partnerships: **待定 / TBD**.
+- 官方商业服务、托管、支持、再分发和品牌合作 / Official commercial services, hosting, support, redistribution, and branding partnerships: **待定 / TBD**.
 
-如果你需要把 RPI Work 集成到商业产品中，请先核对本仓库代码、第三方依赖和资源的许可证边界；不要把官方名称或 Logo 当作代码许可证的一部分。
+如果你希望获得复制、修改、再分发、集成或商用许可，请先通过 GitHub Issue 或私下联系维护者确认。该状态可能在未来通过单独的许可证或授权协议调整。
 
-If you plan to integrate RPI Work into a commercial product, review the license boundaries for this repository, its dependencies, and bundled assets. Do not treat the official name or logo as part of the code license.
-
+If you need permission to copy, modify, redistribute, integrate, or use RPI Work commercially, contact the maintainer through a GitHub Issue or privately first. This status may change later through a separate license or authorization agreement.
 ## 贡献 / Contributing
 
 欢迎提交 Issue、文档改进和 Pull Request。提交代码前请运行格式检查、相关测试和 Clippy；涉及 Web、Android 或 UI 的改动应同时说明验证平台和未覆盖的边界。
