@@ -1,8 +1,8 @@
+use crate::features::conversation::timeline::markdown_view;
+use crate::shared::components::Icon;
 use dioxus::core::spawn_forever;
 use dioxus::prelude::*;
 use work_update::Release;
-
-use crate::shared::components::Icon;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(target_arch = "wasm32")]
@@ -272,7 +272,10 @@ pub fn UpdatePage(busy: bool) -> Element {
                 small { "{snapshot.progress}%" }
             }
             if let Some(release) = snapshot.release {
-                div { class: "update-notes", h3 { "版本 {release.manifest.version}" } p { "{release.manifest.notes}" } }
+                div { class: "update-notes",
+                    h3 { "版本 {release.manifest.version}" }
+                    {markdown_view(&release.manifest.notes)}
+                }
             }
             div { class: "update-actions",
                 button { class: "button", disabled: locked || snapshot.phase == "ready", onclick: move |_| { spawn_forever(check(state)); }, "检查更新" }
