@@ -218,7 +218,7 @@ function serveStatic(req, response) {
         const reloadScript = `<script>(()=>{const e=new EventSource('/__rpi_reload');e.onmessage=()=>location.reload();e.onerror=()=>setTimeout(()=>location.reload(),1500)})()</script>`;
         body = Buffer.from(contents.toString().replace('</body>', `${reloadScript}</body>`));
       }
-      if (compressibleExtensions.has(extension) && /gzip/i.test(req.headers['accept-encoding'] || '')) {
+      if (compressibleExtensions.has(extension) && /gzip/i.test(req.headers['accept-encoding'] || '')) {
         const plainBody = body;
         const cacheKey = `${filePath}:${stat.mtimeMs}:${plainBody.length}`;
         body = gzipCache.get(cacheKey);
