@@ -47,7 +47,7 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
   await phone.reload();await open(phone,'连接我的电脑');await phone.locator('.phone-current-node [role=status]').filter({hasText:'在线'}).waitFor();assert.equal(await phone.getByLabel('节点地址',{exact:true}).count(),0);pass('mobile automatically reconnects its previously confirmed computer after reopening');
   await open(phone,'工作协同');await phone.locator('.mobile-collaboration-hub').waitFor();
   const currentNode = phone.getByRole('region',{name:'当前连接',exact:true});
-  await currentNode.locator('.collaboration-share-address code').filter({hasText:'192.168.50.9:3030'}).waitFor();
+  await currentNode.locator('.collaboration-address').filter({hasText:'192.168.50.9:3030'}).waitFor();
   assert.equal(await phone.getByRole('button',{name:'分享当前节点连接',exact:true}).isEnabled(),true);
   const savedNodes = phone.getByRole('region',{name:'连接列表',exact:true});
   assert((await savedNodes.locator('[role=listitem]').count())>0,'mobile collaboration lists saved nodes');

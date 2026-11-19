@@ -394,9 +394,9 @@ dialog.context-column::backdrop { background:#17233a30; backdrop-filter:none; }
 .collaboration-heading h2 { font-size:20px; font-weight:600; letter-spacing:-.4px; margin-top:4px; }
 .collaboration-heading p { color:var(--muted); font-size:13px; margin-top:7px; line-height:1.7; }
 .collaboration-heading .eyebrow { font-size:10px; letter-spacing:1.2px; }
-.collaboration-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.collaboration-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
 .collaboration-card,.collaboration-list-card { background:#fff; border:1px solid var(--line); border-radius:11px; box-shadow:var(--shadow); min-width:0; }
-.collaboration-card { padding:20px; }
+.collaboration-card { display:flex; flex-direction:column; padding:20px; }
 .collaboration-card-heading { display:flex; align-items:flex-start; gap:12px; min-width:0; }
 .collaboration-icon { display:grid; place-items:center; flex:0 0 38px; width:38px; height:38px; border-radius:9px; color:#444; background:#f0f0f0; }
 .collaboration-icon.assist { background:#f4f0e8; color:#795c28; }
@@ -404,26 +404,72 @@ dialog.context-column::backdrop { background:#17233a30; backdrop-filter:none; }
 .collaboration-card h3,.collaboration-list-card h3 { font-size:14px; font-weight:600; }
 .collaboration-card p,.collaboration-list-card p { color:var(--muted); font-size:12px; line-height:1.75; margin-top:6px; }
 .collaboration-card-heading>div { flex:1; min-width:0; }
-.collaboration-card-footer { display:flex; align-items:center; gap:12px; margin:22px 0 0 50px; }
-.collaboration-card-footer span { color:var(--muted); font-size:11px; }
 .collaboration-switch { display:flex; align-items:center; gap:8px; flex-shrink:0; color:var(--muted); font-size:11px; }
 .collaboration-switch>span { width:34px; height:20px; border-radius:12px; padding:3px; background:#d7d7d7; }
 .collaboration-switch>span:after { content:''; display:block; width:14px; height:14px; border-radius:50%; background:#fff; box-shadow:0 1px 2px #0002; }
 .collaboration-switch[aria-checked="true"]>span { background:#333; }
 .collaboration-switch[aria-checked="true"]>span:after { transform:translateX(14px); }
 .collaboration-switch b { font-weight:400; white-space:nowrap; }
-.collaboration-notice { display:flex; align-items:flex-start; gap:9px; border-top:1px solid var(--line); margin:20px -20px -20px; padding:14px 20px; background:#fafafa; }
-.collaboration-notice>.icon { flex:0 0 15px; width:15px; height:15px; color:#777; margin-top:2px; }
-.collaboration-notice>div { flex:1; min-width:0; }
-.collaboration-notice strong { font-size:12px; font-weight:500; }
-.collaboration-notice p { margin-top:3px; font-size:11px; }
-.collaboration-notice .button { flex-shrink:0; min-height:32px; font-size:11px; padding:5px 9px; }
-.collaboration-lists { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:14px; }
-.collaboration-list-card { padding:20px; min-height:205px; }
+
+/* Current connection answers "which node am I using" only; sharing lives in its
+   own card so an address or QR is never mistaken for an authorization. */
+.collaboration-current-card { background:#fff; border:1px solid var(--line); border-radius:11px; box-shadow:var(--shadow); padding:20px; margin-bottom:14px; }
+.collaboration-current-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
+.collaboration-current-heading h3 { font-size:15px; font-weight:600; margin-top:4px; }
+.collaboration-current-heading p { color:var(--muted); font-size:12px; margin-top:5px; }
+.collaboration-address { display:block; margin:18px 0 9px; padding:11px 12px; border:1px solid var(--line); border-radius:7px; color:#34445d; background:#fafbfc; font:12px var(--mono); overflow-wrap:anywhere; }
+.collaboration-current-meta { display:flex; flex-wrap:wrap; gap:7px; color:var(--muted); font-size:11px; }
+.collaboration-current-meta span { padding:4px 7px; border:1px solid var(--line); border-radius:5px; background:#fafafa; }
+.collaboration-current-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.collaboration-current-note { display:flex; align-items:flex-start; gap:7px; margin-top:15px; padding-top:13px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; line-height:1.7; }
+.collaboration-current-note .icon { flex:0 0 13px; width:13px; margin-top:3px; }
+.collaboration-switch-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.collaboration-switch-row>div,.collaboration-access-row>div { min-width:0; }
+.collaboration-switch-row strong,.collaboration-access-row strong { display:block; font-size:12px; font-weight:500; }
+.collaboration-switch-row span:not(.collaboration-switch),.collaboration-access-row span { display:block; margin-top:3px; color:var(--muted); font-size:11px; line-height:1.6; }
+.collaboration-card-note { display:flex; align-items:flex-start; gap:7px; margin-top:12px; color:var(--muted); font-size:10px; line-height:1.7; }
+.collaboration-card-note .icon { flex:0 0 12px; width:12px; margin-top:3px; }
+.collaboration-connect-actions { display:flex; gap:8px; margin-top:12px; }
+.collaboration-connect-actions .button { flex:1; min-width:0; justify-content:center; }
+
+/* The current connection card also carries sharing: one address, one QR, one
+   authorization entry — never a second copy in a separate card. */
+/* Auto-discovery sits inside the connect card: it is one way to reach a node,
+   not a separate permission, so it reports freshness and requires auth. */
+.collaboration-discovered { margin-top:18px; padding-top:14px; border-top:1px solid var(--line); }
+.collaboration-discovered-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.collaboration-discovered-heading strong { display:block; font-size:12px; font-weight:500; }
+.collaboration-discovered-heading span { display:block; margin-top:3px; color:var(--muted); font-size:10px; }
+.collaboration-discovered-heading .button { flex:0 0 auto; min-height:30px; padding:5px 9px; font-size:11px; }
+.collaboration-discovered-list { margin-top:10px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.collaboration-discovered[data-scanning="true"] .collaboration-discovered-list { opacity:.45; }
+.collaboration-discovered[data-scanning="true"] .collaboration-discovered-heading .icon { animation:collaboration-spin 1s linear infinite; }
+@keyframes collaboration-spin { to { transform:rotate(360deg); } }
+.collaboration-discovered-row { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; border-bottom:1px solid var(--line); }
+.collaboration-discovered-row:last-child { border-bottom:0; }
+.collaboration-discovered-row>.status-dot,.collaboration-node-row>.status-dot { flex:0 0 7px; width:7px; height:7px; border-radius:50%; background:#c9d0da; }
+.collaboration-discovered-row>div,.collaboration-node-row>div { flex:1; min-width:0; }
+.collaboration-discovered-row strong,.collaboration-node-row strong { display:block; color:var(--text); font:11px var(--mono); overflow-wrap:anywhere; }
+.collaboration-discovered-row small,.collaboration-node-row small { display:block; margin-top:3px; color:var(--muted); font-size:10px; }
+.collaboration-discovered-row .button,.collaboration-node-row .button { flex:0 0 auto; min-height:30px; padding:5px 9px; font-size:11px; }
+
+.collaboration-access-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+
+.collaboration-recent-card { display:flex; flex-direction:column; }
+.collaboration-visited-card { min-height:0; }
+.collaboration-visited-card .collaboration-empty.compact { flex:1; align-content:center; }
+.collaboration-node-list { flex:1; margin-top:17px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.collaboration-node-row { display:flex; align-items:center; gap:10px; min-width:0; padding:12px 13px; border-bottom:1px solid var(--line); }
+.collaboration-node-row:last-child { border-bottom:0; }
+.collaboration-node-row>.status-dot.online { background:#2aaf66; }
+.collaboration-list-card { padding:20px; }
 .collaboration-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:130px; text-align:center; color:var(--muted); gap:5px; }
 .collaboration-empty>.icon { width:18px; height:18px; margin-bottom:3px; }
 .collaboration-empty strong { color:#555; font-size:12px; font-weight:500; }
 .collaboration-empty span { font-size:11px; }
+.collaboration-empty.compact { display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto; column-gap:9px; row-gap:3px; min-height:0; margin-top:16px; padding:14px; border:1px dashed var(--line); border-radius:8px; text-align:left; }
+.collaboration-empty.compact>.icon { grid-row:1 / span 2; align-self:start; margin:2px 0 0; }
+.collaboration-empty.compact strong,.collaboration-empty.compact span { grid-column:2; }
 .collaboration-boundary { display:flex; align-items:flex-start; gap:7px; color:var(--muted); font-size:11px; line-height:1.8; margin-top:14px; }
 .collaboration-boundary>.icon { flex:0 0 13px; width:13px; height:13px; margin-top:3px; }
 @media(max-width:767px) {
@@ -431,25 +477,21 @@ dialog.context-column::backdrop { background:#17233a30; backdrop-filter:none; }
   .settings-tabs button { min-height:46px; padding:12px 15px 13px; white-space:nowrap; }
   .collaboration-heading { display:block; margin-bottom:18px; }
   .collaboration-heading>.neutral-pill { display:inline-flex; margin-top:12px; }
-  .collaboration-actions,.collaboration-lists { grid-template-columns:1fr; gap:12px; }
+  .collaboration-grid { grid-template-columns:1fr; gap:12px; }
   .collaboration-card,.collaboration-list-card { padding:16px; }
-  .collaboration-card-footer { margin-left:50px; }
-  .collaboration-notice { margin:16px -16px -16px; padding:13px 16px; }
-  .collaboration-notice .button { display:none; }
-  .collaboration-list-card { min-height:175px; }
-}
-
-/* Mobile is a client/connection surface: it does not expose remote-access
-   switches. Desktop keeps the explicit Web access boundary visible. */
-.mobile-connect-actions { display:none; }
-.collaboration-card-footer .icon { width:14px; height:14px; }
-@media(max-width:767px) {
-  .desktop-connect-action { display:none; }
-  .mobile-connect-actions { display:flex; margin-left:0; gap:8px; }
-  .mobile-connect-actions .button { display:inline-flex; align-items:center; justify-content:center; gap:6px; flex:1; min-height:44px; }
-  .remote-assist-card,.web-access-card { display:none; }
-  .collaboration-actions { grid-template-columns:1fr; }
+  .collaboration-current-card { padding:16px; }
+  .collaboration-current-heading { display:block; }
+  .collaboration-current-heading>.neutral-pill { display:inline-flex; margin-top:10px; }
+  .collaboration-current-actions .button,.collaboration-connect-actions .button { min-height:44px; }
+  .collaboration-current-note { font-size:10px; }
+  .collaboration-card-note { font-size:10px; }
+  .collaboration-discovered-heading .button { min-height:40px; }
+  .collaboration-discovered-row { padding:11px; }
+  .collaboration-discovered-row .button,.collaboration-node-row .button { min-height:38px; }
+  .collaboration-node-row { padding:12px 11px; }
   .collaboration-boundary { font-size:10px; }
+  /* Mobile is a client surface: inbound access switches stay on desktop. */
+  .collaboration-access-card { display:none; }
 }
 
 /* Resource installation is an explicit, scoped confirmation—not an implicit
@@ -542,3 +584,58 @@ dialog.context-column::backdrop { background:#17233a30; backdrop-filter:none; }
   .provider-model-preview-actions { display:grid; grid-template-columns:1fr; }
   .provider-model-preview-actions .button { justify-content:center; min-height:44px; }
 }
+
+/* Multiple connected nodes: one is the working node, the others stay connected
+   and can be switched or configured without leaving collaboration. */
+.collaboration-node-switcher { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.collaboration-subheading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.collaboration-subheading strong { font-size:12px; font-weight:500; }
+.collaboration-subheading span { color:var(--muted); font-size:10px; }
+.collaboration-node-switch { display:flex; align-items:center; gap:10px; min-width:0; margin-top:8px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.collaboration-node-switch.current { border-color:#cfd8cc; background:#fafbf8; }
+.collaboration-node-switch>.status-dot { flex:0 0 7px; width:7px; height:7px; border-radius:50%; background:#c9d0da; }
+.collaboration-node-switch>.status-dot.online { background:#2aaf66; }
+.collaboration-node-switch>div { flex:1; min-width:0; }
+.collaboration-node-switch strong { display:block; font-size:12px; font-weight:500; }
+.collaboration-node-switch small { display:block; margin-top:3px; color:var(--muted); font:10px var(--mono); overflow-wrap:anywhere; }
+.collaboration-node-state { flex:0 0 auto; padding:3px 7px; border:1px solid var(--line); border-radius:5px; color:var(--muted); font-size:10px; }
+.collaboration-node-switch.current .collaboration-node-state { color:#fff; background:#333; border-color:#333; }
+.collaboration-node-switch .button { flex:0 0 auto; min-height:30px; padding:5px 9px; font-size:11px; }
+.collaboration-access-block { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.collaboration-node-row.current { background:#fafbf8; }
+
+/* Per-node settings open from either list; they never change the node's
+   projects, sessions or authorizations. */
+.node-settings-summary { display:grid; gap:10px; margin:16px 0; padding:13px; border:1px solid var(--line); border-radius:8px; background:#fafafa; }
+.node-settings-summary div { display:grid; gap:4px; min-width:0; }
+.node-settings-summary dt { color:var(--muted); font-size:10px; }
+.node-settings-summary dd { margin:0; font-size:12px; overflow-wrap:anywhere; }
+.node-settings-summary code { font:11px var(--mono); color:#34445d; overflow-wrap:anywhere; }
+.node-settings-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+.node-settings-note { margin-top:14px; color:var(--muted); font-size:10px; line-height:1.7; }
+
+/* Scan belongs to phones; inbound access history belongs to the host desktop. */
+.mobile-scan-action { display:none; }
+@media(max-width:767px) {
+  .mobile-scan-action { display:inline-flex; }
+  .collaboration-visited-card { display:none; }
+  .collaboration-access-block { display:none; }
+  .collaboration-node-switch { flex-wrap:wrap; row-gap:9px; }
+  .collaboration-node-switch>div { flex:1 1 120px; }
+  .collaboration-node-switch .button { min-height:44px; flex:1 1 45%; }
+  .collaboration-node-switch.current .button { flex:0 0 auto; margin-left:auto; }
+  .node-settings-actions { flex-direction:column-reverse; }
+  .node-settings-actions .button { width:100%; min-height:44px; }
+}
+
+/* Inbound access history is a host surface: desktop only, full row. */
+.collaboration-visited-card { grid-column:1 / -1; }
+@media(max-width:767px) {
+  .collaboration-visited-card { grid-column:auto; }
+}
+
+/* The local node is the default focus; remote nodes are opt-in switches. */
+.collaboration-node-tag { margin-left:5px; padding:2px 5px; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:9px; font-weight:400; vertical-align:2px; }
+.collaboration-node-switch.current .collaboration-node-tag { color:#fff; background:#333; border-color:#333; }
+.collaboration-address-hint { margin-top:9px; color:var(--muted); font-size:10px; line-height:1.7; }
+.collaboration-current-note[hidden],.collaboration-access-block[hidden] { display:none; }

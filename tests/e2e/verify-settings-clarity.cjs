@@ -118,7 +118,8 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
     await page.setViewportSize({ width:1440, height:960 });
     await choose('工作协同');
     assert.equal(await page.locator('.settings-page h1').count(), 1, 'category content does not introduce another page title');
-    assert.equal(await page.locator('.collaboration-actions > .collaboration-action-card').count(), 3);
+    assert.equal(await page.locator('.collaboration-hub .collaboration-action-card').count(), 1, 'one connection card groups discovery, manual address and nearby nodes');
+    assert.equal(await page.locator('.collaboration-current-card').count(), 1, 'the current node owns identity, sharing and switching');
     assert.equal(await page.locator('.connection-details').getAttribute('open'), null, 'legacy node diagnostics are collapsed');
     assert.equal(await page.locator('.connection-details .connection-page-heading').isVisible(), false);
     assert.equal(await page.locator('.web-access-card [role=switch]').count(), 0, 'Web status must not invent a separate host permission switch');

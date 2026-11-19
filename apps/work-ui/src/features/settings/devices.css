@@ -153,7 +153,7 @@
 @media(max-width:700px){.collaboration-advanced-row{flex-direction:column;align-items:stretch}.collaboration-port-control input{flex:1 1 100px;width:auto;font-size:16px;min-height:44px}.collaboration-port-control .button{flex:1 1 auto;min-height:44px}.collaboration-advanced>summary small{display:none}}
 
 /* Mobile collaboration keeps the current address and saved connections visible. */
-.mobile-collaboration-hub > .collaboration-current-node-card {
+.mobile-collaboration-hub > .collaboration-current-card, .mobile-collaboration-hub > .collaboration-current-node-card {
   min-width: 0;
   margin: 18px 0 20px;
   padding: 16px;
@@ -262,7 +262,7 @@
   font-size: calc(11px * var(--type-scale, 1));
 }
 @media (max-width: 359px) {
-  .mobile-collaboration-hub > .collaboration-current-node-card { padding: 12px; }
+  .mobile-collaboration-hub > .collaboration-current-card, .mobile-collaboration-hub > .collaboration-current-card, .mobile-collaboration-hub > .collaboration-current-node-card { padding: 12px; }
   .collaboration-current-node-heading { align-items: flex-start; flex-wrap: wrap; }
   .collaboration-current-node-heading .status-badge { margin-left: 50px; }
   .mobile-collaboration-hub .collaboration-list-row { align-items: stretch; flex-wrap: wrap; }
@@ -270,3 +270,88 @@
   .mobile-collaboration-hub .collaboration-list-row > .button { width: 100%; }
 }
 .collaboration-connection-error{margin:0 0 16px;padding:10px 12px;border:1px solid var(--danger);border-radius:var(--radius-md);background:var(--danger-bg);overflow-wrap:anywhere}
+
+/* Current node first: identity, address and share actions, then node switching.
+   Desktops own a local node and inbound permissions; phones only connect out. */
+.collaboration-current-card{min-width:0;margin:20px 0 16px;padding:22px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);box-shadow:0 2px 10px #202c2007}
+.collaboration-current-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;min-width:0}
+.collaboration-current-heading>div{min-width:0;flex:1}
+.collaboration-current-heading .eyebrow{margin-bottom:4px;color:var(--muted);font-size:calc(10px * var(--type-scale,1));letter-spacing:.04em}
+.collaboration-current-heading h2{margin:0;font-size:calc(17px * var(--type-scale,1));font-weight:600;letter-spacing:-.01em}
+.collaboration-current-heading p{margin:4px 0 0;color:var(--muted);font-size:calc(11px * var(--type-scale,1));line-height:1.6;overflow-wrap:anywhere}
+.collaboration-current-heading>.status-badge{flex:none;margin-top:2px}
+.collaboration-address{display:block;min-width:0;margin-top:16px;padding:11px 12px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);color:var(--text);font:calc(12px * var(--type-scale,1))/1.6 var(--mono);overflow-wrap:anywhere;white-space:normal}
+.collaboration-current-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.collaboration-current-meta>span{padding:3px 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:calc(9px * var(--type-scale,1));line-height:1.5}
+.collaboration-current-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.collaboration-current-actions>.button{min-height:38px;justify-content:center;white-space:normal}
+.collaboration-address-hint{margin:10px 0 0;color:var(--muted);font-size:calc(10px * var(--type-scale,1));line-height:1.75;overflow-wrap:anywhere}
+.collaboration-current-note{display:flex;align-items:flex-start;gap:8px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:calc(10px * var(--type-scale,1));line-height:1.75;overflow-wrap:anywhere}
+.collaboration-current-note>.icon{width:14px;height:14px;margin-top:3px;flex:none}
+.collaboration-node-switcher{display:grid;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);min-width:0}
+.collaboration-subheading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}
+.collaboration-subheading strong{font-size:calc(12px * var(--type-scale,1));font-weight:600}
+.collaboration-subheading>span{color:var(--muted);font-size:calc(9px * var(--type-scale,1));line-height:1.5;text-align:right}
+.collaboration-node-switch{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--card)}
+.collaboration-node-switch.current{border-color:var(--accent-line);background:var(--accent-bg)}
+.collaboration-node-switch>.status-dot{margin-top:1px}
+.collaboration-node-switch-copy{min-width:0;flex:1;display:grid;gap:2px}
+.collaboration-node-switch-copy strong,.collaboration-node-switch-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.collaboration-node-switch-copy strong{font-size:calc(11px * var(--type-scale,1));font-weight:550}
+.collaboration-node-switch-copy small{color:var(--muted);font-size:calc(9px * var(--type-scale,1))}
+.collaboration-node-tag{margin-left:5px;padding:1px 5px;border:1px solid var(--line-strong);border-radius:4px;color:var(--muted);font-size:calc(8px * var(--type-scale,1));font-weight:400;vertical-align:1px}
+.collaboration-node-switch.current .collaboration-node-tag{border-color:var(--accent-line);color:var(--accent)}
+.collaboration-node-state{flex:none;padding:3px 7px;border-radius:5px;background:var(--panel);color:var(--muted);font-size:calc(9px * var(--type-scale,1));white-space:nowrap}
+.collaboration-node-switch.current .collaboration-node-state{background:var(--card);color:var(--accent)}
+.collaboration-node-switch>.button{flex:none;min-height:34px;padding:5px 10px;font-size:calc(10px * var(--type-scale,1))}
+.collaboration-access-block{display:grid;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);min-width:0}
+.collaboration-access-block .collaboration-action-card{padding:12px 0 4px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none}
+.collaboration-access-block .collaboration-action-card:first-of-type{border-top:0;padding-top:4px}
+.collaboration-access-block .collaboration-action-heading h2{font-size:calc(13px * var(--type-scale,1))}
+.collaboration-access-block .collaboration-action-icon{width:32px;height:32px}
+.collaboration-card-note{display:flex;align-items:flex-start;gap:7px;margin:10px 0 0;color:var(--muted);font-size:calc(10px * var(--type-scale,1));line-height:1.7;overflow-wrap:anywhere}
+.collaboration-card-note>.icon{width:13px;height:13px;margin-top:3px;flex:none}
+.collaboration-connect-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px}
+.collaboration-connect-row>.button{min-height:36px}
+.collaboration-discovered{display:grid;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);min-width:0}
+.collaboration-discovered-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.collaboration-discovered-heading>div{display:grid;gap:2px;min-width:0}
+.collaboration-discovered-heading strong{font-size:calc(11px * var(--type-scale,1));font-weight:550}
+.collaboration-discovered-heading span{color:var(--muted);font-size:calc(9px * var(--type-scale,1));line-height:1.5;overflow-wrap:anywhere}
+.collaboration-discovered-heading>.button{flex:none;min-height:32px;padding:5px 9px;font-size:calc(10px * var(--type-scale,1))}
+.collaboration-discovered-empty{display:grid;justify-items:center;gap:4px;padding:16px 12px;border:1px dashed var(--line-strong);border-radius:var(--radius-md);text-align:center;color:var(--muted);font-size:calc(10px * var(--type-scale,1));line-height:1.7}
+.collaboration-discovered-empty>.icon{width:20px;height:20px;color:var(--line-strong)}
+.collaboration-discovered-empty strong{color:var(--text);font-size:calc(11px * var(--type-scale,1))}
+.collaboration-scanner{display:grid;gap:8px;margin-top:14px;padding:12px;border:1px dashed var(--line-strong);border-radius:var(--radius-md);background:var(--panel)}
+.collaboration-scanner video{width:100%;max-height:280px;object-fit:cover;border-radius:var(--radius-sm)}
+.collaboration-scanner p{margin:0;color:var(--muted);font-size:calc(10px * var(--type-scale,1));line-height:1.7}
+.collaboration-boundary{display:flex;align-items:flex-start;gap:8px;margin:22px 0 0;color:var(--muted);font-size:calc(10px * var(--type-scale,1));line-height:1.8;overflow-wrap:anywhere}
+.collaboration-boundary>.icon{width:14px;height:14px;margin-top:3px;flex:none}
+.node-settings-dialog .modal-body{display:grid;gap:10px;min-width:0}
+.node-settings-heading{display:flex;align-items:center;gap:10px;min-width:0}
+.node-settings-heading>div{display:grid;gap:2px;min-width:0}
+.node-settings-heading strong{font-size:calc(13px * var(--type-scale,1));font-weight:550}
+.node-settings-heading small{color:var(--muted);font-size:calc(10px * var(--type-scale,1))}
+.node-settings-meta{display:flex;flex-wrap:wrap;gap:6px}
+.node-settings-meta>span{padding:3px 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:calc(9px * var(--type-scale,1))}
+.node-settings-dialog .modal-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+@media(max-width:900px){.collaboration-current-heading{flex-wrap:wrap}.collaboration-node-switch{flex-wrap:wrap}.collaboration-node-state{margin-left:22px}}
+@media(max-width:700px){
+  .collaboration-current-card{padding:16px}
+  .collaboration-current-heading h2{font-size:calc(16px * var(--type-scale,1))}
+  .collaboration-current-actions>.button{flex:1 1 100%;min-height:44px}
+  .collaboration-node-switch{padding:10px;gap:8px}
+  .collaboration-node-switch>.button{min-height:44px;flex:1 1 40%}
+  .collaboration-node-state{margin-left:0}
+  .collaboration-node-switch-copy strong,.collaboration-node-switch-copy small{white-space:normal;overflow-wrap:anywhere}
+  .collaboration-connect-row{display:grid;gap:8px}
+  .collaboration-connect-row>.button{min-height:44px;width:100%}
+  .collaboration-discovered-heading{flex-wrap:wrap}
+  .collaboration-discovered-heading>.button{min-height:44px}
+  .collaboration-access-block{display:none}
+  .collaboration-boundary{margin-top:18px}
+  .node-settings-dialog .modal-actions{flex-direction:column-reverse}
+  .node-settings-dialog .modal-actions>.button{width:100%;min-height:44px}
+  .mobile-collaboration-hub>.collaboration-current-card{margin:16px 0 18px}
+}

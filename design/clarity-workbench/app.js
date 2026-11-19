@@ -382,6 +382,61 @@ async function toggleFullscreen() {
   finally {fullscreenPending=false;syncFullscreen();if(restoreFocus)button.focus({preventScroll:true});}
 }
 document.addEventListener('fullscreenchange',syncFullscreen);
+const prototypeAttachments = [];
+function renderPrototypeAttachments() {
+  const list = document.querySelector('#prototype-attachment-list');
+  list.replaceChildren();
+  list.hidden = prototypeAttachments.length === 0;
+  for (const attachment of prototypeAttachments) {
+    const row = document.createElement('div');row.className = 'prototype-attachment';
+    const icon = document.createElement('i');icon.dataset.icon = 'file';
+    const name = document.createElement('strong');name.textContent = attachment.name;name.title = attachment.name;
+    const size = document.createElement('span');size.textContent = `${(attachment.size / 1024).toFixed(1)} KiB · 本地`;
+    const remove = document.createElement('button');remove.className = 'icon-button prototype-attachment-remove';remove.type = 'button';
+    remove.setAttribute('aria-label',`移除 ${attachment.name}`);remove.title = `移除 ${attachment.name}`;remove.textContent = '×';
+    remove.addEventListener('click',() => {
+      const index = prototypeAttachments.indexOf(attachment);
+      if (index >= 0) prototypeAttachments.splice(index,1);
+      renderPrototypeAttachments();
+    });
+    row.append(icon,name,size,remove);list.append(row);
+  }
+  mountIcons(list);
+}
+async function addPrototypeFiles(fileList,types = []) {
+  const files = Array.from(fileList || []);
+  const fallback = files.length || !navigator.clipboard?.read ? [] : await (async () => {
+    const copies = [];
+    for (const item of await navigator.clipboard.read()) {
+      for (const type of item.types || []) {
+        if (type.startsWith('text/') || types.includes('Files') || types.some(value => /uri-list|file-url|file-list/i.test(value))) {
+          const blob = await item.getType(type);const extension = type.split('/')[1]?.split('+')[0] || 'bin';
+          copies.push(new File([blob],`粘贴附件.${extension}`,{type}));
+        }
+      }
+    }
+    return copies;
+  })().catch(() => []);
+  for (const file of [...files,...fallback]) {
+    if (prototypeAttachments.some(item => item.name === file.name && item.size === file.size && item.type === file.type)) continue;
+    prototypeAttachments.push({name:file.name,size:file.size,type:file.type});
+  }
+  renderPrototypeAttachments();
+  if (files.length || fallback.length) toast('设计预览：已将复制的文件保留在本次页面内存中，不会上传。');
+  else if (types.some(value => /Files|uri-list|file-url|file-list/i.test(value))) toast('设计预览：检测到复制文件，但浏览器未提供文件内容；请点按钮选择文件。');
+}
+function prototypeClipboardFiles(clipboard) {
+  const files = [
+    ...Array.from(clipboard?.files || []),
+    ...Array.from(clipboard?.items || []).filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean),
+  ];
+  const seen = new Set();
+  return files.filter(file => {
+    const key = `${file.name}:${file.size}:${file.type}`;
+    if (seen.has(key)) return false;
+    seen.add(key);return true;
+  });
+}
 function toggleToolDetails() {
   const records=document.querySelector('#tool-records');const detailed=records.dataset.rendering!=='detailed';
   records.dataset.rendering=detailed?'detailed':'simple';
@@ -395,6 +450,32 @@ document.addEventListener('click', event => {
   if (button.dataset.toast) {
     if (button.closest('.project-heading')) event.preventDefault();
     toast(button.dataset.toast);
+  }
+  if (button.dataset.copy === 'assistant-reply') {
+    const text = button.closest('.assistant-message')?.querySelector('.assistant-content')?.innerText.trim();
+    if (!text) return;
+    event.preventDefault();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => toast('设计预览：已复制回复文本。')).catch(() => toast('复制失败，请手动选择回复内容。'));
+    } else {
+      const helper = document.createElement('textarea');helper.value = text;helper.setAttribute('readonly','');
+      helper.style.cssText = 'position:fixed;top:-1000px;opacity:0';document.body.append(helper);helper.select();
+      const copied = document.execCommand?.('copy');helper.remove();
+      toast(copied ? '设计预览：已复制回复文本。' : '复制失败，请手动选择回复内容。');
+    }
+    return;
+  }
+  if (button.dataset.action === 'attachment-paste') {
+    event.preventDefault();
+    if (navigator.clipboard?.read) {
+      navigator.clipboard.read().then(items => {
+        const files = [];
+        return Promise.all(items.flatMap(item => (item.types || []).filter(type => !type.startsWith('text/')).map(async type => {
+          const blob = await item.getType(type);files.push(new File([blob],`粘贴附件.${type.split('/')[1]?.split('+')[0] || 'bin'}`,{type}));
+        }))).then(() => files);
+      }).then(files => addPrototypeFiles(files,['Files'])).catch(() => document.querySelector('#prototype-attachment-input').click());
+    } else { document.querySelector('#prototype-attachment-input').click(); }
+    return;
   }
   if (button.dataset.settingsPanel) {
     const panel = button.dataset.settingsPanel;
@@ -519,6 +600,21 @@ document.querySelector('#provider-search')?.addEventListener('input', event => {
   for (const row of document.querySelectorAll('.provider-row')) row.hidden = !row.textContent.toLowerCase().includes(query);
 });
 document.querySelector('#prompt').addEventListener('input', event => { document.querySelector('.send-button').disabled = !event.target.value.trim(); });
+document.querySelector('#prompt').addEventListener('paste', event => {
+  const clipboard = event.clipboardData;
+  const types = Array.from(clipboard?.types || []);
+  const files = prototypeClipboardFiles(clipboard);
+  const uriList = clipboard?.getData?.('text/uri-list') || '';
+  const plain = clipboard?.getData?.('text/plain') || '';
+  const copiedFile = files.length > 0 || types.includes('Files') || types.some(type => /uri-list|file-url|file-list/i.test(type)) || /^file:\/\//i.test(plain.trim()) || (/^[A-Za-z]:[\\/]/.test(plain.trim()) && plain.length < 500);
+  if (!copiedFile) return;
+  event.preventDefault();
+  void addPrototypeFiles(files,types.length ? types : [...(/^file:\/\//i.test(uriList) ? ['text/uri-list'] : [])]);
+});
+document.querySelector('#prototype-attachment-input').addEventListener('change',event => {
+  void addPrototypeFiles(event.target.files);
+  event.target.value = '';
+});
 document.querySelector('#prompt').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (event.target.value.trim()) document.querySelector('.send-button').click(); } });
 document.addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'j') {event.preventDefault();openHome();document.querySelector('#prompt').focus();}
@@ -554,3 +650,131 @@ function routeHash() {
 }
 window.addEventListener('hashchange',routeHash);
 mountIcons();syncFullscreen();renderResources();renderSessionLists();syncPreference();routeHash();
+
+// Node discovery is a read-only scan: refreshing only re-renders the demo list,
+// never opens a connection and never grants access. Each refresh alternates the
+// found and zero-result states so both can be reviewed without a real scan.
+document.addEventListener('click', event => {
+  const refresh = event.target.closest('[data-discover="refresh"]');
+  if (!refresh) return;
+  const panel = document.querySelector('.collaboration-discovered');
+  const status = document.querySelector('#discovered-status');
+  const list = panel?.querySelector('.collaboration-discovered-list');
+  const empty = panel?.querySelector('.collaboration-discovered-empty');
+  if (!panel || !status || !list || !empty || panel.dataset.scanning === 'true') return;
+  const showNodes = list.hidden;
+  panel.dataset.scanning = 'true';
+  refresh.setAttribute('aria-busy','true');
+  status.textContent = '正在发现附近节点…';
+  setTimeout(() => {
+    panel.dataset.scanning = 'false';
+    refresh.removeAttribute('aria-busy');
+    list.hidden = !showNodes;
+    empty.hidden = showNodes;
+    status.textContent = showNodes
+      ? `自动发现 · 刚刚更新 · ${panel.querySelectorAll('.collaboration-discovered-row').length} 个节点`
+      : '自动发现 · 刚刚更新 · 未发现节点';
+    toast(showNodes
+      ? '设计预览：重新发现到 2 个节点示例。'
+      : '设计预览：演示未发现任何节点的空态，扫码与输入地址仍然可用。');
+  }, 800);
+});
+
+// Multiple nodes stay connected; one is the working node. The local node is
+// always listed first, and switching or per-node settings stay local to this
+// device: they never touch the node's projects, sessions or authorizations.
+const nodeSwitchRow = id => document.querySelector(`.collaboration-node-switch[data-node-id="${id}"]`);
+function readNode(id) {
+  const row = nodeSwitchRow(id);
+  if (!row) return null;
+  return {
+    id,
+    kind: row.dataset.nodeKind || 'remote',
+    name: row.dataset.nodeName,
+    address: row.dataset.nodeAddress,
+    transport: row.dataset.nodeTransport,
+    auth: row.dataset.nodeAuth,
+    privacy: row.dataset.nodePrivacy,
+    scope: row.dataset.nodeScope,
+  };
+}
+function markCurrentNode(id) {
+  document.querySelectorAll('.collaboration-node-switch').forEach(row => {
+    const current = row.dataset.nodeId === id;
+    row.classList.toggle('current', current);
+    const state = row.querySelector('.collaboration-node-state');
+    if (state) state.textContent = current ? '当前' : '已连接';
+    const switchButton = row.querySelector('[data-node-switch]');
+    if (switchButton) switchButton.hidden = current;
+  });
+  document.querySelectorAll('.collaboration-node-row').forEach(row => {
+    const current = row.dataset.nodeId === id;
+    row.classList.toggle('current', current);
+    const small = row.querySelector('small');
+    const seen = row.dataset.nodeSeen || '';
+    if (small) small.textContent = current ? `当前节点 · ${seen}` : seen;
+  });
+  const node = readNode(id);
+  if (!node) return;
+  const local = node.kind === 'local';
+  const text = (selector, value) => {
+    const element = document.querySelector(selector);
+    if (element) element.textContent = value;
+  };
+  text('#current-node-kind', local ? '当前节点 · 本机' : '当前节点 · 远程');
+  text('#current-node-name', node.name);
+  text('#current-node-scope', node.scope);
+  text('#current-node-address', node.address);
+  text('#current-node-transport', node.transport);
+  text('#current-node-auth', node.auth);
+  text('#current-node-privacy', node.privacy);
+  text('#current-node-address-hint', local
+    ? '本机节点固定在第一项；本机连接走 RPC，上方地址用于其他设备访问。'
+    : '远程节点使用 HTTP(S)；断开只改变本机使用哪个节点，不改变节点上的项目、会话与授权。');
+  const card = document.querySelector('.collaboration-current-card');
+  if (card) card.dataset.currentKind = node.kind;
+  const access = document.querySelector('#current-node-access');
+  if (access) access.hidden = !local;
+  const accessNote = document.querySelector('#current-node-access-note');
+  if (accessNote) accessNote.hidden = local;
+  const disconnect = document.querySelector('#current-node-disconnect');
+  if (disconnect) disconnect.hidden = local;
+}
+let nodeSettingsTarget = null;
+function openNodeSettings(id) {
+  const node = readNode(id);
+  if (!node) return;
+  nodeSettingsTarget = id;
+  const current = nodeSwitchRow(id)?.classList.contains('current');
+  document.querySelector('#node-settings-title').textContent = `节点设置 · ${node.name}`;
+  document.querySelector('#node-settings-address').textContent = node.address;
+  document.querySelector('#node-settings-status').textContent = current
+    ? (node.kind === 'local' ? '当前节点 · 本机' : '当前节点 · 已连接')
+    : (node.kind === 'local' ? '本机 · 未在使用' : '已连接 · 未在使用');
+  const switchButton = document.querySelector('#node-settings-switch');
+  if (switchButton) {
+    switchButton.disabled = Boolean(current);
+    switchButton.textContent = current ? '当前节点' : '切换到该节点';
+  }
+  document.querySelector('#node-settings-dialog')?.showModal();
+}
+document.addEventListener('click', event => {
+  const switchButton = event.target.closest('[data-node-switch]');
+  if (switchButton) {
+    const node = readNode(switchButton.dataset.nodeSwitch);
+    markCurrentNode(switchButton.dataset.nodeSwitch);
+    if (node) toast(`设计预览：已把 ${node.name} 设为当前节点，不发起真实连接。`);
+    return;
+  }
+  const settingsButton = event.target.closest('[data-node-settings]');
+  if (settingsButton) {
+    openNodeSettings(settingsButton.dataset.nodeSettings);
+  }
+});
+document.querySelector('#node-settings-switch')?.addEventListener('click', () => {
+  if (!nodeSettingsTarget) return;
+  const node = readNode(nodeSettingsTarget);
+  markCurrentNode(nodeSettingsTarget);
+  document.querySelector('#node-settings-dialog')?.close();
+  if (node) toast(`设计预览：已把 ${node.name} 设为当前节点，不保存设置。`);
+});
