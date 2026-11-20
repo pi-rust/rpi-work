@@ -23,6 +23,9 @@ web = ["dioxus/web"]
 dioxus = { version = "0.7", features = ["desktop"] }
 work-host = { path = "../../crates/host/work-host" }
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+# Native clipboard file lists are needed for Finder/Explorer "copy file -> paste";
+# browser clipboardData does not expose local paths on every desktop WebView.
+arboard = { version = "3.6", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 dioxus = { version = "0.7", features = ["mobile"] }

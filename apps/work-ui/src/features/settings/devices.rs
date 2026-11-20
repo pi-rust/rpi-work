@@ -102,6 +102,8 @@ const decodeFrame=source=>{
 };";
 
 fn connection_address(raw: &str, port: u16) -> Result<String, String> {
+    // Both encrypted envelopes and legacy plaintext payloads are accepted here.
+    let raw = crate::app::qr_codec::open(raw)?;
     let raw = raw.trim();
     if raw.len() > 4096 {
         return Err("连接信息过长。".into());
@@ -261,11 +263,7 @@ async fn set_desktop_access(web: bool, enabled: bool) -> Result<(), String> {
 }
 
 #[component]
-fn LocalAccessCards(
-    mut sharing: Signal<DesktopSharing>,
-    available: bool,
-    onshare: EventHandler<()>,
-) -> Element {
+fn LocalAccessCards(mut sharing: Signal<DesktopSharing>, available: bool) -> Element {
     let mut busy = use_signal(|| false);
     let mut error = use_signal(String::new);
     let mut guide = use_signal(|| false);
@@ -290,68 +288,63 @@ fn LocalAccessCards(
         });
     };
     rsx! {
-        section { class: "collaboration-action-card assist-card", aria_label: "允许远程协作",
-            div { class: "collaboration-action-heading",
-                span { class: "collaboration-action-icon assist", Icon { name: "shield" } }
-                div { h2 { "允许远程协作" } p { "授权其他设备连接这台电脑，继续处理项目、会话和任务。" } }
-                button {
-                    class: if snapshot.enabled { "sharing-switch enabled" } else { "sharing-switch" },
-                    role: "switch", aria_label: "允许远程协作", aria_checked: snapshot.enabled,
-                    disabled: !available || !snapshot.listening || *busy.read(),
-                    onclick: move |_| change(false),
-                    span { class: "sharing-switch-track", span {} }
-                    span { if snapshot.enabled { "已开启" } else { "未开启" } }
-                }
+        div { class: "collaboration-access-row", aria_label: "允许远程协作",
+            div {
+                strong { "允许远程协助" }
+                span { "可信设备可访问项目、会话和运行任务，开启后仍需节点鉴权。" }
             }
-            if !available {
-                p { class: "connection-help", "请在拥有该工作节点的电脑上管理远程协作。" }
-            } else if !snapshot.listening {
-                p { class: "connection-form-error", role: "alert", "{snapshot.status}" }
-            } else {
-                div { class: "sharing-ready",
-                    Icon { name: if snapshot.enabled { "check" } else { "info" } }
-                    span { if snapshot.enabled { "远程协作已开启，可以分享连接信息。" } else { "节点入口已就绪，开启后可授权其他设备。" } }
-                }
-                if snapshot.enabled {
-                    button { class: "button", onclick: move |_| onshare.call(()), "分享连接信息" }
-                }
-            }
-            if !snapshot.warning.is_empty() {
-                p { class: "connection-form-error", role: "alert", "{snapshot.warning}" }
+            button {
+                class: if snapshot.enabled { "sharing-switch enabled" } else { "sharing-switch" },
+                role: "switch", aria_label: "允许远程协作", aria_checked: snapshot.enabled,
+                disabled: !available || !snapshot.listening || *busy.read(),
+                onclick: move |_| change(false),
+                span { class: "sharing-switch-track", span {} }
+                span { if snapshot.enabled { "已开启" } else { "未开启" } }
             }
         }
-        section { class: "collaboration-action-card web-access-card", aria_label: "允许 Web 访问",
-            div { class: "collaboration-action-heading",
-                span { class: "collaboration-action-icon", Icon { name: "server" } }
-                div { h2 { "允许 Web 访问" } p { "使用 Work 自带的网页界面，在浏览器中处理同一节点的工作。" } }
-                button {
-                    class: if snapshot.web.enabled { "sharing-switch enabled" } else { "sharing-switch" },
-                    role: "switch", aria_label: "允许 Web 访问", aria_checked: snapshot.web.enabled,
-                    disabled: !available || !snapshot.web.listening || *busy.read(),
-                    onclick: move |_| change(true),
-                    span { class: "sharing-switch-track", span {} }
-                    span { if snapshot.web.enabled { "已开启" } else { "未开启" } }
-                }
+        if !available {
+            p { class: "collaboration-card-note", "请在拥有该工作节点的电脑上管理远程协作。" }
+        } else if !snapshot.listening {
+            p { class: "connection-form-error", role: "alert", "{snapshot.status}" }
+        } else {
+            p { class: "collaboration-card-note",
+                if snapshot.enabled { "远程协作已开启，其他设备可用密码连接。" } else { "节点入口已就绪，开启后其他设备可以连接。" }
             }
-            if available {
-                if !snapshot.web.listening {
+        }
+        if !snapshot.warning.is_empty() {
+            p { class: "connection-form-error", role: "alert", "{snapshot.warning}" }
+        }
+        div { class: "collaboration-access-row", aria_label: "允许 Web 访问",
+            div {
+                strong { "允许 Web 访问" }
+                span { "浏览器可通过受控入口访问当前工作节点，与 App 共用项目和会话。" }
+            }
+            button {
+                class: if snapshot.web.enabled { "sharing-switch enabled" } else { "sharing-switch" },
+                role: "switch", aria_label: "允许 Web 访问", aria_checked: snapshot.web.enabled,
+                disabled: !available || !snapshot.web.listening || *busy.read(),
+                onclick: move |_| change(true),
+                span { class: "sharing-switch-track", span {} }
+                span { if snapshot.web.enabled { "已开启" } else { "未开启" } }
+            }
+        }
+        if available {
+            if !snapshot.web.listening {
+                p { class: "connection-form-error", role: "alert", "{snapshot.web.status}" }
+                button { class: "button", onclick: move |_| guide.toggle(), if *guide.read() { "收起指引" } else { "查看准备指引" } }
+                if *guide.read() {
+                    p { class: "collaboration-card-note", "安装包含 Web 资源的完整 Work 桌面包，或将 Work Web 文件放在程序旁的 web 目录，然后重新启动 Work。自定义部署可通过 RPI_WORK_HTTP_ASSETS 指定目录。" }
+                }
+            } else if snapshot.web.enabled && !snapshot.web.url.is_empty() {
+                div { class: "web-entry-row",
+                    code { class: "web-entry-address", "{snapshot.web.url}" }
+                    a { class: "web-entry-link", href: "{snapshot.web.url}", target: "_blank", rel: "noopener noreferrer", aria_label: "打开 Web 入口", title: "在浏览器中打开 Web 入口", "打开" }
+                }
+                if !snapshot.web.status.is_empty() {
                     p { class: "connection-form-error", role: "alert", "{snapshot.web.status}" }
-                    button { class: "button", onclick: move |_| guide.toggle(), if *guide.read() { "收起指引" } else { "查看准备指引" } }
-                    if *guide.read() {
-                        p { class: "connection-help", "安装包含 Web 资源的完整 Work 桌面包，或将 Work Web 文件放在程序旁的 web 目录，然后重新启动 Work。自定义部署可通过 RPI_WORK_HTTP_ASSETS 指定目录。" }
-                    }
-                } else {
-                    p { class: "connection-help", if snapshot.web.enabled { "Web 访问已开启，浏览器仍需登录节点。" } else { "Web 入口已就绪，开启后可使用浏览器访问。" } }
-                    if snapshot.web.enabled && !snapshot.web.url.is_empty() {
-                        a { class: "button web-entry-button", href: "{snapshot.web.url}", target: "_blank", rel: "noopener noreferrer", aria_label: "打开 Web 入口", title: "在浏览器中打开 Web 入口", "打开 Web 入口" }
-                        code { class: "web-entry-address", "{snapshot.web.url}" }
-                    }
-                    if !snapshot.web.status.is_empty() {
-                        p { class: "connection-form-error", role: "alert", "{snapshot.web.status}" }
-                    }
                 }
             } else {
-                p { class: "connection-help", "请在拥有该工作节点的电脑上管理 Web 访问。" }
+                p { class: "collaboration-card-note", "Web 入口已就绪，开启后可使用浏览器访问。" }
             }
         }
         if available {
@@ -403,7 +396,10 @@ fn phone_share_address(value: &str, owned_local: bool) -> Result<String, String>
 }
 
 fn qr_payload(address: &str) -> String {
-    serde_json::json!({ "v": 1, "type": "rpi-work-node-address", "address": address }).to_string()
+    crate::app::qr_codec::seal(
+        &serde_json::json!({ "v": 1, "type": "rpi-work-node-address", "address": address })
+            .to_string(),
+    )
 }
 
 // Pure cleanup: never send a bool into the scanner's String channel.
@@ -748,6 +744,28 @@ pub fn DevicesPage(
             );
         });
     };
+    let mut copy_address = move |(): ()| {
+        let Ok(value) = phone_share_address(&advertised_address.read(), owned_local) else {
+            copy_status.set("请先配置对方可访问的有效地址。".into());
+            return;
+        };
+        let script = format!(
+            "try{{if(!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText({});dioxus.send(true);}}catch(_){{dioxus.send(false);}}",
+            serde_json::to_string(&value).expect("JSON strings serialize")
+        );
+        let mut evaluator = document::eval(&script);
+        spawn(async move {
+            let copied = matches!(evaluator.recv::<bool>().await, Ok(true));
+            copy_status.set(
+                if copied {
+                    "已复制连接地址。"
+                } else {
+                    "无法自动复制，请手动选择地址。"
+                }
+                .into(),
+            );
+        });
+    };
     let mut connect_address = move |(): ()| {
         let candidate = phone_address.read().clone();
         match connection_address(&candidate, remote_port) {
@@ -805,6 +823,16 @@ pub fn DevicesPage(
                     discovery_results.set(nodes);
                 }
                 Err(message) => discovery_status.set(message),
+            }
+        });
+    };
+    // mDNS advertising follows the remote-collaboration switch; expose the same
+    // state here so discovery reads as one decision, not two conflicting ones.
+    let toggle_discovery = move |enabled: bool| {
+        let mut state = sharing_state;
+        spawn(async move {
+            if set_desktop_access(false, enabled).await.is_ok() {
+                state.set(desktop_sharing().await);
             }
         });
     };
@@ -956,24 +984,8 @@ pub fn DevicesPage(
                             span { "密码不会保存" }
                         }
                         div { class: "collaboration-current-actions",
-                            button { class: "button", r#type: "button", disabled: !share_available, aria_label: "分享当前节点连接", onclick: move |_| open_share(()), Icon { name: "phone" } "分享当前连接" }
-                            AuthorizationQrButton {
-                                owned_local: false, target: current_address.clone(), available: online && mobile_authorized,
-                                onopen: move |()| { qr_open.set(false); pairing.request.with_mut(authorization_offer::Request::show); },
-                            }
-                            button { class: "button", r#type: "button", disabled: session_control.is_none() && navigation.is_none(), onclick: move |_| {
-                                if let Some(control) = session_control { control.forget.call(()); }
-                                else if let Some(nav) = navigation { nav.navigate.call(nav.home_address.peek().clone()); }
-                            }, "断开连接" }
-                        }
-                        p { class: "collaboration-address-hint", "切换只改变这台手机使用哪个节点；访问权限在拥有它的电脑上管理。" }
-                    }
-                    section { class: "collaboration-action-card connect-card", aria_label: "连接其他节点",
-                        div { class: "collaboration-action-heading",
-                            span { class: "collaboration-action-icon", Icon { name: "cloud" } }
-                            div { h2 { "连接其他节点" } p { "扫码或输入地址连接另一台电脑；发现结果仍需读取信息并确认。" } }
-                        }
-                        div { class: "collaboration-connect-actions",
+                            button { class: "button", r#type: "button", disabled: !share_available, aria_label: "分享当前节点连接", onclick: move |_| open_share(()), Icon { name: "image" } "显示地址二维码" }
+                            button { class: "button", r#type: "button", disabled: !share_available, onclick: move |_| copy_address(()), Icon { name: "copy" } "复制地址" }
                             button { class: "button primary mobile-scan-action", r#type: "button", disabled: busy,
                                 onclick: move |_| {
                                     if *scanning.read() {
@@ -1008,19 +1020,14 @@ pub fn DevicesPage(
                                 Icon { name: "image" }
                                 if *scanning.read() { "关闭相机" } else { "扫码连接" }
                             }
-                            button { class: "button", r#type: "button", disabled: busy,
-                                onclick: move |_| {
-                                    let next = !*manual_open.peek();
-                                    manual_open.set(next);
-                                    password.set(NodePassword::default());
-                                    error.set(String::new());
-                                },
-                                Icon { name: "code" } "输入地址"
-                            }
+                            button { class: "button", r#type: "button", disabled: session_control.is_none() && navigation.is_none(), onclick: move |_| {
+                                if let Some(control) = session_control { control.forget.call(()); }
+                                else if let Some(nav) = navigation { nav.navigate.call(nav.home_address.peek().clone()); }
+                            }, "断开连接" }
                         }
+                        video { id: "device-camera", playsinline: true, muted: true, hidden: true }
                         if *scanning.read() {
                             div { class: "collaboration-scanner",
-                                video { id: "device-camera", playsinline: true, muted: true, hidden: true }
                                 p { role: "status", "{scanner_status}" }
                             }
                         } else if phone_address.read().is_empty() && !scanner_status.read().is_empty() {
@@ -1035,6 +1042,38 @@ pub fn DevicesPage(
                                     button { class: "button", r#type: "button", onclick: move |_| { phone_address.set(String::new()); scanner_status.set(String::new()); error.set(String::new()); }, "取消" }
                                     button { class: "button primary", r#type: "button", disabled: busy || *preview_busy.read(), onclick: move |_| connect_address(()), if *preview_busy.read() { "正在读取节点信息…" } else { "连接这台电脑" } }
                                 }
+                            }
+                        }
+                        if !copy_status.read().is_empty() {
+                            p { class: "collaboration-card-note", role: "status", "{copy_status}" }
+                        }
+                        p { class: "collaboration-address-hint", "切换只改变这台手机使用哪个节点；访问权限在拥有它的电脑上管理。" }
+                    }
+                    section { class: "collaboration-action-card connect-card", aria_label: "连接其他节点",
+                        div { class: "collaboration-action-heading",
+                            span { class: "collaboration-action-icon", Icon { name: "cloud" } }
+                            div { h2 { "连接其他节点" } p { "让同一网络中的设备发现这个节点，或从附近节点、地址直接连接。" } }
+                        }
+                        div { class: "collaboration-switch-row",
+                            div { strong { "允许局域网发现" } span { "开启后，附近设备在连接时能自动找到这个节点地址。" } }
+                            button {
+                                class: if sharing_state.read().enabled { "sharing-switch enabled" } else { "sharing-switch" },
+                                role: "switch", aria_label: "允许局域网发现", aria_checked: sharing_state.read().enabled,
+                                disabled: true,
+                                span { class: "sharing-switch-track", span {} }
+                                span { if sharing_state.read().enabled { "已开启" } else { "未开启" } }
+                            }
+                        }
+                        p { class: "collaboration-card-note", "只有拥有该节点的电脑可以控制局域网发现。" }
+                        div { class: "collaboration-connect-actions",
+                            button { class: "button", r#type: "button", disabled: busy,
+                                onclick: move |_| {
+                                    let next = !*manual_open.peek();
+                                    manual_open.set(next);
+                                    password.set(NodePassword::default());
+                                    error.set(String::new());
+                                },
+                                Icon { name: "code" } "输入地址"
                             }
                         }
                         if *manual_open.read() {
@@ -1162,9 +1201,12 @@ pub fn DevicesPage(
                             }
                         }
                         div { class: "collaboration-current-actions",
-                            button { class: "button primary", r#type: "button", disabled: !share_available, onclick: move |_| open_share(()), Icon { name: "image" } "分享当前连接" }
+                            button { class: "button primary", r#type: "button", disabled: !share_available, onclick: move |_| open_share(()), Icon { name: "image" } "显示地址二维码" }
+                            button { class: "button", r#type: "button", disabled: !share_available, onclick: move |_| copy_address(()), Icon { name: "copy" } "复制地址" }
                             AuthorizationQrButton {
-                                owned_local: false, target: current_address.clone(), available: online,
+                                owned_local,
+                                target: if owned_local { if sharing.public_url.is_empty() { sharing.app_url.clone() } else { sharing.public_url.clone() } } else { current_address.clone() },
+                                available: online && if owned_local { owns_desktop && sharing.listening && sharing.enabled } else { remote_authenticated },
                                 onopen: move |()| { qr_open.set(false); pairing.request.with_mut(authorization_offer::Request::show); },
                             }
                             if !owned_local && owns_desktop {
@@ -1175,6 +1217,9 @@ pub fn DevicesPage(
                                     onconnect.call(());
                                 }, "断开连接" }
                             }
+                        }
+                        if !copy_status.read().is_empty() {
+                            p { class: "collaboration-card-note", role: "status", "{copy_status}" }
                         }
                         if owned_local {
                             p { class: "collaboration-address-hint", "本机节点固定在第一项；本机连接走 RPC，上方地址用于其他设备访问。" }
@@ -1231,7 +1276,6 @@ pub fn DevicesPage(
                                 LocalAccessCards {
                                     sharing: sharing_state,
                                     available: owns_desktop && owned_local,
-                                    onshare: move |()| pairing.request.with_mut(authorization_offer::Request::show),
                                 }
                             }
                         } else {
@@ -1242,31 +1286,50 @@ pub fn DevicesPage(
                     section { class: "collaboration-action-card discovery-card connect-card", aria_label: "连接其他节点",
                         div { class: "collaboration-action-heading",
                             span { class: "collaboration-action-icon", Icon { name: "cloud" } }
-                            div { h2 { "连接其他节点" } p { "搜索同一网络中的节点，或从地址直接连接；发现结果仍需读取信息并确认。" } }
+                            div { h2 { "连接其他节点" } p { "让同一网络中的设备发现这个节点，或从附近节点、地址直接连接。" } }
                         }
-                        div { class: "collaboration-connect-row",
-                            button { class: "button primary", r#type: "button", disabled: busy, onclick: move |_| { error.set(String::new()); remote_open.toggle(); }, "连接设备" }
-                            button { class: "button", r#type: "button", disabled: *discovery_busy.read() || busy, onclick: move |_| discover_lan(()), Icon { name: "refresh" } if *discovery_busy.read() { "正在发现…" } else { "刷新附近节点" } }
-                            if !discovery_status.read().is_empty() { span { class: "collaboration-action-hint", role: "status", "{discovery_status}" } }
+                        div { class: "collaboration-switch-row",
+                            div { strong { "允许局域网发现" } span { "开启后，附近设备在连接时能自动找到这个节点地址。" } }
+                            button {
+                                class: if sharing_state.read().enabled { "sharing-switch enabled" } else { "sharing-switch" },
+                                role: "switch", aria_label: "允许局域网发现", aria_checked: sharing_state.read().enabled,
+                                disabled: !(owns_desktop && owned_local),
+                                onclick: move |_| toggle_discovery(!sharing_state.read().enabled),
+                                span { class: "sharing-switch-track", span {} }
+                                span { if sharing_state.read().enabled { "已开启" } else { "未开启" } }
+                            }
                         }
-                        if !discovery_results.read().is_empty() {
-                            div { class: "discovered-node-list", role: "list",
-                                for node in discovery_results.read().clone() {
-                                    div { class: "discovered-node-row", role: "listitem",
-                                        div { class: "collaboration-device-copy",
-                                            strong { "{node.node_id}" }
-                                            small { "{node.endpoint} · {node.authentication}" }
+                        if !(owns_desktop && owned_local) {
+                            p { class: "collaboration-card-note", "只有拥有该节点的电脑可以控制局域网发现。" }
+                        }
+                        div { class: "collaboration-connect-actions",
+                            button { class: "button primary", r#type: "button", disabled: busy, onclick: move |_| { error.set(String::new()); remote_open.toggle(); }, Icon { name: "code" } "输入地址" }
+                        }
+                        div { class: "collaboration-discovered",
+                            div { class: "collaboration-discovered-heading",
+                                div { strong { "附近节点" } span { role: "status", if discovery_status.read().is_empty() { "自动发现 · 手动刷新" } else { "{discovery_status}" } } }
+                                button { class: "button ghost", r#type: "button", disabled: *discovery_busy.read() || busy, onclick: move |_| discover_lan(()), Icon { name: "refresh" } if *discovery_busy.read() { "正在发现…" } else { "刷新发现" } }
+                            }
+                            if !discovery_results.read().is_empty() {
+                                div { class: "discovered-node-list", role: "list",
+                                    for node in discovery_results.read().clone() {
+                                        div { class: "discovered-node-row", role: "listitem",
+                                            div { class: "collaboration-device-copy",
+                                                strong { "{node.node_id}" }
+                                                small { "{node.endpoint} · {node.authentication}" }
+                                            }
+                                            button { class: "button", disabled: *preview_busy.read(), onclick: { let node = node.clone(); move |_| preview.set(Some(node.clone())) }, "连接" }
                                         }
-                                        button { class: "button", disabled: *preview_busy.read(), onclick: { let node = node.clone(); move |_| preview.set(Some(node.clone())) }, "查看信息" }
                                     }
                                 }
+                            } else if !*discovery_busy.read() {
+                                div { class: "collaboration-discovered-empty",
+                                    Icon { name: "search" }
+                                    strong { "没有发现附近节点" }
+                                    span { "扫码或输入地址仍可连接，不必等待自动发现结果。" }
+                                }
                             }
-                        } else if !*discovery_busy.read() && discovery_status.read().is_empty() {
-                            div { class: "collaboration-discovered-empty",
-                                Icon { name: "search" }
-                                strong { "还没有扫描附近节点" }
-                                span { "点击刷新附近节点，或用地址直接连接。" }
-                            }
+                            p { class: "collaboration-card-note", Icon { name: "info" } "只有对方开启“允许局域网发现”且与你这台设备在同一网络时才会出现；自动发现不替代鉴权。" }
                         }
                         if *remote_open.read() {
                             form { class: "collaboration-connect-form", method: "post", autocomplete: "on", onsubmit: move |event: FormEvent| event.prevent_default(),
@@ -1305,9 +1368,7 @@ pub fn DevicesPage(
                                 if !error.read().is_empty() { p { class: "connection-form-error", role: "alert", "{error}" } }
                             }
                         }
-                        p { class: "collaboration-card-note", Icon { name: "info" } "自动发现只提供地址和可用性；连接仍需节点密码或一次性授权，且不替代远程协助、Web 访问等权限。" }
                     }
-                    CollaborationAdvancedSettings { store: settings_store, default_port: remote_port }
                     div { class: "collaboration-lists",
                         section { class: "collaboration-list-panel", aria_label: "最近连接",
                             div { class: "collaboration-list-heading", div { h2 { "最近连接" } p { "本设备主动连接过的工作节点" } }
@@ -1350,6 +1411,9 @@ pub fn DevicesPage(
                             span { if target.local { "仅本机可访问" } else { "密码不会保存" } }
                         }
                         p { class: "collaboration-card-note", "切换只改变这台设备使用哪个节点，不改变节点上的项目、会话与授权；密码不会保存。" }
+                        if target.local && settings_store.is_some() {
+                            CollaborationAdvancedSettings { store: settings_store, default_port: remote_port }
+                        }
                         div { class: "modal-actions",
                             button { class: "button", onclick: move |_| node_settings.set(None), "关闭" }
                             button { class: "button primary", disabled: (target.local && owned_local) || (!target.local && is_same_node_address(&target.address, &current_address)), onclick: {
@@ -1641,7 +1705,7 @@ pub fn DevicesPage(
             if share_available && qr_open.read().to_owned() {
                 crate::shared::components::Modal { id: "device-address-qr", title: share_title, class: "device-address-dialog", onclose: move |()| { qr_open.set(false); share_epoch += 1; },
                     div { class: "modal-body",
-                        p { class: "modal-help device-address-intro", "分享仅包含节点地址，不包含密码或登录凭据；接收方仍需输入节点密码。" }
+                        p { class: "modal-help device-address-intro", "分享内容是加密后的节点地址，不包含密码或登录凭据；接收方仍需输入节点密码。" }
                         div { class: "connection-share-source", small { "当前已连接节点" } code { "{current_address}" } }
                         div { class: "device-address-layout",
                             section { class: "device-address-qr-column",
@@ -1780,9 +1844,11 @@ fn AuthorizationQrButton(
     let valid = phone_share_address(&target, owned_local).is_ok();
     rsx! {
         if available {
-            button { class: "button", disabled: !valid, onclick: move |_| onopen.call(()), "手机 App 扫码授权" }
-            p { class: "connection-help", "Android 原生 App：一次性扫码授权，无需输入密码。浏览器仍使用普通地址和密码登录。" }
-            if !valid { p { class: "connection-help", "请先配置可达的局域网或 HTTPS 地址；回环地址不能用于手机授权。" } }
+            button {
+                class: "button", disabled: !valid, onclick: move |_| onopen.call(()),
+                title: if valid { "生成一次性授权二维码" } else { "需要先配置可达的局域网或 HTTPS 地址" },
+                "一次性授权"
+            }
         }
     }
 }
@@ -1953,7 +2019,7 @@ fn AuthorizationQr(
                     unix_seconds(),
                 )?;
                 Ok(AuthorizationQrData {
-                    payload,
+                    payload: crate::app::qr_codec::seal(&payload),
                     expires_at,
                 })
             }
@@ -2003,7 +2069,7 @@ fn AuthorizationQr(
     rsx! {
         if available && *open.read() {
             crate::shared::components::Modal {
-                id: "device-auth-qr", title: "手机 App 扫码授权", class: "device-address-dialog device-auth-dialog",
+                id: "device-auth-qr", title: "一次性授权", class: "device-address-dialog device-auth-dialog",
                 onclose: move |()| close(),
                 div { class: "modal-body",
                     p { class: "device-auth-warning", "任何人在过期前扫描此码，都可访问当前工作空间（项目、会话与运行任务）。只向你信任的 Android 手机展示。" }
@@ -2180,15 +2246,23 @@ mod tests {
     }
 
     #[test]
-    fn qr_contains_only_versioned_address_data() {
-        let payload: serde_json::Value =
-            serde_json::from_str(&qr_payload("https://example.test:3030")).unwrap();
+    fn qr_payload_is_encrypted_and_carries_only_versioned_address_data() {
+        let sealed = qr_payload("https://example.test:3030");
+        assert!(
+            !sealed.contains("example.test"),
+            "address stays out of the QR text"
+        );
+        let envelope: serde_json::Value = serde_json::from_str(&sealed).unwrap();
+        assert_eq!(envelope["v"], 2);
+        assert_eq!(envelope["type"], "rpi-work-qr");
+        let plaintext = crate::app::qr_codec::open(&sealed).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&plaintext).unwrap();
         assert_eq!(payload["v"], 1);
         assert_eq!(payload["type"], "rpi-work-node-address");
         assert_eq!(payload["address"], "https://example.test:3030");
-        assert!(!qr_payload("https://example.test:3030").contains("password"));
+        assert!(!plaintext.contains("password"));
         assert_eq!(
-            connection_address(&payload.to_string(), DEFAULT_REMOTE_PORT).unwrap(),
+            connection_address(&sealed, DEFAULT_REMOTE_PORT).unwrap(),
             "https://example.test:3030"
         );
     }

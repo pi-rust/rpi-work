@@ -69,7 +69,7 @@ const { bridgeRealtimePolicies } = require('../support/realtime-http-policy-brid
     await input.fill('首次使用时保留的想法');
     await button('打开设置').click();
     await button('工作协同', page.getByRole('navigation', { name: '设置分类' })).click();
-    await button('连接设备', page.locator('.collaboration-hub .connect-card')).click();
+    await button('输入地址', page.locator('.collaboration-hub .connect-card')).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await button('连接节点').click();
     await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();

@@ -213,6 +213,19 @@ mod attachment_snapshot_tests {
     use super::*;
 
     #[test]
+    fn attachment_icons_follow_the_file_kind() {
+        assert_eq!(attachment_icon_kind("screenshot.PNG"), "image");
+        assert_eq!(attachment_icon_kind("main.rs"), "code");
+        assert_eq!(attachment_icon_kind("settings.json"), "code");
+        assert_eq!(attachment_icon_kind("deploy.sh"), "terminal");
+        assert_eq!(attachment_icon_kind("demo.mp4"), "play");
+        assert_eq!(attachment_icon_kind("voice.m4a"), "play");
+        assert_eq!(attachment_icon_kind("bundle.tar.gz"), "download");
+        assert_eq!(attachment_icon_kind("notes.md"), "file");
+        assert_eq!(attachment_icon_kind("no-extension"), "file");
+    }
+
+    #[test]
     fn snapshots_are_scoped_metadata_and_include_loading() {
         let mut store = AttachmentStore::default();
         let mut file = local_attachment("private.txt".into(), b"never copy this payload");
@@ -373,6 +386,27 @@ mod attachment_snapshot_tests {
             partial.prepare("scope", "caption", true).is_err(),
             "never send a partial selection without acknowledgement"
         );
+    }
+}
+
+#[cfg(all(test, not(any(target_arch = "wasm32", target_os = "android"))))]
+mod clipboard_path_tests {
+    use super::{clipboard_path, percent_decode};
+
+    #[test]
+    fn parses_local_file_uris_without_accepting_remote_urls() {
+        assert_eq!(percent_decode("%E4%B8%AD%E6%96%87"), "中文");
+        assert_eq!(
+            clipboard_path("file:///tmp/%E4%B8%AD%E6%96%87.txt"),
+            Some(std::path::PathBuf::from("/tmp/中文.txt"))
+        );
+        assert_eq!(
+            clipboard_path("file://localhost/Users/bigfish/a.txt"),
+            Some(std::path::PathBuf::from("/Users/bigfish/a.txt"))
+        );
+        assert_eq!(clipboard_path("https://example.com/file.txt"), None);
+        assert_eq!(clipboard_path("data:text/plain,secret"), None);
+        assert_eq!(clipboard_path("relative/file.txt"), None);
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -567,6 +601,22 @@ fn local_attachment(name: String, bytes: &[u8]) -> LocalAttachment {
     }
 }
 
+/// Pick the closest built-in icon for a pasted or selected file. Scanned
+/// file names are local metadata only; nothing here reads or uploads bytes.
+fn attachment_icon_kind(name: &str) -> &'static str {
+    let extension = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match extension.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "ico" => "image",
+        "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "h" | "cc" | "cpp"
+        | "hpp" | "cs" | "rb" | "php" | "swift" | "kt" | "json" | "toml" | "yaml" | "yml"
+        | "xml" | "html" | "css" | "scss" | "sql" => "code",
+        "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd" => "terminal",
+        "mp4" | "mov" | "webm" | "mkv" | "avi" | "mp3" | "wav" | "flac" | "ogg" | "m4a" => "play",
+        "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" => "download",
+        _ => "file",
+    }
+}
+
 fn attachment_label(file: &LocalAttachment, images_supported: bool) -> &'static str {
     if file.send_error.is_some() {
         "图片读取失败，无法发送"
@@ -591,6 +641,235 @@ fn attachment_label(file: &LocalAttachment, images_supported: bool) -> &'static 
     } else {
         "仅预览，暂不支持发送"
     }
+}
+
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+fn native_clipboard_file_paths(request_paths: &Value) -> Result<Vec<std::path::PathBuf>, String> {
+    let mut paths = Vec::new();
+    // Finder/Explorer copy operations are exposed as a native file list. This is
+    // more reliable than clipboardData, which can omit local file bytes entirely.
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        if let Ok(files) = clipboard.get().file_list() {
+            paths = files;
+        }
+    }
+    if paths.is_empty() {
+        if let Some(values) = request_paths.as_array() {
+            for value in values {
+                if let Some(text) = value.as_str() {
+                    for line in text.lines() {
+                        if let Some(path) = clipboard_path(line) {
+                            paths.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    paths.retain(|path| seen.insert(path.clone()));
+    if paths.is_empty() {
+        return Err("未能读取剪贴板中的文件；请使用附件按钮选择文件。".into());
+    }
+    Ok(paths)
+}
+
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+fn native_clipboard_file_paths(_request_paths: &Value) -> Result<Vec<std::path::PathBuf>, String> {
+    Err("当前运行环境无法读取系统复制的文件；请使用附件按钮选择文件。".into())
+}
+
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+fn clipboard_path(raw: &str) -> Option<std::path::PathBuf> {
+    let mut value = raw.trim().trim_matches('"').to_string();
+    if value.is_empty()
+        || value.starts_with("http://")
+        || value.starts_with("https://")
+        || value.starts_with("data:")
+    {
+        return None;
+    }
+    if value.len() >= 7 && value[..7].eq_ignore_ascii_case("file://") {
+        let rest = &value[7..];
+        let rest = rest.strip_prefix("localhost").unwrap_or(rest);
+        value = percent_decode(rest.split('#').next().unwrap_or(rest));
+        #[cfg(target_os = "windows")]
+        if value.starts_with('/') && value.as_bytes().get(2).is_some_and(|byte| *byte == b':') {
+            value.remove(0);
+        }
+    }
+    if !std::path::Path::new(&value).is_absolute() {
+        return None;
+    }
+    Some(std::path::PathBuf::from(value))
+}
+
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && let Some(high) = bytes.get(index + 1).and_then(|byte| hex_value(*byte))
+            && let Some(low) = bytes.get(index + 2).and_then(|byte| hex_value(*byte))
+        {
+            decoded.push(high * 16 + low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+const fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn set_paste_error(store: Signal<AttachmentStore>, scope: &str, error: String) {
+    let mut store = store;
+    let mut state = store.write();
+    let entry = state.scopes.entry(scope.to_string()).or_default();
+    entry.loading = false;
+    entry.error = error;
+}
+
+async fn add_pasted_path(
+    mut store: Signal<AttachmentStore>,
+    scope: &str,
+    path: &std::path::Path,
+    alive: &Rc<Cell<bool>>,
+) -> Result<(), String> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map_or_else(|| "粘贴附件".into(), clean_filename);
+    let metadata = std::fs::metadata(path).map_err(|_| format!("{name}：无法读取文件"))?;
+    if !metadata.is_file() {
+        return Err(format!("{name}：仅支持普通文件，复制文件夹暂不支持"));
+    }
+    if metadata.len() > MAX_FILE as u64 {
+        return Err(format!("{name}：超出附件限制（单个 5 MiB）"));
+    }
+    let (count, total) = store.peek().scopes.get(scope).map_or((0, 0), |state| {
+        (
+            state.files.len(),
+            state.files.iter().map(|item| item.size).sum::<usize>(),
+        )
+    });
+    if count >= MAX_FILES || metadata.len() as usize + total > MAX_TOTAL {
+        return Err(format!("{name}：超出附件限制（8 个 / 合计 10 MiB）"));
+    }
+    let bytes = std::fs::read(path).map_err(|_| format!("{name}：读取失败"))?;
+    if !alive.get() {
+        return Err("附件读取已中断，未加入附件。".into());
+    }
+    let mut attachment = local_attachment(name.clone(), &bytes);
+    if matches!(raster_mime(&bytes), Some("image/png" | "image/jpeg")) {
+        if let Err(error) = prepare_image(&mut attachment).await {
+            attachment.image = None;
+            attachment.send_error = Some(error);
+        }
+    }
+    if !alive.get() {
+        return Err("附件读取已中断，未加入附件。".into());
+    }
+    let mut state = store.write();
+    let exceeds_limits = state.scopes.get(scope).is_some_and(|scope_state| {
+        scope_state.files.len() >= MAX_FILES
+            || bytes.len() > MAX_FILE
+            || scope_state
+                .files
+                .iter()
+                .map(|item| item.size)
+                .sum::<usize>()
+                + bytes.len()
+                > MAX_TOTAL
+    });
+    if exceeds_limits {
+        return Err(format!("{name}：读取后大小超出限制"));
+    }
+    state.next_id = state.next_id.wrapping_add(1);
+    attachment.id = state.next_id;
+    state
+        .scopes
+        .entry(scope.to_string())
+        .or_default()
+        .files
+        .push(attachment);
+    Ok(())
+}
+
+async fn read_pasted_files(
+    mut store: Signal<AttachmentStore>,
+    scope: String,
+    request_paths: Value,
+    alive: Rc<Cell<bool>>,
+    probe: bool,
+) -> (usize, Option<String>) {
+    let paths = match native_clipboard_file_paths(&request_paths) {
+        Ok(paths) => paths,
+        Err(error) => {
+            if !probe {
+                set_paste_error(store, &scope, error.clone());
+                return (0, Some(error));
+            }
+            return (0, None);
+        }
+    };
+    if store
+        .peek()
+        .scopes
+        .get(&scope)
+        .is_some_and(|state| state.loading)
+    {
+        return (0, Some("附件仍在读取；请等待读取完成后再粘贴。".into()));
+    }
+    if let Some(state) = store.write().scopes.get_mut(&scope) {
+        state.loading = true;
+        state.error.clear();
+    } else {
+        store.write().scopes.insert(
+            scope.clone(),
+            AttachmentScopeState {
+                loading: true,
+                ..Default::default()
+            },
+        );
+    }
+    let mut added = 0usize;
+    let mut errors = Vec::new();
+    for path in paths {
+        if !alive.get() {
+            break;
+        }
+        match add_pasted_path(store, &scope, &path, &alive).await {
+            Ok(()) => added += 1,
+            Err(error) => errors.push(error),
+        }
+    }
+    if alive.get() {
+        if let Some(state) = store.write().scopes.get_mut(&scope) {
+            state.loading = false;
+            state.error = errors.join("；");
+        }
+    }
+    (
+        added,
+        if errors.is_empty() {
+            None
+        } else {
+            Some(errors.join("；"))
+        },
+    )
 }
 
 // Only JSON-quoted raster bytes enter this fixed script; never a file path, URL
@@ -733,14 +1012,21 @@ fn AttachmentReader(
     let input_id_json = serde_json::to_string(&input_id).unwrap();
     let alive = use_hook(|| Rc::new(Cell::new(true)));
     let pending = use_hook(|| Rc::new(RefCell::new(None::<Task>)));
+    // The paste bridge owns an eval channel while the reader is mounted; dispose
+    // it together with the hidden input instead of leaving a WebView listener.
+    let paste_task = use_hook(|| Rc::new(RefCell::new(None::<Task>)));
     let drop_alive = alive.clone();
     let drop_pending = pending.clone();
+    let drop_paste = paste_task.clone();
     let cleanup_scope = scope.clone();
     let paste_cleanup_id = input_id_json.clone();
     let mut cleanup_store = store;
     use_drop(move || {
         drop_alive.set(false);
         if let Some(task) = drop_pending.borrow_mut().take() {
+            task.cancel();
+        }
+        if let Some(task) = drop_paste.borrow_mut().take() {
             task.cancel();
         }
         if let Some(state) = cleanup_store.write().scopes.get_mut(&cleanup_scope) {
@@ -759,6 +1045,10 @@ fn AttachmentReader(
     let state = store.read().scopes.get(&scope).cloned().unwrap_or_default();
     let read_scope = scope.clone();
     let paste_input_id = input_id_json.clone();
+    let paste_task_slot = paste_task.clone();
+    let paste_scope = scope.clone();
+    let paste_store = store;
+    let paste_alive = alive.clone();
     rsx! {
         div { class: "composer-extras attachment-picker attachment-button-slot",
             if let Some(onmore) = onmore {
@@ -771,8 +1061,12 @@ fn AttachmentReader(
                 input { id: input_id, r#type: "file", multiple: true, disabled: state.loading || disabled, aria_label: "选择本地附件，可多选",
                     onmounted: move |_| {
                         let input_id = paste_input_id.clone();
+                        let evaluator_store = paste_store;
+                        let evaluator_scope = paste_scope.clone();
+                        let evaluator_alive = paste_alive.clone();
+                        let evaluator_task_slot = paste_task_slot.clone();
                         spawn(async move {
-                            let script = format!(r#"(() => {{
+                            let script = format!(r#"return (async () => {{
                                 const input = document.getElementById({input_id});
                                 if (!input) return false;
                                 const bindings = window.__rpiAttachmentPasteBindings ||= new Map();
@@ -819,28 +1113,125 @@ fn AttachmentReader(
                                     }}
                                     return files;
                                 }};
-                                const handler = event => {{
+                                const fileTypes = ['Files', 'text/uri-list', 'public.file-url', 'application/x-file-url', 'application/x-java-file-list', 'CF_HDROP'];
+                                const nativeBridge = Boolean(window.ipc?.postMessage);
+                                const readData = (clipboard, type) => {{
+                                    try {{ return clipboard?.getData?.(type) || ''; }} catch (_) {{ return ''; }}
+                                }};
+                                const fileReferences = clipboard => {{
+                                    const references = [];
+                                    for (const type of ['text/uri-list', 'public.file-url', 'application/x-file-url']) {{
+                                        for (const line of readData(clipboard, type).split(/\r?\n/)) {{
+                                            const value = line.trim();
+                                            if (value && !value.startsWith('#')) references.push(value);
+                                        }}
+                                    }}
+                                    return references;
+                                }};
+                                let nativeQueue = Promise.resolve();
+                                let nativeRequest = 0;
+                                const pendingReplies = new Map();
+                                const receiveReplies = async () => {{
+                                    while (true) {{
+                                        const reply = await dioxus.recv();
+                                        if (reply?.kind === 'pastePathsResult' && pendingReplies.has(reply.requestId)) {{
+                                            pendingReplies.get(reply.requestId)(reply);
+                                            pendingReplies.delete(reply.requestId);
+                                        }}
+                                    }}
+                                }};
+                                receiveReplies().catch(() => {{}});
+                                const requestNative = (paths, requestId, probe) => {{
+                                    const run = () => new Promise(resolve => {{
+                                        pendingReplies.set(requestId, resolve);
+                                        dioxus.send({{kind: 'pastePaths', requestId, paths, probe}});
+                                    }});
+                                    const pending = nativeQueue.then(run, run);
+                                    nativeQueue = pending.catch(() => {{}});
+                                    return pending;
+                                }};
+                                const handledEvents = window.__rpiAttachmentPasteHandled ||= new WeakSet();
+                                const restorePastedText = (target, before) => {{
+                                    if (!target.isConnected || target.value === before.value) return;
+                                    target.value = before.value;
+                                    target.setSelectionRange(before.start, before.end);
+                                    target.dispatchEvent(new Event('input', {{bubbles: true}}));
+                                }};
+                                const handler = async event => {{
                                     // Do not use `instanceof HTMLTextAreaElement` here: native
                                     // WebViews can deliver the event target from another DOM realm.
                                     const target = event.target;
                                     if (!target || target.getAttribute?.('aria-label') !== '发送给 agent 的消息') return;
                                     if (input.disabled) return;
+                                    // Only the reader mounted beside this composer owns this paste.
+                                    const composer = target.closest?.('.composer-main, .home-composer');
+                                    if (composer && !composer.contains(input)) return;
                                     const files = directFiles(event.clipboardData);
                                     const clipboardTypes = Array.from(event.clipboardData?.types || []);
-                                    const mayContainFile = files.length > 0 || clipboardTypes.includes('Files') || clipboardTypes.some(type => type.startsWith('image/'));
-                                    if (!mayContainFile) return;
-                                    event.preventDefault();
-                                    if (installFiles(files)) return;
+                                    const references = fileReferences(event.clipboardData);
+                                    const explicitFile = files.length > 0 || clipboardTypes.includes('Files') || clipboardTypes.some(type => type.startsWith('image/')) || clipboardTypes.some(type => fileTypes.includes(type)) || references.length > 0;
+                                    // Native WebViews can hide a copied file completely from
+                                    // clipboardData. Probe the native file list on ordinary
+                                    // text paste, but only when a desktop bridge exists.
+                                    if (!explicitFile && !nativeBridge) return;
+                                    if (handledEvents.has(event)) return;
+                                    handledEvents.add(event);
+                                    const before = {{value: target.value, start: target.selectionStart, end: target.selectionEnd}};
+                                    if (explicitFile) event.preventDefault();
+                                    try {{
+                                        if (files.length && installFiles(files)) return;
+                                        if (nativeBridge) {{
+                                            const probe = !explicitFile;
+                                            const requestId = `paste-${{Date.now()}}-${{++nativeRequest}}`;
+                                            const result = await requestNative(probe ? [] : references, requestId, probe);
+                                            if (result?.ok) {{
+                                                if (probe) restorePastedText(target, before);
+                                                return;
+                                            }}
+                                        }}
+                                        if (!explicitFile) return;
+                                    }} catch (_) {{}}
                                     // Desktop WebViews may expose only MIME types on the paste
                                     // event. Read the native clipboard as a fallback instead of
                                     // silently dropping the image/file.
                                     readNavigatorClipboard().then(installFiles).catch(() => {{}});
                                 }};
+                                let resolveDone;
+                                const done = new Promise(resolve => resolveDone = resolve);
+                                const cleanup = () => {{
+                                    document.removeEventListener('paste', handler, true);
+                                    bindings.delete({input_id});
+                                    resolveDone();
+                                }};
+                                bindings.set({input_id}, {{cleanup}});
                                 document.addEventListener('paste', handler, true);
-                                bindings.set({input_id}, {{ cleanup: () => document.removeEventListener('paste', handler, true) }});
+                                await done;
+                                dioxus.send({{kind: 'stop'}});
                                 return true;
                             }})()"#);
-                            let _ = document::eval(&script).await;
+                            let mut evaluator = document::eval(&script);
+                            let evaluator_task = spawn(async move {
+                                while let Ok(request) = evaluator.recv::<Value>().await {
+                                    match request["kind"].as_str() {
+                                        Some("stop") => break,
+                                        Some("pastePaths") => {
+                                            let request_id = request["requestId"].clone();
+                                            let probe = request["probe"].as_bool().unwrap_or(false);
+                                            let (count, error) = read_pasted_files(evaluator_store, evaluator_scope.clone(), request["paths"].clone(), evaluator_alive.clone(), probe).await;
+                                            let reply = serde_json::json!({
+                                                "kind": "pastePathsResult",
+                                                "requestId": request_id,
+                                                "ok": count > 0,
+                                                "count": count,
+                                                "error": error,
+                                            });
+                                            if evaluator.send(reply).is_err() { break; }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            });
+                            *evaluator_task_slot.borrow_mut() = Some(evaluator_task);
                         });
                     },
                     onclick: move |_| {
@@ -929,7 +1320,7 @@ fn AttachmentFiles(
                                                 state.error = "图片预览失败；附件仍保留，可移除后重新选择。".into();
                                             }
                                         } } } }
-                                    } else { ExtraIcon { kind: "file" } }
+                                    } else { ExtraIcon { kind: attachment_icon_kind(&file.name) } }
                                     span { title: "{file.name}", span { "{file.name}" } small { "{size_label(file.size)} · {attachment_label(&file, images_supported)}" } }
                                 }
                                 button { r#type: "button", class: "attachment-remove", disabled, aria_label: "移除 {file.name}", onclick: move |_| { if disabled { return; }

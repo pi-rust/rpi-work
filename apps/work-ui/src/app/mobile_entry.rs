@@ -20,8 +20,10 @@ fn parse_code(raw: &str, now: u64) -> Result<AuthorizationCode, &'static str> {
     if raw.len() > 4096 {
         return Err("二维码过长，请重新扫码。");
     }
+    let raw =
+        crate::app::qr_codec::open(raw).map_err(|_| "不是有效的节点授权二维码，请重新扫码。")?;
     let mut code: AuthorizationCode =
-        serde_json::from_str(raw).map_err(|_| "不是有效的节点授权二维码，请重新扫码。")?;
+        serde_json::from_str(&raw).map_err(|_| "不是有效的节点授权二维码，请重新扫码。")?;
     if code.v != 1 || code.kind != "rpi-work-node-auth" {
         return Err("二维码类型或版本不受支持。");
     }

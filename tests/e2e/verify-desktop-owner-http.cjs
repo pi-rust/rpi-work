@@ -241,7 +241,7 @@ const runDevWeb = require('../support/run-dev-web.cjs');
     const health = await page.request.get(webUrl + 'api/v1/health');
     assert.equal((await health.json()).nodeId, 'browser-native-owner-fixture');
     assert.equal(await page.getByRole('switch', { name: '允许共享这台电脑', exact: true }).count(), 0);
-    assert.equal(await page.getByRole('button', { name: '手机 App 扫码授权', exact: true }).isDisabled(), true);
+    assert.equal(await page.getByRole('button', { name: '一次性授权', exact: true }).isDisabled(), true);
     pass('loopback disables phone QR UI; API checks below do not claim camera or real Android coverage');
     pass('formal Web connects with a password in one step but cannot control desktop sharing');
     await page.getByRole('button', { name: '返回会话', exact: true }).click();

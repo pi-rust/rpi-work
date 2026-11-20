@@ -370,6 +370,18 @@ Rust metadata/consent tests and `verify-attachment-send-guard.cjs` cover this UI
 safety boundary using an isolated HTTP/WebSocket fixture; they do not demonstrate real
 attachment transfer or native desktop/Android/live-backend E2E.
 
+Clipboard-pasted files use the same scoped local attachment store and send guard.
+Browser `clipboardData.files` / `clipboardData.items` and `navigator.clipboard.read`
+are tried first. Desktop native WebViews can expose a Finder/Explorer file copy
+only as `text/uri-list`, a file URL or a native file-list format; the desktop
+adapter reads that file list through `arboard::Clipboard::get().file_list()`, or
+falls back to absolute local `file://` URIs supplied by the paste event. Only
+ordinary files are read, under the existing 8-file / 5 MiB / 10 MiB limits; remote
+URLs, data URLs and relative paths are never opened. Web/mobile builds keep the
+browser clipboard paths and do not claim native file-list access. All bytes stay
+local until the existing explicit send guard prepares approved text or image
+content; no new upload endpoint or prompt field is introduced.
+
 ## Desktop native workspace
 
 `work-node-runtime::workspace::LocalWorkspace` owns the app catalog, per-project

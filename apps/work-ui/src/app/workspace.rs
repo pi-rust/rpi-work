@@ -4737,7 +4737,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                     a { class: "brand", href: "#",
                         BrandMark { class: "brand-mark" }
                         strong { "rpi" span { "work" } }
-                        span { class: "version", "MVP" }
+                        span { class: "version", {format!("v{}", env!("CARGO_PKG_VERSION"))} }
                     }
                     button { class: "search-trigger", r#type: "button", aria_label: "搜索项目与会话", onclick: move |_| global_search_open.set(true),
                         Icon { name: "search" } span { "搜索项目与会话" } kbd { "Ctrl K" }

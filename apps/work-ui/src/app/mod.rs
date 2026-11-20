@@ -24,6 +24,7 @@ pub(crate) mod local_node;
 #[cfg(any(target_os = "android", test))]
 pub(crate) mod mobile_entry;
 pub(crate) mod node_navigation;
+pub(crate) mod qr_codec;
 mod runtime;
 mod sidebar_resize;
 mod transcript_order;

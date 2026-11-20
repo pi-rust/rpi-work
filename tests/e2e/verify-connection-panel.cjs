@@ -127,7 +127,7 @@ async function serve() {
       await compareScreen(`connected-${width}-${mode}`);
       await assertLayout();
       await screenshot(`${adapter}-connected-${width}-${mode}`);
-      await button('分享当前连接').click();
+      await button('显示地址二维码').click();
       assert((await state.textContent()).includes('share:1'));
       await button('连接其他电脑').click();
       await page.locator('#phone-node-address').waitFor();

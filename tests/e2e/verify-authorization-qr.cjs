@@ -70,8 +70,8 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
         } else await route.fulfill({ response });
       });
     }
-    const trigger = () => page.getByRole('button', { name: '手机 App 扫码授权', exact: true });
-    const dialog = () => page.getByRole('dialog', { name: '手机 App 扫码授权', exact: true });
+    const trigger = () => page.locator('.device-auth-entry > button');
+    const dialog = () => page.getByRole('dialog', { name: '一次性授权', exact: true });
     const svg = () => dialog().locator('#device-auth-qr-code svg');
     const online = () => page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
     const decode = async () => {
@@ -92,9 +92,13 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     };
     const verify = async issue => {
       const value = await decode();
-      const expected = { v: 1, type: 'rpi-work-node-auth', address: issue.node.address, ...issue.grant };
-      check(Object.keys(value).sort().join(',') === Object.keys(expected).sort().join(','), 'QR has exactly the protocol fields');
-      check(Object.entries(expected).every(([key, val]) => value[key] === val), 'QR fields match the current node and issued grant');
+      check(value.v === 2 && value.type === 'rpi-work-qr', 'QR uses the encrypted v2 envelope');
+      check(typeof value.n === 'string' && typeof value.d === 'string' && typeof value.m === 'string', 'envelope carries nonce, ciphertext and tag');
+      const readable = JSON.stringify(value);
+      check(!readable.includes(issue.node.address), 'QR hides the node address');
+      check(!readable.includes(issue.grant.ticket), 'QR hides the one-time ticket');
+      check(!readable.includes(issue.grant.nodeId), 'QR hides the node identity');
+      check(!readable.includes('rpi-work-node-auth'), 'QR hides the authorization type');
     };
     const privateUi = async () => {
       const safe = await page.evaluate(tickets => {
@@ -113,7 +117,9 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     };
     const open = async () => {
       check(await trigger().isEnabled(), 'Authorization button enabled after login');
-      await trigger().click(); await svg().waitFor();
+      // The manual entry lives in the collapsed node-details block; opening it
+      // never issues a second global QR instance.
+      await trigger().evaluate(button => button.click()); await svg().waitFor();
     };
     stage = 'login and initial QR';
     await page.goto(ui.href);
@@ -132,7 +138,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await page.locator('.device-auth-entry > button').evaluate(button => button.click());
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     check(issues.length === 1 && await page.locator('#device-auth-qr').count() === 1, 'Repeated open reuses the valid global QR without issuing again');
-    pass('Desktop Web login enables authorization; generated SVG decodes to exact v1 grant fields');
+    pass('Desktop Web login enables authorization; generated SVG decodes to an encrypted v2 envelope with no readable address or ticket');
 
     stage = 'draft invalidation';
     // Dispatch input explicitly: the modal focus trap can redirect Playwright's

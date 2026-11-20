@@ -41,7 +41,7 @@ const PROFILE = {contentBlocksVersion:1,image:true,imageMimeTypes:['image/png','
     const text={name:'说明.md',mimeType:'text/markdown',buffer:Buffer.from('# 完整附件\n安全的文本内容 😀\n最后一行。')};
     await page.getByRole('button',{name:'打开设置',exact:true}).click();
     await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'工作协同',exact:true}).click();
-    await page.locator('.collaboration-hub .connect-card').getByRole('button',{name:'连接设备',exact:true}).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button',{name:'输入地址',exact:true}).click();
     await page.getByLabel('节点地址',{exact:true}).fill(fixture.url);
     await page.getByRole('button',{name:'连接节点',exact:true}).click();
     await page.locator('.collaboration-page-heading [role=status]').filter({hasText:'已连接'}).waitFor();

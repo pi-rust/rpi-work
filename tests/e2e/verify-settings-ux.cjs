@@ -64,7 +64,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     pass('320/390px navigation keeps every category visible, keyboard focus stable and touch targets at least 44px');
     await page.setViewportSize({ width: 1280, height: 960 });
     await choose('工作协同');
-    await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '连接设备', exact: true }).click();
+    await page.locator('.collaboration-hub .connect-card').getByRole('button', { name: '输入地址', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
     await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '已连接' }).waitFor();
