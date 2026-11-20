@@ -340,7 +340,7 @@ async function test(name, configure, verify) {
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     if (!await h.session('dark').isVisible()) await page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();
     await h.session('dark').click();
@@ -726,7 +726,7 @@ async function test(name, configure, verify) {
       }
       await h.page.getByLabel('节点地址', { exact: true }).fill(h.fixture.url);
       await h.page.getByRole('button', { name: '连接节点', exact: true }).click();
-      await h.page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+      await h.page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
       await h.page.getByRole('button', { name: '返回会话', exact: true }).click();
       // Reconnection may retain dark or return to the workspace landing view.
       if (!await h.page.locator('.sidebar-sessions:not(.recent-sessions) [data-session-id="dark"].selected .session-item').isVisible()) {
@@ -1198,7 +1198,7 @@ async function test(name, configure, verify) {
       if (!await h.page.getByLabel('节点地址', { exact: true }).isVisible()) await h.page.getByRole('button', { name: '连接其他节点', exact: true }).click();
       await h.page.getByLabel('节点地址', { exact: true }).fill(h.fixture.url);
       await h.page.getByRole('button', { name: '连接节点', exact: true }).click();
-      await h.page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+      await h.page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
       await h.page.getByRole('button', { name: '返回会话', exact: true }).click();
       if (!await h.page.locator('.sidebar-sessions:not(.recent-sessions) [data-session-id="dark"].selected .session-item').isVisible()) {
         if (!await h.session('dark').isVisible()) await h.page.locator('.project-row').filter({ hasText: 'rpi-work' }).click();

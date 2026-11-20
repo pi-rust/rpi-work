@@ -57,7 +57,7 @@ async function test(name, configure, verify) {
         if (!await page.getByLabel('节点地址', { exact: true }).isVisible()) await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
         await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
         await page.getByRole('button', { name: '连接节点', exact: true }).click();
-        await until(async () => await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).isVisible()
+        await until(async () => await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).isVisible()
           || (!await page.getByRole('navigation', { name: '设置分类' }).isVisible() && await h.field().isVisible()), 'connected settings or auto-returned conversation');
         const back = page.getByRole('button', { name: '返回会话', exact: true });
         if (await back.isVisible()) await back.click();

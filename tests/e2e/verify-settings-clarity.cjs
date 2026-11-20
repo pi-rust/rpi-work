@@ -120,14 +120,11 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
     assert.equal(await page.locator('.settings-page h1').count(), 1, 'category content does not introduce another page title');
     assert.equal(await page.locator('.collaboration-hub .collaboration-action-card').count(), 1, 'one connection card groups discovery, manual address and nearby nodes');
     assert.equal(await page.locator('.collaboration-current-card').count(), 1, 'the current node owns identity, sharing and switching');
-    assert.equal(await page.locator('.connection-details').getAttribute('open'), null, 'legacy node diagnostics are collapsed');
-    assert.equal(await page.locator('.connection-details .connection-page-heading').isVisible(), false);
+    assert.equal(await page.locator('.connection-details').count(), 0, 'legacy bottom diagnostics are gone');
     assert.equal(await page.locator('.web-access-card [role=switch]').count(), 0, 'Web status must not invent a separate host permission switch');
     await page.locator('.connect-card').getByRole('button', { name:'输入地址', exact:true }).click();
     assert.equal(await page.getByLabel('节点地址', { exact:true }).count(), 1, 'only one connection form, with unique field IDs');
     await page.locator('.connect-card').getByRole('button', { name:'取消', exact:true }).click();
-    await page.locator('.connection-details > summary').click();
-    await page.locator('.server-overview').waitFor();
     await choose('供应商');
     assert.equal(await page.locator('.settings-page h1').count(), 1);
     await page.getByLabel('搜索供应商', { exact:true }).fill('missing-provider');

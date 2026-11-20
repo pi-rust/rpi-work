@@ -44,7 +44,7 @@ async function bounded(promise, label) {
     }
     await page.getByLabel('节点地址', { exact: true }).fill(node.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    const status = page.locator('.server-details [role=status]');
+    const status = page.locator('.collaboration-page-heading [role=status]');
     if (requireLogin) {
       await status.filter({ hasText: '需要节点密码' }).waitFor();
       await page.getByLabel('节点密码', { exact: true }).fill('test-only');

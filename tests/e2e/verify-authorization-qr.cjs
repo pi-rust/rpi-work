@@ -73,7 +73,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     const trigger = () => page.locator('.device-auth-entry > button');
     const dialog = () => page.getByRole('dialog', { name: '一次性授权', exact: true });
     const svg = () => dialog().locator('#device-auth-qr-code svg');
-    const online = () => page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    const online = () => page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     const decode = async () => {
       const raw = await svg().evaluate(async element => {
         const clone = element.cloneNode(true);

@@ -126,7 +126,7 @@ function validateBuild() {
     await button('连接其他节点').click();
     await page.getByLabel('节点地址', { exact: true }).fill(host.url);
     await button('连接节点').click();
-    await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     await button('返回会话').click();
     await page.locator('[data-project-id="rpi-work"]').waitFor();
     assert.equal(await page.locator('.composer .execution-backend-menu, .composer .backend-switch-trigger').count(), 0);

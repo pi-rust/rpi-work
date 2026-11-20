@@ -19,7 +19,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     const password = page.getByLabel('节点密码', { exact: true });
     const connect = page.getByRole('button', { name: '连接节点', exact: true });
     const login = page.getByRole('button', { name: '登录', exact: true });
-    const status = text => page.locator('.server-details [role=status]').filter({ hasText: text }).waitFor();
+    const status = text => page.locator('.collaboration-page-heading [role=status]').filter({ hasText: text }).waitFor();
     assert.equal(await page.locator('#node-token,#phone-node-token,#scanned-node-token').count(), 0);
     assert.equal(await password.count(), 1);
     assert.equal(await password.getAttribute('autocomplete'), 'current-password');

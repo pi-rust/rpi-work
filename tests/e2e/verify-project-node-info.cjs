@@ -126,7 +126,7 @@ async function test(name, verify, options = {}) {
           await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
         await page.getByLabel('节点地址', { exact: true }).fill(node.url);
         await page.getByRole('button', { name: '连接节点', exact: true }).click();
-        await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+        await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
         await page.getByRole('button', { name: '返回会话', exact: true }).click();
         await h.sidebar(); await h.state('online');
       },
@@ -411,7 +411,7 @@ async function test(name, verify, options = {}) {
         }, target.url);
         await h.page.getByRole('button', { name: '连接节点', exact: true, includeHidden: true }).evaluate(e => e.click());
         await h.dialog().waitFor({ state: 'hidden' });
-        await h.page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+        await h.page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
         await h.page.getByRole('button', { name: '返回会话', exact: true }).click();
         await h.sidebar(); await h.state('online'); await h.open();
         assert.equal(await h.value('服务').innerText(), newService);

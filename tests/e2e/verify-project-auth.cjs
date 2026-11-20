@@ -14,7 +14,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
   const add = () => page.locator('.sidebar button[title="添加项目"]');
   const picker = () => page.getByRole('dialog', { name: '添加项目', exact: true });
   const folders = () => page.getByRole('dialog', { name: '选择项目文件夹', exact: true });
-  const online = () => page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+  const online = () => page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
   const login = async () => {
     await page.getByLabel('节点密码', { exact: true }).fill('test-only');
     await page.getByRole('button', { name: '登录', exact: true }).click();

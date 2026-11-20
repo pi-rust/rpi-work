@@ -230,6 +230,9 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     let mut file_from_message = use_signal(|| false);
     let mut reveal_directory = use_signal(|| None::<String>);
     let mut git_status = use_signal(|| None::<GitStatus>);
+    let mut change_line_counts =
+        use_signal(std::collections::HashMap::<String, (u64, u64)>::new);
+    let mut changed_files_expanded = use_signal(|| false);
     let mut git_loading = use_signal(|| false);
     let mut git_error = use_signal(|| None::<String>);
     let mut git_generation = use_signal(|| 0u64);
@@ -380,6 +383,12 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
         });
     });
     let mut project_files_open = use_signal(|| false);
+    let mut browser_open = use_signal(|| false);
+    let mut browser_url = use_signal(|| "http://127.0.0.1:14180/".to_string());
+    let mut browser_device = use_signal(|| "desktop".to_string());
+    let mut browser_reload = use_signal(|| 0u64);
+    // Desktop docks the inspector as a third column; narrow/mobile keeps the drawer.
+    let mut project_files_docked = use_signal(|| true);
     let mut project_file_tab = use_signal(|| "files".to_owned());
     let mut project_file_preview = use_signal(|| false);
     let mut project_open_tabs = use_signal(Vec::<ProjectOpenTab>::new);
@@ -2995,6 +3004,36 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
         });
     });
 
+    // Codex-style totals: preload diff counts for the visible changed files,
+    // bounded so a large working tree never fans out into unlimited node calls.
+    use_effect(move || {
+        let repository = git_status.read().clone();
+        let project = selected_project.read().clone();
+        let client = shared_client.read().clone();
+        let Some(repository) = repository else {
+            change_line_counts.write().clear();
+            return;
+        };
+        let (Some(project), Some(client)) = (project, client) else {
+            return;
+        };
+        let files = repository
+            .files
+            .iter()
+            .take(6)
+            .map(|file| (file.path.clone(), file.staged))
+            .collect::<Vec<_>>();
+        change_line_counts.write().clear();
+        state::scoped_spawn(requests, async move {
+            for (path, staged) in files {
+                if let Ok(patch) = client.diff(&project, &path, staged).await {
+                    let counts = count_patch_lines(&patch.patch);
+                    change_line_counts.write().insert(path, counts);
+                }
+            }
+        });
+    });
+
     use_effect(move || {
         let key = selected_session.read().clone().map(|id| {
             (
@@ -4219,6 +4258,24 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     let change_count = repository_snapshot
         .as_ref()
         .map_or_else(|| "—".into(), |repo| repo.files.len().to_string());
+    let browser_allowed = is_local_browser_address(&browser_url.read());
+    let changed_files_preview = repository_snapshot
+        .as_ref()
+        .map(|repository| {
+            repository
+                .files
+                .iter()
+                .take(6)
+                .map(|file| {
+                    let label = crate::features::projects::review::change_status_label(&file.status);
+                    (file.path.clone(), file.staged, label.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let changed_files_total = repository_snapshot
+        .as_ref()
+        .map_or(0, |repository| repository.files.len());
     let reviewed_snapshot = reviewed_changes.read().clone();
     let visible_changes = repository_snapshot
         .as_ref()
@@ -4393,7 +4450,17 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     } else if mobile_device {
         "远程节点".to_owned()
     } else {
-        node_info::safe_address(&node_url.read())
+        // The sidebar has little room: show host:port instead of the full URL.
+        let address = node_info::safe_address(&node_url.read());
+        address
+            .split("://")
+            .nth(1)
+            .unwrap_or(&address)
+            .trim_end_matches('/')
+            .split('/')
+            .next()
+            .unwrap_or("远程节点")
+            .to_string()
     };
     let (node_status_tone, node_status_label) =
         node_info::status(&node_connection.phase.read(), &node_probe.read());
@@ -4708,10 +4775,10 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                     scroll_follow::ScrollFollow { scope: session_scope_key(&node_url.read(), &session_id), selector: ".transcript".to_owned() }
                 }
             }
-            main { class: format!("{}{}{}{}{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
+            main { class: format!("{}{}{}{}{}{}{}{}{}", match (active_page.read().as_str(), *inspector_open.read()) {
                 ("settings", false) | ("workspace", false) => "app-shell context-hidden",
                 _ => "app-shell",
-            }, if *btw_open.read() && workspace_page && !showing_home { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }, if *project_files_open.read() { " project-files-open" } else { "" }, if *project_file_preview.read() || *change_mobile_preview.read() { " project-files-preview-open" } else { "" }, if showing_home { " home-page" } else { "" }, if *sidebar_collapsed.read() && !mobile_device { " sidebar-collapsed" } else { "" }),
+            }, if *btw_open.read() && workspace_page && !showing_home { " btw-open" } else { "" }, if conversation_focus() { " conversation-focus" } else { "" }, if *project_files_open.read() { " project-files-open" } else { "" }, if *project_files_open.read() && *project_files_docked.read() && !mobile_device { " project-files-docked" } else { "" }, if *browser_open.read() { " browser-open" } else { "" }, if *project_file_preview.read() || *change_mobile_preview.read() { " project-files-preview-open" } else { "" }, if showing_home { " home-page" } else { "" }, if *sidebar_collapsed.read() && !mobile_device { " sidebar-collapsed" } else { "" }),
                 "data-device-mode": if mobile_device { "mobile" } else { "desktop" },
                 onkeydown: move |event| {
                 if (event.modifiers().ctrl() || event.modifiers().meta()) && !event.is_composing() {
@@ -5060,11 +5127,14 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                             }
                         }
                         div { class: "top-actions",
-                                span { class: if node_status_online { "header-connection-status online" } else { "header-connection-status" },
+                                // Status is a dot only; the words live in the tooltip and
+                                // accessibility label so the topbar stays icon-first.
+                                span {
+                                    class: if node_status_online { "header-connection-status online" } else { "header-connection-status" },
+                                    role: "status",
+                                    aria_label: format!("{} · {}", if node_display_local { "本机节点" } else { "当前节点" }, node_status_label),
+                                    title: format!("{} · {}", if node_display_local { "本机节点" } else { "当前节点" }, node_status_label),
                                     span { class: "header-connection-dot" }
-                                    if node_display_local { "本机" } else { "节点" }
-                                    " · "
-                                    "{node_status_short_label}"
                                 }
                                 if workspace_page && (!showing_home || selected_session.read().is_some()) {
                                 button { class: "icon-button timeline-toggle", r#type: "button",
@@ -5082,11 +5152,16 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                     }
                                 }
                                 if (workspace_page && !showing_home) || selected_project.read().is_some() {
-                                button { class: "project-files-trigger", r#type: "button", aria_label: "打开项目文件", title: "项目文件与变更", aria_expanded: *project_files_open.read(), onclick: move |_| {
+                                button { class: "icon-button browser-trigger", r#type: "button", aria_label: if *browser_open.read() { "收起嵌入浏览器" } else { "打开嵌入浏览器" }, title: "嵌入浏览器", aria_expanded: *browser_open.read(),
+                                    onclick: move |_| { let next = !*browser_open.read(); browser_open.set(next); },
+                                    Icon { name: "globe" }
+                                }
+                                button { class: "icon-button project-files-trigger", r#type: "button", aria_label: "打开项目文件", title: "项目文件与变更", aria_expanded: *project_files_open.read(), onclick: move |_| {
                                     home_requested.set(false);
                                     project_file_tab.set("files".into());
                                     project_files_open.set(true);
-                                }, Icon { name: "file".to_owned() } span { "项目文件" } span { class: "count-badge", "{change_count}" } }
+                                }, Icon { name: "file".to_owned() }
+                                if change_count != "—" { span { class: "count-badge", "{change_count}" } } }
                             }
                             if showing_home || !workspace_page {
                                     workspace_home::Fullscreen {}
@@ -5231,6 +5306,37 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                     _ => "workspace page-hidden",
                 },
                     section { class: "conversation-panel",
+                        section { class: "browser-surface", hidden: !*browser_open.read(), aria_label: "嵌入浏览器",
+                            div { class: "browser-toolbar",
+                                button { class: "icon-button", r#type: "button", aria_label: "刷新页面", onclick: move |_| { let next = *browser_reload.peek() + 1; browser_reload.set(next); }, Icon { name: "refresh" } }
+                                label { class: "browser-url", span { "地址" }
+                                    input { r#type: "url", value: "{browser_url}", aria_label: "浏览器地址", autocomplete: "off", spellcheck: "false",
+                                        oninput: move |event| browser_url.set(event.value()) }
+                                }
+                                a { class: "button quiet browser-external", href: "{browser_url}", target: "_blank", rel: "noopener noreferrer", "外部打开" }
+                                div { class: "segmented browser-devices", role: "group", aria_label: "视口宽度",
+                                    for (key, label) in [("desktop", "桌面"), ("tablet", "平板"), ("mobile", "手机")] {
+                                        button { class: if browser_device.read().as_str() == key { "active" } else { "" }, r#type: "button", aria_pressed: browser_device.read().as_str() == key,
+                                            onclick: move |_| browser_device.set(key.to_string()), "{label}" }
+                                    }
+                                }
+                                button { class: "icon-button", r#type: "button", aria_label: "收起浏览器面板", onclick: move |_| browser_open.set(false), Icon { name: "close" } }
+                            }
+                            div { class: "browser-viewport", "data-browser-width": "{browser_device}",
+                                if !browser_allowed {
+                                    p { class: "browser-blocked", role: "status", "只嵌入节点确认过的本地/局域网地址；该地址请使用「外部打开」。" }
+                                } else {
+                                iframe { key: "{browser_reload}", src: "{browser_url}", title: "嵌入浏览器页面", referrerpolicy: "no-referrer",
+                                    onmounted: move |_| {
+                                        spawn(async move {
+                                            let _ = document::eval("document.querySelector('.browser-viewport iframe')?.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-popups allow-downloads');").recv::<bool>().await;
+                                        });
+                                    }
+                                }
+                                }
+                            }
+                            p { class: "browser-note", "嵌入浏览器只用于节点确认过的本地开发地址；若页面禁止被嵌入，请使用「外部打开」。预览页不会继承工作台凭据。" }
+                        }
                         if conversation_focus() {
                             div { class: "conversation-focus-toolbar", role: "toolbar", aria_label: "专注阅读",
                                 button { id: "conversation-focus-exit", class: "icon-button", r#type: "button", aria_label: "退出专注阅读", title: "退出专注阅读（Esc）",
@@ -5345,6 +5451,72 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                                 onanswer: answer_dialog,
                                             }
                                         } }
+                                    }
+                                }
+                            }
+                            if timeline_visible() && !changed_files_preview.is_empty() {
+                                {
+                                    let line_counts = change_line_counts.read().clone();
+                                    let total_adds = line_counts.values().map(|(adds, _)| *adds).sum::<u64>();
+                                    let total_deletes = line_counts.values().map(|(_, deletes)| *deletes).sum::<u64>();
+                                    let visible = if *changed_files_expanded.read() { changed_files_preview.len() } else { changed_files_preview.len().min(3) };
+                                    rsx! {
+                                        section { class: "conversation-changed-files", aria_label: "本次修改的文件",
+                                            div { class: "changed-files-heading",
+                                                span { class: "changed-files-icon", Icon { name: "git" } }
+                                                span { class: "changed-files-title", strong { "已编辑 {changed_files_total} 个文件" } small { "当前项目工作区" } }
+                                                if total_adds + total_deletes > 0 {
+                                                    span { class: "changed-files-totals", span { class: "added", "+{total_adds}" } span { class: "deleted", "−{total_deletes}" } }
+                                                }
+                                                button { class: "button quiet", r#type: "button", onclick: move |_| {
+                                                    project_files_open.set(true);
+                                                    project_file_tab.set("changes".into());
+                                                    change_list_open.set(true);
+                                                    project_file_preview.set(false);
+                                                    change_mobile_preview.set(false);
+                                                }, "查看变更" }
+                                            }
+                                            div { class: "changed-files-list",
+                                                for (path, staged, status) in changed_files_preview.iter().cloned().take(visible) {
+                                                    {
+                                                        let handler = open_change_handler.clone();
+                                                        let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                                                        let directory = path.rsplit_once('/').map_or(String::new(), |(dir, _)| dir.to_string());
+                                                        let counts = line_counts.get(&path).copied();
+                                                        let icon = if matches!(name.rsplit('.').next(), Some("rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "json" | "toml" | "css" | "html")) { "code" } else { "file" };
+                                                        rsx! {
+                                                            button { key: "changed-file-{path}", class: "changed-file-row", r#type: "button", title: "{path}",
+                                                                onclick: move |_| handler.call((path.clone(), staged)),
+                                                                Icon { name: icon }
+                                                                span { class: "changed-file-copy", strong { "{name}" } small { "{directory}" } }
+                                                                if let Some((adds, deletes)) = counts {
+                                                                    span { class: "changed-file-counts", span { class: "added", "+{adds}" } span { class: "deleted", "−{deletes}" } }
+                                                                } else {
+                                                                    em { "{status}" }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if changed_files_preview.len() > 3 {
+                                                button { class: "changed-files-more", r#type: "button",
+                                                    onclick: move |_| { let next = !*changed_files_expanded.read(); changed_files_expanded.set(next); },
+                                                    if *changed_files_expanded.read() { "收起" } else { "再显示 {changed_files_preview.len() - 3} 个文件" }
+                                                    Icon { name: "chevron-right" }
+                                                }
+                                            }
+                                            div { class: "changed-files-footer",
+                                                span { Icon { name: "shield" } "只读 Diff，不会提交或修改真实文件。" }
+                                                button { class: "button quiet", r#type: "button", onclick: move |_| {
+                                                    project_files_open.set(true);
+                                                    project_file_tab.set("changes".into());
+                                                    change_list_open.set(true);
+                                                    project_file_preview.set(false);
+                                                    change_mobile_preview.set(false);
+                                                }, "查看全部变更" }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -5888,7 +6060,22 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                 }
                 if *project_files_open.read() {
                     Modal { id: "project-files", title: "项目文件", subtitle: format!("{} · {}", workspace_label, selected_project_name.read().as_deref().unwrap_or("项目")), class: if *project_file_preview.read() { "project-files-modal show-preview" } else if *change_mobile_preview.read() { "project-files-modal show-diff" } else { "project-files-modal" }, onclose: move |()| { project_files_open.set(false); project_file_preview.set(false); change_mobile_preview.set(false); },
-                        div { class: "project-files-scope", Icon { name: "folder".to_owned() } span { "当前项目工作区" } span { class: "neutral-pill", "只读预览" } }
+                        div { class: "project-files-resize", role: "separator", aria_orientation: "vertical", aria_label: "调整项目文件宽度", tabindex: "0",
+                            onmounted: move |_| {
+                                spawn(async move {
+                                    let _ = document::eval(include_str!("project_files_resize.js")).recv::<bool>().await;
+                                });
+                            },
+                        }
+                        div { class: "project-files-scope", Icon { name: "folder".to_owned() } span { "当前项目工作区" } span { class: "neutral-pill", "只读预览" }
+                            if !mobile_device {
+                                button {
+                                    class: "project-files-pin", r#type: "button", aria_pressed: *project_files_docked.read(),
+                                    onclick: move |_| { let next = !*project_files_docked.read(); project_files_docked.set(next); },
+                                    if *project_files_docked.read() { "浮层" } else { "固定" }
+                                }
+                            }
+                        }
                         if !*project_file_preview.read() && !*change_mobile_preview.read() {
                             nav { class: "project-files-tabs", role: "tablist", aria_label: "项目文件视图",
                                 button {
@@ -6080,4 +6267,42 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
             }
         }
     }
+}
+
+/// Only local, `.local` and private LAN hosts may be embedded. Everything else
+/// must use the external-open link, so the workbench never frames arbitrary sites.
+fn is_local_browser_address(value: &str) -> bool {
+    let value = value.trim();
+    let authority = value
+        .strip_prefix("http://")
+        .or_else(|| value.strip_prefix("https://"))
+        .unwrap_or("");
+    if authority.is_empty() || authority.starts_with("//") {
+        return false;
+    }
+    let host_port = authority.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = host_port.rsplit('@').next().unwrap_or(host_port);
+    let host = host_port.trim_start_matches('[').split([']', ':']).next().unwrap_or("");
+    matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1")
+        || host.ends_with(".local")
+        || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || (host.starts_with("172.") && host.split('.').nth(1).and_then(|part| part.parse::<u8>().ok()).is_some_and(|second| (16..=31).contains(&second)))
+}
+
+/// Count added/removed lines without treating file headers as content.
+fn count_patch_lines(patch: &str) -> (u64, u64) {
+    let mut added = 0;
+    let mut removed = 0;
+    for line in patch.lines() {
+        if line.starts_with("+++") || line.starts_with("---") {
+            continue;
+        }
+        if line.starts_with('+') {
+            added += 1;
+        } else if line.starts_with('-') {
+            removed += 1;
+        }
+    }
+    (added, removed)
 }

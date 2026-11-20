@@ -79,7 +79,7 @@ async function test(name, configure, verify, boundMs = 45000) {
         if (!await page.getByLabel('节点地址', { exact: true }).isVisible()) await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
         await page.getByLabel('节点地址', { exact: true }).fill(node.url);
         await page.getByRole('button', { name: '连接节点', exact: true }).click();
-        await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+        await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
         await h.back(); await h.chooseSession();
       },
       async openSettings() {

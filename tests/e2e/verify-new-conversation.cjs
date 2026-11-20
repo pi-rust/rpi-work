@@ -35,7 +35,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(node.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     await row('rpi-work').locator('.project-row').click();
     await row('rpi-work').getByRole('button', { name: '为工作台添加深色模式', exact: true }).click();

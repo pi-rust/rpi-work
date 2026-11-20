@@ -72,7 +72,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     const address = desktop.getByLabel('节点地址', { exact: true });
     const connect = desktop.getByRole('button', { name: '连接节点', exact: true });
     await address.fill(firstAddress); await desktop.getByLabel('节点密码', { exact: true }).fill('test-only');
-    await connect.click(); await desktop.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await connect.click(); await desktop.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     const beforeSharing = mutations();
     await address.fill(secondAddress); // This draft is deliberately NOT connected.
     await openShare(desktop);
@@ -128,7 +128,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await dialog(desktop).getByRole('button', { name: '复制地址', exact: true }).click();
     await desktop.waitForFunction(() => typeof window.__finishCopy === 'function');
     await desktop.keyboard.press('Escape');
-    await connect.click(); await desktop.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await connect.click(); await desktop.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     await openShare(desktop);
     expectSealed(await exported(desktop), secondAddress, 'switched node');
     await desktop.evaluate(() => { window.__finishCopy(); window.__copyMode = 'ok'; });
@@ -142,7 +142,7 @@ const { startFixture } = require('../fixtures/ui-fixture.cjs');
     await openShare(desktop); // Must close if a same-address connection epoch changes.
     await desktop.evaluate(() => document.querySelector('.remote-node-form button').click());
     await dialog(desktop).waitFor({ state: 'hidden' });
-    await desktop.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await desktop.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     await openShare(desktop);
     expectSealed(await exported(desktop), secondAddress, 'reconnected node');
     await desktop.keyboard.press('Escape');

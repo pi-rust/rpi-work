@@ -4,7 +4,7 @@
 
 [中文 README](README.md) · [Latest release](https://github.com/pi-rust/rpi-work/releases/latest) · [All releases](https://github.com/pi-rust/rpi-work/releases) · [CI](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [Documentation](#documentation)
 
-Current version: **RPI Work 0.1.21**. This is a personally maintained project under active development; some APIs and features may change.
+Current version: **RPI Work 0.1.22**. This is a personally maintained project under active development; some APIs and features may change.
 
 > This project is released under the [MIT License](LICENSE). Commercial plans, official services, and paid support are still being planned; the MIT grant itself permits commercial use. See the [legal and commercial status](docs/legal/licensing.md) for details.
 
@@ -142,6 +142,6 @@ Issues, documentation improvements, and pull requests are welcome. Before submit
 
 ## Releases
 
-Stable releases are triggered by `v*` tags. GitHub Actions builds the platform packages, generates SHA-256 checksums, and creates a signed update manifest. The current release is [`v0.1.21`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.21).
+Stable releases are triggered by `v*` tags. GitHub Actions builds the platform packages, generates SHA-256 checksums, and creates a signed update manifest. The current release is [`v0.1.22`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.22).
 
 For a new release, update `apps/work-ui/Cargo.toml`, `docs/release-notes.md`, and the current-version reference in both README files, then create a tag matching the UI package version.

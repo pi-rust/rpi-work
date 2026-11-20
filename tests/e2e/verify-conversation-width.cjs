@@ -213,7 +213,7 @@ const QUEUE_TEXT = '隔离队列宽度验证：' + 'Please retain this readable 
     await page.getByRole('button', { name: '连接其他节点', exact: true }).click();
     await page.getByLabel('节点地址', { exact: true }).fill(fixture.url);
     await page.getByRole('button', { name: '连接节点', exact: true }).click();
-    await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     // Startup may already expand/open the default project and session.
     const session = page.getByLabel('会话列表', { exact: true }).locator('[data-session-id="dark"] .session-item');

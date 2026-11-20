@@ -15,7 +15,7 @@ const {startFixture}=require('../fixtures/ui-fixture.cjs');
  try{
   await page.goto(process.env.WORK_UI_URL||'http://127.0.0.1:14180/');
   await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'工作协同',exact:true}).click();
-  await page.getByRole('button',{name:'连接其他节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(node.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.locator('.server-details [role=status]').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();
+  await page.getByRole('button',{name:'连接其他节点',exact:true}).click();await page.getByLabel('节点地址',{exact:true}).fill(node.url);await page.getByRole('button',{name:'连接节点',exact:true}).click();await page.locator('.collaboration-page-heading [role=status]').filter({hasText:'在线'}).waitFor();await page.getByRole('button',{name:'返回会话',exact:true}).click();
   await row('rpi-work').locator('.project-row').click();await session('dark').locator('.session-item').click();
   await row('rpi-work').locator('.project-row-menu').click();await page.getByRole('menuitem',{name:'重命名项目',exact:true}).click();
   const projectName=page.getByRole('dialog',{name:'项目名称与目录',exact:true});await projectName.getByLabel('显示名称',{exact:true}).fill('我的工作台');node.controls.failProjectRename=true;await projectName.getByLabel('显示名称',{exact:true}).press('Enter');await projectName.getByRole('alert').waitFor();assert.equal(await projectName.getByLabel('显示名称',{exact:true}).inputValue(),'我的工作台');node.controls.failProjectRename=false;await projectName.getByLabel('显示名称',{exact:true}).press('Enter');await projectName.waitFor({state:'hidden'});

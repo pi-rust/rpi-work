@@ -96,7 +96,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
       await page.getByLabel('节点密码', { exact: true }).fill(password);
       await page.getByRole('button', { name: '登录', exact: true }).click();
     }
-    await page.locator('.server-details [role=status]').filter({ hasText: '在线' }).waitFor();
+    await page.locator('.collaboration-page-heading [role=status]').filter({ hasText: '在线' }).waitFor();
     pass('real node authentication and workspace load through the client proxy');
     await page.getByRole('button', { name: '返回会话', exact: true }).click();
     await page.locator('.project-row').filter({ hasText: project.name }).click();

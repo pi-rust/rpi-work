@@ -340,3 +340,343 @@
 @media (max-width: 767px) {
   .app-shell > .inspector .inspector-content { padding: 16px; }
 }
+
+/* Desktop docks the project inspector; narrow windows keep the modal drawer. */
+.project-files-resize { display: none; }
+.project-files-pin {
+  min-height: 26px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+}
+.project-files-pin[aria-pressed="true"] { background: var(--panel); color: var(--text); }
+@media (max-width: 1199px) {
+  .project-files-pin { display: none; }
+}
+@media (min-width: 1200px) {
+  .app-shell.project-files-docked.project-files-open .main-shell {
+    margin-right: var(--project-files-width, 392px);
+  }
+  .app-shell.project-files-docked.project-files-open.project-files-preview-open .main-shell {
+    margin-right: min(720px, calc(100vw - 320px));
+  }
+  .app-shell.project-files-docked dialog.project-files-modal {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: var(--project-files-width, 392px);
+    max-width: 480px;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-left: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .app-shell.project-files-docked dialog.project-files-modal::backdrop { background: transparent; }
+  .app-shell.project-files-docked dialog.project-files-modal:is(.show-preview, .show-diff) {
+    width: min(720px, calc(100vw - 320px));
+    max-width: 720px;
+  }
+  .app-shell.project-files-docked .project-files-resize {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 2;
+  }
+  .app-shell.project-files-docked .project-files-resize:hover,
+  .app-shell.project-files-docked .project-files-resize:focus-visible {
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    outline: none;
+  }
+}
+@media (min-width: 768px) {
+  .app-shell.project-files-open:not(.project-files-docked) dialog.project-files-modal {
+    position: fixed;
+    inset: 60px 0 0 auto;
+    width: min(392px, calc(100vw - 24px));
+    height: auto;
+    max-height: calc(100dvh - 60px);
+    margin: 0;
+    border-radius: 22px 0 0 22px;
+  }
+  .app-shell.project-files-open:not(.project-files-docked) dialog.project-files-modal:is(.show-preview, .show-diff) {
+    width: min(720px, calc(100vw - 24px));
+    max-width: 720px;
+  }
+}
+
+/* Modified files stay in the conversation and open the existing read-only Diff. */
+.conversation-changed-files {
+  max-width: 600px;
+  margin: 18px 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.changed-files-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.changed-files-heading:hover { background: var(--panel); }
+.changed-files-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.changed-files-icon > .icon { width: 16px; height: 16px; }
+.changed-files-title { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.changed-files-title strong { font-size: calc(13px * var(--type-scale, 1)); font-weight: 550; }
+.changed-files-title small { color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); }
+.changed-files-count { flex: none; color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); }
+.changed-files-heading > .icon { width: 13px; height: 13px; flex: none; color: var(--muted); }
+.changed-files-list { display: grid; border-top: 1px solid var(--line); }
+.changed-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+}
+.changed-file-row:first-child { border-top: 0; }
+.changed-file-row:hover { background: var(--panel); }
+.changed-file-row > .icon { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.changed-file-row > span { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.changed-file-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11px * var(--type-scale, 1)); font-weight: 550; }
+.changed-file-row small { overflow-wrap: anywhere; color: var(--muted); font-size: calc(9px * var(--type-scale, 1)); }
+.changed-file-row em { flex: none; color: var(--muted); font: calc(10px * var(--type-scale, 1)) var(--mono); font-style: normal; }
+.changed-files-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+}
+.changed-files-footer > span { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.changed-files-footer .icon { width: 12px; height: 12px; flex: none; }
+.changed-files-footer .button { min-height: 28px; padding: 4px 8px; font-size: calc(10px * var(--type-scale, 1)); }
+@media (max-width: 700px) {
+  .conversation-changed-files { margin: 16px 0 6px; }
+  .changed-file-row { padding: 10px 12px; }
+  .changed-files-footer { flex-wrap: wrap; }
+  .changed-files-footer .button { width: 100%; min-height: 40px; }
+}
+
+/* Embedded browser replaces the conversation surface; the chat stays mounted. */
+.browser-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: calc(12px * var(--type-scale, 1));
+}
+.browser-trigger > .icon { width: 15px; height: 15px; }
+.browser-trigger[aria-expanded="true"] { background: var(--panel); color: var(--text); }
+.app-shell.browser-open .transcript,
+.app-shell.browser-open .composer-main { display: none; }
+.browser-surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 24px 14px;
+}
+.browser-surface[hidden] { display: none !important; }
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.browser-toolbar .icon-button { width: 34px; height: 34px; }
+.browser-url {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--card);
+}
+.browser-url > span { color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); }
+.browser-url > input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: calc(11px * var(--type-scale, 1)) var(--mono);
+  outline: none;
+}
+.browser-external { min-height: 34px; font-size: calc(11px * var(--type-scale, 1)); }
+.browser-devices { margin-left: auto; }
+.browser-devices > button { min-height: 30px; font-size: calc(10px * var(--type-scale, 1)); }
+.browser-viewport {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+  overflow: auto;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.browser-viewport > iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.browser-viewport[data-browser-width="tablet"] > iframe { width: min(720px, 100%); }
+.browser-viewport[data-browser-width="mobile"] > iframe { width: min(390px, 100%); }
+.browser-note { margin-top: 9px; color: var(--muted); font-size: calc(10px * var(--type-scale, 1)); line-height: 1.7; }
+@media (max-width: 700px) {
+  .browser-trigger { min-width: 44px; min-height: 44px; border: 0; padding: 0 5px; }
+  .browser-trigger > span { display: none; }
+  .browser-surface { padding: 0 12px 10px; }
+  .browser-url { flex: 1 1 100%; order: 2; }
+  .browser-url > input { min-height: 44px; font-size: 16px; }
+  .browser-external { order: 3; min-height: 44px; flex: 1; }
+  .browser-devices { order: 4; margin-left: 0; }
+  .browser-devices > button { min-height: 44px; }
+  .browser-toolbar .icon-button { width: 44px; height: 44px; }
+  .browser-viewport { padding: 8px; }
+  .browser-viewport > iframe { min-height: 300px; }
+}
+.browser-blocked {
+  align-self: center;
+  margin: auto;
+  padding: 14px 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: calc(11px * var(--type-scale, 1));
+  text-align: center;
+}
+
+/* Codex-style edited-files card: totals, bounded list and a "more" row. */
+.conversation-changed-files .changed-files-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+}
+.conversation-changed-files .changed-files-title { flex: 1; }
+.conversation-changed-files .changed-files-title strong { font-size: calc(12px * var(--type-scale, 1)); }
+.conversation-changed-files .changed-files-title small { color: var(--muted); }
+.changed-files-totals { display: flex; gap: 8px; flex: none; font: calc(11px * var(--type-scale, 1)) var(--mono); }
+.changed-files-totals .added { color: var(--success); }
+.changed-files-totals .deleted { color: var(--danger); }
+.conversation-changed-files .changed-files-heading .button { min-height: 28px; padding: 3px 8px; font-size: calc(10px * var(--type-scale, 1)); }
+.changed-file-copy { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.changed-file-copy strong { font-size: calc(11px * var(--type-scale, 1)); font-weight: 550; overflow-wrap: anywhere; }
+.changed-file-copy small { color: var(--muted); font-size: calc(9px * var(--type-scale, 1)); overflow-wrap: anywhere; }
+.changed-file-counts { display: flex; gap: 7px; flex: none; font: calc(10px * var(--type-scale, 1)) var(--mono); }
+.changed-file-counts .added { color: var(--success); }
+.changed-file-counts .deleted { color: var(--danger); }
+.changed-files-more {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 7px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: calc(10px * var(--type-scale, 1));
+  text-align: left;
+}
+.changed-files-more:hover { color: var(--text); background: var(--panel); }
+.changed-files-more > .icon { width: 11px; height: 11px; }
+.changed-file-row em { font-style: normal; }
+
+/* Topbar utilities are icon-only; counts stay as a small badge. */
+.topbar .browser-trigger,
+.topbar .project-files-trigger {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.topbar .browser-trigger:hover,
+.topbar .project-files-trigger:hover,
+.topbar .browser-trigger[aria-expanded="true"],
+.topbar .project-files-trigger[aria-expanded="true"] {
+  background: var(--panel);
+  color: var(--text);
+}
+.topbar .browser-trigger > .icon,
+.topbar .project-files-trigger > .icon { width: 17px; height: 17px; }
+.topbar .project-files-trigger .count-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 14px;
+}
+.topbar .project-files-trigger[aria-expanded="true"] .count-badge { background: var(--card); color: var(--text); }
+
+/* The browser page uses the same flat surfaces as the conversation. */
+.browser-surface { padding: 0 20px 14px; }
+.browser-toolbar { padding: 8px 0; }
+.browser-viewport {
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+.browser-viewport > iframe { border-radius: var(--radius-sm); }
+.browser-note { padding-left: 2px; }
+@media (max-width: 700px) {
+  .browser-surface { padding: 0 12px 10px; }
+}

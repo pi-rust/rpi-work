@@ -35,8 +35,31 @@ function showView(view) {
 function showTab(tab) {
   const context = document.querySelector('#context-dialog');if (context.open) context.close();
   if (document.body.dataset.view !== 'workspace') showView('workspace');
+  setBrowser(false);
   document.querySelector('#chat-panel').hidden = tab !== 'chat';
   document.querySelector('#changes-panel').hidden = tab !== 'changes';
+}
+// The embedded browser owns the conversation column; chat stays mounted so the
+// draft survives. It never navigates a real URL in this static prototype.
+function setBrowser(open) {
+  const panel = document.querySelector('#browser-panel');
+  if (!panel) return;
+  panel.hidden = !open;
+  if (open) {
+    document.querySelector('#chat-panel').hidden = true;
+    document.querySelector('#changes-panel').hidden = true;
+  } else if (document.querySelector('#chat-panel').hidden && document.querySelector('#changes-panel').hidden) {
+    document.querySelector('#chat-panel').hidden = false;
+  }
+  const trigger = document.querySelector('[data-action="browser-toggle"]');
+  if (trigger) {
+    trigger.setAttribute('aria-expanded', String(open));
+    trigger.setAttribute('aria-label', open ? '关闭嵌入浏览器' : '打开嵌入浏览器');
+  }
+}
+function browserStatus(message) {
+  const status = document.querySelector('.browser-status');
+  if (status && message) status.textContent = message;
 }
 function setProjectFiles(open) {
   const panel = document.querySelector('#project-files-panel');
@@ -44,6 +67,7 @@ function setProjectFiles(open) {
   shell.classList.toggle('project-files-open',open);
   if (!open) shell.classList.remove('project-files-diff-open');
   for (const button of document.querySelectorAll('[data-action="project-files"]')) button.setAttribute('aria-expanded',String(open));
+  if (open) applyProjectFilesMode();
   syncNavigation();
 }
 function toggleProjectFiles() {
@@ -51,7 +75,31 @@ function toggleProjectFiles() {
   setProjectFiles(open);
   if (open) showProjectFileList();
 }
+// Desktop keeps the inspector as a docked third column; narrow windows use the
+// overlay drawer. The pin is a local display preference for this prototype.
+let projectFilesPinned = true;
+const projectFilesMinWidth = 320;
+const projectFilesMaxWidth = 480;
+function projectFilesWidth() {
+  return parseFloat(getComputedStyle(shell).getPropertyValue('--project-files-width')) || 392;
+}
+function setProjectFilesWidth(width) {
+  const clamped = Math.max(projectFilesMinWidth, Math.min(projectFilesMaxWidth, Math.round(width)));
+  shell.style.setProperty('--project-files-width', `${clamped}px`);
+}
+function applyProjectFilesMode() {
+  const docked = projectFilesPinned && window.innerWidth >= 1200;
+  shell.classList.toggle('project-files-docked', docked);
+  const pin = document.querySelector('[data-action="project-files-pin"]');
+  if (pin) {
+    pin.setAttribute('aria-pressed', String(projectFilesPinned));
+    pin.textContent = projectFilesPinned ? '浮层' : '固定';
+    pin.title = projectFilesPinned ? '切换为浮层' : '固定到右侧';
+  }
+}
+window.addEventListener('resize', applyProjectFilesMode, { passive: true });
 function showProjectFileList() {
+  applyProjectFilesMode();
   shell.classList.remove('project-files-diff-open');
   document.querySelector('.project-tree').hidden = false;
   document.querySelector('.project-changes').hidden = false;
@@ -75,6 +123,8 @@ function renderProjectFileDiff(file = 'appearance.rs') {
 }
 function openProjectFileDiff(file = 'appearance.rs') {
   setProjectFiles(true);
+  // A large Diff needs the overlay width even when the tree column is docked.
+  shell.classList.remove('project-files-docked');
   shell.classList.add('project-files-diff-open');
   document.querySelector('.project-tree').hidden = true;
   document.querySelector('.project-changes').hidden = true;
@@ -523,6 +573,12 @@ document.addEventListener('click', event => {
   }
   if (button.classList.contains('scrim')) { if (shell.classList.contains('project-files-open')) setProjectFiles(false); shell.classList.remove('nav-open'); syncNavigation(); document.querySelector('.mobile-menu').focus(); }
   if (button.dataset.action === 'project-files') toggleProjectFiles();
+  if (button.dataset.action === 'browser-toggle') setBrowser(document.querySelector('#browser-panel').hidden);
+  if (button.dataset.action === 'browser-close') setBrowser(false);
+  if (button.dataset.action === 'browser-reload') browserStatus('设计预览：刷新只改变占位内容，不会请求真实地址。');
+  if (button.dataset.action === 'browser-external') browserStatus('设计预览：不会在系统浏览器打开真实地址。');
+  if (button.dataset.action === 'browser-back' || button.dataset.action === 'browser-forward') browserStatus('设计预览：没有真实浏览历史。');
+  if (button.dataset.action === 'project-files-pin') { projectFilesPinned = !projectFilesPinned; applyProjectFilesMode(); }
   if (button.dataset.action === 'project-file-diff') openProjectFileDiff(button.dataset.file);
   if (button.dataset.action === 'project-file-diff-back') showProjectFileList();
   if (button.dataset.fileTab) renderProjectFileDiff(button.dataset.fileTab);
@@ -777,4 +833,48 @@ document.querySelector('#node-settings-switch')?.addEventListener('click', () =>
   markCurrentNode(nodeSettingsTarget);
   document.querySelector('#node-settings-dialog')?.close();
   if (node) toast(`设计预览：已把 ${node.name} 设为当前节点，不保存设置。`);
+});
+
+
+const projectFilesResize = document.querySelector('.project-files-resize');
+if (projectFilesResize) {
+  let startX = 0, startWidth = 0, dragging = false;
+  projectFilesResize.addEventListener('pointerdown', event => {
+    if (!shell.classList.contains('project-files-docked')) return;
+    dragging = true; startX = event.clientX; startWidth = projectFilesWidth();
+    projectFilesResize.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  projectFilesResize.addEventListener('pointermove', event => {
+    if (!dragging) return;
+    setProjectFilesWidth(startWidth - (event.clientX - startX));
+  });
+  const end = () => { dragging = false; };
+  projectFilesResize.addEventListener('pointerup', end);
+  projectFilesResize.addEventListener('pointercancel', end);
+  projectFilesResize.addEventListener('keydown', event => {
+    if (!shell.classList.contains('project-files-docked')) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    setProjectFilesWidth(projectFilesWidth() + (event.key === 'ArrowLeft' ? 16 : -16));
+  });
+}
+applyProjectFilesMode();
+
+document.addEventListener('click', event => {
+  const widthButton = event.target.closest('[data-browser-width]');
+  if (!widthButton) return;
+  const workspace = document.querySelector('#browser-workspace');
+  if (workspace) workspace.dataset.browserWidth = widthButton.dataset.browserWidth;
+  for (const button of document.querySelectorAll('[data-browser-width]')) {
+    const active = button === widthButton;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  browserStatus(`嵌入浏览器 · ${widthButton.dataset.browserWidth === 'mobile' ? '手机' : widthButton.dataset.browserWidth === 'tablet' ? '平板' : '桌面'}视口 · 只允许节点确认的本地端口。`);
+});
+document.querySelector('#browser-url')?.addEventListener('input', event => {
+  let host = event.target.value;
+  try { host = new URL(host).host || host; } catch {}
+  browserStatus(`嵌入浏览器 · ${host} · 只允许节点确认的本地端口。`);
 });

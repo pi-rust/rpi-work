@@ -80,7 +80,7 @@
 .sharing-ready.disabled{color:var(--muted)}
 .sharing-ready>.icon{width:16px;height:16px;flex:none}
 .assist-card>.button{margin-top:15px}
-.collaboration-lists{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.collaboration-lists{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
 .collaboration-list-panel{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card)}
 .collaboration-list-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:16px 15px 12px}
 .collaboration-list-heading h2{margin:0;font-size:14px;font-weight:600}
@@ -386,3 +386,7 @@
   .collaboration-switch-row>.sharing-switch{align-self:flex-start}
   .connect-card .collaboration-connect-actions{margin-top:12px}
 }
+
+/* Node online/offline is an icon state; the wording stays in title/aria-label. */
+.status-badge.status-dot-only { width:24px; min-width:24px; height:24px; padding:0; justify-content:center; gap:0; }
+.status-badge.status-dot-only i { margin:0; }

@@ -103,7 +103,10 @@ pub fn SettingsPage(
                     }
                 }
                 div { class: "settings-content",
-                    if !status.read().is_empty() {
+                    // Connection/composer prompts belong to the workspace. The
+                    // collaboration page reports its own node state, so do not
+                    // stack an unrelated red banner above it.
+                    if !status.read().is_empty() && current_category != "devices" {
                         div {
                             class: if status_is_error(&status.read()) { "settings-operation-status is-error" } else { "settings-operation-status" },
                             role: if status_is_error(&status.read()) { "alert" } else { "status" },

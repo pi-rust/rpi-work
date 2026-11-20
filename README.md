@@ -4,7 +4,7 @@
 
 [English README](README.en.md) · [下载最新版](https://github.com/pi-rust/rpi-work/releases/latest) · [全部版本](https://github.com/pi-rust/rpi-work/releases) · [构建状态](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [文档](#文档)
 
-当前版本：**RPI Work 0.1.21**。项目由个人维护，持续开发中；部分 API 和功能仍可能变化。
+当前版本：**RPI Work 0.1.22**。项目由个人维护，持续开发中；部分 API 和功能仍可能变化。
 
 > 本项目采用 [MIT License](LICENSE)。个人商业计划、官方服务和商业支持方案仍在规划中；MIT 授权本身允许商业使用，完整说明见[法律与商业状态](docs/legal/licensing.md)。
 
@@ -142,6 +142,6 @@ cargo run --locked -p work-cli -- watch SESSION_ID
 
 ## 发布
 
-稳定版本通过 `v*` 标签触发 GitHub Actions，构建多平台安装包，生成 SHA-256 校验文件，并创建签名更新清单。当前发布版本为 [`v0.1.21`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.21)。
+稳定版本通过 `v*` 标签触发 GitHub Actions，构建多平台安装包，生成 SHA-256 校验文件，并创建签名更新清单。当前发布版本为 [`v0.1.22`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.22)。
 
 发布新版本时同步更新 `apps/work-ui/Cargo.toml`、`docs/release-notes.md` 和本 README 中的当前版本，再创建与 UI 包版本一致的标签。
