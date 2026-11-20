@@ -230,8 +230,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
     let mut file_from_message = use_signal(|| false);
     let mut reveal_directory = use_signal(|| None::<String>);
     let mut git_status = use_signal(|| None::<GitStatus>);
-    let mut change_line_counts =
-        use_signal(std::collections::HashMap::<String, (u64, u64)>::new);
+    let mut change_line_counts = use_signal(std::collections::HashMap::<String, (u64, u64)>::new);
     let mut changed_files_expanded = use_signal(|| false);
     let mut git_loading = use_signal(|| false);
     let mut git_error = use_signal(|| None::<String>);
@@ -4267,7 +4266,8 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                 .iter()
                 .take(6)
                 .map(|file| {
-                    let label = crate::features::projects::review::change_status_label(&file.status);
+                    let label =
+                        crate::features::projects::review::change_status_label(&file.status);
                     (file.path.clone(), file.staged, label.to_string())
                 })
                 .collect::<Vec<_>>()
@@ -6282,12 +6282,21 @@ fn is_local_browser_address(value: &str) -> bool {
     }
     let host_port = authority.split(['/', '?', '#']).next().unwrap_or("");
     let host_port = host_port.rsplit('@').next().unwrap_or(host_port);
-    let host = host_port.trim_start_matches('[').split([']', ':']).next().unwrap_or("");
+    let host = host_port
+        .trim_start_matches('[')
+        .split([']', ':'])
+        .next()
+        .unwrap_or("");
     matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1")
         || host.ends_with(".local")
         || host.starts_with("10.")
         || host.starts_with("192.168.")
-        || (host.starts_with("172.") && host.split('.').nth(1).and_then(|part| part.parse::<u8>().ok()).is_some_and(|second| (16..=31).contains(&second)))
+        || (host.starts_with("172.")
+            && host
+                .split('.')
+                .nth(1)
+                .and_then(|part| part.parse::<u8>().ok())
+                .is_some_and(|second| (16..=31).contains(&second)))
 }
 
 /// Count added/removed lines without treating file headers as content.
