@@ -28,7 +28,8 @@ test('workspace navigation and connection actions do not fork by platform', () =
   assert.match(presentation,/restart.call/);
   assert.match(presentation,/control.forget/);
   assert.doesNotMatch(devices,/MobileEntryControl|native_mobile/);
-  assert(devices.includes('if owned_local || (!mobile_client && !scoped_entry)')); 
+  assert(devices.includes('if !mobile_collaboration && !collaboration_hub')); 
+  assert(!devices.includes('当前节点与连接详情'), 'legacy bottom diagnostics stay removed');
   for (const file of ['entry.rs','mobile_entry.rs']) {
     assert.match(read(`apps/work-ui/src/app/${file}`),/use_context_provider\(move \|\| ConnectionSessionControl/);
   }
