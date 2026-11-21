@@ -18,3 +18,6 @@ Thumbs.db
 # Generated screenshots, downloads and machine-specific reports stay local.
 # Source-review baselines are tracked in tests/fixtures/baselines/.
 /artifacts/
+
+# Generated prototype review screenshots
+design/clarity-workbench/screenshots/
