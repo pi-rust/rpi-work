@@ -141,7 +141,12 @@ export function rowElement(
 ) {
   if (row.source === 'history') {
     const message = history[row.index]
-    return message ? <UserRow key={`h-${row.index}`} message={message} /> : null
+    if (!message) return null
+    return message.role === 'user' ? (
+      <UserRow key={`h-${row.index}`} message={message} />
+    ) : (
+      <AnswerRow key={`h-${row.index}`} text={message.content} model={model} />
+    )
   }
   const block = blocks[row.index]
   if (!block) return null

@@ -3,7 +3,22 @@
 > 目标：在 `design/reui-codex/` 用 **ReUI**（MIT 的 shadcn 生态组件库）实现一版 **Codex 式布局**的工作台前端，并逐步接到真实节点。
 > 预算：500 轮。一轮 = 一次可合并的改动 + 一次可复现验收（`npm run build` + Playwright 截图 + 必要单测）。
 
-## 0. 许可证结论（先回答能不能免费用）
+## 0. 目标（goal）
+
+**一句话**：在 `design/reui-codex/` 交付一版以 ReUI（MIT）+ Codex 布局为基础、规则全部由 Rust
+（`work-viewmodel` / `work-client` 的 wasm 绑定）驱动的 Web 工作台，500 轮内达到可替代
+`apps/work-ui` 的 Web 入口能力。
+
+**完成的定义（Definition of Done）**
+
+1. P0–P10 全部验收通过（见 §2 表格），每阶段一次提交 + 可复现验收脚本。
+2. 实时事件、发送/中止、文件 Diff、资源与设置、320/390 布局与当前 Dioxus Web 版功能对齐（对照表逐项勾选）。
+3. 展示规则零 TypeScript 重复：行序、工具摘要、代码分词、指标格式、主题 token 只能来自 Rust。
+4. 产物可由 `work-node-service` 同源托管，登录 → 工作台 → 发送全链路可用。
+
+**轮次预算**：500 轮（§2 合计 540，含 40 轮缓冲）。
+
+## 0.1 许可证结论（先回答能不能免费用）
 
 | 对象 | 许可 | 能否商用 | 说明 |
 | --- | --- | --- | --- |
@@ -50,7 +65,19 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 合计 **540** 轮，留 40 轮缓冲（缺陷修复与视觉打磨）。
 
-## 3. 已完成（本次）
+## 3. 已完成
+
+### P2 只读数据（已落地）
+
+- 新增 `crates/client/work-client-wasm`：`NodeClient::{auth,login,projects,sessions,messages}`，
+  协议与错误形状留在 Rust，JS 只做 promise 适配。
+- Vite 同源代理 `/api` → `RPI_NODE_URL`，浏览器不需要 CORS 或额外 host 允许列表。
+- `src/lib/workspace.ts`：fixture / live 双数据源、连接生命周期（connecting / auth-required /
+  error / ready）、断开回退，全部喂给同一个 `TranscriptPresenter`。
+- `messages()` 用 `message_summaries` 取最新用户消息做锚点，再 `message_window` 取窗口，
+  满足原生节点「恰好一个游标」的约束。
+- 验收：`npm run verify:fixture`（6 条）与 `npm run verify:live`（6 条）全绿，截图见提交。
+
 
 ### P2/P3 前置：`crates/client/work-viewmodel-wasm`（已落地）
 

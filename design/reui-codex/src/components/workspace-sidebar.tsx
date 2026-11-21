@@ -10,6 +10,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import type { ReactNode } from 'react'
 import type { Project, Session } from '@/data'
 
 type Props = {
@@ -21,6 +22,10 @@ type Props = {
   onSession: (id: string) => void
   onNewChat: () => void
   className?: string
+  /** Connection controls, rendered above the node row. */
+  connection?: ReactNode
+  nodeLabel?: string
+  nodeState?: 'fixture' | 'online' | 'offline'
 }
 
 /** Codex-style left rail: workspace switcher, projects, threads, footer. */
@@ -33,6 +38,9 @@ export function Sidebar({
   onSession,
   onNewChat,
   className,
+  connection,
+  nodeLabel = 'fixture-node',
+  nodeState = 'fixture',
 }: Props) {
   return (
     <aside
@@ -91,10 +99,7 @@ export function Sidebar({
                   {list.map((entry) => (
                     <button
                       key={entry.id}
-                      onClick={() => {
-                        onProject(item.id)
-                        onSession(entry.id)
-                      }}
+                      onClick={() => onSession(entry.id)}
                       className={cn(
                         'hover:bg-sidebar-accent truncate rounded-md px-2 py-1.5 text-left text-[13px]',
                         active && entry.id === session
@@ -112,11 +117,17 @@ export function Sidebar({
         </div>
       </ScrollArea>
 
+      {connection ? <div className="px-3 pb-2">{connection}</div> : null}
       <Separator />
       <div className="flex items-center justify-between px-3 py-2 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1">
-          <Dot className="size-4" />
-          fixture-node
+          <span
+            className={cn(
+              'size-1.5 rounded-full',
+              nodeState === 'online' ? 'bg-emerald-500' : nodeState === 'offline' ? 'bg-destructive' : 'bg-muted-foreground/50',
+            )}
+          />
+          {nodeLabel}
         </span>
         <Button variant="ghost" size="icon" aria-label="设置" className="size-6">
           <Settings className="size-3.5" />

@@ -13,6 +13,20 @@ npm run build             # 先编 wasm，再 tsc + vite build
 展示规则不在 TypeScript 里：`src/lib/viewmodel.ts` 只是 `crates/client/work-viewmodel-wasm`
 的薄封装，行序、工具目标、指标格式、主题 token 都由 Rust 提供（`src/pkg/` 为构建产物，已忽略）。
 
+## 两种数据源
+
+| 模式 | 命令 | 说明 |
+| --- | --- | --- |
+| fixture（默认） | `npm run preview` | 内置内容，验证布局与 Rust 规则 |
+| live | `node scripts/live-fixture.cjs` 拿端口 → `RPI_NODE_URL=http://127.0.0.1:<port> npm run preview -- --port 5180` → 打开 `http://127.0.0.1:5180/?live=1` | 通过 wasm 版 `work-client` 读取真实节点的项目/会话/消息；`/api` 由 Vite 同源代理 |
+
+验收脚本（需要仓库根目录 `npm ci --prefix tools`）：
+
+```bash
+npm run verify:fixture           # fixture 模式 6 条断言（需先启动 preview 到 5179）
+REUI_URL='http://127.0.0.1:5180/?live=1' npm run verify:live
+```
+
 ## 已实现
 
 | 区域 | 实现 |
@@ -33,7 +47,8 @@ npm run build             # 先编 wasm，再 tsc + vite build
 
 ## 已知限制
 
-- fixture 数据，没有接节点、没有实时事件、不能发送消息（P2/P3 待做）。
+- 已接只读节点（项目/会话/消息、密码登录、断开回退）；**没有实时事件、不能发送消息**（P3/P4）。
+- 实时转写（工具卡）仍只在 fixture 模式出现；live 模式暂时只有历史消息。
 - `src/pkg/` 需先执行 `npm run build:viewmodel`（约 70s，含 wasm 目标编译）。
 - 主题只有明暗两套（未接 `work-viewmodel` 的 12 套主题 token）。
 - 未做 320/390 窄屏布局验收。

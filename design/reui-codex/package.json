@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:viewmodel && tsc -b && vite build",
+    "build": "npm run build:wasm && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "build:viewmodel": "cargo build --manifest-path ../../Cargo.toml -p work-viewmodel-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir src/pkg --out-name work_viewmodel ../../target/wasm32-unknown-unknown/release/work_viewmodel_wasm.wasm"
+    "build:wasm": "cargo build --manifest-path ../../Cargo.toml -p work-viewmodel-wasm -p work-client-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir src/pkg --out-name work_viewmodel ../../target/wasm32-unknown-unknown/release/work_viewmodel_wasm.wasm && wasm-bindgen --target web --out-dir src/pkg --out-name work_client ../../target/wasm32-unknown-unknown/release/work_client_wasm.wasm",
+    "verify:fixture": "node scripts/verify-fixture.cjs",
+    "verify:live": "node scripts/verify-live.cjs",
+    "live:fixture": "node scripts/live-fixture.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

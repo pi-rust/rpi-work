@@ -6968,6 +6968,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "work-client-wasm"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "work-client",
+]
+
+[[package]]
 name = "work-component-api"
 version = "0.1.0"
 dependencies = [

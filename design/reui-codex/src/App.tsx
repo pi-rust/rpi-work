@@ -1,111 +1,117 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Moon, PanelRight, Sun } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Moon, PanelRight, Sun, Wifi, WifiOff } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  blocks,
-  contextPayload,
-  history,
-  node,
-  projects,
-  runSteps,
-  sessions,
-  statsPayload,
-} from '@/data'
+import { node, runSteps, statsPayload, contextPayload } from '@/data'
 import { Composer } from '@/components/composer'
 import { RunTimeline, rowElement } from '@/components/transcript'
 import { Sidebar } from '@/components/workspace-sidebar'
-import {
-  contextFrom,
-  formatTokens,
-  initViewModel,
-  metricsFrom,
-  themeTokens,
-  TranscriptPresenter,
-  type RowRef,
-} from '@/lib/viewmodel'
+import { useWorkspace } from '@/lib/workspace'
+import { contextFrom, formatTokens, metricsFrom, themeTokens } from '@/lib/viewmodel'
 
 export default function App() {
-  const [project, setProject] = useState('rpi-work')
-  const [session, setSession] = useState('dark')
+  const workspace = useWorkspace()
   const [draft, setDraft] = useState('')
   const [dark, setDark] = useState(false)
   const [rail, setRail] = useState(true)
-  const [ready, setReady] = useState(false)
-  const presenter = useRef<TranscriptPresenter | null>(null)
+  const [origin, setOrigin] = useState('')
+  const [password, setPassword] = useState('')
 
-  // Rust owns ordering/formatting, so the presenter may only exist after the
-  // wasm module finished instantiating.
+  // `?live=1` connects to the same origin through the Vite proxy, so the
+  // prototype can be pointed at an isolated owner without touching the UI.
   useEffect(() => {
-    void initViewModel().then(() => {
-      presenter.current = new TranscriptPresenter()
-      setReady(true)
-    })
+    if (new URLSearchParams(window.location.search).get('live') === '1') {
+      void workspace.connect(window.location.origin)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const scopedRows = useMemo<RowRef[]>(() => {
-    const scope = `${project}/${session}`
-    const instance = presenter.current
-    return ready && instance ? instance.rows(scope, history, blocks) : []
-  }, [project, session, ready])
-
-  const metrics = useMemo(
-    () =>
-      ready
-        ? metricsFrom(statsPayload)
-        : {
-            input: null,
-            output: null,
-            cachePercent: null,
-            cost: null,
-            requests: null,
-            retries: null,
-            speed: null,
-            inputText: '—',
-            outputText: '—',
-            cacheText: '—',
-          },
-    [ready],
-  )
-  const context = useMemo(
-    () => (ready ? contextFrom(contextPayload) : { used: null, window: null, percent: null, threshold: null, percentText: '—' }),
-    [ready],
-  )
+  const ready = workspace.status === 'fixture' || workspace.status === 'ready'
+  const metrics = useMemo(() => (ready ? metricsFrom(statsPayload) : null), [ready])
+  const context = useMemo(() => (ready ? contextFrom(contextPayload) : null), [ready])
   const tokens = useMemo(() => (ready ? themeTokens('codex', dark) : {}), [ready, dark])
-  // Every wasm call needs the module instance, so unready states stay literal.
-  const contextText = ready
-    ? `${formatTokens(context.used)} / ${formatTokens(context.window)} · ${context.percentText}`
-    : '— / —'
+  const contextText =
+    ready && context
+      ? `${formatTokens(context.used)} / ${formatTokens(context.window)} · ${context.percentText}`
+      : '— / —'
 
-  const title = useMemo(
-    () => sessions.find((entry) => entry.id === session)?.title ?? '新对话',
-    [session],
-  )
+  const title = workspace.sessions.find((entry) => entry.id === workspace.selected.session)?.title ?? '新对话'
+  const live = workspace.source.kind === 'live'
+  const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
 
   return (
     <div className={dark ? 'dark h-dvh' : 'h-dvh'}>
       <div className="bg-background text-foreground flex h-full overflow-hidden">
         <Sidebar
-          projects={projects}
-          sessions={sessions}
-          project={project}
-          session={session}
-          onProject={setProject}
-          onSession={setSession}
+          projects={workspace.projects}
+          sessions={workspace.sessions}
+          project={workspace.selected.project}
+          session={workspace.selected.session}
+          onProject={workspace.selectProject}
+          onSession={workspace.selectSession}
           onNewChat={() => setDraft('')}
+          nodeLabel={workspace.source.kind === 'live' ? workspace.source.origin.replace(/^https?:\/\//, '') : 'fixture-node'}
+          nodeState={live ? 'online' : 'fixture'}
+          connection={
+            live ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-full gap-2 text-[12px]"
+                onClick={workspace.disconnect}
+              >
+                <WifiOff className="size-3.5" />
+                断开节点
+              </Button>
+            ) : (
+              <form
+                className="flex flex-col gap-1.5"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void workspace.connect(origin.trim() || window.location.origin)
+                }}
+              >
+                <Input
+                  value={origin}
+                  onChange={(event) => setOrigin(event.target.value)}
+                  placeholder="http://127.0.0.1:13031"
+                  className="h-7 font-mono text-[11px]"
+                  aria-label="节点地址"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="h-7 w-full gap-2 text-[12px]"
+                  disabled={workspace.status === 'connecting'}
+                >
+                  <Wifi className="size-3.5" />
+                  {workspace.status === 'connecting' ? '连接中…' : '连接节点'}
+                </Button>
+              </form>
+            )
+          }
         />
 
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
-            <span className="text-muted-foreground text-[13px]">{project}</span>
+            <span className="text-muted-foreground text-[13px]">{workspace.selected.project}</span>
             <span className="text-muted-foreground/50 text-[13px]">/</span>
             <span className="truncate text-[13px] font-medium">{title}</span>
             <Badge variant="outline" className="ml-1 h-5 gap-1 px-1.5 text-[10px] font-normal">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              在线
+              <span className={`size-1.5 rounded-full ${ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              {workspace.status === 'connecting'
+                ? '连接中'
+                : workspace.status === 'auth-required'
+                  ? '需要密码'
+                  : workspace.status === 'error'
+                    ? '失败'
+                    : live
+                      ? '在线'
+                      : 'fixture'}
             </Badge>
             <div className="ml-auto flex items-center gap-1">
               <Button
@@ -133,14 +139,44 @@ export default function App() {
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <div className="mx-auto flex max-w-3xl flex-col gap-6">
-                  {ready ? (
-                    scopedRows.map((row) => rowElement(row, history, blocks, node.model))
+                  {workspace.status === 'error' ? (
+                    <ErrorState message={workspace.error ?? '未知错误'} onRetry={() => void workspace.connect(origin.trim() || window.location.origin)} />
+                  ) : workspace.status === 'auth-required' ? (
+                    <form
+                      className="border-input bg-card mx-auto flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void workspace.submitpassword(password)
+                      }}
+                    >
+                      <span className="text-[13px] font-medium">节点需要密码</span>
+                      <Input
+                        type="password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="节点密码"
+                        aria-label="节点密码"
+                      />
+                      <Button type="submit">登录</Button>
+                    </form>
+                  ) : ready ? (
+                    workspace.rows.length > 0 ? (
+                      workspace.rows.map((row) =>
+                        rowElement(row, workspace.history as never, workspace.blocks as never, node.model),
+                      )
+                    ) : (
+                      <EmptyState live={live} />
+                    )
                   ) : (
                     <p className="text-muted-foreground text-[13px]">正在加载 work-viewmodel…</p>
                   )}
                 </div>
               </div>
-              <Composer draft={draft} onDraft={setDraft} context={context} />
+              <Composer
+                draft={draft}
+                onDraft={setDraft}
+                context={context ?? { used: null, window: null, percent: null, threshold: null, percentText: '—' }}
+              />
             </div>
 
             {rail ? (
@@ -148,7 +184,7 @@ export default function App() {
                 <div className="flex h-full flex-col">
                   <div className="flex h-11 items-center justify-between border-b px-3 text-[12px] font-medium">
                     运行
-                    <span className="text-muted-foreground font-normal">fixture</span>
+                    <span className="text-muted-foreground font-normal">{live ? 'node' : 'fixture'}</span>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
                     <RunTimeline steps={runSteps} />
@@ -156,9 +192,10 @@ export default function App() {
                     <div className="flex flex-col gap-2 text-[12px]">
                       <Row label="模型" value={node.model} />
                       <Row label="思考" value={node.thinking} />
-                      <Row label="工具" value={`${blocks.filter((block) => block.kind === 'tool').length} 次 · 失败 0`} />
-                      <Row label="缓存命中" value={metrics.cacheText} />
-                      <Row label="成本" value={metrics.cost === null ? '—' : `$${metrics.cost.toFixed(4)}`} />
+                      <Row label="工具" value={`${toolCount} 次 · 失败 0`} />
+                      <Row label="缓存命中" value={metrics?.cacheText ?? '—'} />
+                      <Row label="成本" value={metrics?.cost == null ? '—' : `$${metrics.cost.toFixed(4)}`} />
+                      <Row label="消息" value={`${workspace.messageCount} 条`} />
                     </div>
                     <Separator className="my-3" />
                     <details className="text-[11px]">
@@ -172,32 +209,49 @@ export default function App() {
                       </pre>
                     </details>
                   </div>
-                  <div className="text-muted-foreground border-t px-3 py-2 text-[11px]">
-                    上下文 {contextText}
-                  </div>
+                  <div className="text-muted-foreground border-t px-3 py-2 text-[11px]">上下文 {contextText}</div>
                 </div>
               </aside>
             ) : null}
           </div>
 
           <footer className="text-muted-foreground flex h-7 shrink-0 items-center gap-4 border-t px-4 text-[11px] tabular-nums">
-            <span>↑ {metrics.inputText}</span>
-            <span>↓ {metrics.outputText}</span>
-            <span>缓存 {metrics.cacheText}</span>
-            <span>成本 {metrics.cost === null ? '—' : `$${metrics.cost.toFixed(4)}`}</span>
-            <span>上下文 {context.percentText}</span>
-            <span>工具 {blocks.filter((block) => block.kind === 'tool').length} / 失败 0</span>
+            <span>↑ {metrics?.inputText ?? '—'}</span>
+            <span>↓ {metrics?.outputText ?? '—'}</span>
+            <span>缓存 {metrics?.cacheText ?? '—'}</span>
+            <span>成本 {metrics?.cost == null ? '—' : `$${metrics.cost.toFixed(4)}`}</span>
+            <span>上下文 {context?.percentText ?? '—'}</span>
+            <span>工具 {toolCount} / 失败 0</span>
             <Tooltip>
               <TooltipTrigger className="ml-auto cursor-default">
                 ReUI · Codex 布局原型 · rules from Rust
               </TooltipTrigger>
-              <TooltipContent>
-                行序、工具目标、指标格式由 work-viewmodel（wasm）提供
-              </TooltipContent>
+              <TooltipContent>行序、工具目标、节点协议、指标格式都来自 Rust（wasm）</TooltipContent>
             </Tooltip>
           </footer>
         </main>
       </div>
+    </div>
+  )
+}
+
+function EmptyState({ live }: { live: boolean }) {
+  return (
+    <div className="text-muted-foreground mx-auto flex flex-col items-center gap-2 py-24 text-center text-[13px]">
+      <span className="text-[15px] font-medium">这个会话还没有消息</span>
+      <span>{live ? '从节点读取到 0 条消息；P3 会接实时事件。' : 'fixture 会话没有内容。'}</span>
+    </div>
+  )
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="border-destructive/40 bg-destructive/5 mx-auto flex w-full max-w-md flex-col gap-3 rounded-xl border p-4">
+      <span className="text-[13px] font-medium">连接节点失败</span>
+      <p className="text-muted-foreground text-[12px] break-words">{message}</p>
+      <Button size="sm" onClick={onRetry} className="self-start">
+        重试
+      </Button>
     </div>
   )
 }

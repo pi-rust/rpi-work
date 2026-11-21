@@ -99,10 +99,7 @@ impl Presenter {
         let history: Vec<Value> = serde_json::from_str(history_json).unwrap_or_default();
         let inputs: Vec<BlockInput> = serde_json::from_str(blocks_json).unwrap_or_default();
         let blocks: Vec<MessageBlock> = inputs.into_iter().map(BlockInput::into_block).collect();
-        let order = self
-            .orders
-            .entry(scope.to_string())
-            .or_default();
+        let order = self.orders.entry(scope.to_string()).or_default();
         let rows = order.update(scope, &history, &blocks);
         let payload: Vec<Value> = rows
             .into_iter()
