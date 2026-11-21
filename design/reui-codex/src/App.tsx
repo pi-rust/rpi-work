@@ -11,11 +11,13 @@ import { Composer } from '@/components/composer'
 import { RunTimeline, rowElement } from '@/components/transcript'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { useWorkspace } from '@/lib/workspace'
+import { useDraft } from '@/lib/drafts'
 import { contextFrom, formatTokens, metricsFrom, themeTokens } from '@/lib/viewmodel'
 
 export default function App() {
   const workspace = useWorkspace()
-  const [draft, setDraft] = useState('')
+  const draftScope = `${workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}/${workspace.selected.session || 'none'}`
+  const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
   const [dark, setDark] = useState(false)
   const [rail, setRail] = useState(true)
   const [origin, setOrigin] = useState('')
@@ -193,9 +195,18 @@ export default function App() {
                 context={context ?? { used: null, window: null, percent: null, threshold: null, percentText: '—' }}
                 onSend={() => {
                   void workspace.send(draft).then((ok) => {
-                    if (ok) setDraft('')
+                    if (ok) clearDraft()
                   })
                 }}
+                onQueue={
+                  live
+                    ? () => {
+                        void workspace.queueMessage(draft).then((ok) => {
+                          if (ok) clearDraft()
+                        })
+                      }
+                    : undefined
+                }
                 onAbort={() => void workspace.abort()}
                 busy={workspace.busy}
                 error={workspace.sendError}
@@ -228,6 +239,32 @@ export default function App() {
                       <Row label="缓存命中" value={metrics?.cacheText ?? '—'} />
                       <Row label="成本" value={metrics?.cost == null ? '—' : `$${metrics.cost.toFixed(4)}`} />
                       <Row label="消息" value={`${workspace.messageCount} 条`} />
+                    </div>
+                    <Separator className="my-3" />
+                    <div className="flex flex-col gap-2 text-[12px]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">队列 {workspace.queue.count}</span>
+                        {workspace.queue.count > 0 ? (
+                          <button
+                            className="text-muted-foreground hover:text-foreground text-[11px]"
+                            onClick={() => void workspace.clearQueue()}
+                          >
+                            清空
+                          </button>
+                        ) : null}
+                      </div>
+                      {workspace.queue.items.map((item) => (
+                        <div key={item.entryId} className="bg-muted/40 flex items-center gap-2 rounded-md px-2 py-1">
+                          <span className="truncate">{item.text}</span>
+                          <button
+                            aria-label={`取消排队 ${item.text}`}
+                            className="text-muted-foreground hover:text-destructive ml-auto text-[11px]"
+                            onClick={() => void workspace.cancelQueued(item.entryId)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
                     </div>
                     <Separator className="my-3" />
                     <details className="text-[11px]">

@@ -33,6 +33,14 @@ function freePort() {
   })
 }
 
+async function workspaceQueueRefresh(page) {
+  // Re-selecting the session reloads its queue from the node.
+  await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+  await page.getByText('这是 梳理 Agent 架构 的独立历史。').waitFor()
+  await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+  await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。').waitFor()
+}
+
 async function waitForServer(url, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -142,6 +150,29 @@ async function waitForServer(url, timeoutMs = 30000) {
     fixture.controls.promptDelayMs = 0
     await page.getByRole('button', { name: '发送' }).waitFor()
     pass('abort reaches the node and the composer returns to send')
+
+    // P4: queue listing, cancellation and drafts per scope.
+    fixture.setQueue([{ entryId: 'q-1', queue: 'followUp', text: '排队的一条消息', status: 'queued' }], 'dark')
+    await workspaceQueueRefresh(page)
+    await page.getByText('排队的一条消息', { exact: true }).waitFor()
+    pass('queue items come from the node and render in the run panel')
+
+    await page.getByRole('button', { name: '取消排队 排队的一条消息' }).click()
+    await page.waitForFunction(() => true)
+    await page.waitForTimeout(600)
+    assert(commands('cancel_queued').length >= 1, 'cancel_queued reached the node')
+    await page.getByText('排队的一条消息', { exact: true }).waitFor({ state: 'detached' }).catch(() => {})
+    pass('cancelling a queued prompt round-trips with the node')
+
+    await composer.fill('这个草稿要跨会话保留')
+    await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+    await page.getByText('这是 梳理 Agent 架构 的独立历史。').waitFor()
+    assert.equal(await composer.inputValue(), '', 'another session starts without the draft')
+    await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+    await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。').waitFor()
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === '这个草稿要跨会话保留')
+    pass('drafts are stored per origin/session and restored on switch')
+    await composer.fill('')
 
     await page.screenshot({ path: '/tmp/reui-live.png' })
     await page.getByRole('button', { name: '断开节点' }).click()

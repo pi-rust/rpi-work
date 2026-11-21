@@ -249,6 +249,63 @@ impl NodeClient {
         })
     }
 
+    /// Queued prompts for the session.
+    pub fn queue(&self, session_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let snapshot = client
+                .queue(&session_id, false)
+                .await
+                .map_err(|error| failure("队列读取失败", error))?;
+            json_string(&snapshot)
+        })
+    }
+
+    /// Queue a follow-up prompt instead of interrupting the current run.
+    pub fn queue_message(
+        &self,
+        session_id: String,
+        message: String,
+        deliver_as: String,
+    ) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let outcome = client
+                .queue_message(&session_id, &message, &deliver_as)
+                .await
+                .map_err(|error| failure("加入队列失败", error))?;
+            json_string(&outcome)
+        })
+    }
+
+    /// Cancel one queued prompt; the node answers with the resulting outcome.
+    pub fn cancel_queued(&self, session_id: String, entry_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let outcome = client
+                .cancel_queued(&session_id, &entry_id)
+                .await
+                .map_err(|error| failure("取消队列项失败", error))?;
+            json_string(&outcome)
+        })
+    }
+
+    /// Drop every queued prompt for the session.
+    pub fn clear_queue(&self, session_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            client
+                .clear_queue(&session_id)
+                .await
+                .map_err(|error| failure("清空队列失败", error))?;
+            let snapshot = client
+                .queue(&session_id, false)
+                .await
+                .map_err(|error| failure("队列回读失败", error))?;
+            json_string(&snapshot)
+        })
+    }
+
     /// Stream live wire events for one session.
     ///
     /// `onEvent` receives one JSON `WireEvent` per call; the returned id can be

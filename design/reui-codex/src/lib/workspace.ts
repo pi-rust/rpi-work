@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import * as fixture from '@/data'
-import { NodeConnection, type NodeModel, type NodeRuntime, type NodeSession } from '@/lib/node'
+import { NodeConnection, type NodeModel, type NodeQueue, type NodeRuntime, type NodeSession } from '@/lib/node'
 import { initViewModel, TranscriptPresenter, type LiveView, type RowRef } from '@/lib/viewmodel'
 import type { Block, HistoryMessage, Project, Session } from '@/data'
 
@@ -32,6 +32,11 @@ export type Workspace = {
   thinkingLevels: string[]
   busy: boolean
   sendError: string | null
+  queue: NodeQueue
+  refreshQueue: () => Promise<void>
+  queueMessage: (text: string) => Promise<boolean>
+  cancelQueued: (entryId: string) => Promise<void>
+  clearQueue: () => Promise<void>
   send: (text: string) => Promise<boolean>
   abort: () => Promise<void>
   setModel: (model: NodeModel) => Promise<void>
@@ -90,6 +95,7 @@ export function useWorkspace(): Workspace {
   const [models, setModels] = useState<NodeModel[]>([])
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  const [queue, setQueue] = useState<NodeQueue>({ items: [], count: 0 })
   const [sendError, setSendError] = useState<string | null>(null)
   const sessionIdRef = useRef<string>('')
 
@@ -120,6 +126,10 @@ export function useWorkspace(): Workspace {
       setSelected({ project: projectId, session: sessionId })
       sessionIdRef.current = sessionId
       setStatus('ready')
+      void conn
+        .queue(sessionId)
+        .then(setQueue)
+        .catch(() => setQueue({ items: [], count: 0 }))
       // Runtime state, model catalogue and thinking levels come from the node.
       void Promise.all([conn.runtimeState(sessionId), conn.models(sessionId), conn.thinkingLevels(sessionId)])
         .then(([state, catalogue, levels]) => {
@@ -234,6 +244,60 @@ export function useWorkspace(): Workspace {
     [],
   )
 
+  const refreshQueue = useCallback(async () => {
+    const conn = connection.current
+    const sessionId = sessionIdRef.current
+    if (!conn || !sessionId) return
+    try {
+      setQueue(await conn.queue(sessionId))
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [])
+
+  const queueMessage = useCallback(
+    async (text: string) => {
+      const conn = connection.current
+      const sessionId = sessionIdRef.current
+      if (!conn || !sessionId || text.trim().length === 0) return false
+      try {
+        await conn.queueMessage(sessionId, text)
+        await refreshQueue()
+        return true
+      } catch (cause) {
+        setSendError(String(cause))
+        return false
+      }
+    },
+    [refreshQueue],
+  )
+
+  const cancelQueued = useCallback(
+    async (entryId: string) => {
+      const conn = connection.current
+      const sessionId = sessionIdRef.current
+      if (!conn || !sessionId) return
+      try {
+        await conn.cancelQueued(sessionId, entryId)
+        await refreshQueue()
+      } catch (cause) {
+        setSendError(String(cause))
+      }
+    },
+    [refreshQueue],
+  )
+
+  const clearQueue = useCallback(async () => {
+    const conn = connection.current
+    const sessionId = sessionIdRef.current
+    if (!conn || !sessionId) return
+    try {
+      setQueue(await conn.clearQueue(sessionId))
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [])
+
   const abort = useCallback(async () => {
     const conn = connection.current
     const sessionId = sessionIdRef.current
@@ -272,6 +336,7 @@ export function useWorkspace(): Workspace {
     connection.current = null
     setLiveView(null)
     setRuntime(null)
+    setQueue({ items: [], count: 0 })
     setModels([])
     setThinkingLevels([])
     setSendError(null)
@@ -338,6 +403,11 @@ export function useWorkspace(): Workspace {
     thinkingLevels,
     busy,
     sendError,
+    queue,
+    refreshQueue,
+    queueMessage,
+    cancelQueued,
+    clearQueue,
     send,
     abort,
     setModel,

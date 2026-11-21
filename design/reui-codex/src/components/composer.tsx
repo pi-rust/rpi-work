@@ -15,6 +15,7 @@ type Props = {
   context: ContextView
   onSend: () => void
   onAbort: () => void
+  onQueue?: () => void
   busy: boolean
   error: string | null
   modelLabel: string
@@ -32,6 +33,7 @@ export function Composer({
   context,
   onSend,
   onAbort,
+  onQueue,
   busy,
   error,
   modelLabel,
@@ -104,6 +106,17 @@ export function Composer({
               `思考 ${thinking}`
             )}
           </span>
+          {onQueue ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={onQueue}
+              disabled={draft.trim().length === 0}
+            >
+              加入队列
+            </Button>
+          ) : null}
           <span className="text-muted-foreground ml-auto text-[11px] tabular-nums">
             上下文 {context.percentText}
           </span>

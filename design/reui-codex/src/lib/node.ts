@@ -36,6 +36,13 @@ export type NodeRuntime = {
   stats?: Record<string, unknown> | null
   queue?: { count?: number } | null
 }
+export type NodeQueueItem = {
+  entryId: string
+  queue: string
+  text: string
+  status: string | null
+}
+export type NodeQueue = { items: NodeQueueItem[]; count: number }
 export type NodeMessages = {
   messages: unknown[]
   firstId: string | null
@@ -113,6 +120,22 @@ export class NodeConnection {
 
   async setThinking(sessionId: string, level: string): Promise<NodeRuntime> {
     return parse<NodeRuntime>(await this.client.set_thinking(sessionId, level))
+  }
+
+  async queue(sessionId: string): Promise<NodeQueue> {
+    return parse<NodeQueue>(await this.client.queue(sessionId))
+  }
+
+  async queueMessage(sessionId: string, message: string, deliverAs = 'followUp'): Promise<unknown> {
+    return parse(await this.client.queue_message(sessionId, message, deliverAs))
+  }
+
+  async cancelQueued(sessionId: string, entryId: string): Promise<unknown> {
+    return parse(await this.client.cancel_queued(sessionId, entryId))
+  }
+
+  async clearQueue(sessionId: string): Promise<NodeQueue> {
+    return parse<NodeQueue>(await this.client.clear_queue(sessionId))
   }
 
   /** Live wire events; returns the subscription id used by `stop`. */

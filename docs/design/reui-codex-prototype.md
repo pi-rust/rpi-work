@@ -67,7 +67,13 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
-### P4 写操作（已落地）
+### P4 写操作（已落地，含队列与草稿）
+
+- 队列：`queue` / `queue_message` / `cancel_queued` / `clear_queue` 全部经 wasm 客户端；
+  运行面板展示队列项与「清空」，取消后按节点结果回读。
+- 草稿：`src/lib/drafts.ts` 按 `origin/session` 存 `localStorage`，切会话/切节点互不串味，
+  配额写失败时退回内存不打断输入。
+- 验收：`npm run verify:live` **16 条**（新增队列读取、取消回读、跨会话草稿恢复）。
 
 - `work-client-wasm` 增加 `prompt` / `abort` / `runtime_state` / `models` /
   `thinking_levels` / `set_model` / `set_thinking`；切换后一律**回读权威 runtime state**。
