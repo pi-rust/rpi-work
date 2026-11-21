@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use work_core::api::{NativeCatalog, NativeKind, NativeResource, NativeScope, PackageOffer};
 
 #[derive(Clone, Debug)]
-pub(super) enum ResourceChoice {
+pub enum ResourceChoice {
     Installed(NativeResource),
     Public(PackageOffer),
 }
@@ -104,7 +104,7 @@ fn strip_uuid_suffix(name: &str) -> Option<&str> {
 /// Installed names may carry a native version/digest suffix such as
 /// `rpi_acp-v0.2.13-<digest>` or `librpi_acp-v0.2.17`. Keep the raw name for
 /// management and matching; only show the stable identity in the UI.
-pub(super) fn display_name(name: &str) -> String {
+pub fn display_name(name: &str) -> String {
     if let Some(marker) = name.rfind("-v") {
         if marker > 0 {
             let suffix = &name[marker + 2..];
@@ -130,7 +130,7 @@ pub(super) fn display_name(name: &str) -> String {
     name.to_owned()
 }
 
-pub(super) fn kind_key(kind: NativeKind) -> &'static str {
+pub fn kind_key(kind: NativeKind) -> &'static str {
     match kind {
         NativeKind::Extension => "extensions",
         NativeKind::Skill => "skills",
@@ -138,7 +138,7 @@ pub(super) fn kind_key(kind: NativeKind) -> &'static str {
     }
 }
 
-pub(super) fn kind_label(kind: NativeKind) -> &'static str {
+pub fn kind_label(kind: NativeKind) -> &'static str {
     match kind {
         NativeKind::Extension => "扩展",
         NativeKind::Skill => "技能",
@@ -146,7 +146,7 @@ pub(super) fn kind_label(kind: NativeKind) -> &'static str {
     }
 }
 
-pub(super) fn kind_icon(kind: NativeKind) -> &'static str {
+pub fn kind_icon(kind: NativeKind) -> &'static str {
     match kind {
         NativeKind::Extension => "tool",
         NativeKind::Skill => "skills",
@@ -154,7 +154,7 @@ pub(super) fn kind_icon(kind: NativeKind) -> &'static str {
     }
 }
 
-pub(super) fn counts<'a>(kinds: impl Iterator<Item = &'a NativeKind>) -> [usize; 3] {
+pub fn counts<'a>(kinds: impl Iterator<Item = &'a NativeKind>) -> [usize; 3] {
     let mut values = [0; 3];
     for kind in kinds {
         values[match kind {
@@ -168,10 +168,7 @@ pub(super) fn counts<'a>(kinds: impl Iterator<Item = &'a NativeKind>) -> [usize;
 
 /// A project inherits the node's global resources. Preserve versions and unknown
 /// records separately, and prefer the project reference for the same verified bytes.
-pub(super) fn installed_resources(
-    catalog: &NativeCatalog,
-    global_only: bool,
-) -> Vec<NativeResource> {
+pub fn installed_resources(catalog: &NativeCatalog, global_only: bool) -> Vec<NativeResource> {
     let mut versions = BTreeMap::<String, NativeResource>::new();
     for resource in catalog.resources.iter().filter(|resource| {
         resource.facts["installed"] == true
@@ -192,10 +189,7 @@ pub(super) fn installed_resources(
     versions.into_values().collect()
 }
 
-pub(super) fn installation_origin(
-    resource: &NativeResource,
-    catalog: &NativeCatalog,
-) -> &'static str {
+pub fn installation_origin(resource: &NativeResource, catalog: &NativeCatalog) -> &'static str {
     let choice = ResourceChoice::Installed(resource.clone());
     let global = catalog.resources.iter().any(|candidate| {
         candidate.scope == NativeScope::Global

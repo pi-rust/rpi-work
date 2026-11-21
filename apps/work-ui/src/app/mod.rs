@@ -1,6 +1,6 @@
 mod background;
 mod bootstrap;
-mod config_requests;
+pub(crate) use work_viewmodel::config_requests;
 #[cfg(any(target_os = "android", test))]
 pub(crate) mod connection_auth;
 #[cfg(any(target_os = "android", test))]
@@ -24,7 +24,7 @@ pub(crate) mod local_node;
 #[cfg(any(target_os = "android", test))]
 pub(crate) mod mobile_entry;
 pub(crate) mod node_navigation;
-pub(crate) mod qr_codec;
+pub(crate) use work_viewmodel::qr as qr_codec;
 mod runtime;
 mod sidebar_resize;
 mod transcript_order;

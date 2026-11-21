@@ -8,13 +8,13 @@
 //! application default and `en_us()` is useful for future locale plumbing.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Locale {
+pub enum Locale {
     ZhCn,
     EnUs,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Key {
+pub enum Key {
     Workbench,
     ToolProgram,
     ReadingToolProgram,
@@ -83,24 +83,24 @@ pub(crate) enum Key {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Copy {
+pub struct Copy {
     locale: Locale,
 }
 
 impl Copy {
-    pub(crate) const fn for_locale(locale: Locale) -> Self {
+    pub const fn for_locale(locale: Locale) -> Self {
         Self { locale }
     }
 
-    pub(crate) const fn zh_cn() -> Self {
+    pub const fn zh_cn() -> Self {
         Self::for_locale(Locale::ZhCn)
     }
 
-    pub(crate) const fn en_us() -> Self {
+    pub const fn en_us() -> Self {
         Self::for_locale(Locale::EnUs)
     }
 
-    pub(crate) const fn text(self, key: Key) -> &'static str {
+    pub const fn text(self, key: Key) -> &'static str {
         match self.locale {
             Locale::ZhCn => zh_cn(key),
             Locale::EnUs => en_us(key),

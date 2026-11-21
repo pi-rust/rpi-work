@@ -7128,6 +7128,7 @@ dependencies = [
  "work-core",
  "work-host",
  "work-update",
+ "work-viewmodel",
 ]
 
 [[package]]
@@ -7148,6 +7149,21 @@ dependencies = [
  "tempfile",
  "tokio",
  "zip",
+]
+
+[[package]]
+name = "work-viewmodel"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "gloo-timers",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "web-time",
+ "work-client",
+ "work-core",
 ]
 
 [[package]]

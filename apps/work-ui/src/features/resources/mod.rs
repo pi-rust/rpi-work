@@ -1,4 +1,4 @@
-mod catalog;
+pub(crate) use work_viewmodel::resources::catalog;
 pub(crate) mod center;
 pub(crate) mod detail;
 pub(crate) mod install_handoff;

@@ -27,7 +27,7 @@ flowchart TB
 
 ## 物理模块与依赖方向
 
-工作区包含 15 个成员，全部为 Work 私有包。实现位置与兼容导出名称如下：
+工作区包含 14 个成员，全部为 Work 私有包。实现位置与兼容导出名称如下：
 
 | 模块 | 实际职责 | 依赖边界 |
 | --- | --- | --- |
@@ -38,6 +38,7 @@ flowchart TB
 | `work-node-service` | 将已有 owner 适配为 HTTP/WebSocket，按配置托管 Web assets | 依赖 runtime/API/HTTP 辅助层，不依赖客户端 |
 | `work-node-host` | 数据锁、owner 初始化、HTTP 配置、内置组件绑定及协作退出 | 组合 runtime、service 和组件；无 GUI 依赖 |
 | `work-client` | `WorkspaceClient` 本地/远程适配，认证、传输、快照恢复与客户端投影 | 原生本地 adapter 直接依赖 `work-node-runtime`；Web/Android 不托管 owner |
+| `work-viewmodel` | 渲染器无关的展示逻辑：转写排序、工具摘要、主题 token、历史分页与短请求期限 | 不依赖 Dioxus、DOM、CSS 或任何窗口工具包；只依赖 `work-client`/`work-core` 与序列化 |
 | `work-host` | 面向应用的宿主门面，将已有 owner 包装为本地客户端 | 组合 `work-node-host` 与 `work-client` |
 | `work-component-api` | Bundle、校验、目录、能力授权和隔离面板通信桥 | 独立于 rpi 原生插件 ABI |
 | `work-http-component` | 远程访问专用界面和动作契约 | 宿主绑定真实能力，通用 UI 负责安装和挂载 |

@@ -2,7 +2,7 @@
 use std::{env, fs, path::PathBuf};
 
 #[allow(dead_code)]
-#[path = "../src/shared/theme/theme_contract.rs"]
+#[path = "../../../crates/client/work-viewmodel/src/theme/theme_contract.rs"]
 mod theme_contract;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

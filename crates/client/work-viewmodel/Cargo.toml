@@ -1,0 +1,27 @@
+[package]
+name = "work-viewmodel"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+publish = false
+description = "Renderer-independent presentation state and formatting rules for RPI Work clients."
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+web-time = "1"
+work-client = { path = "../work-client" }
+work-core = { path = "../../foundation/work-core" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["time"] }

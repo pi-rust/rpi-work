@@ -12,7 +12,7 @@ test('catalog browsing remains read-only and counts do not derive installation f
   assert.match(load, /NodeApi::native_catalog/);
   assert.match(load, /NodeApi::package_catalog/);
   assert.doesNotMatch(load, /package_install|package_acquire|native_manage|native_apply/);
-  const catalog = read('catalog.rs');
+  const catalog = fs.readFileSync('crates/client/work-viewmodel/src/resources/catalog.rs', 'utf8');
   assert.match(catalog, /resource.facts\["installed"\] == true/);
   assert.doesNotMatch(catalog, /acquired/);
 });

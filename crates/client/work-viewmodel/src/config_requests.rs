@@ -9,14 +9,14 @@ use work_client::{ClientError, RuntimeState};
 /// capabilities or an optional native handle. ACP uses opaque configOptions.
 #[allow(clippy::struct_excessive_bools)] // Four independent observed commands, not mutually exclusive states.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(super) struct CatalogAccess {
+pub struct CatalogAccess {
     pub models_read: bool,
     pub models_write: bool,
     pub thinking_read: bool,
     pub thinking_write: bool,
 }
 impl CatalogAccess {
-    pub(super) fn for_configuration(config: &work_client::SessionConfiguration) -> Self {
+    pub fn for_configuration(config: &work_client::SessionConfiguration) -> Self {
         if config.protocol != "rpi" {
             return Self::default();
         }
@@ -30,13 +30,13 @@ impl CatalogAccess {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum ConfigField {
+pub enum ConfigField {
     Model,
     Thinking,
 }
 
 impl ConfigField {
-    pub(super) fn reported_by(self, state: &RuntimeState) -> bool {
+    pub fn reported_by(self, state: &RuntimeState) -> bool {
         let value = match self {
             Self::Model => state.model_id.as_deref(),
             Self::Thinking => state.thinking_level.as_deref(),
@@ -45,7 +45,7 @@ impl ConfigField {
     }
 }
 
-pub(super) async fn bounded<T>(
+pub async fn bounded<T>(
     operation: &'static str,
     future: impl Future<Output = Result<T, ClientError>>,
 ) -> Result<T, ClientError> {

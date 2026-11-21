@@ -1,11 +1,12 @@
 pub(crate) mod activity;
-pub(crate) mod code_tokens;
+pub(crate) use work_viewmodel::conversation::{
+    code_tokens, history_window, tool_display, tool_program_i18n,
+};
 pub(crate) mod command_preview;
 pub(crate) mod composer_extras;
 pub(crate) mod composer_input;
 pub(crate) mod execution_backend;
 pub(crate) mod history_pager;
-pub(crate) mod history_window;
 pub(crate) mod mermaid;
 pub(crate) mod message_image;
 pub(crate) mod message_links;
@@ -16,8 +17,6 @@ pub(crate) mod native_timeline;
 pub(crate) mod output_motion;
 pub(crate) mod scroll_follow;
 pub(crate) mod timeline;
-pub(crate) mod tool_display;
 pub(crate) mod tool_program;
-pub(crate) mod tool_program_i18n;
 pub(crate) mod turn_timing;
 pub(crate) mod user_timeline;

@@ -101,8 +101,8 @@
 
 ## 开发入口
 
-- [`theme_design.rs`](../../apps/work-ui/src/shared/theme/theme_design.rs)：强类型规格、范围、兼容默认值与规格 token；
-- [`theme_contract.rs`](../../apps/work-ui/src/shared/theme/theme_contract.rs)：配色、v1/v2 主题文档和整体 token 解析；
+- [`theme_design.rs`](../../crates/client/work-viewmodel/src/theme/theme_design.rs)：强类型规格、范围、兼容默认值与规格 token；
+- [`theme_contract.rs`](../../crates/client/work-viewmodel/src/theme/theme_contract.rs)：配色、v1/v2 主题文档和整体 token 解析；
 - [`appearance.rs`](../../apps/work-ui/src/shared/theme/appearance.rs)：持久化、预览、取消、主题库和全量 token 应用；
 - [`theme-design.css`](../../apps/work-ui/src/shared/theme/theme-design.css)：核心视觉角色与移动/动效安全规则；
 - [`tool-presentation.css`](../../apps/work-ui/src/shared/theme/tool-presentation.css)：独立于配色 ID 的受控工具展示，详情模式沿用现有组件样式。

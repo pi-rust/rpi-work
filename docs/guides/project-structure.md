@@ -28,6 +28,7 @@ crates/
     work-node-service/   同 owner 的 HTTP/WebSocket、测试和静态 Web 托管
   client/
     work-client/         本机/远程 adapter、连接恢复、消息投影
+    work-viewmodel/      渲染器无关的展示逻辑（转写、工具摘要、主题、分页）
   host/
     work-node-host/      实际 owner 启动、数据锁、组件绑定与退出
     work-host/           应用宿主门面与本机 client 包装
@@ -56,7 +57,7 @@ target/                  忽略的编译、下载、日志与临时验证数据
 .rpi/                    忽略的本机 Agent 会话
 ```
 
-`work-node-api` 是共享契约实际位置；`work-core::api` 重导出契约并保留纯客户端投影。`work-node-runtime` 持有权威 `LocalWorkspace`；`work-client` 本机 facade 包装同一个 owner，远端使用 HTTP/WebSocket。`work-node-service` 适配已有 owner，并在同一 crate 保留集成测试和 examples；生产服务依赖不引用 `work-client`。`work-node-host` 实现无 GUI 宿主生命周期，`work-host` 提供应用门面。当前工作区成员均为私有包。`work-component-api` 是通用组件包契约、校验、授权与隔离面板桥；`work-http-component` 是 Work 内部的远程访问专用面板。桌面不启动 standalone `rpi-http`，也不把 rpi HTTP 扩展当作自己的宿主运行时；HTTP 入口只接在同一 owner 上。完整依赖见[架构总览](../architecture/overview.md)，具体传输见 [架构与传输边界](../architecture/transport.md) 和[组件组合](../architecture/component-composition.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
+`work-viewmodel` 存放不依赖任何窗口工具包的展示规则，`work-ui` 只保留组件、布局与平台胶水；`work-node-api` 是共享契约实际位置；`work-core::api` 重导出契约并保留纯客户端投影。`work-node-runtime` 持有权威 `LocalWorkspace`；`work-client` 本机 facade 包装同一个 owner，远端使用 HTTP/WebSocket。`work-node-service` 适配已有 owner，并在同一 crate 保留集成测试和 examples；生产服务依赖不引用 `work-client`。`work-node-host` 实现无 GUI 宿主生命周期，`work-host` 提供应用门面。当前工作区成员均为私有包。`work-component-api` 是通用组件包契约、校验、授权与隔离面板桥；`work-http-component` 是 Work 内部的远程访问专用面板。桌面不启动 standalone `rpi-http`，也不把 rpi HTTP 扩展当作自己的宿主运行时；HTTP 入口只接在同一 owner 上。完整依赖见[架构总览](../architecture/overview.md)，具体传输见 [架构与传输边界](../architecture/transport.md) 和[组件组合](../architecture/component-composition.md)，新增和修改代码须遵循 [开发规范](development-standards.md)。
 
 正式应用通过 `assets/vendor/` 编译二维码与 Mermaid 资源，不引用设计原型。原型自己的 vendor 快照和内容哈希独立保留，以便复现历史设计；整理文档不重新生成冻结原型。
 

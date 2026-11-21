@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use work_client::{MessagePage, MessagePageInfo};
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct HistoryWindow {
+pub struct HistoryWindow {
     pub scope: String,
     pub generation: u64,
     pub revision: u64,

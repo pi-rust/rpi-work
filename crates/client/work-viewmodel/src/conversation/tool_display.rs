@@ -57,13 +57,13 @@ fn edit_name(name: &str) -> bool {
     matches!(name, "edit" | "edit_file" | "multiedit")
 }
 
-pub(super) fn is_read(name: &str) -> bool {
+pub fn is_read(name: &str) -> bool {
     read_name(&normalized_name(name))
 }
 
 /// A presentation hint for an actual file-read call, not proof that the model
 /// followed the skill. Never infer activation from a catalog, text or directory.
-pub(super) fn is_skill_read(name: &str, args: &str) -> bool {
+pub fn is_skill_read(name: &str, args: &str) -> bool {
     if !is_read(name) {
         return false;
     }
@@ -77,7 +77,7 @@ pub(super) fn is_skill_read(name: &str, args: &str) -> bool {
         .is_some_and(|path| path.rsplit(['/', '\\']).next() == Some("SKILL.md"))
 }
 
-pub(super) fn skill_read_action(label: &str, failed: bool) -> &'static str {
+pub fn skill_read_action(label: &str, failed: bool) -> &'static str {
     if failed {
         "读取技能失败"
     } else {
@@ -90,11 +90,11 @@ pub(super) fn skill_read_action(label: &str, failed: bool) -> &'static str {
     }
 }
 
-pub(super) fn is_shell(name: &str) -> bool {
+pub fn is_shell(name: &str) -> bool {
     shell_name(&normalized_name(name))
 }
 
-pub(super) fn icon(name: &str) -> &'static str {
+pub fn icon(name: &str) -> &'static str {
     let name = normalized_name(name);
     if shell_name(&name) {
         "terminal"
@@ -153,7 +153,7 @@ const PATH_KEYS: &[&str] = &[
 
 /// Full, whitespace-normalized summary, also suitable for a plain-text title.
 /// No length limit: truncation belongs to CSS, never to the underlying text.
-pub(super) fn target(name: &str, args: &str) -> String {
+pub fn target(name: &str, args: &str) -> String {
     let Ok(value) = serde_json::from_str::<Value>(args) else {
         return String::new();
     };
@@ -214,7 +214,7 @@ fn table_separator(line: &str) -> bool {
 
 /// Intentionally conservative: ordinary source, HTML, and inline punctuation
 /// alone do not select Markdown rendering. Fences must have a closing fence.
-pub(super) fn is_markdown(text: &str) -> bool {
+pub fn is_markdown(text: &str) -> bool {
     let mut previous_list = false;
     let mut previous_pipe = false;
     let mut fence: Option<(u8, usize)> = None;
@@ -264,14 +264,14 @@ pub(super) fn is_markdown(text: &str) -> bool {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct EditPreview {
+pub struct EditPreview {
     pub path: String,
     pub changes: Vec<(String, String)>,
 }
 
 impl EditPreview {
     /// Counts explicit replacement text, not a verified on-disk or Git diff.
-    pub(super) fn line_counts(&self) -> (usize, usize) {
+    pub fn line_counts(&self) -> (usize, usize) {
         self.changes
             .iter()
             .fold((0, 0), |(added, removed), (old, new)| {
@@ -306,7 +306,7 @@ fn raw_field<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
 
 /// Preview only explicit replacement pairs. Never executes edits or invents a
 /// diff from writes/patches. Validate every pair before cloning any payload.
-pub(super) fn edit_preview(name: &str, args: &str) -> Option<EditPreview> {
+pub fn edit_preview(name: &str, args: &str) -> Option<EditPreview> {
     if !edit_name(&normalized_name(name)) {
         return None;
     }

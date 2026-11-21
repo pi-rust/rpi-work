@@ -28,7 +28,7 @@ Codex 的视觉默认值由 `ThemeDesign::codex()` 提供：消息 15px / 1.7 �
 
 独立于以上 Codex 配色打磨，工具展示现已抽象为共享主题配置：默认跟随主题，所有未指定模式的主题使用 **简单**。在「外观与主题 → 工具展示」可显式选择简单或详情；简单为无边框紧凑摘要，可展开完整结果，详情保留当前卡片。v2 主题通过 `theme.design.toolRendering` 设置默认，本机选择可覆盖；优先级、可移植偏好和严格枚举校验见 [主题视觉规格](../guides/theme-design.md#toolrendering简单--详情)。这一受控展示设置适用于所有配色，不改变执行、确认或工具状态。新增 `tests/e2e/verify-tool-rendering.cjs` 生成 `artifacts/tool-rendering-*` 截图并验证保存、撤销、主题往返和手机布局。
 
-正式实现以 [`theme_contract.rs`](../../apps/work-ui/src/shared/theme/theme_contract.rs) 的 palette / `build_tokens` 为来源；[`codex.css`](../../apps/work-ui/src/shared/theme/codex.css) 是生成结果，包含启动 fallback 及 light/dark/system 规则，与 JSON 导入导出共用同一组 token。正式应用与模块 harness 加载同一套 stylesheet。
+正式实现以 [`theme_contract.rs`](../../crates/client/work-viewmodel/src/theme/theme_contract.rs) 的 palette / `build_tokens` 为来源；[`codex.css`](../../apps/work-ui/src/shared/theme/codex.css) 是生成结果，包含启动 fallback 及 light/dark/system 规则，与 JSON 导入导出共用同一组 token。正式应用与模块 harness 加载同一套 stylesheet。
 
 ```shell
 cargo run -p work-ui --example sync-codex-theme --locked

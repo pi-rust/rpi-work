@@ -17,7 +17,7 @@ const NUMBER: &str = "code-token-number";
 const LITERAL: &str = "code-token-literal";
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Token<'a> {
+pub struct Token<'a> {
     pub class: &'static str,
     pub text: &'a str,
 }
@@ -249,7 +249,7 @@ impl Language {
     }
 }
 
-pub(crate) fn tokenize<'a>(source: &'a str, language: &str) -> Vec<Token<'a>> {
+pub fn tokenize<'a>(source: &'a str, language: &str) -> Vec<Token<'a>> {
     tokenize_bounded(source, language, MAX_SOURCE_BYTES, MAX_TOKENS)
 }
 
@@ -295,7 +295,7 @@ fn tokenize_bounded<'a>(
 }
 
 /// Color the complete file before splitting rows, preserving multiline tokens.
-pub(crate) fn tokenize_file<'a>(source: &'a str, path: &str) -> Vec<Vec<Token<'a>>> {
+pub fn tokenize_file<'a>(source: &'a str, path: &str) -> Vec<Vec<Token<'a>>> {
     if source.is_empty() {
         return Vec::new();
     }

@@ -1,7 +1,7 @@
 //! Dependency-free harness: includes the production display lexer and its tests.
 //! Run with `rustc --edition=2021 --test ... -o target/code-tokens-tests.exe`.
 
-#[path = "../../../../../apps/work-ui/src/features/conversation/code_tokens.rs"]
+#[path = "../../../../../crates/client/work-viewmodel/src/conversation/code_tokens.rs"]
 mod code_tokens;
 
 fn main() {

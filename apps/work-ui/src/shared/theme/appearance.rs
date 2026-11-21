@@ -3,9 +3,10 @@ use dioxus::{html::FileData, prelude::*};
 use serde_json::{Value, json};
 use std::{cell::Cell, fmt::Write as _, rc::Rc};
 
-#[path = "theme_contract.rs"]
-mod theme_contract;
-use theme_contract::{MAX_CUSTOM_THEMES, MAX_THEME_JSON_BYTES, THEME_KIND, Theme, ToolRendering};
+use work_viewmodel::theme::theme_contract;
+use work_viewmodel::theme::theme_contract::{
+    MAX_CUSTOM_THEMES, MAX_THEME_JSON_BYTES, THEME_KIND, Theme, ToolRendering,
+};
 
 const APPEARANCE_KIND: &str = "rpi-work-appearance";
 pub const STYLESHEETS: &str = concat!(

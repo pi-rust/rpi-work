@@ -95,7 +95,7 @@ fn nonce() -> [u8; NONCE_LEN] {
 }
 
 /// Wrap one plaintext payload in the encrypted, versioned QR envelope.
-pub(crate) fn seal(plaintext: &str) -> String {
+pub fn seal(plaintext: &str) -> String {
     let nonce = nonce();
     let ciphertext = xor_keystream(&nonce, plaintext.as_bytes());
     let tag = tag(&nonce, &ciphertext);
@@ -109,7 +109,7 @@ pub(crate) fn seal(plaintext: &str) -> String {
     .to_string()
 }
 
-fn decode_field<'a>(value: &'a serde_json::Value, name: &str) -> Result<Vec<u8>, &'static str> {
+fn decode_field(value: &serde_json::Value, name: &str) -> Result<Vec<u8>, &'static str> {
     let raw = value
         .get(name)
         .and_then(serde_json::Value::as_str)
@@ -124,7 +124,7 @@ fn looks_like_envelope(raw: &str) -> bool {
 }
 
 /// Decrypt an encrypted envelope and pass legacy plaintext payloads through.
-pub(crate) fn open(raw: &str) -> Result<String, &'static str> {
+pub fn open(raw: &str) -> Result<String, &'static str> {
     let raw = raw.trim();
     if raw.len() > MAX_PLAINTEXT * 2 {
         return Err("二维码过长，请重新扫码。");
