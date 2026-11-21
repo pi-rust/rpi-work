@@ -12,13 +12,13 @@ import { RunTimeline, rowElement } from '@/components/transcript'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
-import { contextFrom, formatTokens, metricsFrom, themeTokens } from '@/lib/viewmodel'
+import { useTheme } from '@/lib/theme'
+import { contextFrom, formatTokens, metricsFrom } from '@/lib/viewmodel'
 
 export default function App() {
   const workspace = useWorkspace()
   const draftScope = `${workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}/${workspace.selected.session || 'none'}`
   const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
-  const [dark, setDark] = useState(false)
   const [rail, setRail] = useState(true)
   const [origin, setOrigin] = useState('')
   const [password, setPassword] = useState('')
@@ -33,6 +33,8 @@ export default function App() {
   }, [])
 
   const ready = workspace.status === 'fixture' || workspace.status === 'ready'
+  const theme = useTheme(ready)
+  const dark = theme.choice.dark
   const liveMetrics = workspace.runtime?.stats ?? null
   const liveContext = workspace.runtime?.context ?? null
   const metrics = useMemo(
@@ -43,7 +45,7 @@ export default function App() {
     () => (ready ? contextFrom(liveContext ?? contextPayload) : null),
     [ready, liveContext],
   )
-  const tokens = useMemo(() => (ready ? themeTokens('codex', dark) : {}), [ready, dark])
+  const tokens = theme.tokens
   const contextText =
     ready && context
       ? `${formatTokens(context.used)} / ${formatTokens(context.window)} · ${context.percentText}`
@@ -61,7 +63,7 @@ export default function App() {
   const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
 
   return (
-    <div className={dark ? 'dark h-dvh' : 'h-dvh'}>
+    <div className={dark ? 'dark h-dvh' : 'h-dvh'} style={theme.style} data-density={theme.choice.compact ? 'compact' : 'standard'}>
       <div className="bg-background text-foreground flex h-full overflow-hidden">
         <Sidebar
           projects={workspace.projects}
@@ -136,9 +138,30 @@ export default function App() {
                 size="icon"
                 className="size-7"
                 aria-label="切换主题"
-                onClick={() => setDark((value) => !value)}
+                onClick={() => theme.setDark(!dark)}
               >
                 {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </Button>
+              <select
+                aria-label="选择主题"
+                value={theme.choice.id}
+                onChange={(event) => theme.setTheme(event.target.value)}
+                className="border-input bg-background h-7 rounded-md border px-1.5 text-[11px]"
+              >
+                {(theme.presets.length > 0 ? theme.presets : [{ id: 'codex', name: 'Codex', description: '' }]).map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant={theme.choice.compact ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                aria-label="切换密度"
+                onClick={() => theme.setCompact(!theme.choice.compact)}
+              >
+                {theme.choice.compact ? '紧凑' : '标准'}
               </Button>
               <Button
                 variant={rail ? 'secondary' : 'ghost'}

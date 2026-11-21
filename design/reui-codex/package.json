@@ -11,7 +11,8 @@
     "build:wasm": "cargo build --manifest-path ../../Cargo.toml -p work-viewmodel-wasm -p work-client-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir src/pkg --out-name work_viewmodel ../../target/wasm32-unknown-unknown/release/work_viewmodel_wasm.wasm && wasm-bindgen --target web --out-dir src/pkg --out-name work_client ../../target/wasm32-unknown-unknown/release/work_client_wasm.wasm",
     "verify:fixture": "node scripts/verify-fixture.cjs",
     "verify:live": "node scripts/verify-live.cjs",
-    "live:fixture": "node scripts/live-fixture.cjs"
+    "live:fixture": "node scripts/live-fixture.cjs",
+    "verify:theme": "node scripts/verify-theme.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

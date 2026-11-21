@@ -23,8 +23,9 @@ npm run build             # 先编 wasm，再 tsc + vite build
 验收脚本（需要仓库根目录 `npm ci --prefix tools`）：
 
 ```bash
-npm run verify:fixture           # fixture 模式 6 条断言（需先启动 preview 到 5179）
-REUI_URL='http://127.0.0.1:5180/?live=1' npm run verify:live
+npm run verify:live              # 自包含：起 fixture + preview，16 条断言
+npm run verify:fixture           # fixture 模式 6 条（需先启动 preview 到 5179）
+npm run verify:theme             # 主题契约 7 条（需先启动 preview 到 5179）
 ```
 
 ## 已实现
@@ -53,6 +54,6 @@ REUI_URL='http://127.0.0.1:5180/?live=1' npm run verify:live
 - **还没有**文件 Diff、资源/设置页、12 套主题（P5–P7）；
   运行面板的「步骤」列表仍是占位，指标在 live 模式已来自节点 `get_state`。
 - `src/pkg/` 需先执行 `npm run build:viewmodel`（约 70s，含 wasm 目标编译）。
-- 主题只有明暗两套（未接 `work-viewmodel` 的 12 套主题 token）。
+- 主题已接 `work-viewmodel` 契约（5 套内置预设 + 明暗 + 密度），但 `CodeBlock` 的 shiki 配色尚未跟随。
 - 未做 320/390 窄屏布局验收。
 - 右侧运行面板为静态数据，不随会话切换。

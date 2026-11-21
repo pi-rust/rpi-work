@@ -67,6 +67,18 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P5 主题对齐（已落地）
+
+- `src/lib/theme.ts` 把 `theme_tokens(id, dark, compact)` 的 Rust token **改名映射**成 shadcn
+  的 CSS 变量（`bg→--background`、`text→--foreground`、`line→--border`、`accent-bg→--accent`…），
+  TypeScript 里不定义任何颜色。
+- 预设目录、明暗、密度全部来自契约：`presets()` 目前 5 套内置（纸与苔绿 / 海湾蓝 / 石墨紫 /
+  Reddit 橙 / Codex 黑白），自定义上限 12 套。密度用 `density-factor` 缩放根字号，rem 布局整体跟随。
+- 选择写入 `localStorage`，刷新后保持。
+- 验收：`npm run verify:theme` 7 条（token 落地、目录、切预设、切暗色、密度缩放、持久化、
+  零 page error）。
+- 已知缺口：`CodeBlock` 里的 shiki 配色仍是 githbub 主题，未跟随 Rust palette（记入 P5 收尾）。
+
 ### P4 写操作（已落地，含队列与草稿）
 
 - 队列：`queue` / `queue_message` / `cancel_queued` / `clear_queue` 全部经 wasm 客户端；
