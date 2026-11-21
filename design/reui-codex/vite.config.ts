@@ -6,7 +6,7 @@ import { defineConfig } from 'vite'
 // Same-origin node proxy: the wasm client talks to `${origin}/api/v1/*`, so the
 // browser never needs CORS or a second host allowlist entry.
 const nodeTarget = process.env.RPI_NODE_URL ?? 'http://127.0.0.1:13031'
-const proxy = { '/api': { target: nodeTarget, changeOrigin: true } }
+const proxy = { '/api': { target: nodeTarget, changeOrigin: true, ws: true } }
 
 // https://vite.dev/config/
 export default defineConfig({

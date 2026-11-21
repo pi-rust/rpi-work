@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import * as fixture from '@/data'
 import { NodeConnection, type NodeSession } from '@/lib/node'
-import { initViewModel, TranscriptPresenter, type RowRef } from '@/lib/viewmodel'
+import { initViewModel, TranscriptPresenter, type LiveView, type RowRef } from '@/lib/viewmodel'
 import type { Block, HistoryMessage, Project, Session } from '@/data'
 
 export type Source = { kind: 'fixture' } | { kind: 'live'; origin: string }
@@ -74,6 +74,9 @@ export function useWorkspace(): Workspace {
   const connection = useRef<NodeConnection | null>(null)
   const pendingOrigin = useRef<string>('')
   const presenter = useRef<TranscriptPresenter | null>(null)
+  const historyRef = useRef<HistoryMessage[]>(fixture.history)
+  const subscription = useRef<number | null>(null)
+  const [liveView, setLiveView] = useState<LiveView | null>(null)
 
   useEffect(() => {
     void initViewModel().then(() => {
@@ -82,19 +85,39 @@ export function useWorkspace(): Workspace {
     })
   }, [])
 
+  const stopLive = useCallback(() => {
+    if (subscription.current !== null && connection.current) {
+      connection.current.stop(subscription.current)
+    }
+    subscription.current = null
+  }, [])
+
   const loadSession = useCallback(async (conn: NodeConnection, sessionId: string, projectId: string) => {
+    stopLive()
     setStatus('connecting')
     try {
       const page = await conn.messages(sessionId)
-      setHistory(asHistory(page.messages))
+      const messages = asHistory(page.messages)
+      historyRef.current = messages
+      setHistory(messages)
       setBlocks([])
+      setLiveView(null)
       setSelected({ project: projectId, session: sessionId })
       setStatus('ready')
+      // Live events replay through the Rust projection; the presenter dedupes
+      // reconnects, so subscribing from 0 is safe.
+      const scope = `${projectId}/${sessionId}`
+      subscription.current = conn.subscribe(sessionId, 0, (event) => {
+        const view = presenter.current?.applyEvents(scope, historyRef.current, [event])
+        if (!view) return
+        setLiveView(view)
+        setBlocks(view.blocks as Block[])
+      })
     } catch (cause) {
       setError(String(cause))
       setStatus('error')
     }
-  }, [])
+  }, [stopLive])
 
   const openNode = useCallback(
     async (origin: string) => {
@@ -162,7 +185,10 @@ export function useWorkspace(): Workspace {
   )
 
   const disconnect = useCallback(() => {
+    stopLive()
     connection.current = null
+    setLiveView(null)
+    historyRef.current = fixture.history
     setSource({ kind: 'fixture' })
     setProjects(fixture.projects)
     setSessions(fixture.sessions)
@@ -202,10 +228,11 @@ export function useWorkspace(): Workspace {
   )
 
   const rows = useMemo<RowRef[]>(() => {
+    if (liveView && source.kind === 'live') return liveView.rows
     const instance = presenter.current
     if (!instance || (status !== 'fixture' && status !== 'ready')) return []
     return instance.rows(`${selected.project}/${selected.session || 'none'}`, history, blocks)
-  }, [status, selected, history, blocks])
+  }, [liveView, source, status, selected, history, blocks])
 
   return {
     status,

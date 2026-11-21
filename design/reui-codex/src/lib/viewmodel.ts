@@ -51,6 +51,8 @@ export function initViewModel(): Promise<void> {
   return ready
 }
 
+export type LiveView = { rows: RowRef[]; blocks: unknown[]; phase: string; settled: boolean }
+
 export class TranscriptPresenter {
   private presenter = new Presenter()
 
@@ -58,6 +60,13 @@ export class TranscriptPresenter {
     return JSON.parse(
       this.presenter.rows(scope, JSON.stringify(history), JSON.stringify(blocks)),
     ) as RowRef[]
+  }
+
+  /** Replay live wire events through the Rust projection, then order rows. */
+  applyEvents(scope: string, history: unknown[], events: unknown[]): LiveView {
+    return JSON.parse(
+      this.presenter.apply_events(scope, JSON.stringify(history), JSON.stringify(events)),
+    ) as LiveView
   }
 
   forget(scope: string) {

@@ -8,9 +8,14 @@
 //! Every method returns a JSON string so the JS wrapper stays trivial and the
 //! payload shape stays owned by `work-node-api` types.
 
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use futures_util::StreamExt;
 use js_sys::Promise;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::future_to_promise;
+use wasm_bindgen_futures::{future_to_promise, spawn_local};
 use work_client::WorkspaceClient;
 use work_client::{MessageSummaryQuery, MessageWindowQuery};
 
@@ -29,6 +34,8 @@ fn failure(context: &str, error: impl std::fmt::Display) -> JsValue {
 pub struct NodeClient {
     client: WorkspaceClient,
     origin: String,
+    next_subscription: Rc<Cell<u32>>,
+    stops: Rc<RefCell<HashMap<u32, Rc<Cell<bool>>>>>,
 }
 
 #[wasm_bindgen]
@@ -40,6 +47,8 @@ impl NodeClient {
         Ok(Self {
             client,
             origin: origin.trim_end_matches('/').to_string(),
+            next_subscription: Rc::new(Cell::new(0)),
+            stops: Rc::new(RefCell::new(HashMap::new())),
         })
     }
 
@@ -124,6 +133,58 @@ impl NodeClient {
                     .collect::<Vec<_>>()
             ))
         })
+    }
+
+    /// Stream live wire events for one session.
+    ///
+    /// `onEvent` receives one JSON `WireEvent` per call; the returned id can be
+    /// passed to [`Self::stop`] to end the subscription. Delivery starts at
+    /// `after`, so a reconnect replays only newer events.
+    pub fn subscribe(&self, session_id: String, after: f64, on_event: js_sys::Function) -> u32 {
+        let client = self.client.clone();
+        let id = self.next_subscription.get() + 1;
+        self.next_subscription.set(id);
+        let stop = Rc::new(Cell::new(false));
+        self.stops.borrow_mut().insert(id, stop.clone());
+        let stops = self.stops.clone();
+        spawn_local(async move {
+            let mut stream = match client.subscribe(&session_id, after.max(0.0) as u64).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    let payload =
+                        serde_json::json!({ "error": format!("订阅失败：{error}") }).to_string();
+                    let _ = on_event.call1(&JsValue::NULL, &JsValue::from_str(&payload));
+                    stops.borrow_mut().remove(&id);
+                    return;
+                }
+            };
+            while let Some(item) = stream.next().await {
+                if stop.get() {
+                    break;
+                }
+                match item {
+                    Ok(event) => {
+                        if let Ok(text) = serde_json::to_string(&event) {
+                            let _ = on_event.call1(&JsValue::NULL, &JsValue::from_str(&text));
+                        }
+                    }
+                    Err(error) => {
+                        let payload = serde_json::json!({ "error": error.to_string() }).to_string();
+                        let _ = on_event.call1(&JsValue::NULL, &JsValue::from_str(&payload));
+                        break;
+                    }
+                }
+            }
+            stops.borrow_mut().remove(&id);
+        });
+        id
+    }
+
+    /// Stop a live subscription; the stream ends on its next event.
+    pub fn stop(&self, id: u32) {
+        if let Some(flag) = self.stops.borrow().get(&id) {
+            flag.set(true);
+        }
     }
 
     /// Canonical messages for one session.

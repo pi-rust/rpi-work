@@ -45,6 +45,18 @@ const URL = process.env.REUI_URL || 'http://127.0.0.1:5180/?live=1';
     await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。').waitFor();
     pass('switching back restores the first session through the same presenter');
 
+    // P3: live wire events replay through the Rust projection.
+    await page.getByText('标题占位', { exact: true }).count();
+    await page.getByText('src/theme.rs', { exact: true }).first().waitFor();
+    await page.getByText('cargo test -p work-ui --lib', { exact: true }).first().waitFor();
+    pass('live WS events produce the read/bash tool cards');
+
+    const transcript = await page.locator('main').innerText();
+    assert.match(transcript, /pub fn theme\(\) \{ \/\* test fixture \*\/ \}/, 'read output comes from the event stream');
+    await page.getByText('bash', { exact: true }).first().click();
+    await page.getByText(/12 passed; 0 failed/).waitFor();
+    pass('expanding a live tool card shows the streamed result');
+
     await page.screenshot({ path: '/tmp/reui-live.png' });
     await page.getByRole('button', { name: '断开节点' }).click();
     await page.getByText('rpiwork').first().waitFor();

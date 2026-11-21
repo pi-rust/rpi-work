@@ -13,7 +13,9 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
-use work_core::{MessageBlock, ToolStatus};
+use work_core::api::WireEvent;
+use work_core::api::events::WireEventProjection as _;
+use work_core::{MessageBlock, RunPhase, RunProjection, ToolStatus};
 use work_viewmodel::conversation::{code_tokens, tool_display};
 use work_viewmodel::observability::metrics::{Context, Metrics, percent, tokens};
 use work_viewmodel::theme::theme_contract;
@@ -74,11 +76,13 @@ impl BlockInput {
     }
 }
 
-/// Stateful presenter: one `TranscriptOrder` per session scope, so display
-/// slots stay stable while history and the run projection grow independently.
+/// Stateful presenter: one `TranscriptOrder` and one `RunProjection` per
+/// session scope, so display slots stay stable while history and the live run
+/// projection grow independently.
 #[wasm_bindgen]
 pub struct Presenter {
     orders: HashMap<String, TranscriptOrder>,
+    projections: HashMap<String, RunProjection>,
 }
 
 #[wasm_bindgen]
@@ -87,6 +91,7 @@ impl Presenter {
     pub fn new() -> Self {
         Self {
             orders: HashMap::new(),
+            projections: HashMap::new(),
         }
     }
 
@@ -114,15 +119,83 @@ impl Presenter {
         serde_json::to_string(&payload).unwrap_or_else(|_| "[]".into())
     }
 
+    /// Replay live wire events, then return `{rows, blocks, phase, settled}`.
+    ///
+    /// The projection owns deduplication, stale-sequence rejection and resync,
+    /// so a reconnect that replays old events cannot duplicate rows.
+    pub fn apply_events(&mut self, scope: &str, history_json: &str, wire_json: &str) -> String {
+        let history: Vec<Value> = serde_json::from_str(history_json).unwrap_or_default();
+        let events: Vec<WireEvent> = serde_json::from_str(wire_json).unwrap_or_default();
+        let projection = self
+            .projections
+            .entry(scope.to_string())
+            .or_insert_with(|| RunProjection::new(scope));
+        for event in events {
+            if let Ok(event) = event.into_core_event() {
+                projection.apply(event);
+            }
+        }
+        let blocks = projection.blocks.clone();
+        let phase = format!("{:?}", projection.phase);
+        let settled = matches!(projection.phase, RunPhase::Settled(_));
+        let order = self.orders.entry(scope.to_string()).or_default();
+        let rows = order.update(scope, &history, &blocks);
+        let rows: Vec<Value> = rows
+            .into_iter()
+            .map(|row| {
+                let (source, index) = match row.source {
+                    RowSource::History(index) => ("history", index),
+                    RowSource::Projection(index) => ("projection", index),
+                };
+                json!({ "key": row.key, "source": source, "index": index })
+            })
+            .collect();
+        let blocks: Vec<Value> = blocks.iter().map(block_wire).collect();
+        json!({ "rows": rows, "blocks": blocks, "phase": phase, "settled": settled }).to_string()
+    }
+
     /// Drop retained slots for a scope (node switch, session reset).
     pub fn forget(&mut self, scope: &str) {
         self.orders.remove(scope);
+        self.projections.remove(scope);
     }
 }
 
 impl Default for Presenter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Same wire shape the JS contract accepts as projection input.
+fn block_wire(block: &MessageBlock) -> Value {
+    match block {
+        MessageBlock::Text { id, text } => json!({ "kind": "text", "id": id, "text": text }),
+        MessageBlock::Thinking { id, text } => {
+            json!({ "kind": "thinking", "id": id, "text": text })
+        }
+        MessageBlock::PublicSummary { id, text } => {
+            json!({ "kind": "summary", "id": id, "text": text })
+        }
+        MessageBlock::ToolCall {
+            id,
+            name,
+            arguments,
+            output,
+            status,
+        } => json!({
+            "kind": "tool",
+            "id": id,
+            "name": name,
+            "arguments": arguments,
+            "output": output,
+            "status": match status {
+                ToolStatus::Running => "running",
+                ToolStatus::Failed => "failed",
+                ToolStatus::Cancelled => "cancelled",
+                ToolStatus::Completed => "completed",
+            },
+        }),
     }
 }
 
@@ -301,6 +374,38 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(context["percentText"], "38%");
+    }
+
+    #[test]
+    fn live_events_build_tool_blocks_and_keep_duplicates_out() {
+        let mut presenter = Presenter::new();
+        let history = json!([{ "id": "user-1", "role": "user", "content": "hi" }]).to_string();
+        let wire = json!([
+            { "id": "1", "seq": 1, "event_type": "agent_start", "data": { "type": "agent_start" } },
+            { "id": "2", "seq": 2, "event_type": "message_update", "data": { "type": "message_update", "message": { "entryId": "answer" }, "eventType": "text_delta", "delta": "hello" } },
+            { "id": "3", "seq": 3, "event_type": "tool_execution_start", "data": { "type": "tool_execution_start", "toolCallId": "read-1", "toolName": "read", "args": { "path": "src/theme.rs" } } },
+            { "id": "4", "seq": 4, "event_type": "tool_execution_end", "data": { "type": "tool_execution_end", "toolCallId": "read-1", "toolName": "read", "result": { "content": [{ "type": "text", "text": "fn theme() {}" }] } } }
+        ])
+        .to_string();
+        let first: Value =
+            serde_json::from_str(&presenter.apply_events("scope", &history, &wire)).unwrap();
+        let blocks = first["blocks"].as_array().unwrap();
+        assert_eq!(
+            blocks
+                .iter()
+                .filter(|block| block["kind"] == "tool")
+                .count(),
+            1
+        );
+        assert_eq!(blocks[0]["kind"], "text");
+        assert_eq!(blocks[0]["text"], "hello");
+        assert_eq!(first["rows"].as_array().unwrap().len(), 3);
+
+        // The same batch replayed again must not duplicate rows or blocks.
+        let again: Value =
+            serde_json::from_str(&presenter.apply_events("scope", &history, &wire)).unwrap();
+        assert_eq!(first["rows"], again["rows"]);
+        assert_eq!(first["blocks"], again["blocks"]);
     }
 
     #[test]

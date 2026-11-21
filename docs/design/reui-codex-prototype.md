@@ -67,6 +67,16 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P3 实时流（已落地）
+
+- `work-viewmodel-wasm::Presenter::apply_events(scope, history, wire)`：wasm 侧持有
+  `RunProjection`，把 `WireEvent` 解码后 `apply`，返回 `{rows, blocks, phase, settled}`。
+  去重、陈旧序号拒绝、resync 都由 Rust 投影负责 —— 重连重放不会重复行。
+- `work-client-wasm::NodeClient::{subscribe,stop}`：`spawn_local` 消费 `EventStream`，
+  逐个事件回调给 JS；返回订阅号供切换会话时停止。
+- Vite 代理启用 `ws: true`，`/api/v1/realtime` 与 HTTP 同一来源；`?live=1` 自动连接。
+- 验收：`npm run verify:live` 8 条（含「WS 事件产生 read/bash 工具卡」与「展开看到流式结果」）。
+
 ### P2 只读数据（已落地）
 
 - 新增 `crates/client/work-client-wasm`：`NodeClient::{auth,login,projects,sessions,messages}`，

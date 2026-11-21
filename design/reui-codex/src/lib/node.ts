@@ -71,4 +71,28 @@ export class NodeConnection {
   async messages(sessionId: string, limit = 60): Promise<NodeMessages> {
     return parse<NodeMessages>(await this.client.messages(sessionId, limit))
   }
+
+  /** Live wire events; returns the subscription id used by `stop`. */
+  subscribe(sessionId: string, after: number, onEvent: (event: unknown) => void): number {
+    return this.client.subscribe(sessionId, after, (raw: unknown) => {
+      // The Rust side sends one JSON string per event.
+      let event: unknown = raw
+      if (typeof raw === 'string') {
+        try {
+          event = JSON.parse(raw)
+        } catch {
+          return
+        }
+      }
+      if (typeof event === 'object' && event !== null && 'error' in event) {
+        console.error('live subscription error:', (event as { error: string }).error)
+        return
+      }
+      onEvent(event)
+    })
+  }
+
+  stop(subscription: number) {
+    this.client.stop(subscription)
+  }
 }
