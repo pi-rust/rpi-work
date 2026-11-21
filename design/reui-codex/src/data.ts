@@ -1,45 +1,28 @@
 /**
  * Fixture content for the ReUI/Codex layout prototype.
  *
- * Same data as `tests/fixtures/ui-fixture.cjs` and the GPUI prototype, so the
- * three renderers can be compared side by side.
+ * The shapes match what the wasm presenter consumes: canonical history plus an
+ * append-only run projection. Ordering, tool labels and metric formatting come
+ * from `work-viewmodel` through `@/lib/viewmodel`, not from this file.
  */
 
 export type Project = { id: string; name: string }
+export type Session = { id: string; projectId: string; title: string; updatedAt: number }
 
-export type Session = {
-  id: string
-  projectId: string
-  title: string
-  updatedAt: number
-}
+export type HistoryMessage = { id: string; role: 'user' | 'assistant'; content: string }
 
-export type ToolCall = {
+export type TextBlock = { kind: 'text'; id: string; text: string }
+export type ToolBlock = {
+  kind: 'tool'
   id: string
   name: string
-  target: string
-  language: string
-  status: 'completed' | 'running' | 'failed'
-  detail: string
+  arguments: string
   output: string
-  durationMs: number
+  status: 'completed' | 'running' | 'failed'
 }
-
-export type Turn = { id: string; role: 'user' | 'assistant'; text: string }
+export type Block = TextBlock | ToolBlock
 
 export type RunStep = { id: string; title: string; status: 'done' | 'running' | 'pending'; at: string }
-
-export type Metrics = {
-  input: number
-  output: number
-  cachePercent: number
-  cost: number
-  contextPercent: number
-  contextUsed: number
-  contextWindow: number
-  tools: number
-  failures: number
-}
 
 export const projects: Project[] = [
   { id: 'rpi-work', name: 'rpi-work' },
@@ -53,34 +36,53 @@ export const sessions: Session[] = [
   { id: 'rpc', projectId: 'pi-rust', title: '验证 RPC 事件协议', updatedAt: 1792880000000 },
 ]
 
-export const turns: Turn[] = [
-  { id: 'user-1', role: 'user', text: '帮我为工作台增加一个深色主题，并保持手机端可用。' },
-  { id: 'answer-1', role: 'assistant', text: '主题切换已经准备好，接下来运行组件测试。深色模式复用同一套 token，手机端沿用 320px 断点。' },
+/** Canonical history exactly as the node returns it. */
+export const history: HistoryMessage[] = [
+  { id: 'user-1', role: 'user', content: '帮我为工作台增加一个深色主题，并保持手机端可用。' },
 ]
 
-export const tools: ToolCall[] = [
+/** Run projection blocks; the display order is decided in Rust. */
+export const blocks: Block[] = [
   {
+    kind: 'text',
+    id: 'answer-1',
+    text: '主题切换已经准备好，接下来运行组件测试。深色模式复用同一套 token，手机端沿用 320px 断点。',
+  },
+  {
+    kind: 'tool',
     id: 'read-1',
     name: 'read',
-    target: 'src/theme.rs',
-    language: 'rust',
-    status: 'completed',
-    detail: '{ "path": "src/theme.rs" }',
+    arguments: JSON.stringify({ path: 'src/theme.rs' }),
     output:
       'pub fn theme() -> Tokens {\n    let light = Tokens::codex(false);\n    let dark = Tokens::codex(true);\n    Tokens { light, dark }\n}',
-    durationMs: 12,
+    status: 'completed',
   },
   {
+    kind: 'tool',
     id: 'bash-1',
     name: 'bash',
-    target: 'cargo test -p work-ui --lib',
-    language: 'shell',
-    status: 'completed',
-    detail: '{ "command": "cargo test -p work-ui --lib" }',
+    arguments: JSON.stringify({ command: 'cargo test -p work-ui --lib' }),
     output: 'running 12 tests\ntest result: ok. 12 passed; 0 failed',
-    durationMs: 1840,
+    status: 'completed',
   },
 ]
+
+/** Render-only metadata keyed by block id. */
+export const toolMeta: Record<string, { durationMs: number; language: string }> = {
+  'read-1': { durationMs: 12, language: 'rust' },
+  'bash-1': { durationMs: 1840, language: 'shell' },
+}
+
+export const statsPayload = {
+  uncachedTokens: 8000,
+  cacheReadTokens: 24000,
+  cacheWriteTokens: 4800,
+  outputTokens: 4800,
+  costTotal: 0.0184,
+  requests: 3,
+}
+
+export const contextPayload = { tokens: 38000, window: 100000, percent: 38, threshold: 84000 }
 
 export const runSteps: RunStep[] = [
   { id: 'step-plan', title: '读取主题契约', status: 'done', at: '16:21' },
@@ -89,20 +91,9 @@ export const runSteps: RunStep[] = [
   { id: 'step-answer', title: '输出回答', status: 'done', at: '16:22' },
 ]
 
-export const metrics: Metrics = {
-  input: 32000,
-  output: 4800,
-  cachePercent: 75,
-  cost: 0.0184,
-  contextPercent: 38,
-  contextUsed: 38000,
-  contextWindow: 100000,
-  tools: 2,
-  failures: 0,
-}
-
-export const node = { id: 'fixture-node', mode: '本地节点', model: 'deepseek/deepseek-v4-pro', thinking: '高' }
-
-export function formatTokens(value: number): string {
-  return value >= 1000 ? `${(value / 1000).toFixed(1).replace('.0', '')}k` : `${value}`
+export const node = {
+  id: 'fixture-node',
+  mode: '本地节点',
+  model: 'deepseek/deepseek-v4-pro',
+  thinking: '高',
 }

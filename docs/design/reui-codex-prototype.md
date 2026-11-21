@@ -52,6 +52,16 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成（本次）
 
+### P2/P3 前置：`crates/client/work-viewmodel-wasm`（已落地）
+
+- 新增 workspace 成员，`crate-type = ["cdylib", "rlib"]`，导出 `Presenter::rows`、`tool_target`、
+  `tool_icon`、`tokenize_file`、`metrics_session`、`context_reported`、`format_tokens`、
+  `theme_tokens`、`theme_presets`、`normalize_address`。
+- 前端 `src/lib/viewmodel.ts` 是薄封装；`npm run build:viewmodel` 生成 `src/pkg/`（构建产物，gitignore）。
+- 浏览器验收 6 条断言：行序来自 wasm、工具目标来自 Rust、底栏 `32k / 4.8k / 75% / 38% / $0.0184`
+  由 Rust 格式化、主题 token 来自 `theme_contract`、明暗截图、零 page error。
+- Rust 侧 4 个单测覆盖同样的规则（`cargo test -p work-viewmodel-wasm`）。
+
 - P0、P1 全绿：可运行于 `npm run dev` / `npm run preview`，明暗两套截图见提交说明。
 - 组件：ReUI `CodeBlock`（shiki 着色 + 行号 + 复制）、ReUI `Timeline`（运行步骤）、shadcn `Button/Textarea/ScrollArea/Badge/Avatar/Separator/Collapsible/Tooltip`。
 - 布局：Codex 三段式（左栏 264px / 中央 max-w-3xl 对话 / 右侧 300px 运行面板）+ 底部 28px 指标栏。

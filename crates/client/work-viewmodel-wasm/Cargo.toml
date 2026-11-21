@@ -1,0 +1,18 @@
+[package]
+name = "work-viewmodel-wasm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+publish = false
+description = "wasm-bindgen surface for work-viewmodel, so Web renderers reuse the Rust display rules."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2.129"
+work-core = { path = "../../foundation/work-core" }
+work-viewmodel = { path = "../work-viewmodel" }

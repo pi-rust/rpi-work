@@ -5,9 +5,13 @@
 ```bash
 cd design/reui-codex
 npm ci
-npm run dev        # http://localhost:5173
-npm run build      # 产出 dist/
+npm run build:viewmodel   # cargo build -p work-viewmodel-wasm + wasm-bindgen → src/pkg/
+npm run dev               # http://localhost:5173
+npm run build             # 先编 wasm，再 tsc + vite build
 ```
+
+展示规则不在 TypeScript 里：`src/lib/viewmodel.ts` 只是 `crates/client/work-viewmodel-wasm`
+的薄封装，行序、工具目标、指标格式、主题 token 都由 Rust 提供（`src/pkg/` 为构建产物，已忽略）。
 
 ## 已实现
 
@@ -29,7 +33,8 @@ npm run build      # 产出 dist/
 
 ## 已知限制
 
-- 纯前端 fixture，没有接节点、没有实时事件、不能发送消息。
+- fixture 数据，没有接节点、没有实时事件、不能发送消息（P2/P3 待做）。
+- `src/pkg/` 需先执行 `npm run build:viewmodel`（约 70s，含 wasm 目标编译）。
 - 主题只有明暗两套（未接 `work-viewmodel` 的 12 套主题 token）。
 - 未做 320/390 窄屏布局验收。
 - 右侧运行面板为静态数据，不随会话切换。

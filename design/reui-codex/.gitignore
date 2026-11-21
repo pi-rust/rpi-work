@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Generated wasm binding for @rpi/work-viewmodel
+src/pkg/

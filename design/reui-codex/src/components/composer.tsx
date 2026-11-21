@@ -6,16 +6,17 @@ import {
   Avatar,
   AvatarFallback,
 } from '@/components/ui/avatar'
-import { node, type Metrics } from '@/data'
+import { node } from '@/data'
+import type { ContextView } from '@/lib/viewmodel'
 
 type Props = {
   draft: string
   onDraft: (value: string) => void
-  metrics: Metrics
+  context: ContextView
 }
 
 /** Codex-style composer: rounded card, model chip row, send button. */
-export function Composer({ draft, onDraft, metrics }: Props) {
+export function Composer({ draft, onDraft, context }: Props) {
   return (
     <div className="bg-background/80 sticky bottom-0 px-6 pt-2 pb-3 backdrop-blur">
       <div className="border-input bg-card focus-within:border-ring/60 mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border p-3 shadow-sm">
@@ -40,7 +41,7 @@ export function Composer({ draft, onDraft, metrics }: Props) {
             思考 {node.thinking}
           </Button>
           <span className="text-muted-foreground ml-auto text-[11px] tabular-nums">
-            上下文 {metrics.contextPercent}%
+            上下文 {context.percentText}
           </span>
           <Button
             size="icon"

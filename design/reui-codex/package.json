@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:viewmodel && tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:viewmodel": "cargo build --manifest-path ../../Cargo.toml -p work-viewmodel-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir src/pkg --out-name work_viewmodel ../../target/wasm32-unknown-unknown/release/work_viewmodel_wasm.wasm"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
