@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use std::fmt::Write as _;
 use work_client::{PendingDialog, UiDialogOption, UiDialogPayload};
 use work_core::{MessageBlock, ToolStatus};
+use work_viewmodel::transcript::message_has_tool_call;
 
 pub const CSS: &str = include_str!("conversation.css");
 
@@ -260,24 +261,6 @@ fn assistant_heading() -> Element {
 
 pub fn render_history(message: &Value) -> Element {
     render_history_in_context(message, &[], &[])
-}
-
-pub fn message_has_tool_call(message: &Value, id: &str) -> bool {
-    message
-        .get("content")
-        .and_then(Value::as_array)
-        .is_some_and(|items| {
-            items.iter().any(|item| {
-                matches!(
-                    item.get("type").and_then(Value::as_str),
-                    Some("toolCall" | "tool_use" | "tool_call")
-                ) && item
-                    .get("id")
-                    .or_else(|| item.get("toolCallId"))
-                    .and_then(Value::as_str)
-                    == Some(id)
-            })
-        })
 }
 
 fn history_role(message: &Value) -> &str {

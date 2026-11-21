@@ -1,30 +1,71 @@
-//! Stable display slots for canonical history and the append-only run projection.
+//! Renderer-independent transcript model.
 //!
-//! Only identities are retained: callers always render the current input at `source`.
-//! Projection indices must stay stable within a scope; reset the scope when a run
-//! replaces its projection rather than appending to it.
+//! Stable display slots for canonical history and the append-only run projection,
+//! plus the identity rules that decide which history message owns a projection
+//! block. Only identities are retained: callers always render the current input
+//! at `source`. Projection indices must stay stable within a scope; reset the
+//! scope when a run replaces its projection rather than appending to it.
 
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use work_core::MessageBlock;
 
-use super::history::{history_has_block, history_id};
+pub fn message_id(message: &Value) -> Option<&str> {
+    ["entryId", "messageId", "id"]
+        .iter()
+        .find_map(|key| message.get(key)?.as_str())
+}
+
+pub fn history_id(message: &Value, index: usize) -> String {
+    message_id(message).map_or_else(|| format!("snapshot-{index}"), str::to_owned)
+}
+
+pub fn history_has_block(messages: &[Value], block: &MessageBlock) -> bool {
+    messages.iter().any(|message| {
+        let owned_message_block = message_id(message).is_some_and(|id| {
+            block.id() == id
+                || block.id().starts_with(&format!("{id}-text-"))
+                || block.id().starts_with(&format!("{id}-thinking-"))
+        });
+        owned_message_block
+            || message.get("toolCallId").and_then(Value::as_str) == Some(block.id())
+            || message_has_tool_call(message, block.id())
+    })
+}
+
+pub fn message_has_tool_call(message: &Value, id: &str) -> bool {
+    message
+        .get("content")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                matches!(
+                    item.get("type").and_then(Value::as_str),
+                    Some("toolCall" | "tool_use" | "tool_call")
+                ) && item
+                    .get("id")
+                    .or_else(|| item.get("toolCallId"))
+                    .and_then(Value::as_str)
+                    == Some(id)
+            })
+        })
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RowSource {
+pub enum RowSource {
     History(usize),
     Projection(usize),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct OrderedRow {
+pub struct OrderedRow {
     pub key: u64,
     pub source: RowSource,
 }
 
 #[derive(Default)]
-pub(crate) struct TranscriptOrder {
+pub struct TranscriptOrder {
     scope: Option<String>,
     next_key: u64,
     slots: Vec<Slot>,
@@ -562,5 +603,22 @@ mod tests {
         assert_eq!(order.update("run", &[], &[]), Vec::<OrderedRow>::new());
         let returned = order.update("run", &[message("a")], &[]);
         assert!(returned[0].key > before[1].key);
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::history_has_block;
+    use serde_json::json;
+    use work_core::MessageBlock;
+
+    #[test]
+    fn canonical_assistant_message_owns_thinking_projection_blocks() {
+        let message = json!({"entryId":"answer-1","role":"assistant","content":"answer"});
+        let block = MessageBlock::Thinking {
+            id: "answer-1-thinking-0".into(),
+            text: "private".into(),
+        };
+        assert!(history_has_block(std::slice::from_ref(&message), &block));
     }
 }

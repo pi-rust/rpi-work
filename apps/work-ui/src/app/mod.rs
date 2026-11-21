@@ -16,7 +16,7 @@ mod desktop_launch;
 pub(crate) mod desktop_setup;
 pub(crate) mod device_mode;
 pub(crate) mod entry;
-mod history;
+pub(crate) use work_viewmodel::transcript as history;
 pub(crate) mod identity;
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 pub(crate) mod local_http;
@@ -27,7 +27,7 @@ pub(crate) mod node_navigation;
 pub(crate) use work_viewmodel::qr as qr_codec;
 mod runtime;
 mod sidebar_resize;
-mod transcript_order;
+pub(crate) use work_viewmodel::transcript as transcript_order;
 mod workspace;
 mod workspace_changes;
 mod workspace_connection;

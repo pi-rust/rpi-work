@@ -27,3 +27,4 @@ pub mod conversation;
 pub mod qr;
 pub mod resources;
 pub mod theme;
+pub mod transcript;
