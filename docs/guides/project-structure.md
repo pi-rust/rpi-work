@@ -16,6 +16,7 @@ apps/
         settings/        连接、Provider、更新设置
         observability/   用量、上下文与会话追踪
       shared/            公共组件、状态辅助和主题
+  work-gpui/             GPUI 桌面原型（独立 workspace，不进入安装包与根测试）
   work-cli/              节点诊断 CLI
 crates/
   foundation/

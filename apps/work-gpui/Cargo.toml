@@ -1,0 +1,28 @@
+# Standalone workspace: gpui pins `cocoa = "=0.26.0"`, which cannot coexist with
+# the dioxus desktop stack (`cocoa ^0.26.1`) inside the product workspace.
+[workspace]
+
+[package]
+name = "work-gpui"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+publish = false
+description = "GPUI desktop prototype for RPI Work: renderer proof on top of work-viewmodel."
+
+# macOS with Command Line Tools only (no Xcode) cannot run `xcrun metal` at build
+# time, so this prototype compiles gpui shaders at runtime. Release builds should
+# use the default feature set and a full Xcode toolchain.
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui = { version = "0.2.2", default-features = false, features = ["font-kit", "runtime_shaders"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+gpui = "0.2.2"
+
+[dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "time"] }
+work-client = { path = "../../crates/client/work-client" }
+work-core = { path = "../../crates/foundation/work-core" }
+work-viewmodel = { path = "../../crates/client/work-viewmodel" }
