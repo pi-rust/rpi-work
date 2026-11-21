@@ -21,6 +21,21 @@ export type NodeSession = {
 }
 
 export type NodeAuth = { required: boolean; authenticated: boolean }
+export type NodeModel = {
+  id: string
+  name: string
+  provider: string
+  reasoning: boolean
+  contextWindow: number | null
+}
+export type NodeRuntime = {
+  modelId: string | null
+  provider: string | null
+  thinkingLevel: string | null
+  context?: { tokens?: number | null; window?: number | null; percent?: number | null; threshold?: number | null }
+  stats?: Record<string, unknown> | null
+  queue?: { count?: number } | null
+}
 export type NodeMessages = {
   messages: unknown[]
   firstId: string | null
@@ -70,6 +85,34 @@ export class NodeConnection {
 
   async messages(sessionId: string, limit = 60): Promise<NodeMessages> {
     return parse<NodeMessages>(await this.client.messages(sessionId, limit))
+  }
+
+  async prompt(sessionId: string, message: string): Promise<{ accepted: boolean; error: string | null }> {
+    return parse(await this.client.prompt(sessionId, message))
+  }
+
+  async abort(sessionId: string): Promise<{ accepted: boolean; error: string | null }> {
+    return parse(await this.client.abort(sessionId))
+  }
+
+  async runtimeState(sessionId: string): Promise<NodeRuntime> {
+    return parse<NodeRuntime>(await this.client.runtime_state(sessionId))
+  }
+
+  async models(sessionId: string): Promise<NodeModel[]> {
+    return parse<NodeModel[]>(await this.client.models(sessionId))
+  }
+
+  async thinkingLevels(sessionId: string): Promise<string[]> {
+    return parse<string[]>(await this.client.thinking_levels(sessionId))
+  }
+
+  async setModel(sessionId: string, modelId: string, provider: string): Promise<NodeRuntime> {
+    return parse<NodeRuntime>(await this.client.set_model(sessionId, modelId, provider))
+  }
+
+  async setThinking(sessionId: string, level: string): Promise<NodeRuntime> {
+    return parse<NodeRuntime>(await this.client.set_thinking(sessionId, level))
   }
 
   /** Live wire events; returns the subscription id used by `stop`. */

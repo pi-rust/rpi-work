@@ -31,8 +31,16 @@ export default function App() {
   }, [])
 
   const ready = workspace.status === 'fixture' || workspace.status === 'ready'
-  const metrics = useMemo(() => (ready ? metricsFrom(statsPayload) : null), [ready])
-  const context = useMemo(() => (ready ? contextFrom(contextPayload) : null), [ready])
+  const liveMetrics = workspace.runtime?.stats ?? null
+  const liveContext = workspace.runtime?.context ?? null
+  const metrics = useMemo(
+    () => (ready ? metricsFrom(liveMetrics ?? statsPayload) : null),
+    [ready, liveMetrics],
+  )
+  const context = useMemo(
+    () => (ready ? contextFrom(liveContext ?? contextPayload) : null),
+    [ready, liveContext],
+  )
   const tokens = useMemo(() => (ready ? themeTokens('codex', dark) : {}), [ready, dark])
   const contextText =
     ready && context
@@ -40,6 +48,13 @@ export default function App() {
       : '— / —'
 
   const title = workspace.sessions.find((entry) => entry.id === workspace.selected.session)?.title ?? '新对话'
+  const modelLabel = (workspace.runtime?.modelId ?? node.model).split('/').slice(-1)[0]
+  const thinking = workspace.runtime?.thinkingLevel ?? node.thinking
+  const modelOptions = workspace.models.map((model) => ({
+    id: model.id,
+    label: model.name || model.id.split('/').slice(-1)[0],
+    provider: model.provider,
+  }))
   const live = workspace.source.kind === 'live'
   const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
 
@@ -176,11 +191,28 @@ export default function App() {
                 draft={draft}
                 onDraft={setDraft}
                 context={context ?? { used: null, window: null, percent: null, threshold: null, percentText: '—' }}
+                onSend={() => {
+                  void workspace.send(draft).then((ok) => {
+                    if (ok) setDraft('')
+                  })
+                }}
+                onAbort={() => void workspace.abort()}
+                busy={workspace.busy}
+                error={workspace.sendError}
+                modelLabel={modelLabel}
+                thinking={thinking}
+                modelOptions={live ? modelOptions : undefined}
+                thinkingOptions={live ? workspace.thinkingLevels : undefined}
+                onModel={live ? (id, provider) => {
+                  const model = workspace.models.find((entry) => entry.id === id)
+                  if (model) void workspace.setModel({ ...model, provider })
+                } : undefined}
+                onThinking={live ? (level) => void workspace.setThinking(level) : undefined}
               />
             </div>
 
             {rail ? (
-              <aside className="w-[300px] shrink-0 border-l">
+              <aside className="w-[300px] shrink-0 border-l" data-testid="run-panel">
                 <div className="flex h-full flex-col">
                   <div className="flex h-11 items-center justify-between border-b px-3 text-[12px] font-medium">
                     运行
@@ -190,8 +222,8 @@ export default function App() {
                     <RunTimeline steps={runSteps} />
                     <Separator className="my-3" />
                     <div className="flex flex-col gap-2 text-[12px]">
-                      <Row label="模型" value={node.model} />
-                      <Row label="思考" value={node.thinking} />
+                      <Row label="模型" value={workspace.runtime?.modelId ?? node.model} />
+                      <Row label="思考" value={thinking} />
                       <Row label="工具" value={`${toolCount} 次 · 失败 0`} />
                       <Row label="缓存命中" value={metrics?.cacheText ?? '—'} />
                       <Row label="成本" value={metrics?.cost == null ? '—' : `$${metrics.cost.toFixed(4)}`} />

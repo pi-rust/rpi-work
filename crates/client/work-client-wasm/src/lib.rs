@@ -135,6 +135,120 @@ impl NodeClient {
         })
     }
 
+    /// Send a prompt. The reply is the host acknowledgement; the run itself
+    /// arrives on the live subscription.
+    pub fn prompt(&self, session_id: String, message: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let reply = client
+                .prompt(&session_id, &message)
+                .await
+                .map_err(|error| failure("发送失败", error))?;
+            json_string(&serde_json::json!({
+                "accepted": reply.success,
+                "command": reply.command,
+                "data": reply.data,
+                "error": reply.error,
+            }))
+        })
+    }
+
+    /// Ask the node to stop the current run.
+    pub fn abort(&self, session_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let reply = client
+                .abort(&session_id)
+                .await
+                .map_err(|error| failure("中止失败", error))?;
+            json_string(&serde_json::json!({
+                "accepted": reply.success,
+                "command": reply.command,
+                "data": reply.data,
+                "error": reply.error,
+            }))
+        })
+    }
+
+    /// Authoritative runtime state: model, thinking level, context, stats, queue.
+    pub fn runtime_state(&self, session_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let state = client
+                .runtime_state(&session_id)
+                .await
+                .map_err(|error| failure("运行状态读取失败", error))?;
+            json_string(&state)
+        })
+    }
+
+    /// `[{id,name,provider,reasoning,contextWindow}]`
+    pub fn models(&self, session_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let models = client
+                .models(&session_id)
+                .await
+                .map_err(|error| failure("模型列表读取失败", error))?;
+            json_string(&serde_json::json!(
+                models
+                    .into_iter()
+                    .map(|model| serde_json::json!({
+                        "id": model.id,
+                        "name": model.name,
+                        "provider": model.provider,
+                        "reasoning": model.reasoning,
+                        "contextWindow": model.context_window,
+                    }))
+                    .collect::<Vec<_>>()
+            ))
+        })
+    }
+
+    /// Available thinking levels for the session.
+    pub fn thinking_levels(&self, session_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let levels = client
+                .thinking_levels(&session_id)
+                .await
+                .map_err(|error| failure("思考等级读取失败", error))?;
+            json_string(&serde_json::json!(levels))
+        })
+    }
+
+    /// Switch model, then return the authoritative runtime state.
+    pub fn set_model(&self, session_id: String, model_id: String, provider: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            client
+                .set_model_with_provider(&session_id, &model_id, &provider)
+                .await
+                .map_err(|error| failure("模型切换失败", error))?;
+            let state = client
+                .runtime_state(&session_id)
+                .await
+                .map_err(|error| failure("切换后回读失败", error))?;
+            json_string(&state)
+        })
+    }
+
+    /// Switch thinking level, then return the authoritative runtime state.
+    pub fn set_thinking(&self, session_id: String, level: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            client
+                .set_thinking_level(&session_id, &level)
+                .await
+                .map_err(|error| failure("思考等级切换失败", error))?;
+            let state = client
+                .runtime_state(&session_id)
+                .await
+                .map_err(|error| failure("切换后回读失败", error))?;
+            json_string(&state)
+        })
+    }
+
     /// Stream live wire events for one session.
     ///
     /// `onEvent` receives one JSON `WireEvent` per call; the returned id can be

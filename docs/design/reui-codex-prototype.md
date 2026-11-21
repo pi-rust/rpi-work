@@ -67,6 +67,17 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P4 写操作（已落地）
+
+- `work-client-wasm` 增加 `prompt` / `abort` / `runtime_state` / `models` /
+  `thinking_levels` / `set_model` / `set_thinking`；切换后一律**回读权威 runtime state**。
+- composer：⌘↵ 发送、发送中变为「中止」、失败保留草稿并显示节点错误文案。
+- 模型与思考等级下拉来自节点目录，选中即以回读结果更新标题栏与运行面板。
+- 运行面板指标改为节点 `get_state` 的 `stats`/`context`（fixture 模式下仍用内置数据）。
+- 一个实测发现：写命令走实时 socket，而不是 HTTP 请求体，因此验收脚本改为断言
+  WebSocket 帧（`prompt`/`abort` 命令与其文本）。
+- 验收：`npm run verify:live` 13 条全绿（新增发送、拒绝保留草稿、模型回读、思考回读、中止）。
+
 ### P3 实时流（已落地）
 
 - `work-viewmodel-wasm::Presenter::apply_events(scope, history, wire)`：wasm 侧持有

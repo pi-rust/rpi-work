@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import * as fixture from '@/data'
-import { NodeConnection, type NodeSession } from '@/lib/node'
+import { NodeConnection, type NodeModel, type NodeRuntime, type NodeSession } from '@/lib/node'
 import { initViewModel, TranscriptPresenter, type LiveView, type RowRef } from '@/lib/viewmodel'
 import type { Block, HistoryMessage, Project, Session } from '@/data'
 
@@ -27,6 +27,15 @@ export type Workspace = {
   selected: { project: string; session: string }
   rows: RowRef[]
   messageCount: number
+  runtime: NodeRuntime | null
+  models: NodeModel[]
+  thinkingLevels: string[]
+  busy: boolean
+  sendError: string | null
+  send: (text: string) => Promise<boolean>
+  abort: () => Promise<void>
+  setModel: (model: NodeModel) => Promise<void>
+  setThinking: (level: string) => Promise<void>
   connect: (origin: string) => Promise<void>
   submitpassword: (password: string) => Promise<void>
   disconnect: () => void
@@ -77,6 +86,12 @@ export function useWorkspace(): Workspace {
   const historyRef = useRef<HistoryMessage[]>(fixture.history)
   const subscription = useRef<number | null>(null)
   const [liveView, setLiveView] = useState<LiveView | null>(null)
+  const [runtime, setRuntime] = useState<NodeRuntime | null>(null)
+  const [models, setModels] = useState<NodeModel[]>([])
+  const [thinkingLevels, setThinkingLevels] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const sessionIdRef = useRef<string>('')
 
   useEffect(() => {
     void initViewModel().then(() => {
@@ -103,7 +118,18 @@ export function useWorkspace(): Workspace {
       setBlocks([])
       setLiveView(null)
       setSelected({ project: projectId, session: sessionId })
+      sessionIdRef.current = sessionId
       setStatus('ready')
+      // Runtime state, model catalogue and thinking levels come from the node.
+      void Promise.all([conn.runtimeState(sessionId), conn.models(sessionId), conn.thinkingLevels(sessionId)])
+        .then(([state, catalogue, levels]) => {
+          setRuntime(state)
+          setModels(catalogue)
+          setThinkingLevels(levels)
+        })
+        .catch(() => {
+          // Older nodes may not expose the catalogue; the header keeps the defaults.
+        })
       // Live events replay through the Rust projection; the presenter dedupes
       // reconnects, so subscribing from 0 is safe.
       const scope = `${projectId}/${sessionId}`
@@ -184,10 +210,72 @@ export function useWorkspace(): Workspace {
     [openNode],
   )
 
+  const send = useCallback(
+    async (text: string) => {
+      const conn = connection.current
+      const sessionId = sessionIdRef.current
+      if (!conn || !sessionId || text.trim().length === 0) return false
+      setBusy(true)
+      setSendError(null)
+      try {
+        const reply = await conn.prompt(sessionId, text)
+        if (!reply.accepted) {
+          setSendError(reply.error ?? '节点拒绝了这次发送')
+          return false
+        }
+        return true
+      } catch (cause) {
+        setSendError(String(cause))
+        return false
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
+
+  const abort = useCallback(async () => {
+    const conn = connection.current
+    const sessionId = sessionIdRef.current
+    if (!conn || !sessionId) return
+    try {
+      await conn.abort(sessionId)
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [])
+
+  const setModel = useCallback(async (model: NodeModel) => {
+    const conn = connection.current
+    const sessionId = sessionIdRef.current
+    if (!conn || !sessionId) return
+    try {
+      setRuntime(await conn.setModel(sessionId, model.id, model.provider))
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [])
+
+  const setThinking = useCallback(async (level: string) => {
+    const conn = connection.current
+    const sessionId = sessionIdRef.current
+    if (!conn || !sessionId) return
+    try {
+      setRuntime(await conn.setThinking(sessionId, level))
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [])
+
   const disconnect = useCallback(() => {
     stopLive()
     connection.current = null
     setLiveView(null)
+    setRuntime(null)
+    setModels([])
+    setThinkingLevels([])
+    setSendError(null)
+    sessionIdRef.current = ''
     historyRef.current = fixture.history
     setSource({ kind: 'fixture' })
     setProjects(fixture.projects)
@@ -245,6 +333,15 @@ export function useWorkspace(): Workspace {
     selected,
     rows,
     messageCount: history.length,
+    runtime,
+    models,
+    thinkingLevels,
+    busy,
+    sendError,
+    send,
+    abort,
+    setModel,
+    setThinking,
     connect,
     submitpassword,
     disconnect,
