@@ -27,6 +27,7 @@
 pub mod config_requests;
 pub mod connection;
 pub mod conversation;
+pub mod observability;
 pub mod qr;
 pub mod resources;
 pub mod theme;

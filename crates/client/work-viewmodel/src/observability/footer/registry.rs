@@ -1,17 +1,17 @@
 //! Typed, client-only, read-only providers. No node/plugin loader or executable input.
-use super::super::runtime_stats::{percent, shown, tokens};
+use super::super::metrics::{percent, shown, tokens};
 use super::FooterContext;
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum Tone {
+pub enum Tone {
     Neutral,
     Good,
     Warning,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum FooterVisual {
+pub enum FooterVisual {
     Text,
     Tokens {
         input: String,
@@ -35,7 +35,7 @@ pub(super) enum FooterVisual {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct FooterItem {
+pub struct FooterItem {
     pub id: String,
     pub label: String,
     pub value: String,
@@ -44,11 +44,11 @@ pub(super) struct FooterItem {
     pub tone: Tone,
 }
 
-pub(super) struct ItemDeclaration {
+pub struct ItemDeclaration {
     pub id: &'static str,
     pub label: &'static str,
 }
-pub(super) struct FooterPlugin {
+pub struct FooterPlugin {
     pub id: &'static str,
     pub version: u32,
     pub title: &'static str,
@@ -56,7 +56,7 @@ pub(super) struct FooterPlugin {
     pub provider: fn(&FooterContext) -> Result<Vec<FooterItem>, &'static str>,
 }
 
-pub(super) static BUILTINS: &[FooterPlugin] = &[
+pub static BUILTINS: &[FooterPlugin] = &[
     FooterPlugin {
         id: "session-identity",
         version: 1,
@@ -117,7 +117,7 @@ pub(super) static BUILTINS: &[FooterPlugin] = &[
     },
 ];
 
-pub(super) fn valid_id(id: &str) -> bool {
+pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 40
         && id
@@ -131,7 +131,7 @@ fn valid_text(text: &str, max: usize) -> bool {
 
 /// Fail closed per descriptor/item, not per registry. First valid duplicate wins.
 /// IDs must be declared; providers cannot choose markup, classes, actions or URLs.
-pub(super) fn collect<'a>(
+pub fn collect<'a>(
     plugins: &'a [FooterPlugin],
     context: &FooterContext,
 ) -> Vec<(&'a FooterPlugin, Vec<FooterItem>)> {
@@ -187,7 +187,7 @@ pub(super) fn collect<'a>(
     result
 }
 
-pub(super) fn finite(value: Option<f64>) -> Option<f64> {
+pub fn finite(value: Option<f64>) -> Option<f64> {
     value.filter(|n| n.is_finite() && *n >= 0.0)
 }
 fn count(value: Option<f64>) -> Option<f64> {
@@ -208,7 +208,7 @@ fn text(value: Option<&str>) -> &str {
         .filter(|s| !s.trim().is_empty() && !matches!(s.trim(), "unknown" | "undefined" | "null"))
         .unwrap_or("—")
 }
-pub(super) fn confirmed(context: &FooterContext) -> bool {
+pub fn confirmed(context: &FooterContext) -> bool {
     context.online && text(Some(&context.scope)) != "—"
 }
 #[allow(clippy::unnecessary_wraps)] // Matches FooterPlugin's fallible provider function pointer.
@@ -237,7 +237,7 @@ fn identity(c: &FooterContext) -> Result<Vec<FooterItem>, &'static str> {
 }
 #[allow(clippy::unnecessary_wraps)] // Matches FooterPlugin's fallible provider function pointer.
 fn usage(c: &FooterContext) -> Result<Vec<FooterItem>, &'static str> {
-    let empty = super::super::runtime_stats::Metrics::default();
+    let empty = super::super::metrics::Metrics::default();
     let m = if confirmed(c) { &c.metrics } else { &empty };
     let input = tokens(count(m.input));
     let output = tokens(count(m.output));
@@ -355,7 +355,7 @@ fn tools(c: &FooterContext) -> Result<Vec<FooterItem>, &'static str> {
     Ok(vec![result])
 }
 
-pub(super) fn metric_class(id: &str) -> &'static str {
+pub fn metric_class(id: &str) -> &'static str {
     match id {
         "identity" => "identity-metric",
         "cache" => "cache-metric",
