@@ -5477,8 +5477,11 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                                 }, "查看变更" }
                                             }
                                             div { class: "changed-files-list",
-                                                for (path, staged, status) in changed_files_preview.iter().cloned().take(visible) {
+                                                for (path, staged, status) in changed_files_preview.iter().take(visible) {
                                                     {
+                                                        let path = path.clone();
+                                                        let staged = *staged;
+                                                        let status = status.clone();
                                                         let handler = open_change_handler.clone();
                                                         let name = path.rsplit('/').next().unwrap_or(&path).to_string();
                                                         let directory = path.rsplit_once('/').map_or(String::new(), |(dir, _)| dir.to_string());
@@ -6288,7 +6291,10 @@ fn is_local_browser_address(value: &str) -> bool {
         .next()
         .unwrap_or("");
     matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1")
-        || host.ends_with(".local")
+        || host
+            .rsplit('.')
+            .next()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("local"))
         || host.starts_with("10.")
         || host.starts_with("192.168.")
         || (host.starts_with("172.")
