@@ -39,6 +39,7 @@ crates/
     work-update/         签名更新与安装适配
 assets/vendor/           正式应用使用的二维码、Mermaid 库及许可证
 design/prototype/        冻结的 HTML 原型和原型资源
+design/reui-codex/       ReUI + Codex 布局的 Web 原型（独立 npm 工程，不进入产物）
 tests/
   e2e/                   正式应用的集成回归
   design/                HTML 原型及设计对照测试

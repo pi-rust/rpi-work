@@ -21,3 +21,6 @@ Thumbs.db
 
 # Generated prototype review screenshots
 design/clarity-workbench/screenshots/
+
+# ReUI prototype build output
+/design/reui-codex/dist/

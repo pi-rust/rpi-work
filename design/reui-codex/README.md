@@ -1,0 +1,35 @@
+# ReUI · Codex 布局原型
+
+用 [ReUI](https://reui.io)（MIT 的 shadcn 生态组件库）+ Codex 式布局，实现一版工作台界面。数据来自 `src/data.ts`，与 `tests/fixtures/ui-fixture.cjs`、`apps/work-gpui` 原型同内容，便于三个渲染器横向比对。
+
+```bash
+cd design/reui-codex
+npm ci
+npm run dev        # http://localhost:5173
+npm run build      # 产出 dist/
+```
+
+## 已实现
+
+| 区域 | 实现 |
+| --- | --- |
+| 左侧栏 | 工作区切换、`新对话 ⌘J`、项目折叠列表（含会话计数）、会话选中、节点状态、设置入口 |
+| 顶栏 | `项目 / 会话` 面包屑、在线状态、明暗主题切换、右侧运行面板开关 |
+| 转写区 | 用户/助手消息、模型徽标、工具卡（可折叠、耗时、状态、参数、结果） |
+| 代码 | ReUI `CodeBlock`（shiki 着色、行号、复制按钮）渲染 `read` 的工具结果 |
+| 运行面板 | ReUI `Timeline` 展示运行步骤 + 模型/思考/工具/缓存/成本/上下文 |
+| 输入区 | 圆角 composer、模型与思考等级 chip、上下文比例、发送态禁用逻辑 |
+| 底栏 | `↑ 32k ↓ 4.8k 缓存 75% 成本 $0.0184 上下文 38% 工具 2/失败 0` |
+
+## 组件来源
+
+- `src/components/reui/`：ReUI registry 安装（`npx shadcn@latest add @reui/code-block @reui/timeline`）
+- `src/components/ui/`：shadcn（preset `nova` / Base UI）
+- 许可证与免费/付费边界见 [NOTICE.md](NOTICE.md)
+
+## 已知限制
+
+- 纯前端 fixture，没有接节点、没有实时事件、不能发送消息。
+- 主题只有明暗两套（未接 `work-viewmodel` 的 12 套主题 token）。
+- 未做 320/390 窄屏布局验收。
+- 右侧运行面板为静态数据，不随会话切换。
