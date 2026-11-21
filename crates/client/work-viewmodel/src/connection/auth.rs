@@ -1,20 +1,17 @@
 //! Android entry authentication. Passwords are memory-only and never Debug/Serialize.
 //! Verified session cookies may separately be saved using Android Keystore.
 
-use super::connections::{NodePassword, normalize_address, with_timeout};
+use super::{EntryNode, NodePassword, normalize_address, with_timeout};
 use work_client::{AuthState, WorkspaceClient};
 
 // No Clone, Debug or Serialize: an attempt consumes its bound password once.
-pub(crate) struct ManualAttempt {
+pub struct ManualAttempt {
     pub address: String,
     client: WorkspaceClient,
     secret: String,
 }
 
-pub(crate) fn manual_prepare(
-    address: &str,
-    mut password: NodePassword,
-) -> Result<ManualAttempt, String> {
+pub fn manual_prepare(address: &str, mut password: NodePassword) -> Result<ManualAttempt, String> {
     let address = normalize_address(address, true)?;
     let secret = password
         .take_for(&address)
@@ -54,9 +51,9 @@ async fn authenticate(client: WorkspaceClient, secret: String) -> Result<Workspa
 }
 
 impl ManualAttempt {
-    pub async fn login(self) -> Result<super::entry::EntryNode, String> {
+    pub async fn login(self) -> Result<EntryNode, String> {
         let client = authenticate(self.client, self.secret).await?;
-        Ok(super::entry::EntryNode {
+        Ok(EntryNode {
             address: self.address,
             client,
         })
@@ -66,7 +63,6 @@ impl ManualAttempt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::connections::NodePassword;
 
     #[test]
     fn manual_addresses_use_phone_policy() {

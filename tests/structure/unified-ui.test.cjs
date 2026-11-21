@@ -40,7 +40,7 @@ test('hosted login stays fixed while the workspace offers capability-driven node
   assert.match(entry,/address, fixed_address: true, fixed_target: true/);
   assert.match(entry,/restart: None/);
   assert.match(entry,/node_navigation::use_navigation/);
-  assert.doesNotMatch(entry.slice(entry.indexOf('pub(crate) struct ConnectionSessionControl'),entry.indexOf('pub(crate) struct EntryNode')),/fixed_target/);
+  assert.doesNotMatch(entry.slice(entry.indexOf('pub(crate) struct ConnectionSessionControl'),entry.indexOf('pub(crate) use work_viewmodel::connection::EntryNode')),/fixed_target/);
   const workspace=read('apps/work-ui/src/app/workspace.rs');
   const connect=workspace.slice(workspace.indexOf('let mut connect_node ='),workspace.indexOf('let candidate ='));
   assert.match(connect,/navigation.navigate.call\(target\)/);

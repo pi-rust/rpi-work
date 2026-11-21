@@ -2,9 +2,9 @@ mod background;
 mod bootstrap;
 pub(crate) use work_viewmodel::config_requests;
 #[cfg(any(target_os = "android", test))]
-pub(crate) mod connection_auth;
+pub(crate) use work_viewmodel::connection::auth as connection_auth;
 #[cfg(any(target_os = "android", test))]
-mod connection_memory;
+pub(crate) use work_viewmodel::connection::memory as connection_memory;
 #[cfg(target_os = "android")]
 mod connection_memory_android;
 pub(crate) mod connections;

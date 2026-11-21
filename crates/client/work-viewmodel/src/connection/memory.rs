@@ -1,7 +1,7 @@
 //! Native remembered connection policy. Only the Android bridge may persist its
 //! serialized credentials, and only in Keystore-encrypted storage (never Web JS).
-use super::connections::{normalize_address, with_timeout};
-use super::entry::EntryNode;
+use super::EntryNode;
+use super::{normalize_address, with_timeout};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use work_client::{ClientError, RememberedSession, WorkClient, WorkspaceClient};
@@ -15,19 +15,19 @@ struct SessionEnvelope {
     session: Option<RememberedSession>,
 }
 
-pub(super) struct StoredConnection {
+pub struct StoredConnection {
     pub address: String,
     pub attempt: Option<ResumeAttempt>,
     pub unavailable: bool,
 }
 
-pub(super) struct ResumeAttempt {
+pub struct ResumeAttempt {
     address: String,
     node_id: Option<String>,
     session: RememberedSession,
 }
 
-pub(super) struct ResumeFailure {
+pub struct ResumeFailure {
     pub discard: bool,
     pub message: &'static str,
 }
@@ -53,12 +53,12 @@ fn valid_identity(id: &str) -> bool {
 
 /// Plain HTTP is supported on trusted LANs, but must not replay a saved cookie
 /// unattended after a process restart onto a potentially different network.
-pub(super) fn automatic_restore_allowed(address: &str) -> bool {
+pub fn automatic_restore_allowed(address: &str) -> bool {
     normalize_address(address, true).is_ok_and(|address| address.starts_with("https://"))
 }
 
 /// Treat the entire bridge result as untrusted. Never echo its serde error.
-pub(super) fn decode(value: Value) -> StoredConnection {
+pub fn decode(value: Value) -> StoredConnection {
     let address = value["address"]
         .as_str()
         .and_then(|raw| normalize_address(raw, true).ok())
@@ -97,11 +97,7 @@ pub(super) fn decode(value: Value) -> StoredConnection {
 
 /// Called only after an authenticated login result passes its cancellation epoch.
 /// An unsupported node can still remember its address without a cookie credential.
-pub(super) fn encode(
-    node: &EntryNode,
-    node_id: Option<String>,
-    now: u64,
-) -> Option<(String, bool)> {
+pub fn encode(node: &EntryNode, node_id: Option<String>, now: u64) -> Option<(String, bool)> {
     let address = normalize_address(&node.address, true).ok()?;
     let node_id = node_id.filter(|id| valid_identity(id));
     // A transient identity-probe failure must never downgrade a saved cookie
@@ -162,7 +158,7 @@ impl ResumeAttempt {
 }
 
 /// Optional pin from a fresh unauthenticated transport, never the saved cookie jar.
-pub(super) async fn identity(address: &str) -> Option<String> {
+pub async fn identity(address: &str) -> Option<String> {
     let client = WorkClient::new(address).ok()?;
     with_timeout(client.qr_authorization_node())
         .await

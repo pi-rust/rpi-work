@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use work_client::WorkspaceClient;
 
 /// Host adapters provide operations; Settings never chooses a platform flow.
 #[derive(Clone, Copy)]
@@ -12,18 +11,7 @@ pub(crate) struct ConnectionSessionControl {
 }
 
 /// The authenticated client must survive entry → workspace (including Android's cookie jar).
-#[derive(Clone)]
-pub(crate) struct EntryNode {
-    pub address: String,
-    pub client: WorkspaceClient,
-}
-
-// Entry mounts a workspace once; props identity is the node address, not its transport.
-impl PartialEq for EntryNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.address == other.address
-    }
-}
+pub(crate) use work_viewmodel::connection::EntryNode;
 
 #[component]
 pub(crate) fn AuthorizedWorkspace(node: EntryNode) -> Element {

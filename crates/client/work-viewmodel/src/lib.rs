@@ -7,6 +7,8 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::map_unwrap_or,
+    clippy::match_wild_err_arm,
+    clippy::needless_pass_by_value,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::must_use_candidate,
@@ -23,6 +25,7 @@
 //! Widgets, hooks, layout and platform glue stay in `work-ui`.
 
 pub mod config_requests;
+pub mod connection;
 pub mod conversation;
 pub mod qr;
 pub mod resources;
