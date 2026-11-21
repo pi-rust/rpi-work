@@ -62,6 +62,17 @@ const { chromium } = require(resolvePlaywright());
     assert.equal(await page.getByRole('button', { name: '切换密度' }).innerText(), '紧凑');
     pass('theme choice persists across reloads');
 
+    // Syntax colours come from the same palette through the css-variables theme.
+    const keywordVar = () => page.evaluate(() => getComputedStyle(document.querySelector('.h-dvh')).getPropertyValue('--code-token-keyword').trim());
+    const codexKeyword = await keywordVar();
+    assert(codexKeyword.length > 0, 'keyword variable present');
+    await page.getByRole('button', { name: '切换密度' }).click();
+    await page.getByLabel('选择主题').selectOption('codex');
+    await page.getByRole('button', { name: '切换主题' }).click();
+    await page.waitForTimeout(600);
+    assert.notEqual(await keywordVar(), codexKeyword, 'code token colour follows the theme');
+    pass('shiki code tokens resolve through --code-token-* from the same contract');
+
     await page.screenshot({ path: '/tmp/reui-theme.png' });
     assert.deepEqual(errors, []);
     pass('no page errors');

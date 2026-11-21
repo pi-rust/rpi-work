@@ -54,6 +54,6 @@ npm run verify:theme             # 主题契约 7 条（需先启动 preview 到
 - **还没有**文件 Diff、资源/设置页、12 套主题（P5–P7）；
   运行面板的「步骤」列表仍是占位，指标在 live 模式已来自节点 `get_state`。
 - `src/pkg/` 需先执行 `npm run build:viewmodel`（约 70s，含 wasm 目标编译）。
-- 主题已接 `work-viewmodel` 契约（5 套内置预设 + 明暗 + 密度），但 `CodeBlock` 的 shiki 配色尚未跟随。
+- 主题已接 `work-viewmodel` 契约（5 套内置预设 + 明暗 + 密度），代码着色通过 `--code-token-*` 跟随同一套 palette。
 - 未做 320/390 窄屏布局验收。
 - 右侧运行面板为静态数据，不随会话切换。

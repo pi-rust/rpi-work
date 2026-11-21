@@ -99,6 +99,9 @@ export function ToolCard({ block }: { block: ToolBlock }) {
                 code={block.output}
                 language={detail?.language ?? 'text'}
                 showLineNumbers
+                // Both sides resolve to the CSS-variable theme, so token colours
+                // come from the Rust palette instead of a bundled shiki theme.
+                themes={{ light: 'css-variables', dark: 'css-variables' }}
               >
                 <CodeBlockHeader>
                   <CodeBlockTitle>{meta.target}</CodeBlockTitle>

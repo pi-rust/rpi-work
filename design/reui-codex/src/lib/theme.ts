@@ -81,6 +81,24 @@ export function themeStyle(tokens: Record<string, string>): CSSProperties {
     const value = tokens[token]
     if (value) style[variable] = value
   }
+  // Syntax colours for the ReUI `css-variables` shiki theme: the highlighter
+  // emits `var(--code-token-*)`, so code follows the Rust palette too.
+  const code: [string, string][] = [
+    ['--code-foreground', 'body-text'],
+    ['--code-token-constant', 'info'],
+    ['--code-token-string', 'success'],
+    ['--code-token-comment', 'muted'],
+    ['--code-token-keyword', 'accent'],
+    ['--code-token-parameter', 'text'],
+    ['--code-token-function', 'text'],
+    ['--code-token-string-expression', 'success'],
+    ['--code-token-punctuation', 'muted'],
+    ['--code-token-link', 'accent'],
+  ]
+  for (const [variable, token] of code) {
+    const value = tokens[token]
+    if (value) style[variable] = value
+  }
   const radius = tokens['radius-lg']
   if (radius) style['--radius'] = radius
   // Density rides on the root font size: every rem-based Tailwind value scales.

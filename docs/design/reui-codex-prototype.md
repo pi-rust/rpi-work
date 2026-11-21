@@ -77,7 +77,8 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 - 选择写入 `localStorage`，刷新后保持。
 - 验收：`npm run verify:theme` 7 条（token 落地、目录、切预设、切暗色、密度缩放、持久化、
   零 page error）。
-- 已知缺口：`CodeBlock` 里的 shiki 配色仍是 githbub 主题，未跟随 Rust palette（记入 P5 收尾）。
+- 代码着色：`CodeBlock` 使用 ReUI 自带的 `css-variables` shiki 主题，token 颜色读
+  `--code-token-*`，由 `themeStyle()` 从 Rust token 生成 —— 换主题时代码配色同步变化。
 
 ### P4 写操作（已落地，含队列与草稿）
 
