@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Moon, PanelRight, Sun, Wifi, WifiOff } from 'lucide-react'
+import { Menu, Moon, PanelRight, Sun, Wifi, WifiOff, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +17,7 @@ import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
 import { useTheme } from '@/lib/theme'
 import { contextFrom, formatTokens, metricsFrom } from '@/lib/viewmodel'
+import { useIsMobile } from '@/lib/viewport'
 
 export default function App() {
   const workspace = useWorkspace()
@@ -25,6 +26,13 @@ export default function App() {
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'run' | 'files'>('run')
   const [page, setPage] = useState<'chat' | 'resources' | 'settings'>('chat')
+  const isMobile = useIsMobile()
+  const [drawer, setDrawer] = useState(false)
+  // The run panel is a side column on desktop and an overlay on phones, so it
+  // must start closed on narrow viewports instead of covering the transcript.
+  useEffect(() => {
+    if (isMobile) setRail(false)
+  }, [isMobile])
   const [origin, setOrigin] = useState('')
   const [password, setPassword] = useState('')
 
@@ -70,14 +78,30 @@ export default function App() {
   return (
     <div className={dark ? 'dark h-dvh' : 'h-dvh'} style={theme.style} data-density={theme.choice.compact ? 'compact' : 'standard'}>
       <div className="bg-background text-foreground flex h-full overflow-hidden">
+        {(!isMobile || drawer) && (
+        <div className={isMobile ? 'fixed inset-0 z-40 flex' : 'contents'}>
+          {isMobile ? (
+            <div
+              className="absolute inset-0 bg-black/40"
+              aria-hidden
+              onClick={() => setDrawer(false)}
+            />
+          ) : null}
         <Sidebar
+          className={isMobile ? 'relative z-50 h-full shadow-xl' : undefined}
           projects={workspace.projects}
           sessions={workspace.sessions}
           project={workspace.selected.project}
           session={workspace.selected.session}
           onProject={workspace.selectProject}
-          onSession={workspace.selectSession}
-          onNewChat={() => setDraft('')}
+          onSession={(id) => {
+            workspace.selectSession(id)
+            if (isMobile) setDrawer(false)
+          }}
+          onNewChat={() => {
+            setDraft('')
+            if (isMobile) setDrawer(false)
+          }}
           nodeLabel={workspace.source.kind === 'live' ? workspace.source.origin.replace(/^https?:\/\//, '') : 'fixture-node'}
           nodeState={live ? 'online' : 'fixture'}
           connection={
@@ -119,11 +143,24 @@ export default function App() {
             )
           }
         />
+        </div>
+        )}
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
-            <span className="text-muted-foreground text-[13px]">{workspace.selected.project}</span>
-            <span className="text-muted-foreground/50 text-[13px]">/</span>
+          <header className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:gap-3 md:px-4">
+            {isMobile ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label="打开侧栏"
+                onClick={() => setDrawer(true)}
+              >
+                <Menu className="size-4" />
+              </Button>
+            ) : null}
+            <span className="text-muted-foreground hidden text-[13px] md:inline">{workspace.selected.project}</span>
+            <span className="text-muted-foreground/50 hidden text-[13px] md:inline">/</span>
             <span className="truncate text-[13px] font-medium">{title}</span>
             <Badge variant="outline" className="ml-1 h-5 gap-1 px-1.5 text-[10px] font-normal">
               <span className={`size-1.5 rounded-full ${ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
@@ -147,6 +184,7 @@ export default function App() {
               >
                 {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </Button>
+              <div className="hidden items-center gap-1 md:flex">
               <select
                 aria-label="选择主题"
                 value={theme.choice.id}
@@ -168,6 +206,7 @@ export default function App() {
               >
                 {theme.choice.compact ? '紧凑' : '标准'}
               </Button>
+              </div>
               <Button
                 variant={rail && railTab === 'run' ? 'secondary' : 'ghost'}
                 size="icon"
@@ -322,11 +361,29 @@ export default function App() {
             </div>
 
             {rail ? (
-              <aside className="w-[300px] shrink-0 border-l" data-testid="run-panel">
+              <div className={isMobile ? 'fixed inset-0 z-40 flex justify-end' : 'contents'}>
+                {isMobile ? (
+                  <div
+                    className="absolute inset-0 bg-black/40"
+                    aria-hidden
+                    onClick={() => setRail(false)}
+                  />
+                ) : null}
+              <aside
+                className={isMobile ? 'bg-background relative z-50 h-full w-[86vw] max-w-[320px] border-l' : 'w-[300px] shrink-0 border-l'}
+                data-testid="run-panel"
+              >
                 <div className="flex h-full flex-col">
                   <div className="flex h-11 items-center justify-between border-b px-3 text-[12px] font-medium">
                     {railTab === 'files' ? '文件' : '运行'}
-                    <span className="text-muted-foreground font-normal">{live ? 'node' : 'fixture'}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-muted-foreground font-normal">{live ? 'node' : 'fixture'}</span>
+                      {isMobile ? (
+                        <Button variant="ghost" size="icon" className="size-6" aria-label="关闭面板" onClick={() => setRail(false)}>
+                          <X className="size-3.5" />
+                        </Button>
+                      ) : null}
+                    </span>
                   </div>
                   {railTab === 'files' ? (
                     <FilePanel
@@ -394,6 +451,7 @@ export default function App() {
                   <div className="text-muted-foreground border-t px-3 py-2 text-[11px]">上下文 {contextText}</div>
                 </div>
               </aside>
+              </div>
             ) : null}
           </div>
 

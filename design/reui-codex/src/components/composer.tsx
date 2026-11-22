@@ -44,8 +44,8 @@ export function Composer({
   onThinking,
 }: Props) {
   return (
-    <div className="bg-background/80 sticky bottom-0 px-6 pt-2 pb-3 backdrop-blur">
-      <div className="border-input bg-card focus-within:border-ring/60 mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border p-3 shadow-sm">
+    <div className="bg-background/80 sticky bottom-0 px-3 pt-2 pb-2 backdrop-blur md:px-6 md:pb-3">
+      <div className="border-input bg-card focus-within:border-ring/60 mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border p-2.5 shadow-sm md:p-3">
         <Textarea
           value={draft}
           onChange={(event) => onDraft(event.target.value)}
@@ -56,10 +56,10 @@ export function Composer({
             }
           }}
           placeholder="给 rpi 发消息…（⌘↵ 发送）"
-          className="max-h-40 min-h-[52px] resize-none border-0 bg-transparent p-0 text-[14px] shadow-none focus-visible:ring-0"
+          className="max-h-40 min-h-[36px] resize-none border-0 bg-transparent p-0 text-[14px] shadow-none focus-visible:ring-0 md:min-h-[52px]"
         />
         {error ? <p className="text-destructive text-[11px]">{error}</p> : null}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
           <Button variant="ghost" size="icon" className="size-7" aria-label="添加附件">
             <Paperclip className="size-4" />
           </Button>
@@ -137,7 +137,7 @@ export function Composer({
           )}
         </div>
       </div>
-      <p className="text-muted-foreground mt-2 text-center text-[11px]">
+      <p className="text-muted-foreground mt-1 text-center text-[10px] md:mt-2 md:text-[11px]">
         原型：⌘↵ 发送 · 事件经 Rust 投影渲染
       </p>
     </div>
