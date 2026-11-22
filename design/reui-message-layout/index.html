@@ -1,211 +1,106 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<title>消息布局 · HTML 原型</title>
-<style>
-  :root {
-    --bg: #ffffff; --side: #f9f9f9; --card: #ffffff; --text: #1f1f1f; --muted: #666666;
-    --line: #e5e5e5; --accent: #202020; --success: #2d694d; --muted-bg: #f2f2f2;
-    --code: #f7f7f7; --keyword: #202020; --string: #2d694d;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: "PingFang SC", -apple-system, sans-serif; background: var(--bg); color: var(--text);
-    height: 100vh; display: flex; overflow: hidden; font-size: 14px;
-  }
-  .side { width: 232px; flex: none; background: var(--side); border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-  .brand b { display: block; font-size: 15px; font-weight: 500; }
-  .brand span { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-  .row { padding: 6px; border-radius: 6px; font-size: 13px; color: var(--muted); }
-  .row.on { background: #20202012; color: var(--text); }
-  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .head { height: 44px; flex: none; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 16px; font-size: 13px; }
-  .head .dot { width: 7px; height: 7px; border-radius: 4px; background: var(--success); }
-  .head .spacer { flex: 1; }
-  .ghost { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; background: var(--card); }
-  .scroll { flex: 1; overflow-y: auto; padding: 24px 16px; }
-  .column { margin: 0 auto; display: flex; flex-direction: column; }
-
-  /* ---------- Codex 布局：气泡 + 阅读列 ---------- */
-  body[data-layout="codex"] .column { width: 100%; max-width: 48rem; gap: 32px; }
-  body[data-layout="codex"] .msg-user { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-  body[data-layout="codex"] .msg-user p {
-    max-width: 85%; background: var(--muted-bg); border-radius: 16px 4px 16px 16px;
-    padding: 8px 14px; line-height: 1.75;
-  }
-  body[data-layout="codex"] .msg-assistant { display: flex; flex-direction: column; gap: 8px; }
-  body[data-layout="codex"] .msg-assistant > p { max-width: 46rem; line-height: 1.75; }
-
-  /* ---------- 经典布局：同宽段落 ---------- */
-  body[data-layout="classic"] .column { width: 100%; max-width: 48rem; gap: 24px; }
-  body[data-layout="classic"] .msg-user, body[data-layout="classic"] .msg-assistant { display: flex; flex-direction: column; gap: 6px; }
-  body[data-layout="classic"] .msg-user p, body[data-layout="classic"] .msg-assistant > p { max-width: none; line-height: 1.7; }
-  body[data-layout="classic"] .msg-user p { padding: 0; background: none; border-radius: 0; }
-
-  .who { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-  .chip { font-size: 10px; text-transform: none; background: var(--muted-bg); border-radius: 4px; padding: 1px 6px; letter-spacing: 0; }
-  .tool { border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
-  .tool-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; font-size: 13px; }
-  .tool-head .chev { color: var(--muted); font-size: 11px; }
-  .tool-head .name { font-weight: 500; }
-  .tool-head .target { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-  .tool-head .status { margin-left: auto; color: var(--muted); font-size: 11px; }
-  .tool-head .ok { width: 6px; height: 6px; border-radius: 3px; background: var(--success); }
-  .tool-body { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
-  .tool-body .k { font-size: 11px; color: var(--muted); }
-  .tool-body pre { background: var(--code); border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; overflow-x: auto; }
-  .tool-body .code { border: 1px solid var(--line); border-radius: 6px; }
-  .tool-body .code .bar { display: flex; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
-  .tool-body .code .lines { padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.6; }
-  .kw { color: var(--keyword); font-weight: 500; } .st { color: var(--string); }
-
-  .composer { flex: none; padding: 8px 16px 12px; }
-  .composer .box { max-width: 48rem; margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--card); }
-  .composer .ph { color: var(--muted); font-size: 14px; }
-  .composer .meta { display: flex; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--muted); }
-  .composer .meta .right { margin-left: auto; }
-  .footer { flex: none; height: 28px; border-top: 1px solid var(--line); background: var(--side); display: flex; align-items: center; gap: 16px; padding: 0 16px; font-size: 11px; color: var(--muted); }
-
-  /* ---------- 设置浮层：这就是要评审的开关 ---------- */
-  .panel { position: fixed; right: 24px; bottom: 56px; width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px #0000001f; padding: 14px; }
-  .panel h3 { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
-  .panel p.hint { font-size: 11px; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
-  .switch-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-  .switch-row + .switch-row { border-top: 1px solid var(--line); }
-  .switch-row .text { display: flex; flex-direction: column; gap: 2px; }
-  .switch-row .text b { font-size: 12px; font-weight: 500; }
-  .switch-row .text span { font-size: 10px; color: var(--muted); }
-  .switch { margin-left: auto; width: 34px; height: 20px; border-radius: 999px; background: #d9d9d9; position: relative; cursor: pointer; transition: background .15s; border: none; padding: 0; flex: none; }
-  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px #0003; }
-  .switch[aria-checked="true"] { background: var(--accent); }
-  .switch[aria-checked="true"]::after { transform: translateX(14px); }
-  .seg { margin-left: auto; display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .seg button { border: none; background: var(--card); font-size: 11px; padding: 3px 8px; color: var(--muted); cursor: pointer; }
-  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RPI Work · 消息布局评审</title>
+  <link rel="stylesheet" href="layout.css">
+  <script src="prototype.js" defer></script>
 </head>
-<body data-layout="codex">
-  <aside class="side">
-    <div class="brand"><b>rpiwork</b><span>消息布局原型</span></div>
-    <div><div class="label">项目</div><div class="row on">rpi-work</div><div class="row">pi-rust</div></div>
-    <div><div class="label">会话</div><div class="row on">为工作台添加深色模式</div><div class="row">梳理 Agent 架构</div></div>
+<body data-layout="codex" data-theme="light" data-divider="false" data-bleed="false" data-actions="true" data-activity="true" data-rail="none">
+  <aside class="sidebar" aria-label="项目与会话">
+    <div class="workspace"><span class="workspace-mark">rp</span><b>rpiwork</b><i data-icon="chevron-down"></i><button class="icon-button push" aria-label="搜索会话" data-action="search"><i data-icon="search"></i></button></div>
+    <button class="new-thread" data-action="new"><i data-icon="plus"></i>新对话<kbd>⌘J</kbd></button>
+    <div class="sidebar-scroll">
+      <div class="section-caption">项目<button class="icon-button" aria-label="新建项目（演示）" data-action="new"><i data-icon="plus"></i></button></div>
+      <details class="project" open>
+        <summary><i data-icon="chevron-down"></i><i data-icon="folder"></i><b>rpi-work</b><span class="count">3</span></summary>
+        <div class="thread-list">
+          <button class="thread selected" aria-current="page"><span>为工作台添加深色模式</span><time>现在</time></button>
+          <button class="thread"><span>梳理 Agent 架构</span><time>2h</time></button>
+          <button class="thread"><span>优化会话历史加载</span><time>昨天</time></button>
+        </div>
+      </details>
+      <details class="project" open>
+        <summary><i data-icon="chevron-down"></i><i data-icon="folder"></i><b>pi-rust</b><span class="count">1</span></summary>
+        <div class="thread-list"><button class="thread"><span>验证 RPC 事件协议</span><time>昨天</time></button></div>
+      </details>
+    </div>
+    <div class="sidebar-bottom"><button class="sidebar-link" data-action="settings"><i data-icon="settings"></i>设置<span class="muted push">外观与布局</span></button><div class="node"><span class="status-dot"></span>本地节点<span class="muted push">演示数据</span></div></div>
   </aside>
 
-  <div class="main">
-    <header class="head">
-      rpi-work / 为工作台添加深色模式
-      <span class="ghost">在线</span>
-      <span class="spacer"></span>
-      <span class="ghost">Codex 黑白</span>
-      <span class="ghost">运行</span>
-      <span class="ghost">文件</span>
+  <main class="main">
+    <header class="header">
+      <button class="icon-button" aria-label="切换侧栏" data-action="sidebar"><i data-icon="panel-left"></i></button>
+      <span class="breadcrumb">rpi-work<span>/</span></span><h1>为工作台添加深色模式</h1><span class="online"><span class="status-dot"></span>演示</span>
+      <div class="header-actions"><button class="icon-button" aria-label="切换深色模式" data-action="theme"><i data-icon="moon"></i></button><button class="text-button" data-action="settings"><i data-icon="sliders"></i>外观</button><button class="text-button" aria-pressed="false" data-panel="run"><i data-icon="activity"></i>运行</button><button class="text-button" aria-pressed="false" data-panel="files"><i data-icon="panel-right"></i>文件<span class="count">3</span></button></div>
     </header>
-
-    <div class="scroll">
-      <div class="column">
-        <div class="msg-user">
-          <span class="who">你</span>
-          <p>帮我为工作台增加一个深色主题，并保持手机端可用。</p>
-        </div>
-
-        <div class="msg-assistant">
-          <span class="who">rpi <span class="chip">deepseek-v4-pro</span></span>
-          <p>主题切换已经准备好，接下来运行组件测试。深色模式复用同一套 token，手机端沿用 320px 断点。</p>
-
-          <div class="tool">
-            <div class="tool-head">
-              <span class="chev">▾</span><span class="name">read</span>
-              <span class="target">src/theme.rs</span>
-              <span class="status">12ms <span class="ok" style="display:inline-block"></span></span>
-            </div>
-            <div class="tool-body">
-              <span class="k">调用参数</span>
-              <pre>{ "path": "src/theme.rs" }</pre>
-              <span class="k">工具结果</span>
-              <div class="code">
-                <div class="bar">src/theme.rs</div>
-                <div class="lines">
-                  <div>1&nbsp;&nbsp;<span class="kw">pub fn</span> theme() -&gt; Tokens {</div>
-                  <div>2&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">let</span> light = Tokens::codex(<span class="kw">false</span>);</div>
-                  <div>3&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">let</span> dark = Tokens::codex(<span class="kw">true</span>);</div>
-                  <div>4&nbsp;&nbsp;&nbsp;&nbsp;Tokens { light, dark }</div>
-                  <div>5&nbsp;&nbsp;}</div>
+    <div class="workarea">
+      <section class="conversation" aria-label="会话">
+        <div class="transcript-scroll" tabindex="0" aria-label="消息记录">
+          <div class="reading-column" id="messages">
+            <article class="turn" aria-label="第 1 轮">
+              <div class="user-message message" data-copy="帮我为工作台增加一个深色主题，复用现有的 Rust 主题 token。">
+                <div class="user-bubble">帮我为工作台增加一个深色主题，复用现有的 Rust 主题 token。</div>
+                <div class="message-actions"><button class="icon-button" aria-label="复制用户消息" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用用户消息" data-action="quote"><i data-icon="quote"></i></button></div>
+              </div>
+              <div class="assistant-message">
+                <p class="commentary">我会先检查主题契约和设置入口，再补上明暗切换。颜色继续由 Rust 提供，不在界面层维护第二份。</p>
+                <div class="activity-group">
+                  <details class="activity-summary">
+                    <summary><i data-icon="chevron-right"></i><span>已探索 <b>3</b> 个文件，<b>1</b> 次搜索</span><span class="duration push">8s</span></summary>
+                    <div class="activity-list">
+                      <details class="tool-call"><summary><i data-icon="file"></i><span>已读取 <code>theme_contract.rs</code></span><span class="duration push">12ms</span><i data-icon="chevron-right"></i></summary><div class="tool-output"><div class="code-caption"><span>theme_contract.rs</span><button class="icon-button push" aria-label="复制工具输出" data-action="copy-code"><i data-icon="copy"></i></button></div><pre><code><span class="line-no">1</span><span class="syntax-keyword">pub fn</span> build_tokens(preset: &amp;ThemePreset, dark: bool) {
+<span class="line-no">2</span>    <span class="syntax-keyword">let</span> palette = <span class="syntax-keyword">if</span> dark { &amp;preset.dark } <span class="syntax-keyword">else</span> { &amp;preset.light };
+<span class="line-no">3</span>    palette.tokens()
+<span class="line-no">4</span>}</code></pre></div></details>
+                      <details class="tool-call"><summary><i data-icon="search"></i><span>已搜索 <code>ThemeChoice · 4 处匹配</code></span><span class="duration push">18ms</span><i data-icon="chevron-right"></i></summary><div class="tool-output"><pre><code>src/lib/theme.ts:22       type ThemeChoice
+src/lib/theme.ts:38       function read()
+src/lib/theme.ts:55       function persist()
+src/App.tsx:80            useTheme()</code></pre></div></details>
+                      <div class="activity-item"><i data-icon="file"></i><span>已读取 <code>theme.ts</code>、<code>settings-page.tsx</code></span><span class="duration push">21ms</span></div>
+                    </div>
+                  </details>
+                  <details class="tool-call command"><summary><i data-icon="terminal"></i><span>已运行 <code>cargo test -p work-viewmodel --lib</code></span><span class="duration push">1.8s</span><i class="success" data-icon="check"></i><i data-icon="chevron-right"></i></summary><div class="tool-output"><div class="code-caption">终端输出<span class="push">exit 0</span></div><pre><code>running 129 tests
+<span class="syntax-string">test result: ok. 129 passed; 0 failed; 0 ignored</span></code></pre></div></details>
+                </div>
+                <div class="turn-duration"><span></span>已完成 · 24 秒<span></span></div>
+                <div class="answer message" data-copy="已接入深色模式，沿用共享的 Rust 主题 token。设置保存到本机，重启后仍然生效。">
+                  <div class="prose"><p>已接入深色模式，沿用共享的 Rust 主题 token。</p><ul><li><strong>统一颜色来源</strong>：正文、代码和工具输出都跟随同一套调色板。</li><li><strong>保留当前选择</strong>：外观设置保存到本机，重启后仍然生效。</li><li><strong>不改变执行逻辑</strong>：仅调整展示，不影响节点连接和会话状态。</li></ul><p>测试通过：<code>129 passed</code>，无新增依赖。</p></div>
+                  <details class="change-card"><summary><i data-icon="chevron-right"></i><i data-icon="files"></i><span>3 个文件已更改</span><span class="diff-count push"><span>+48</span><span>−12</span></span></summary><div class="change-list"><button data-open-file="theme.ts"><i data-icon="file"></i><span>src/lib/theme.ts</span><span class="diff-count push"><span>+24</span><span>−8</span></span></button><button data-open-file="settings-page.tsx"><i data-icon="file"></i><span>src/components/settings-page.tsx</span><span class="diff-count push"><span>+18</span><span>−4</span></span></button><button data-open-file="App.tsx"><i data-icon="file"></i><span>src/App.tsx</span><span class="diff-count push"><span>+6</span></span></button></div></details>
+                  <div class="message-actions"><button class="icon-button" aria-label="复制回答" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用回答" data-action="quote"><i data-icon="quote"></i></button><span>16:22</span></div>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <div class="tool">
-            <div class="tool-head">
-              <span class="chev">▸</span><span class="name">bash</span>
-              <span class="target">cargo test -p work-ui --lib</span>
-              <span class="status">1.8s <span class="ok" style="display:inline-block"></span></span>
-            </div>
+            </article>
+            <article class="turn" aria-label="第 2 轮">
+              <div class="user-message message" data-copy="消息区域也做成可切换的布局，先给我看 HTML 原型。"><div class="user-bubble">消息区域也做成可切换的布局，先给我看 HTML 原型。</div><div class="message-actions"><button class="icon-button" aria-label="复制用户消息" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用用户消息" data-action="quote"><i data-icon="quote"></i></button></div></div>
+              <div class="assistant-message">
+                <div class="answer message" data-copy="可以。布局只改变呈现，不改变消息顺序。阅读布局与经典布局可以在外观设置中即时切换。"><div class="prose"><p>可以。布局只改变呈现，不改变消息顺序。</p><p>右上角 <strong>外观</strong> 可以即时对照两种布局；工具输出默认收起，正文保留 Markdown 层次，输入框与阅读列共用同一条对齐线。</p><div class="code-block wide-content"><div class="code-caption"><span>Rust · 布局设置示意</span><button class="icon-button push" aria-label="复制代码" data-action="copy-code"><i data-icon="copy"></i></button></div><pre><code><span class="syntax-keyword">enum</span> MessageLayout {
+    Reading,  <span class="syntax-comment">// 气泡 + 阅读列</span>
+    Classic,  <span class="syntax-comment">// 同宽段落</span>
+}</code></pre></div><p class="muted small">这是交互评审稿，使用演示数据，不会向节点或模型发送请求。</p></div><div class="message-actions"><button class="icon-button" aria-label="复制回答" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用回答" data-action="quote"><i data-icon="quote"></i></button><span>16:23</span></div></div>
+              </div>
+            </article>
           </div>
         </div>
-      </div>
+        <div class="composer-region"><button class="jump-bottom icon-button" aria-label="回到最新消息" data-action="bottom"><i data-icon="arrow-down"></i></button><form class="composer" id="composer"><label class="sr-only" for="draft">消息输入</label><textarea id="draft" rows="2" placeholder="继续这个任务…" spellcheck="false"></textarea><div id="attachment-list" class="attachment-list" hidden></div><div class="composer-toolbar"><button type="button" class="icon-button" aria-label="添加附件" data-action="attach"><i data-icon="plus"></i></button><label class="composer-select"><span class="sr-only">选择模型</span><select id="model"><option>deepseek-v4-pro</option><option>GPT-5.3-Codex</option></select><i data-icon="chevron-down"></i></label><label class="composer-select"><span class="sr-only">思考等级</span><select id="thinking"><option>高</option><option>中</option><option>低</option></select><i data-icon="chevron-down"></i></label><span class="context-label push" title="38,000 / 100,000 tokens"><span class="context-ring"></span>38%</span><button type="submit" class="send-button" aria-label="发送演示消息" disabled><i data-icon="arrow-up"></i></button></div></form><div class="composer-subline"><span><i data-icon="git"></i>feat/next-iteration<i data-icon="chevron-down"></i></span><span>HTML 原型 · ⌘↵ 演示发送</span></div><input type="file" id="attachments" multiple hidden></div>
+      </section>
+      <aside class="right-rail" aria-label="详情面板" hidden>
+        <div class="rail-header"><div class="rail-tabs"><button data-panel="run" aria-pressed="false">运行</button><button data-panel="files" aria-pressed="false">文件 <span class="count">3</span></button></div><button class="icon-button push" aria-label="关闭详情面板" data-action="close-rail"><i data-icon="x"></i></button></div>
+        <div id="run-content" class="rail-content"><div class="rail-caption">本轮活动<span class="push">已完成</span></div><ol class="timeline"><li><i data-icon="check"></i><span>检查主题契约</span><time>16:21</time></li><li><i data-icon="check"></i><span>更新外观设置</span><time>16:21</time></li><li><i data-icon="check"></i><span>运行组件测试</span><time>16:22</time></li><li><i data-icon="check"></i><span>输出结果</span><time>16:22</time></li></ol><dl class="runtime-stats"><div><dt>模型</dt><dd id="runtime-model">deepseek-v4-pro</dd></div><div><dt>思考</dt><dd id="runtime-thinking">高</dd></div><div><dt>工具调用</dt><dd>5 次 · 失败 0</dd></div><div><dt>缓存命中</dt><dd>75%</dd></div><div><dt>成本</dt><dd>$0.0184</dd></div></dl><div class="rail-caption">队列<span class="push">0</span></div><p class="muted small">没有排队中的消息</p></div>
+        <div id="files-content" class="rail-content" hidden><div class="rail-caption">工作区更改<span class="push diff-count"><span>+48</span><span>−12</span></span></div><div class="file-tree"><button data-open-file="theme.ts"><i data-icon="file"></i>theme.ts<span class="push success">M</span></button><button data-open-file="settings-page.tsx"><i data-icon="file"></i>settings-page.tsx<span class="push success">M</span></button><button data-open-file="App.tsx"><i data-icon="file"></i>App.tsx<span class="push success">M</span></button></div><div class="diff-preview"><div class="code-caption" id="diff-filename">theme.ts</div><pre><code><span class="diff-hunk">@@ -22,3 +22,5 @@</span>
+<span class="diff-remove">− const dark = false</span>
+<span class="diff-add">+ const dark = choice.dark</span>
+<span class="diff-add">+ const tokens = themeTokens(choice)</span>
+  return buildTheme(tokens)</code></pre></div><p class="muted small">演示 diff，不读取本机工作区。</p></div>
+        <div class="rail-footer">上下文 38k / 100k · 38%</div>
+      </aside>
     </div>
+    <footer class="statusbar"><span>↑ 32k</span><span>↓ 4.8k</span><span>缓存 75%</span><span>成本 $0.0184</span><span>上下文 38%</span><span>工具 5 / 失败 0</span><span class="push">布局评审 · 演示数据</span></footer>
+  </main>
 
-    <div class="composer">
-      <div class="box">
-        <div class="ph">给 rpi 发消息…（⌘↵ 发送）</div>
-        <div class="meta"><span>deepseek-v4-pro</span><span>思考 high</span><span class="right">上下文 38%</span></div>
-      </div>
-    </div>
-
-    <footer class="footer">
-      <span>↑ 32k</span><span>↓ 4.8k</span><span>缓存 75%</span><span>上下文 38%</span>
-      <span style="margin-left:auto">HTML 原型 · 仅用于评审</span>
-    </footer>
-  </div>
-
-  <div class="panel" role="dialog" aria-label="外观设置">
-    <h3>外观</h3>
-    <p class="hint">这一版只评审消息区的读法：开关落在「设置 → 外观」里，持久化到本机。</p>
-
-    <div class="switch-row">
-      <div class="text"><b>消息布局</b><span>气泡 + 阅读列 / 经典同宽</span></div>
-      <div class="seg" role="group" aria-label="消息布局">
-        <button data-layout-pick="codex" aria-pressed="true">Codex</button>
-        <button data-layout-pick="classic" aria-pressed="false">经典</button>
-      </div>
-    </div>
-
-    <div class="switch-row">
-      <div class="text"><b>轮次分隔</b><span>长会话里显示轮次细线</span></div>
-      <button class="switch" role="switch" aria-checked="false" data-toggle="turn-divider"></button>
-    </div>
-
-    <div class="switch-row">
-      <div class="text"><b>代码块通栏</b><span>代码/工具卡允许略宽于正文</span></div>
-      <button class="switch" role="switch" aria-checked="false" data-toggle="bleed"></button>
-    </div>
-
-    <div class="switch-row">
-      <div class="text"><b>消息悬浮操作</b><span>hover 出现复制 / 引用</span></div>
-      <button class="switch" role="switch" aria-checked="true" data-toggle="hover-actions"></button>
-    </div>
-  </div>
-
-<script>
-  const body = document.body;
-  for (const button of document.querySelectorAll('[data-layout-pick]')) {
-    button.addEventListener('click', () => {
-      const value = button.dataset.layoutPick;
-      body.dataset.layout = value;
-      for (const other of document.querySelectorAll('[data-layout-pick]')) {
-        other.setAttribute('aria-pressed', String(other === button));
-      }
-    });
-  }
-  // 其余三个是评审用的占位开关：状态翻转但不改变布局，等评审通过再接实现。
-  for (const toggle of document.querySelectorAll('[data-toggle]')) {
-    toggle.addEventListener('click', () => {
-      toggle.setAttribute('aria-checked', String(toggle.getAttribute('aria-checked') !== 'true'));
-    });
-  }
-</script>
+  <dialog class="settings-dialog" aria-labelledby="settings-title"><div class="settings-title"><div><h2 id="settings-title">外观与布局</h2><p>即时预览，自动保存在当前浏览器。</p></div><button class="icon-button" aria-label="关闭外观设置" data-action="close-settings"><i data-icon="x"></i></button></div><div class="settings-body"><div class="setting"><div><h3>消息布局</h3><p>阅读布局突出正文；经典布局保留同宽段落。</p></div><div class="segmented" role="group" aria-label="消息布局"><button data-layout-pick="codex" aria-pressed="true">阅读</button><button data-layout-pick="classic" aria-pressed="false">经典</button></div></div><div class="setting"><div><h3>轮次分隔</h3><p>在每轮消息之间显示一条细线。</p></div><button class="switch" role="switch" aria-label="轮次分隔" aria-checked="false" data-setting="divider"></button></div><div class="setting"><div><h3>代码块通栏</h3><p>宽屏时让代码比正文向两侧各延伸 24px。</p></div><button class="switch" role="switch" aria-label="代码块通栏" aria-checked="false" data-setting="bleed"></button></div><div class="setting"><div><h3>消息悬浮操作</h3><p>悬浮或键盘聚焦时显示复制、引用。</p></div><button class="switch" role="switch" aria-label="消息悬浮操作" aria-checked="true" data-setting="actions"></button></div><div class="setting"><div><h3>紧凑活动视图</h3><p>将读取与搜索聚合成摘要，展开查看详情。</p></div><button class="switch" role="switch" aria-label="紧凑活动视图" aria-checked="true" data-setting="activity"></button></div><div class="setting"><div><h3>深色模式</h3><p>正文、代码、diff 和输入区同步切换。</p></div><button class="switch" role="switch" aria-label="深色模式" aria-checked="false" data-setting="dark"></button></div></div><div class="settings-footer"><button class="text-button" data-action="reset-settings">恢复默认</button><span class="muted small push">仅本原型生效</span><button class="primary-button" data-action="close-settings">完成</button></div></dialog>
+  <dialog class="search-dialog" aria-labelledby="search-title"><div class="search-box"><i data-icon="search"></i><label class="sr-only" for="search">搜索会话</label><input id="search" placeholder="搜索项目或会话…"><button class="icon-button" data-action="close-search" aria-label="关闭搜索"><i data-icon="x"></i></button></div><h2 id="search-title" class="sr-only">搜索会话</h2><div id="search-results"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
