@@ -249,6 +249,28 @@ impl NodeClient {
         })
     }
 
+    /// Installed native resources (packages, skills, extensions) for a project.
+    pub fn native_catalog(&self, project_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let catalog = work_core::api::NodeApi::native_catalog(&client, &project_id)
+                .await
+                .map_err(|error| failure("资源目录读取失败", error))?;
+            json_string(&catalog)
+        })
+    }
+
+    /// Public package catalog for a project.
+    pub fn package_catalog(&self, project_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let catalog = work_core::api::NodeApi::package_catalog(&client, &project_id)
+                .await
+                .map_err(|error| failure("包目录读取失败", error))?;
+            json_string(&catalog)
+        })
+    }
+
     /// Directory listing for a project path (`""` is the project root).
     pub fn files(&self, project_id: String, path: String) -> Promise {
         let client = self.client.clone();

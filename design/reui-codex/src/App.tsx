@@ -10,6 +10,7 @@ import { node, runSteps, statsPayload, contextPayload } from '@/data'
 import { Composer } from '@/components/composer'
 import { RunTimeline, rowElement } from '@/components/transcript'
 import { FilePanel } from '@/components/file-panel'
+import { ResourcesPage } from '@/components/resource-view'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
@@ -22,6 +23,7 @@ export default function App() {
   const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'run' | 'files'>('run')
+  const [page, setPage] = useState<'chat' | 'resources'>('chat')
   const [origin, setOrigin] = useState('')
   const [password, setPassword] = useState('')
 
@@ -178,6 +180,18 @@ export default function App() {
                 <PanelRight className="size-4" />
               </Button>
               <Button
+                variant={page === 'resources' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                aria-label="资源中心"
+                onClick={() => {
+                  setPage(page === 'resources' ? 'chat' : 'resources')
+                  if (live) void workspace.loadResources()
+                }}
+              >
+                资源
+              </Button>
+              <Button
                 variant={rail && railTab === 'files' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="h-7 px-2 text-[11px]"
@@ -196,6 +210,14 @@ export default function App() {
           <div className="flex min-h-0 flex-1">
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                {page === 'resources' ? (
+                  <ResourcesPage
+                    live={live}
+                    resources={workspace.resources}
+                    project={workspace.selected.project}
+                    onRefresh={() => void workspace.loadResources()}
+                  />
+                ) : (
                 <div className="mx-auto flex max-w-3xl flex-col gap-6">
                   {workspace.status === 'error' ? (
                     <ErrorState message={workspace.error ?? '未知错误'} onRetry={() => void workspace.connect(origin.trim() || window.location.origin)} />
@@ -229,7 +251,9 @@ export default function App() {
                     <p className="text-muted-foreground text-[13px]">正在加载 work-viewmodel…</p>
                   )}
                 </div>
+                )}
               </div>
+              {page === 'resources' ? null : (
               <Composer
                 draft={draft}
                 onDraft={setDraft}
@@ -261,6 +285,7 @@ export default function App() {
                 } : undefined}
                 onThinking={live ? (level) => void workspace.setThinking(level) : undefined}
               />
+              )}
             </div>
 
             {rail ? (

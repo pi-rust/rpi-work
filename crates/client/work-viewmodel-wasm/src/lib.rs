@@ -167,6 +167,45 @@ impl Default for Presenter {
     }
 }
 
+/// Project a native catalog into the rows a resource list renders.
+///
+/// Grouping keys, display names, scope labels and the install origin all come
+/// from `work_viewmodel::resources::catalog`, so the Web list cannot drift from
+/// the desktop one.
+#[wasm_bindgen]
+pub fn resource_rows(catalog_json: &str, project_id: &str) -> String {
+    let catalog: work_core::api::NativeCatalog = match serde_json::from_str(catalog_json) {
+        Ok(catalog) => catalog,
+        Err(_) => return "{\"rows\":[],\"counts\":[0,0,0]}".into(),
+    };
+    let installed = work_viewmodel::resources::catalog::installed_resources(&catalog, false);
+    let counts =
+        work_viewmodel::resources::catalog::counts(catalog.resources.iter().map(|r| &r.kind));
+    let rows: Vec<Value> = installed
+        .iter()
+        .map(|resource| {
+            let choice = work_viewmodel::resources::catalog::ResourceChoice::Installed(resource.clone());
+            json!({
+                "reference": resource.reference,
+                "name": choice.name(),
+                "nativeName": choice.native_name(),
+                "version": choice.version(),
+                "kind": work_viewmodel::resources::catalog::kind_key(choice.kind()),
+                "kindLabel": work_viewmodel::resources::catalog::kind_label(choice.kind()),
+                "icon": work_viewmodel::resources::catalog::kind_icon(choice.kind()),
+                "scope": match resource.scope {
+                    work_core::api::NativeScope::Global => "global",
+                    work_core::api::NativeScope::Project => "project",
+                },
+                "project": project_id,
+                "installed": resource.facts["installed"] == true,
+                "origin": work_viewmodel::resources::catalog::installation_origin(resource, &catalog),
+            })
+        })
+        .collect();
+    json!({ "rows": rows, "counts": counts }).to_string()
+}
+
 /// Same wire shape the JS contract accepts as projection input.
 fn block_wire(block: &MessageBlock) -> Value {
     match block {

@@ -67,6 +67,15 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P7a 资源中心（已落地）
+
+- `work-client-wasm` 增加 `native_catalog` / `package_catalog`（走 `NodeApi` trait）。
+- `work-viewmodel-wasm::resource_rows(catalog, project)` 用
+  `resources::catalog::{installed_resources, counts, kind_key, kind_label, kind_icon, display_name,
+  installation_origin}` 生成行与计数 —— **分组、命名、范围标签、安装来源全部来自 Rust**。
+- 主区域新增「资源」页：三张计数卡（Packages / Skills / Extensions）+ 表格（名称、类型、版本、范围）。
+- 验收：`verify:live` 22 条（新增「资源中心按 Rust 规则分组」）。
+
 ### P6b 目录浏览与暂存（已落地）
 
 - 文件面板两个标签：**改动**（git status）与**目录**（`files()` 按需展开），点文件用 `file()`

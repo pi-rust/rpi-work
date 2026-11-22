@@ -135,6 +135,11 @@ export class NodeConnection {
     return parse<NodeRuntime>(await this.client.set_thinking(sessionId, level))
   }
 
+  /** Raw native catalog payload; the presenter projects it into rows. */
+  async nativeCatalog(projectId: string): Promise<unknown> {
+    return parse(await this.client.native_catalog(projectId))
+  }
+
   async files(projectId: string, path = ''): Promise<{ path: string; entries: NodeFileEntry[] }> {
     return parse(await this.client.files(projectId, path))
   }

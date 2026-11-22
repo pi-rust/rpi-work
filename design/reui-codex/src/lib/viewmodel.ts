@@ -6,7 +6,7 @@
  * what these functions return.
  */
 import wasmUrl from '../pkg/work_viewmodel_bg.wasm?url'
-import init, {
+import init, { resource_rows,
   Presenter,
   context_reported,
   format_percent,
@@ -24,6 +24,20 @@ import init, {
 
 export type RowRef = { key: number; source: 'history' | 'projection'; index: number }
 export type Token = { text: string; class: string }
+export type ResourceRow = {
+  reference: string
+  name: string
+  nativeName: string
+  version: string
+  kind: string
+  kindLabel: string
+  icon: string
+  scope: 'global' | 'project'
+  project: string
+  installed: boolean
+  origin: string
+}
+export type ResourceView = { rows: ResourceRow[]; counts: [number, number, number] }
 export type MetricsView = {
   input: number | null
   output: number | null
@@ -91,6 +105,9 @@ export const metricsFrom = (stats: unknown): MetricsView =>
 
 export const contextFrom = (context: unknown): ContextView =>
   JSON.parse(context_reported(JSON.stringify(context))) as ContextView
+
+export const resourceRows = (catalog: unknown, projectId: string): ResourceView =>
+  JSON.parse(resource_rows(JSON.stringify(catalog ?? {}), projectId)) as ResourceView
 
 export const themeTokens = (themeId: string, dark: boolean, compact = false) =>
   JSON.parse(theme_tokens(themeId, dark, compact)) as Record<string, string>

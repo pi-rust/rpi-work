@@ -210,6 +210,41 @@ async function waitForServer(url, timeoutMs = 30000) {
     await panel.getByText(/RPI Work/).waitFor()
     pass('opening a file in the tree renders its source')
 
+    // P7a: resource center projects the native catalog through Rust rules.
+    await page.route('**/api/v1/projects/*/native-resources', async (route) => {
+      await route.fulfill({
+        json: {
+          profile: { inspect: true, remove: true, install: true, update: true },
+          diagnostics: [],
+          resources: [
+            {
+              reference: 'skill:review-helper@1.2.0',
+              name: 'review-helper',
+              kind: 'skill',
+              scope: 'global',
+              facts: { installed: true, version: '1.2.0' },
+            },
+            {
+              reference: 'extension:theme-pack@0.4.0',
+              name: 'theme-pack',
+              kind: 'extension',
+              scope: 'project',
+              facts: { installed: true, version: '0.4.0' },
+            },
+          ],
+        },
+      })
+    })
+    await page.getByRole('button', { name: '资源中心' }).click()
+    await page.getByText('review-helper', { exact: false }).waitFor()
+    await page.getByText('theme-pack', { exact: false }).waitFor()
+    const resourceText = await page.locator('main').innerText()
+    assert.match(resourceText, /资源中心/)
+    assert.match(resourceText, /全局/)
+    assert.match(resourceText, /项目/)
+    pass('resource center lists installed resources with Rust grouping')
+
+    await page.getByRole('button', { name: '资源中心' }).click()
     await page.getByRole('button', { name: '运行面板' }).click()
     await page.screenshot({ path: '/tmp/reui-live.png' })
     await page.getByRole('button', { name: '断开节点' }).click()

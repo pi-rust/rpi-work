@@ -17,7 +17,14 @@ import {
   type NodeRuntime,
   type NodeSession,
 } from '@/lib/node'
-import { initViewModel, TranscriptPresenter, type LiveView, type RowRef } from '@/lib/viewmodel'
+import {
+  initViewModel,
+  resourceRows,
+  TranscriptPresenter,
+  type LiveView,
+  type ResourceView,
+  type RowRef,
+} from '@/lib/viewmodel'
 import type { Block, HistoryMessage, Project, Session } from '@/data'
 
 export type Source = { kind: 'fixture' } | { kind: 'live'; origin: string }
@@ -41,6 +48,8 @@ export type Workspace = {
   busy: boolean
   sendError: string | null
   queue: NodeQueue
+  resources: ResourceView
+  loadResources: () => Promise<void>
   changes: NodeChangedFile[]
   files: NodeFileEntry[]
   filePath: string | null
@@ -115,6 +124,7 @@ export function useWorkspace(): Workspace {
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [queue, setQueue] = useState<NodeQueue>({ items: [], count: 0 })
+  const [resources, setResources] = useState<ResourceView>({ rows: [], counts: [0, 0, 0] })
   const [changes, setChanges] = useState<NodeChangedFile[]>([])
   const [files, setFiles] = useState<NodeFileEntry[]>([])
   const [filePath, setFilePath] = useState<string | null>(null)
@@ -322,6 +332,17 @@ export function useWorkspace(): Workspace {
     }
   }, [])
 
+  const loadResources = useCallback(async () => {
+    const conn = connection.current
+    if (!conn || !selected.project) return
+    try {
+      const catalog = await conn.nativeCatalog(selected.project)
+      setResources(resourceRows(catalog, selected.project))
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [selected.project])
+
   const loadChanges = useCallback(async () => {
     const conn = connection.current
     if (!conn || !selected.project) return
@@ -428,6 +449,7 @@ export function useWorkspace(): Workspace {
     setLiveView(null)
     setRuntime(null)
     setQueue({ items: [], count: 0 })
+    setResources({ rows: [], counts: [0, 0, 0] })
     setChanges([])
     setFiles([])
     setFilePath(null)
@@ -500,6 +522,8 @@ export function useWorkspace(): Workspace {
     busy,
     sendError,
     queue,
+    resources,
+    loadResources,
     changes,
     files,
     filePath,
