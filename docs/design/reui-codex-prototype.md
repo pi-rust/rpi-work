@@ -67,6 +67,14 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P7b 安装闸门（已落地）
+
+- `work-client-wasm`：`package_bundle`（审阅）+ `install_package`（获取 → 校验回执 → 安装 →
+  **回读目录**），与桌面端 `workflow.rs` 的顺序一致；回执版本或摘要不匹配会直接失败。
+- UI 审查卡：标题/版本/摘要前缀、文件清单、范围选择（项目/全局）、「我已审阅来源与文件清单」
+  勾选；未勾选时「确认安装」不可点。
+- 验收：`verify:live` 24 条（新增「勾选前不可安装」「范围与 trust 随请求发出、安装后回读目录」）。
+
 ### P7a 资源中心（已落地）
 
 - `work-client-wasm` 增加 `native_catalog` / `package_catalog`（走 `NodeApi` trait）。

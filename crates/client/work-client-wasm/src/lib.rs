@@ -271,6 +271,76 @@ impl NodeClient {
         })
     }
 
+    /// Review bundle for one offer, before anything is acquired or installed.
+    pub fn package_bundle(&self, project_id: String, offer_json: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let offer: work_core::api::PackageOffer = serde_json::from_str(&offer_json)
+                .map_err(|_| JsValue::from_str("资源报价格式无效"))?;
+            let reference = work_core::api::PackageRef {
+                id: offer.manifest.id.clone(),
+                version: offer.manifest.version.clone(),
+                sha256: offer.sha256.clone(),
+            };
+            let bundle = work_core::api::NodeApi::package_bundle(&client, &project_id, reference)
+                .await
+                .map_err(|error| failure("资源包读取失败", error))?;
+            json_string(&bundle)
+        })
+    }
+
+    /// Acquire, verify, install and re-read one package.
+    ///
+    /// Mirrors the desktop workflow: the acquisition receipt must match the
+    /// requested version and digest, the install is explicit and trusted, and
+    /// the catalogue is re-read so the UI never assumes success.
+    pub fn install_package(
+        &self,
+        project_id: String,
+        offer_json: String,
+        scope: String,
+    ) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let offer: work_core::api::PackageOffer = serde_json::from_str(&offer_json)
+                .map_err(|_| JsValue::from_str("资源报价格式无效"))?;
+            let reference = work_core::api::PackageRef {
+                id: offer.manifest.id.clone(),
+                version: offer.manifest.version.clone(),
+                sha256: offer.sha256.clone(),
+            };
+            let scope = match scope.as_str() {
+                "project" => work_core::api::NativeScope::Project,
+                _ => work_core::api::NativeScope::Global,
+            };
+            let acquired =
+                work_core::api::NodeApi::package_acquire(&client, &project_id, reference.clone())
+                    .await
+                    .map_err(|error| failure("获取资源失败", error))?;
+            if acquired.package != reference {
+                return Err(JsValue::from_str("节点获取回执的版本或摘要不匹配"));
+            }
+            let receipt = work_core::api::NodeApi::package_install(
+                &client,
+                &project_id,
+                work_core::api::PackageInstall {
+                    package: reference,
+                    scope,
+                    trusted: true,
+                },
+            )
+            .await
+            .map_err(|error| failure("安装失败", error))?;
+            let catalog = work_core::api::NodeApi::native_catalog(&client, &project_id)
+                .await
+                .map_err(|error| failure("安装后回读失败", error))?;
+            json_string(&serde_json::json!({
+                "receipt": receipt,
+                "catalog": catalog,
+            }))
+        })
+    }
+
     /// Directory listing for a project path (`""` is the project root).
     pub fn files(&self, project_id: String, path: String) -> Promise {
         let client = self.client.clone();

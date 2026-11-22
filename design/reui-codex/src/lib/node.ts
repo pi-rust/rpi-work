@@ -135,6 +135,22 @@ export class NodeConnection {
     return parse<NodeRuntime>(await this.client.set_thinking(sessionId, level))
   }
 
+  async packageCatalog(projectId: string): Promise<{ packages: unknown[]; source: string }> {
+    return parse(await this.client.package_catalog(projectId))
+  }
+
+  async packageBundle(projectId: string, offer: unknown): Promise<{
+    manifest: { id: string; title: string; version: string; kind: string }
+    sources: Record<string, string>
+    sha256: string
+  }> {
+    return parse(await this.client.package_bundle(projectId, JSON.stringify(offer)))
+  }
+
+  async installPackage(projectId: string, offer: unknown, scope: 'global' | 'project'): Promise<unknown> {
+    return parse(await this.client.install_package(projectId, JSON.stringify(offer), scope))
+  }
+
   /** Raw native catalog payload; the presenter projects it into rows. */
   async nativeCatalog(projectId: string): Promise<unknown> {
     return parse(await this.client.native_catalog(projectId))

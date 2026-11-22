@@ -244,7 +244,102 @@ async function waitForServer(url, timeoutMs = 30000) {
     assert.match(resourceText, /项目/)
     pass('resource center lists installed resources with Rust grouping')
 
-    await page.getByRole('button', { name: '资源中心' }).click()
+    // P7b: install is gated by explicit scope + trust and confirmed by readback.
+    const writes = []
+    let nativeReads = 0
+    await page.unroute('**/api/v1/projects/*/native-resources')
+    await page.route('**/api/v1/projects/*/native-resources', async (route) => {
+      nativeReads += 1
+      await route.fulfill({
+        json: {
+          profile: { inspect: true, remove: true, install: true, update: true },
+          diagnostics: [],
+          resources: nativeReads > 1
+            ? [{ reference: 'package:catalog-pack@2.0.0', name: 'catalog-pack', kind: 'package', scope: 'project', facts: { installed: true, version: '2.0.0' } }]
+            : [],
+        },
+      })
+    })
+    await page.route('**/api/v1/projects/*/packages', async (route) => {
+      await route.fulfill({
+        json: {
+          source: 'fixture',
+          diagnostics: [],
+          packages: [
+            {
+              manifest: {
+                schemaVersion: 1,
+                id: 'catalog-pack',
+                name: 'catalog-pack',
+                version: '2.0.0',
+                kind: 'package',
+                title: 'Catalog Pack',
+                description: 'fixture package',
+                author: 'fixture',
+                origin: 'fixture',
+                instructions: ['prompts/system.md'],
+              },
+              sha256: 'a'.repeat(64),
+              fileCount: 2,
+              sizeBytes: 120,
+              acquired: false,
+            },
+          ],
+        },
+      })
+    })
+    await page.route('**/api/v1/projects/*/packages/bundle', async (route) => {
+      await route.fulfill({
+        json: {
+          manifest: {
+                schemaVersion: 1,
+                id: 'catalog-pack',
+                name: 'catalog-pack',
+                version: '2.0.0',
+                kind: 'package',
+                title: 'Catalog Pack',
+                description: 'fixture package',
+                author: 'fixture',
+                origin: 'fixture',
+                instructions: ['prompts/system.md'],
+              },
+          sources: { 'SKILL.md': '# fixture', 'prompts/system.md': 'be careful' },
+          sha256: 'a'.repeat(64),
+        },
+      })
+    })
+    await page.route('**/api/v1/projects/*/packages/acquire', async (route) => {
+      writes.push({ path: 'acquire', body: JSON.parse(route.request().postData() ?? '{}') })
+      await route.fulfill({
+        json: {
+          package: { id: 'catalog-pack', version: '2.0.0', sha256: 'a'.repeat(64) },
+          source: '/tmp/fixture/catalog-pack',
+        },
+      })
+    })
+    await page.route('**/api/v1/projects/*/packages/install', async (route) => {
+      writes.push({ path: 'install', body: JSON.parse(route.request().postData() ?? '{}') })
+      await route.fulfill({
+        json: { success: true, observation: { installed: true }, diagnostics: '' },
+      })
+    })
+    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    await page.getByRole('button', { name: '审阅 Catalog Pack' }).click()
+    await page.getByText('我已审阅来源与文件清单').waitFor()
+    const confirmButton = page.getByRole('button', { name: '确认安装' })
+    assert(await confirmButton.isDisabled(), 'install is disabled before trust')
+    pass('install stays disabled until the review is trusted')
+
+    await page.getByLabel('安装范围').selectOption('global')
+    await page.getByLabel('我已审阅来源').check()
+    await confirmButton.click()
+    await page.getByText('catalog-pack', { exact: false }).waitFor()
+    assert.equal(writes.length, 2, 'acquire + install both sent: ' + JSON.stringify(writes))
+    assert.equal(writes[1].body.scope, 'global', 'scope forwarded: ' + JSON.stringify(writes[1].body))
+    assert.equal(writes[1].body.trusted, true, 'install is explicit about trust')
+    assert(nativeReads > 1, 'catalog is re-read after install')
+    pass('install flow sends scope + trust and confirms by catalogue readback')
+
     await page.getByRole('button', { name: '运行面板' }).click()
     await page.screenshot({ path: '/tmp/reui-live.png' })
     await page.getByRole('button', { name: '断开节点' }).click()
@@ -258,7 +353,8 @@ async function waitForServer(url, timeoutMs = 30000) {
   } catch (error) {
     console.error('FAIL', error.message.split('\n')[0])
     try {
-      console.error('panel now:', (await page.getByTestId('run-panel').innerText()).slice(0, 300).replace(/\n/g, ' | '))
+      console.error('panel now:', (await page.getByTestId('run-panel').innerText()).slice(0, 200).replace(/\n/g, ' | '))
+      console.error('main now:', (await page.locator('main').innerText()).slice(0, 400).replace(/\n/g, ' | '))
     } catch {}
     console.error('page errors:', errors.slice(0, 3))
     await page.screenshot({ path: '/tmp/reui-live-fail.png' })

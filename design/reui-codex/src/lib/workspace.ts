@@ -49,7 +49,14 @@ export type Workspace = {
   sendError: string | null
   queue: NodeQueue
   resources: ResourceView
+  offers: unknown[]
+  bundle: { manifest: { id: string; title: string; version: string }; sources: Record<string, string>; sha256: string } | null
+  installing: boolean
+  installError: string | null
   loadResources: () => Promise<void>
+  reviewOffer: (offer: unknown) => Promise<void>
+  cancelReview: () => void
+  confirmInstall: (scope: 'global' | 'project') => Promise<void>
   changes: NodeChangedFile[]
   files: NodeFileEntry[]
   filePath: string | null
@@ -125,6 +132,11 @@ export function useWorkspace(): Workspace {
   const [busy, setBusy] = useState(false)
   const [queue, setQueue] = useState<NodeQueue>({ items: [], count: 0 })
   const [resources, setResources] = useState<ResourceView>({ rows: [], counts: [0, 0, 0] })
+  const [offers, setOffers] = useState<unknown[]>([])
+  const [bundle, setBundle] = useState<Workspace['bundle']>(null)
+  const [reviewedOffer, setReviewedOffer] = useState<unknown>(null)
+  const [installing, setInstalling] = useState(false)
+  const [installError, setInstallError] = useState<string | null>(null)
   const [changes, setChanges] = useState<NodeChangedFile[]>([])
   const [files, setFiles] = useState<NodeFileEntry[]>([])
   const [filePath, setFilePath] = useState<string | null>(null)
@@ -338,10 +350,55 @@ export function useWorkspace(): Workspace {
     try {
       const catalog = await conn.nativeCatalog(selected.project)
       setResources(resourceRows(catalog, selected.project))
+      const packages = await conn.packageCatalog(selected.project)
+      setOffers(packages.packages ?? [])
     } catch (cause) {
       setSendError(String(cause))
     }
   }, [selected.project])
+
+  const reviewOffer = useCallback(
+    async (offer: unknown) => {
+      const conn = connection.current
+      if (!conn || !selected.project) return
+      setInstallError(null)
+      try {
+        const review = await conn.packageBundle(selected.project, offer)
+        setBundle(review)
+        setReviewedOffer(offer)
+      } catch (cause) {
+        setInstallError(String(cause))
+      }
+    },
+    [selected.project],
+  )
+
+  const cancelReview = useCallback(() => {
+    setBundle(null)
+    setReviewedOffer(null)
+    setInstallError(null)
+  }, [])
+
+  const confirmInstall = useCallback(
+    async (scope: 'global' | 'project') => {
+      const conn = connection.current
+      if (!conn || !selected.project || !reviewedOffer) return
+      setInstalling(true)
+      setInstallError(null)
+      try {
+        await conn.installPackage(selected.project, reviewedOffer, scope)
+        setBundle(null)
+        setReviewedOffer(null)
+        // Read the catalogue back: the receipt is not proof of installation.
+        await loadResources()
+      } catch (cause) {
+        setInstallError(String(cause))
+      } finally {
+        setInstalling(false)
+      }
+    },
+    [selected.project, reviewedOffer, loadResources],
+  )
 
   const loadChanges = useCallback(async () => {
     const conn = connection.current
@@ -450,6 +507,10 @@ export function useWorkspace(): Workspace {
     setRuntime(null)
     setQueue({ items: [], count: 0 })
     setResources({ rows: [], counts: [0, 0, 0] })
+    setOffers([])
+    setBundle(null)
+    setReviewedOffer(null)
+    setInstallError(null)
     setChanges([])
     setFiles([])
     setFilePath(null)
@@ -523,7 +584,14 @@ export function useWorkspace(): Workspace {
     sendError,
     queue,
     resources,
+    offers,
+    bundle,
+    installing,
+    installError,
     loadResources,
+    reviewOffer,
+    cancelReview,
+    confirmInstall,
     changes,
     files,
     filePath,

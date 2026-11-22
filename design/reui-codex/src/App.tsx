@@ -216,6 +216,15 @@ export default function App() {
                     resources={workspace.resources}
                     project={workspace.selected.project}
                     onRefresh={() => void workspace.loadResources()}
+                    install={{
+                      offers: workspace.offers,
+                      bundle: workspace.bundle,
+                      installing: workspace.installing,
+                      error: workspace.installError,
+                      onReview: (offer) => void workspace.reviewOffer(offer),
+                      onCancel: workspace.cancelReview,
+                      onConfirm: (scope) => void workspace.confirmInstall(scope),
+                    }}
                   />
                 ) : (
                 <div className="mx-auto flex max-w-3xl flex-col gap-6">

@@ -1,15 +1,33 @@
-import { Boxes, FolderGit2, Package, Puzzle, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { Boxes, FolderGit2, Package, Puzzle, ShieldCheck, Sparkles } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import type { ResourceView } from '@/lib/viewmodel'
+
+type Bundle = {
+  manifest: { id: string; title: string; version: string }
+  sources: Record<string, string>
+  sha256: string
+}
+export type InstallState = {
+  offers: unknown[]
+  bundle: Bundle | null
+  installing: boolean
+  error: string | null
+  onReview: (offer: unknown) => void
+  onCancel: () => void
+  onConfirm: (scope: 'global' | 'project') => void
+}
 
 type Props = {
   live: boolean
   resources: ResourceView
   project: string
   onRefresh: () => void
+  install: InstallState
 }
 
 const KIND_ICON: Record<string, typeof Package> = {
@@ -19,7 +37,7 @@ const KIND_ICON: Record<string, typeof Package> = {
 }
 
 /** Resource center: installed native resources, grouped by the Rust catalog rules. */
-export function ResourcesPage({ live, resources, project, onRefresh }: Props) {
+export function ResourcesPage({ live, resources, project, onRefresh, install }: Props) {
   if (!live) {
     return (
       <Empty
@@ -39,6 +57,41 @@ export function ResourcesPage({ live, resources, project, onRefresh }: Props) {
           刷新
         </Button>
       </div>
+
+      {install.bundle ? (
+        <InstallReview
+          bundle={install.bundle}
+          installing={install.installing}
+          error={install.error}
+          onCancel={install.onCancel}
+          onConfirm={install.onConfirm}
+        />
+      ) : null}
+
+      {install.offers.length > 0 ? (
+        <div className="flex flex-col gap-1 rounded-lg border border-dashed p-2">
+          <span className="text-muted-foreground px-1 text-[11px]">可安装（公共库）</span>
+          {install.offers.slice(0, 5).map((offer, index) => {
+            const entry = offer as { manifest?: { title?: string; version?: string }; sha256?: string }
+            return (
+              <div key={index} className="flex items-center gap-2 px-1 py-0.5 text-[12px]">
+                <Package className="text-muted-foreground size-3.5" />
+                <span className="truncate">{entry.manifest?.title ?? entry.manifest?.version ?? '包'}</span>
+                <span className="text-muted-foreground font-mono text-[11px]">{entry.manifest?.version}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto h-6 px-2 text-[11px]"
+                  aria-label={`审阅 ${entry.manifest?.title ?? '包'}`}
+                  onClick={() => install.onReview(offer)}
+                >
+                  审阅
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-3 gap-2">
         <Stat label="Packages" value={packages} kind="packages" />
@@ -99,6 +152,81 @@ function Empty({ title, body }: { title: string; body: string }) {
     <div className="text-muted-foreground mx-auto flex max-w-md flex-col items-center gap-2 py-24 text-center text-[13px]">
       <span className="text-foreground text-[15px] font-medium">{title}</span>
       <span>{body}</span>
+    </div>
+  )
+}
+
+/** Review gate: nothing is acquired or installed until scope and trust are explicit. */
+function InstallReview({
+  bundle,
+  installing,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  bundle: Bundle
+  installing: boolean
+  error: string | null
+  onCancel: () => void
+  onConfirm: (scope: 'global' | 'project') => void
+}) {
+  const [scope, setScope] = useState<'global' | 'project'>('project')
+  const [trusted, setTrusted] = useState(false)
+  const files = Object.keys(bundle.sources ?? {})
+  return (
+    <div className="bg-card flex flex-col gap-3 rounded-lg border p-3 text-[12px]">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="text-muted-foreground size-4" />
+        <span className="font-medium">{bundle.manifest.title || bundle.manifest.id}</span>
+        <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
+          {bundle.manifest.version}
+        </Badge>
+        <span className="text-muted-foreground ml-auto font-mono text-[10px]">
+          {bundle.sha256.slice(0, 12)}…
+        </span>
+      </div>
+      <Separator />
+      <div className="text-muted-foreground flex flex-col gap-0.5 font-mono text-[11px]">
+        {files.slice(0, 6).map((path) => (
+          <span key={path}>· {path}</span>
+        ))}
+        {files.length > 6 ? <span>· 还有 {files.length - 6} 个文件</span> : null}
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="text-muted-foreground flex items-center gap-1">
+          范围
+          <select
+            aria-label="安装范围"
+            value={scope}
+            onChange={(event) => setScope(event.target.value as 'global' | 'project')}
+            className="border-input bg-background h-6 rounded border px-1 text-[11px]"
+          >
+            <option value="project">项目</option>
+            <option value="global">全局</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-[11px]">
+          <input
+            type="checkbox"
+            checked={trusted}
+            onChange={(event) => setTrusted(event.target.checked)}
+            aria-label="我已审阅来源"
+          />
+          我已审阅来源与文件清单
+        </label>
+        <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-[11px]" onClick={onCancel}>
+          取消
+        </Button>
+        <Button
+          size="sm"
+          className="h-6 px-2 text-[11px]"
+          disabled={!trusted || installing}
+          onClick={() => onConfirm(scope)}
+        >
+          {installing ? '安装中…' : '确认安装'}
+        </Button>
+      </div>
+      {error ? <p className="text-destructive text-[11px]">{error}</p> : null}
     </div>
   )
 }
