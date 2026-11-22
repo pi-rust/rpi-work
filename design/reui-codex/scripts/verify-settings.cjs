@@ -107,6 +107,21 @@ const catalogue = {
       },
     )
     await page.route(
+      (url) => url.pathname === '/api/v1/health',
+      async (route) => {
+        await route.fulfill({
+          json: {
+            ok: true,
+            service: 'rpi-work-desktop',
+            version: '0.1.22',
+            protocol: 'rpi',
+            nodeId: 'fixture-node-identifier',
+            sharingEnabled: true,
+          },
+        })
+      },
+    )
+    await page.route(
       (url) => url.pathname === '/api/v1/auth/qr',
       async (route) => {
         await route.fulfill({
@@ -189,6 +204,15 @@ const catalogue = {
     assert.match(afterSave, /deepseek/, 'the written provider stays listed')
     assert.match(afterSave, /已保存/, 'the restart hint is shown')
     pass('provider key write uses the read revision and adopts the receipt catalogue')
+
+    // Update section is read-only by design: the Web entry cannot self-update.
+    const updateSection = await page.locator('main').innerText()
+    assert.match(updateSection, /应用更新/)
+    assert.match(updateSection, /Web 入口不支持自更新/)
+    // Version rows depend on what the node reports; the boundary statement is
+    // the contract this section exists for.
+    assert.match(updateSection, /节点版本/)
+    pass('update section explains the desktop-only boundary and shows the node version')
 
     await page.screenshot({ path: '/tmp/reui-settings.png' })
     assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '))

@@ -60,6 +60,8 @@ export type Workspace = {
   loadProviders: () => Promise<void>
   saveProviderKey: (id: string, key: string) => Promise<boolean>
   providerNotice: string | null
+  nodeInfo: { version: string | null; service: string | null; protocol: string | null; nodeId: string | null } | null
+  loadNodeInfo: () => Promise<void>
   offers: unknown[]
   bundle: { manifest: { id: string; title: string; version: string }; sources: Record<string, string>; sha256: string } | null
   installing: boolean
@@ -149,6 +151,7 @@ export function useWorkspace(): Workspace {
   const [providerRevision, setProviderRevision] = useState<string | null>(null)
   const [providerError, setProviderError] = useState<string | null>(null)
   const [providerNotice, setProviderNotice] = useState<string | null>(null)
+  const [nodeInfo, setNodeInfo] = useState<Workspace['nodeInfo']>(null)
   const [offers, setOffers] = useState<unknown[]>([])
   const [bundle, setBundle] = useState<Workspace['bundle']>(null)
   const [reviewedOffer, setReviewedOffer] = useState<unknown>(null)
@@ -374,6 +377,22 @@ export function useWorkspace(): Workspace {
     }
   }, [])
 
+  const loadNodeInfo = useCallback(async () => {
+    const conn = connection.current
+    if (!conn) return
+    try {
+      const info = await conn.nodeInfo()
+      setNodeInfo({
+        version: info.version,
+        service: info.service,
+        protocol: info.protocol,
+        nodeId: info.nodeId,
+      })
+    } catch {
+      // Health is informational; a failure only hides the version row.
+    }
+  }, [])
+
   const loadProviders = useCallback(async () => {
     const conn = connection.current
     if (!conn) return
@@ -396,6 +415,7 @@ export function useWorkspace(): Workspace {
       }
       setProviderError(null)
       setProviderNotice(null)
+    setNodeInfo(null)
       try {
         const receipt = await conn.setProviderKey(id, key, providerRevision)
         // The receipt carries the authoritative catalogue; use it as the truth.
@@ -582,6 +602,7 @@ export function useWorkspace(): Workspace {
     setProviderRevision(null)
     setProviderError(null)
     setProviderNotice(null)
+    setNodeInfo(null)
     setOffers([])
     setBundle(null)
     setReviewedOffer(null)
@@ -668,6 +689,8 @@ export function useWorkspace(): Workspace {
     loadProviders,
     saveProviderKey,
     providerNotice,
+    nodeInfo,
+    loadNodeInfo,
     offers,
     bundle,
     installing,

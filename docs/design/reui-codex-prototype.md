@@ -67,6 +67,13 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P12 更新边界（已落地，只读）
+
+- 设置页新增「应用更新」，明确说明 **Web 入口不支持自更新**（升级桌面端/CLI），并展示节点
+  版本、服务名、协议与节点标识（`work-client-wasm::node_info` → `/api/v1/health` + 身份探测）。
+- 不做假按钮：自动更新的签名校验与平台安装器属桌面端，Web 侧只呈现状态。
+- 验收：`verify:settings` 6 条。
+
 ### P11 Provider 密钥写入（已落地）
 
 - `work-client-wasm::set_provider_key(id, key, expected_revision)`：用读到的 revision 做 CAS，

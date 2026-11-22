@@ -23,6 +23,7 @@ type Props = {
   onIssueAuthorization: () => void
   onSaveKey: (id: string, key: string) => Promise<boolean>
   notice: string | null
+  nodeInfo: { version: string | null; service: string | null; protocol: string | null; nodeId: string | null } | null
 }
 
 /** Settings: node/collaboration facts plus the provider catalogue (read-only). */
@@ -40,6 +41,7 @@ export function SettingsPage({
   onIssueAuthorization,
   onSaveKey,
   notice,
+  nodeInfo,
 }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
@@ -136,6 +138,17 @@ export function SettingsPage({
         {revision ? (
           <p className="text-muted-foreground mt-2 font-mono text-[10px]">revision {revision.slice(0, 12)}…</p>
         ) : null}
+      </Section>
+
+      <Separator />
+
+      <Section title="应用更新" subtitle="自动更新需要签名清单与平台安装器，属于桌面端能力。">
+        <ul className="text-muted-foreground flex flex-col gap-1 text-[12px]">
+          <li>· Web 入口不支持自更新：请升级运行该节点的桌面端或 CLI。</li>
+          <li>· 节点版本：{nodeInfo?.version ?? '—'}{nodeInfo?.service ? `（${nodeInfo.service}）` : ''}</li>
+          <li>· 协议：{nodeInfo?.protocol ?? '—'}</li>
+          <li>· 节点标识：<code className="font-mono text-[11px]">{nodeInfo?.nodeId?.slice(0, 16) ?? '—'}…</code></li>
+        </ul>
       </Section>
 
       <Separator />

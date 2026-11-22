@@ -164,6 +164,16 @@ export class NodeConnection {
     return parse(await this.client.install_package(projectId, JSON.stringify(offer), scope))
   }
 
+  async nodeInfo(): Promise<{
+    ok: boolean
+    service: string | null
+    version: string | null
+    protocol: string | null
+    nodeId: string | null
+  }> {
+    return parse(await this.client.node_info())
+  }
+
   async setProviderKey(
     id: string,
     key: string,

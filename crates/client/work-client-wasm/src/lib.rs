@@ -249,6 +249,25 @@ impl NodeClient {
         })
     }
 
+    /// Node identity and version, for the settings page.
+    pub fn node_info(&self) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let health = client
+                .health()
+                .await
+                .map_err(|error| failure("节点信息读取失败", error))?;
+            let node_id = client.node_identity().await.ok();
+            json_string(&serde_json::json!({
+                "ok": health.ok,
+                "service": health.service,
+                "version": health.version,
+                "protocol": health.protocol,
+                "nodeId": node_id,
+            }))
+        })
+    }
+
     /// Store an API key for one provider.
     ///
     /// The node answers with a compare-and-swap receipt that already contains

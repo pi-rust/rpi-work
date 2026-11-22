@@ -252,7 +252,10 @@ export default function App() {
                 aria-label="设置"
                 onClick={() => {
                   setPage(page === 'settings' ? 'chat' : 'settings')
-                  if (live) void workspace.loadProviders()
+                  if (live) {
+                    void workspace.loadProviders()
+                    void workspace.loadNodeInfo()
+                  }
                 }}
               >
                 设置
@@ -296,6 +299,7 @@ export default function App() {
                     onIssueAuthorization={() => void workspace.issueAuthorization()}
                     onSaveKey={workspace.saveProviderKey}
                     notice={workspace.providerNotice}
+                    nodeInfo={workspace.nodeInfo}
                   />
                 ) : page === 'resources' ? (
                   <ResourcesPage
