@@ -67,6 +67,15 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P7c 设置页（已落地，Provider 只读）
+
+- 顶栏「设置」进入设置页，三段：**节点与协作**（节点地址/当前项目/会话）、**提供商**（只读目录：
+  id、模型数、已配置/缺失、诊断、revision）、**关于**（Rust 规则与 MIT 组件说明）。
+- `work-client-wasm::provider_catalog` 走 `NodeApi`，失败时页面显示节点错误而不是空列表。
+- 验收：`verify:live` 25 条（新增设置页断言：节点事实 + provider 读取失败可见）。
+- 已知缺口：仓库 fixture 没有 `/api/v1/providers`，因此这一轮只验证"失败可见"；真实节点上的
+  列表渲染未在自动化里覆盖。更新检查属于桌面端能力，Web 原型不提供（已在页面上说明）。
+
 ### P7b 安装闸门（已落地）
 
 - `work-client-wasm`：`package_bundle`（审阅）+ `install_package`（获取 → 校验回执 → 安装 →

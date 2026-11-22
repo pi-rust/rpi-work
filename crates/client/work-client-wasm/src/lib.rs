@@ -249,6 +249,17 @@ impl NodeClient {
         })
     }
 
+    /// Provider catalogue with readiness, as the node reports it.
+    pub fn provider_catalog(&self) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let catalog = work_core::api::NodeApi::provider_catalog(&client)
+                .await
+                .map_err(|error| failure("提供商目录读取失败", error))?;
+            json_string(&catalog)
+        })
+    }
+
     /// Installed native resources (packages, skills, extensions) for a project.
     pub fn native_catalog(&self, project_id: String) -> Promise {
         let client = self.client.clone();

@@ -11,6 +11,7 @@ import * as fixture from '@/data'
 import {
   NodeConnection,
   type NodeChangedFile,
+  type NodeProvider,
   type NodeFileEntry,
   type NodeModel,
   type NodeQueue,
@@ -49,6 +50,10 @@ export type Workspace = {
   sendError: string | null
   queue: NodeQueue
   resources: ResourceView
+  providers: NodeProvider[]
+  providerRevision: string | null
+  providerError: string | null
+  loadProviders: () => Promise<void>
   offers: unknown[]
   bundle: { manifest: { id: string; title: string; version: string }; sources: Record<string, string>; sha256: string } | null
   installing: boolean
@@ -132,6 +137,9 @@ export function useWorkspace(): Workspace {
   const [busy, setBusy] = useState(false)
   const [queue, setQueue] = useState<NodeQueue>({ items: [], count: 0 })
   const [resources, setResources] = useState<ResourceView>({ rows: [], counts: [0, 0, 0] })
+  const [providers, setProviders] = useState<NodeProvider[]>([])
+  const [providerRevision, setProviderRevision] = useState<string | null>(null)
+  const [providerError, setProviderError] = useState<string | null>(null)
   const [offers, setOffers] = useState<unknown[]>([])
   const [bundle, setBundle] = useState<Workspace['bundle']>(null)
   const [reviewedOffer, setReviewedOffer] = useState<unknown>(null)
@@ -344,6 +352,19 @@ export function useWorkspace(): Workspace {
     }
   }, [])
 
+  const loadProviders = useCallback(async () => {
+    const conn = connection.current
+    if (!conn) return
+    setProviderError(null)
+    try {
+      const catalog = await conn.providerCatalog()
+      setProviders(catalog.providers)
+      setProviderRevision(catalog.revision)
+    } catch (cause) {
+      setProviderError(String(cause))
+    }
+  }, [])
+
   const loadResources = useCallback(async () => {
     const conn = connection.current
     if (!conn || !selected.project) return
@@ -507,6 +528,9 @@ export function useWorkspace(): Workspace {
     setRuntime(null)
     setQueue({ items: [], count: 0 })
     setResources({ rows: [], counts: [0, 0, 0] })
+    setProviders([])
+    setProviderRevision(null)
+    setProviderError(null)
     setOffers([])
     setBundle(null)
     setReviewedOffer(null)
@@ -584,6 +608,10 @@ export function useWorkspace(): Workspace {
     sendError,
     queue,
     resources,
+    providers,
+    providerRevision,
+    providerError,
+    loadProviders,
     offers,
     bundle,
     installing,

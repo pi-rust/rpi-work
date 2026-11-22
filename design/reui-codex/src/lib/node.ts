@@ -44,6 +44,15 @@ export type NodeQueueItem = {
 }
 export type NodeQueue = { items: NodeQueueItem[]; count: number }
 export type NodeFileEntry = { name: string; path: string; kind: string; size: number }
+export type NodeProvider = {
+  id: string
+  definition: { name?: string; models?: { id: string; name?: string }[] } | null
+  configured: boolean
+  configKeyPresent: boolean
+  storedCredential: string | null
+  diagnostic: string | null
+}
+export type NodeProviderCatalog = { revision: string; providers: NodeProvider[] }
 export type NodeChangedFile = {
   path: string
   originalPath: string | null
@@ -133,6 +142,10 @@ export class NodeConnection {
 
   async setThinking(sessionId: string, level: string): Promise<NodeRuntime> {
     return parse<NodeRuntime>(await this.client.set_thinking(sessionId, level))
+  }
+
+  async providerCatalog(): Promise<NodeProviderCatalog> {
+    return parse<NodeProviderCatalog>(await this.client.provider_catalog())
   }
 
   async packageCatalog(projectId: string): Promise<{ packages: unknown[]; source: string }> {

@@ -11,6 +11,7 @@ import { Composer } from '@/components/composer'
 import { RunTimeline, rowElement } from '@/components/transcript'
 import { FilePanel } from '@/components/file-panel'
 import { ResourcesPage } from '@/components/resource-view'
+import { SettingsPage } from '@/components/settings-page'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
@@ -23,7 +24,7 @@ export default function App() {
   const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'run' | 'files'>('run')
-  const [page, setPage] = useState<'chat' | 'resources'>('chat')
+  const [page, setPage] = useState<'chat' | 'resources' | 'settings'>('chat')
   const [origin, setOrigin] = useState('')
   const [password, setPassword] = useState('')
 
@@ -192,6 +193,18 @@ export default function App() {
                 资源
               </Button>
               <Button
+                variant={page === 'settings' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                aria-label="设置"
+                onClick={() => {
+                  setPage(page === 'settings' ? 'chat' : 'settings')
+                  if (live) void workspace.loadProviders()
+                }}
+              >
+                设置
+              </Button>
+              <Button
                 variant={rail && railTab === 'files' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="h-7 px-2 text-[11px]"
@@ -210,7 +223,18 @@ export default function App() {
           <div className="flex min-h-0 flex-1">
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-                {page === 'resources' ? (
+                {page === 'settings' ? (
+                  <SettingsPage
+                    live={live}
+                    origin={workspace.source.kind === 'live' ? workspace.source.origin : null}
+                    project={workspace.selected.project}
+                    session={workspace.selected.session}
+                    providers={workspace.providers}
+                    revision={workspace.providerRevision}
+                    error={workspace.providerError}
+                    onRefresh={() => void workspace.loadProviders()}
+                  />
+                ) : page === 'resources' ? (
                   <ResourcesPage
                     live={live}
                     resources={workspace.resources}
@@ -262,7 +286,7 @@ export default function App() {
                 </div>
                 )}
               </div>
-              {page === 'resources' ? null : (
+              {page === 'chat' ? (
               <Composer
                 draft={draft}
                 onDraft={setDraft}
@@ -294,7 +318,7 @@ export default function App() {
                 } : undefined}
                 onThinking={live ? (level) => void workspace.setThinking(level) : undefined}
               />
-              )}
+              ) : null}
             </div>
 
             {rail ? (
