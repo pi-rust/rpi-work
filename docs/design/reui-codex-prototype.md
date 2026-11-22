@@ -120,13 +120,15 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ### 未做（有意收尾）
 
-- **大 diff 的 ReUI `data-grid` 变更表**：`@reui/data-grid` 已能安装（拉入 TanStack Table v9 /
-  Virtual / dnd-kit），但 v9 的 `ColumnDef` 泛型是 **features-first**
-  （`ColumnDef<TFeatures, TData, TValue>`），直接按 v8 写法会报
-  `Type 'X' has no properties in common with type 'TableFeatures'`。需要照 ReUI 官网示例
-  写一份 `useTable({ features: dataGridFeatures, columns, data })` 的类型样板再接入；
-  当前改动列表（≤60 条）+ `CodeBlock.maxLines` 已覆盖常见工作区规模，因此本迭代未强上，
-  安装的组件与依赖已回滚，仓库保持干净。
+- **大 diff 的 ReUI `data-grid` 变更表**：类型问题已解决并记录，剩下是行点击的接线。
+  - 正确写法（TanStack Table v9，features-first）：
+    `type Features = typeof dataGridFeatures`，
+    `ColumnDef<Features, TData, unknown>[]`（`TValue` 必须是 `unknown`，写具体类型会报
+    `Type ... is not assignable to type 'ColumnDef<..., unknown>[]'`），
+    `useTable({ features: dataGridFeatures, columns, data, getRowId })`。
+  - 这一步 `tsc` 已通过、表格能渲染（`文件 状态 暂存` 三列 + 120 行）。
+  - 未完成：`DataGrid` 的 `onRowClick` 没在我们的断言里触发（`role=row` 也不匹配），
+    需要照 ReUI 官网示例确认行点击的挂载点；因此本迭代回滚了组件与依赖，仓库保持干净。
 - **扫码接收端**：手机侧仍由现有 Android 客户端承接，Web 原型只负责生成授权码。
 
 ### P8 移动端（已落地）
