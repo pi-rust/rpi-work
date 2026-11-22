@@ -249,6 +249,19 @@ impl NodeClient {
         })
     }
 
+    /// One-time authorization for a trusted device (QR payload lives in the
+    /// view-model: the envelope is sealed there, not here).
+    pub fn issue_qr_authorization(&self) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let authorization = client
+                .issue_qr_authorization()
+                .await
+                .map_err(|error| failure("授权码生成失败", error))?;
+            json_string(&authorization)
+        })
+    }
+
     /// Provider catalogue with readiness, as the node reports it.
     pub fn provider_catalog(&self) -> Promise {
         let client = self.client.clone();

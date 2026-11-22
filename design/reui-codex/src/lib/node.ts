@@ -164,6 +164,10 @@ export class NodeConnection {
     return parse(await this.client.install_package(projectId, JSON.stringify(offer), scope))
   }
 
+  async issueQrAuthorization(): Promise<{ ticket: string; expiresAt: number; nodeId: string }> {
+    return parse(await this.client.issue_qr_authorization())
+  }
+
   /** Raw native catalog payload; the presenter projects it into rows. */
   async nativeCatalog(projectId: string): Promise<unknown> {
     return parse(await this.client.native_catalog(projectId))

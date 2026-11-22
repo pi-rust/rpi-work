@@ -44,7 +44,7 @@ npm run verify:theme             # 主题契约 8 条（需先启动 preview 到
 | 文件面板 | 改动列表 + unified diff + 目录浏览（按需展开、看源码）+ 暂存开关 |
 | 资源中心 | 节点 native catalog → 计数 + 表格（分组/命名/范围由 `work-viewmodel::resources` 提供） |
 | 安装 | 审阅 bundle（文件清单 + sha256）→ 选范围 → 勾选信任 → 获取/安装 → 目录回读 |
-| 设置 | 节点与协作事实 + Provider 只读目录（已配置/缺失、诊断、revision） |
+| 设置 | 节点与协作事实 + 一次性授权二维码 + Provider 只读目录（已配置/缺失、诊断、revision） |
 | 输入区 | 圆角 composer、模型与思考等级 chip、上下文比例、发送态禁用逻辑 |
 | 底栏 | `↑ 32k ↓ 4.8k 缓存 75% 成本 $0.0184 上下文 38% 工具 2/失败 0` |
 

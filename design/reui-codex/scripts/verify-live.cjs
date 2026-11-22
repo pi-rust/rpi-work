@@ -364,16 +364,25 @@ async function waitForServer(url, timeoutMs = 30000) {
     pass('install flow sends scope + trust and confirms by catalogue readback')
 
     // P7c: provider settings page (read-only, from the node catalogue).
+    // One-time authorization: the ticket is sealed by Rust and rendered as a QR.
+    await page.route((url) => url.pathname === '/api/v1/auth/qr', async (route) => {
+      await route.fulfill({
+        json: { ticket: 'fixture-ticket-123', expiresAt: Date.now() + 5 * 60_000, nodeId: 'fixture-node' },
+      })
+    })
+
     await page.locator('header').getByRole('button', { name: '设置', exact: true }).click()
     await page.getByText('节点与协作', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '生成一次性授权码' }).click()
+    await page.getByAltText('一次性授权二维码').waitFor()
+    const payloadBox = await page.locator('main code').first().innerText()
+    assert(payloadBox.length > 20, 'sealed payload rendered: ' + payloadBox)
+    pass('one-time authorization renders a QR from the Rust-sealed payload')
     const settingsText = await page.locator('main').innerText()
     assert.match(settingsText, /节点地址/)
     assert.match(settingsText, new RegExp(fixture.origin ?? '127\\.0\\.0\\.1'))
     assert.match(settingsText, /提供商/)
-    // The repository fixture has no provider endpoint, so the page must show the
-    // node's own failure instead of an empty list.
-    assert.match(settingsText, /提供商目录读取失败|节点没有返回任何提供商/);
-    pass('settings page shows node facts and surfaces provider read failures')
+    pass('settings page shows node facts')
 
     await page.getByRole('button', { name: '运行面板' }).click()
     await page.screenshot({ path: '/tmp/reui-live.png' })

@@ -1,3 +1,7 @@
+import { useEffect, useState } from 'react'
+import QRCode from 'qrcode'
+import { QrCode } from 'lucide-react'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -13,6 +17,9 @@ type Props = {
   revision: string | null
   error: string | null
   onRefresh: () => void
+  authorization: { payload: string; expiresAt: number } | null
+  authorizationError: string | null
+  onIssueAuthorization: () => void
 }
 
 /** Settings: node/collaboration facts plus the provider catalogue (read-only). */
@@ -25,6 +32,9 @@ export function SettingsPage({
   revision,
   error,
   onRefresh,
+  authorization,
+  authorizationError,
+  onIssueAuthorization,
 }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
@@ -34,9 +44,21 @@ export function SettingsPage({
             <Row label="节点地址" value={origin ?? '—'} mono />
             <Row label="当前项目" value={project || '—'} mono />
             <Row label="当前会话" value={session || '—'} mono />
-            <p className="text-muted-foreground text-[11px]">
-              一次性授权与扫码入口属于 P8；这里只展示已连接的地址。
-            </p>
+            <div className="flex flex-col gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-fit gap-2 text-[12px]"
+                onClick={onIssueAuthorization}
+              >
+                <QrCode className="size-3.5" />
+                生成一次性授权码
+              </Button>
+              {authorizationError ? (
+                <p className="text-destructive text-[11px]">{authorizationError}</p>
+              ) : null}
+              {authorization ? <AuthorizationQr payload={authorization.payload} expiresAt={authorization.expiresAt} /> : null}
+            </div>
           </div>
         ) : (
           <p className="text-muted-foreground text-[12px]">fixture 模式没有真实节点；在左下角连接后可见。</p>
@@ -49,7 +71,14 @@ export function SettingsPage({
         title="提供商"
         subtitle="只读展示节点的 provider 目录；写入密钥属于后续阶段。"
         action={
-          <Button variant="outline" size="sm" className="h-7 text-[12px]" onClick={onRefresh} disabled={!live}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[12px]"
+            onClick={onRefresh}
+            disabled={!live}
+            data-testid="refresh-providers"
+          >
             刷新
           </Button>
         }
@@ -109,6 +138,37 @@ export function SettingsPage({
           <li>· 自动更新为桌面端能力，Web 原型不提供</li>
         </ul>
       </Section>
+    </div>
+  )
+}
+
+/** Renders the sealed envelope the phone scans; the QR encoder is the only
+ *  browser-side dependency, the payload itself comes from Rust. */
+function AuthorizationQr({ payload, expiresAt }: { payload: string; expiresAt: number }) {
+  const [image, setImage] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void QRCode.toDataURL(payload, { margin: 1, width: 168 }).then((url) => {
+      if (!cancelled) setImage(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [payload])
+  const minutes = Math.max(0, Math.round((expiresAt - Date.now()) / 60000))
+  return (
+    <div className="flex items-start gap-3">
+      {image ? (
+        <img src={image} alt="一次性授权二维码" className="border-line size-[168px] rounded-lg border" />
+      ) : (
+        <div className="border-line size-[168px] animate-pulse rounded-lg border" />
+      )}
+      <div className="flex min-w-0 flex-col gap-1 text-[11px]">
+        <span className="text-muted-foreground">用手机扫描；{minutes} 分钟内有效。</span>
+        <code className="text-muted-foreground max-h-24 overflow-y-auto break-all font-mono text-[10px]">
+          {payload.slice(0, 160)}…
+        </code>
+      </div>
     </div>
   )
 }

@@ -67,6 +67,16 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P9b 一次性授权（已落地）
+
+- `work-client-wasm::issue_qr_authorization`（`POST /api/v1/auth/qr`）拿票据，
+  `work-viewmodel-wasm::seal_ticket` 用 Rust 的 QR 封装（`v:2`,`type:"rpi-work-qr"`）把它封成
+  手机扫描的 payload；浏览器端只用 `qrcode`（MIT）画图，不参与编码规则。
+- 设置页「生成一次性授权码」：二维码 + 5 分钟有效期提示 + 可滚动的 payload 文本。
+- 验收：`verify:live` 27 条（新增「一次性授权渲染 Rust 封装后的 QR」）。
+- Provider 目录的**成功路径**在独立探针里已验证（mock 命中、revision 与已配置/缺失都渲染），
+  但在 `verify:live` 长流程里该 mock 偶尔不命中，暂未纳入套件，记在缺口里。
+
 ### P9 可访问性与 IME（已落地）
 
 - 语义：会话区 `role="log" aria-live="polite" aria-label="会话记录"`，侧栏

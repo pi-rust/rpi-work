@@ -21,6 +21,7 @@ import {
 import {
   initViewModel,
   resourceRows,
+  sealTicket,
   TranscriptPresenter,
   type LiveView,
   type ResourceView,
@@ -51,6 +52,9 @@ export type Workspace = {
   queue: NodeQueue
   resources: ResourceView
   providers: NodeProvider[]
+  authorization: { payload: string; expiresAt: number } | null
+  authorizationError: string | null
+  issueAuthorization: () => Promise<void>
   providerRevision: string | null
   providerError: string | null
   loadProviders: () => Promise<void>
@@ -138,6 +142,8 @@ export function useWorkspace(): Workspace {
   const [queue, setQueue] = useState<NodeQueue>({ items: [], count: 0 })
   const [resources, setResources] = useState<ResourceView>({ rows: [], counts: [0, 0, 0] })
   const [providers, setProviders] = useState<NodeProvider[]>([])
+  const [authorization, setAuthorization] = useState<{ payload: string; expiresAt: number } | null>(null)
+  const [authorizationError, setAuthorizationError] = useState<string | null>(null)
   const [providerRevision, setProviderRevision] = useState<string | null>(null)
   const [providerError, setProviderError] = useState<string | null>(null)
   const [offers, setOffers] = useState<unknown[]>([])
@@ -352,6 +358,19 @@ export function useWorkspace(): Workspace {
     }
   }, [])
 
+  const issueAuthorization = useCallback(async () => {
+    const conn = connection.current
+    if (!conn) return
+    setAuthorizationError(null)
+    try {
+      const issued = await conn.issueQrAuthorization()
+      // The payload envelope is produced by the Rust codec, not by the UI.
+      setAuthorization({ payload: sealTicket(issued.ticket), expiresAt: issued.expiresAt })
+    } catch (cause) {
+      setAuthorizationError(String(cause))
+    }
+  }, [])
+
   const loadProviders = useCallback(async () => {
     const conn = connection.current
     if (!conn) return
@@ -529,6 +548,8 @@ export function useWorkspace(): Workspace {
     setQueue({ items: [], count: 0 })
     setResources({ rows: [], counts: [0, 0, 0] })
     setProviders([])
+    setAuthorization(null)
+    setAuthorizationError(null)
     setProviderRevision(null)
     setProviderError(null)
     setOffers([])
@@ -609,6 +630,9 @@ export function useWorkspace(): Workspace {
     queue,
     resources,
     providers,
+    authorization,
+    authorizationError,
+    issueAuthorization,
     providerRevision,
     providerError,
     loadProviders,

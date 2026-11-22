@@ -349,6 +349,12 @@ pub fn theme_presets() -> String {
     serde_json::to_string(&presets).unwrap_or_else(|_| "[]".into())
 }
 
+/// Seal a one-time ticket into the QR payload the phone expects.
+#[wasm_bindgen]
+pub fn seal_ticket(ticket: &str) -> String {
+    work_viewmodel::qr::seal(ticket)
+}
+
 /// Address normalization used before any connection attempt.
 #[wasm_bindgen]
 pub fn normalize_address(raw: &str, phone: bool) -> Option<String> {

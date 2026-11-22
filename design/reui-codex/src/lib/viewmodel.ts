@@ -6,7 +6,7 @@
  * what these functions return.
  */
 import wasmUrl from '../pkg/work_viewmodel_bg.wasm?url'
-import init, { resource_rows,
+import init, { resource_rows, seal_ticket,
   Presenter,
   context_reported,
   format_percent,
@@ -105,6 +105,8 @@ export const metricsFrom = (stats: unknown): MetricsView =>
 
 export const contextFrom = (context: unknown): ContextView =>
   JSON.parse(context_reported(JSON.stringify(context))) as ContextView
+
+export const sealTicket = (ticket: string): string => seal_ticket(ticket)
 
 export const resourceRows = (catalog: unknown, projectId: string): ResourceView =>
   JSON.parse(resource_rows(JSON.stringify(catalog ?? {}), projectId)) as ResourceView

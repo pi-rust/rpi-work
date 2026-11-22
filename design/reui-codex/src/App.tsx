@@ -291,6 +291,9 @@ export default function App() {
                     revision={workspace.providerRevision}
                     error={workspace.providerError}
                     onRefresh={() => void workspace.loadProviders()}
+                    authorization={workspace.authorization}
+                    authorizationError={workspace.authorizationError}
+                    onIssueAuthorization={() => void workspace.issueAuthorization()}
                   />
                 ) : page === 'resources' ? (
                   <ResourcesPage
