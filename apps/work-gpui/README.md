@@ -24,7 +24,7 @@ RPI_WORK_PASSWORD=... cargo run --manifest-path apps/work-gpui/Cargo.toml -- --c
 | `src/main.rs` | 应用启动、窗口、`--connect` 参数 |
 | `src/data.rs` | `Snapshot`：fixture 数据，或 `work-client` 只读快照 |
 | `src/shell.rs` | 视图：侧栏、转写、工具卡、输入区、底栏 |
-| `src/theme.rs` | 把 `work-viewmodel::theme` 的 token 解析成 GPUI 颜色 |
+| `src/theme.rs` | 把 `work-viewmodel::theme` 的 token 解析成 GPUI 颜色；`Palette::from_preset(id, dark, compact)` 支持 5 套预设 |
 
 渲染逻辑全部依赖 `work-viewmodel`：`transcript`（行序）、`conversation::tool_display`
 （工具名/目标）、`conversation::code_tokens`（代码着色）、`observability::metrics`

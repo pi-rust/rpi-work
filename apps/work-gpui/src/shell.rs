@@ -25,6 +25,9 @@ enum Row {
 pub struct Shell {
     snapshot: Snapshot,
     palette: Palette,
+    theme_id: String,
+    dark: bool,
+    compact: bool,
     rows: Vec<Row>,
     project: Option<usize>,
     session: Option<usize>,
@@ -74,6 +77,9 @@ impl Shell {
                 .position(|project| project.id == "rpi-work"),
             snapshot,
             palette,
+            theme_id: "codex".into(),
+            dark: false,
+            compact: false,
             rows,
             expanded: HashSet::new(),
             draft: String::new(),
@@ -113,6 +119,24 @@ impl Shell {
 
     fn select_session(&mut self, index: usize, cx: &mut Context<Self>) {
         self.session = Some(index);
+        cx.notify();
+    }
+
+    /// Cycle to the next preset from the shared contract.
+    fn next_theme(&mut self, cx: &mut Context<Self>) {
+        let presets = Palette::presets();
+        let index = presets
+            .iter()
+            .position(|(id, _)| *id == self.theme_id)
+            .unwrap_or(0);
+        self.theme_id = presets[(index + 1) % presets.len()].0.clone();
+        self.palette = Palette::from_preset(&self.theme_id, self.dark, self.compact);
+        cx.notify();
+    }
+
+    fn toggle_dark(&mut self, cx: &mut Context<Self>) {
+        self.dark = !self.dark;
+        self.palette = Palette::from_preset(&self.theme_id, self.dark, self.compact);
         cx.notify();
     }
 
@@ -242,8 +266,8 @@ impl Shell {
             .child(self.text(self.snapshot.node.clone(), 10.0, palette.muted))
     }
 
-    fn header(&mut self) -> impl IntoElement {
-        let palette = &self.palette;
+    fn header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = self.palette;
         let title = self
             .session
             .and_then(|index| self.snapshot.sessions.get(index))
@@ -264,9 +288,31 @@ impl Shell {
                     .flex()
                     .items_center()
                     .gap_2()
+                    .child(self.theme_chip(cx))
                     .child(self.text("deepseek · deepseek-v4-pro", 12.0, palette.muted))
                     .child(div().size(px(7.0)).rounded(px(4.0)).bg(palette.success)),
             )
+    }
+
+    /// Clickable chip: next preset from the shared contract.
+    fn theme_chip(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = self.palette;
+        let name = Palette::presets()
+            .into_iter()
+            .find(|(id, _)| *id == self.theme_id)
+            .map(|(_, name)| name)
+            .unwrap_or_else(|| self.theme_id.clone());
+        div()
+            .id("theme-chip")
+            .flex()
+            .items_center()
+            .gap_1()
+            .p(px(4.0))
+            .rounded(px(6.0))
+            .border_1()
+            .border_color(palette.line)
+            .child(self.text(name, 11.0, palette.muted))
+            .on_click(cx.listener(|this, _, _, cx| this.next_theme(cx)))
     }
 
     fn transcript(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -553,7 +599,7 @@ impl Render for Shell {
                     .flex()
                     .flex_col()
                     .flex_1()
-                    .child(self.header())
+                    .child(self.header(cx))
                     .child(self.transcript(cx))
                     .child(self.composer(cx))
                     .child(self.footer()),
