@@ -91,6 +91,19 @@ async function copy(text) {
   try { await navigator.clipboard.writeText(text); toast('已复制'); }
   catch { toast('浏览器不允许读取剪贴板，请选中文字复制'); }
 }
+function copyableText(source) {
+  if (!source) return '';
+  const clone = source.cloneNode(true);
+  clone.querySelectorAll('.line-no,.code-number,.message-actions,.code-caption,button.icon-button').forEach(node => node.remove());
+  clone.querySelectorAll('br').forEach(node => node.replaceWith('\n'));
+  clone.querySelectorAll('tr').forEach(row => row.replaceWith([...row.querySelectorAll('th,td')].map(cell=>cell.textContent).join('\t')+'\n'));
+  clone.querySelectorAll('li').forEach(node => node.prepend('• '));
+  clone.querySelectorAll('p,h1,h2,h3,li,blockquote,pre,.code-line').forEach(node => node.append('\n'));
+  return clone.textContent.replace(/\n{3,}/g,'\n\n').trim();
+}
+function messageText(message) {
+  return copyableText(message.querySelector('.user-bubble,.prose')) || message.dataset.copy || '';
+}
 function updateDraft() {
   const draft = $('#draft');
   $('.send-button').disabled = !draft.value.trim();
@@ -120,7 +133,7 @@ document.addEventListener('click', event => {
   if (button.dataset.layoutPick) { settings.layout = button.dataset.layoutPick; applySettings(); return; }
   if (button.dataset.setting) { settings[button.dataset.setting] = !settings[button.dataset.setting]; applySettings(); return; }
   if (button.dataset.panel) { setPanel(document.body.dataset.rail === button.dataset.panel ? 'none' : button.dataset.panel); return; }
-  if (button.dataset.openFile) { setPanel('files'); $('#diff-filename').textContent = button.dataset.openFile; return; }
+  if (button.dataset.openFile) { openPreviewFile(button.dataset.openFile); return; }
   if (button.classList.contains('thread')) { toast('演示会话：' + button.querySelector('span').textContent + '（本稿仅包含当前会话）'); return; }
   switch (button.dataset.action) {
     case 'settings': showSettings(); break;
@@ -130,10 +143,11 @@ document.addEventListener('click', event => {
     case 'close-rail': setPanel('none'); break;
     case 'sidebar': document.body.classList.toggle('sidebar-hidden'); break;
     case 'bottom': bottom(); break;
-    case 'copy': void copy(button.closest('.message').dataset.copy); break;
-    case 'copy-code': void copy(button.closest('.tool-output,.code-block').querySelector('code').textContent); break;
+    case 'copy': void copy(messageText(button.closest('.message'))); break;
+    case 'copy-code': void copy(copyableText(button.closest('.tool-output,.code-block').querySelector('code'))); break;
     case 'quote': {
-      $('#draft').value += ($('#draft').value ? '\n\n' : '') + '> ' + button.closest('.message').dataset.copy + '\n\n';
+      const text = messageText(button.closest('.message'));
+      $('#draft').value += ($('#draft').value ? '\n\n' : '') + text.split('\n').map(line=>'> '+line).join('\n') + '\n\n';
       updateDraft(); $('#draft').focus(); break;
     }
     case 'attach': $('#attachments').click(); break;
@@ -156,6 +170,7 @@ $('#draft').addEventListener('keydown', event => {
 });
 $('#composer').addEventListener('submit', event => {
   event.preventDefault();
+  if (document.body.dataset.busy === 'true') return;
   const text = $('#draft').value.trim();
   if (!text) return;
   const turn = document.createElement('article');

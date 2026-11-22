@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>RPI Work · 消息布局评审</title>
   <link rel="stylesheet" href="layout.css">
+  <link rel="stylesheet" href="states.css">
   <script src="prototype.js" defer></script>
+  <script src="states.js" defer></script>
 </head>
 <body data-layout="codex" data-theme="light" data-divider="false" data-bleed="false" data-actions="true" data-activity="true" data-rail="none">
   <aside class="sidebar" aria-label="项目与会话">
@@ -33,7 +35,7 @@
     <header class="header">
       <button class="icon-button" aria-label="切换侧栏" data-action="sidebar"><i data-icon="panel-left"></i></button>
       <span class="breadcrumb">rpi-work<span>/</span></span><h1>为工作台添加深色模式</h1><span class="online"><span class="status-dot"></span>演示</span>
-      <div class="header-actions"><button class="icon-button" aria-label="切换深色模式" data-action="theme"><i data-icon="moon"></i></button><button class="text-button" data-action="settings"><i data-icon="sliders"></i>外观</button><button class="text-button" aria-pressed="false" data-panel="run"><i data-icon="activity"></i>运行</button><button class="text-button" aria-pressed="false" data-panel="files"><i data-icon="panel-right"></i>文件<span class="count">3</span></button></div>
+      <div class="header-actions"><label class="preview-picker"><span>预览</span><select id="preview-state" aria-label="预览消息状态"><option value="complete">已完成</option><option value="running">执行中</option><option value="failed">工具失败</option><option value="long">长回答</option></select></label><button class="icon-button" aria-label="切换深色模式" data-action="theme"><i data-icon="moon"></i></button><button class="text-button" data-action="settings"><i data-icon="sliders"></i>外观</button><button class="text-button" aria-pressed="false" data-panel="run"><i data-icon="activity"></i>运行</button><button class="text-button" aria-pressed="false" data-panel="files"><i data-icon="panel-right"></i>文件<span class="count">3</span></button></div>
     </header>
     <div class="workarea">
       <section class="conversation" aria-label="会话">
@@ -83,7 +85,7 @@ src/App.tsx:80            useTheme()</code></pre></div></details>
             </article>
           </div>
         </div>
-        <div class="composer-region"><button class="jump-bottom icon-button" aria-label="回到最新消息" data-action="bottom"><i data-icon="arrow-down"></i></button><form class="composer" id="composer"><label class="sr-only" for="draft">消息输入</label><textarea id="draft" rows="2" placeholder="继续这个任务…" spellcheck="false"></textarea><div id="attachment-list" class="attachment-list" hidden></div><div class="composer-toolbar"><button type="button" class="icon-button" aria-label="添加附件" data-action="attach"><i data-icon="plus"></i></button><label class="composer-select"><span class="sr-only">选择模型</span><select id="model"><option>deepseek-v4-pro</option><option>GPT-5.3-Codex</option></select><i data-icon="chevron-down"></i></label><label class="composer-select"><span class="sr-only">思考等级</span><select id="thinking"><option>高</option><option>中</option><option>低</option></select><i data-icon="chevron-down"></i></label><span class="context-label push" title="38,000 / 100,000 tokens"><span class="context-ring"></span>38%</span><button type="submit" class="send-button" aria-label="发送演示消息" disabled><i data-icon="arrow-up"></i></button></div></form><div class="composer-subline"><span><i data-icon="git"></i>feat/next-iteration<i data-icon="chevron-down"></i></span><span>HTML 原型 · ⌘↵ 演示发送</span></div><input type="file" id="attachments" multiple hidden></div>
+        <div class="composer-region"><button class="jump-bottom icon-button" aria-label="回到最新消息" data-action="bottom"><i data-icon="arrow-down"></i></button><form class="composer" id="composer"><label class="sr-only" for="draft">消息输入</label><textarea id="draft" rows="2" placeholder="继续这个任务…" spellcheck="false"></textarea><div id="attachment-list" class="attachment-list" hidden></div><div class="composer-toolbar"><button type="button" class="icon-button" aria-label="添加附件" data-action="attach"><i data-icon="plus"></i></button><label class="composer-select"><span class="sr-only">选择模型</span><select id="model"><option>deepseek-v4-pro</option><option>GPT-5.3-Codex</option></select><i data-icon="chevron-down"></i></label><label class="composer-select"><span class="sr-only">思考等级</span><select id="thinking"><option>高</option><option>中</option><option>低</option></select><i data-icon="chevron-down"></i></label><span class="context-label push" title="38,000 / 100,000 tokens"><span class="context-ring"></span>38%</span><button type="button" class="stop-button" aria-label="停止本地演示" data-demo="stop" hidden><span></span></button><button type="submit" class="send-button" aria-label="发送演示消息" disabled><i data-icon="arrow-up"></i></button></div></form><div class="composer-subline"><span><i data-icon="git"></i>feat/next-iteration<i data-icon="chevron-down"></i></span><span>HTML 原型 · ⌘↵ 演示发送</span></div><input type="file" id="attachments" multiple hidden></div>
       </section>
       <aside class="right-rail" aria-label="详情面板" hidden>
         <div class="rail-header"><div class="rail-tabs"><button data-panel="run" aria-pressed="false">运行</button><button data-panel="files" aria-pressed="false">文件 <span class="count">3</span></button></div><button class="icon-button push" aria-label="关闭详情面板" data-action="close-rail"><i data-icon="x"></i></button></div>
