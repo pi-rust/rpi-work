@@ -201,10 +201,11 @@ async function waitForServer(url, timeoutMs = 30000) {
     const panel = page.getByTestId('run-panel')
     await page.getByRole('button', { name: '文件面板' }).click()
     await panel.getByTestId('tab-changes').waitFor()
-    await panel.getByRole('button', { name: /src\/theme\.rs/ }).first().waitFor()
+    await panel.getByText('src/theme.rs').first().waitFor()
+    assert.match(await panel.innerText(), /文件\s+状态\s+暂存/, 'changes render in the ReUI data grid')
     pass('file panel lists the node worktree changes')
 
-    await panel.getByRole('button', { name: /src\/theme\.rs/ }).first().click()
+    await panel.getByText('src/theme.rs').first().click()
     await page.getByText(/let theme = "dark"/).waitFor()
     assert.match(await panel.innerText(), /let theme = "light"/)
     pass('diff for the selected change renders both sides')

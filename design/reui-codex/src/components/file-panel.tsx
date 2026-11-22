@@ -8,6 +8,7 @@ import {
 } from '@headless-tree/core'
 
 import { Tree, TreeItem, TreeItemLabel } from '@/components/reui/tree'
+import { ChangesGrid } from '@/components/changes-grid'
 
 import {
   CodeBlock,
@@ -175,27 +176,7 @@ export function FilePanel({
         ) : changes.length === 0 ? (
           <p className="text-muted-foreground px-1 py-2 text-[11px]">没有未提交的改动。</p>
         ) : (
-          changes.slice(0, 60).map((change) => (
-            <button
-              key={`${change.path}-${change.staged ? 's' : 'w'}`}
-              onClick={() => onOpen(change.path)}
-              className={cn(
-                'hover:bg-muted/60 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11px]',
-                filePath === change.path && 'bg-muted/70',
-              )}
-              title={change.path}
-            >
-              <span className="text-muted-foreground w-3 shrink-0 font-mono">
-                {STATUS_LABEL[change.status] ?? change.status}
-              </span>
-              <span className="truncate font-mono">{change.path}</span>
-              {change.staged ? (
-                <Badge variant="outline" className="ml-auto h-4 px-1 text-[9px]">
-                  已暂存
-                </Badge>
-              ) : null}
-            </button>
-          ))
+          <ChangesGrid changes={changes} onOpen={(path) => onOpen(path)} />
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto border-t p-2">

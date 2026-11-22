@@ -120,16 +120,11 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ### 未做（有意收尾）
 
-- **大 diff 的 ReUI `data-grid` 变更表**：类型问题已解决并记录，剩下是行点击的接线。
-  - 正确写法（TanStack Table v9，features-first）：
-    `type Features = typeof dataGridFeatures`，
-    `ColumnDef<Features, TData, unknown>[]`（`TValue` 必须是 `unknown`，写具体类型会报
-    `Type ... is not assignable to type 'ColumnDef<..., unknown>[]'`），
-    `useTable({ features: dataGridFeatures, columns, data, getRowId })`。
-  - 这一步 `tsc` 已通过、表格能渲染（`文件 状态 暂存` 三列 + 120 行）。
-  - 未完成：`DataGrid` 的 `onRowClick` 没在我们的断言里触发（`role=row` 也不匹配），
-    需要照 ReUI 官网示例确认行点击的挂载点；因此本迭代回滚了组件与依赖，仓库保持干净。
-- **扫码接收端**：手机侧仍由现有 Android 客户端承接，Web 原型只负责生成授权码。
+- **大 diff 的 ReUI `data-grid` 变更表**：已落地。v9 是 features-first，列类型必须写成
+  `ColumnDef<typeof dataGridFeatures, TData, unknown>[]`（`TValue` 写具体类型会被拒绝）；
+  另外**不要**给 `useTable` 传 `getRowId`——工作区里同一路径可能同时有暂存/未暂存两条记录，
+  重复 id 会让行丢失点击绑定。`onRowClick` 由 `DataGrid` 的 props getter 下发到 `<tr>#，
+  所以点单元格文本即可打开 diff。
 
 ### P8 移动端（已落地）
 
