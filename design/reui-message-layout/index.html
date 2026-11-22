@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>消息布局 · HTML 原型</title>
+<style>
+  :root {
+    --bg: #ffffff; --side: #f9f9f9; --card: #ffffff; --text: #1f1f1f; --muted: #666666;
+    --line: #e5e5e5; --accent: #202020; --success: #2d694d; --muted-bg: #f2f2f2;
+    --code: #f7f7f7; --keyword: #202020; --string: #2d694d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "PingFang SC", -apple-system, sans-serif; background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; overflow: hidden; font-size: 14px;
+  }
+  .side { width: 232px; flex: none; background: var(--side); border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .brand b { display: block; font-size: 15px; font-weight: 500; }
+  .brand span { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .row { padding: 6px; border-radius: 6px; font-size: 13px; color: var(--muted); }
+  .row.on { background: #20202012; color: var(--text); }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .head { height: 44px; flex: none; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 16px; font-size: 13px; }
+  .head .dot { width: 7px; height: 7px; border-radius: 4px; background: var(--success); }
+  .head .spacer { flex: 1; }
+  .ghost { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; background: var(--card); }
+  .scroll { flex: 1; overflow-y: auto; padding: 24px 16px; }
+  .column { margin: 0 auto; display: flex; flex-direction: column; }
+
+  /* ---------- Codex 布局：气泡 + 阅读列 ---------- */
+  body[data-layout="codex"] .column { width: 100%; max-width: 48rem; gap: 32px; }
+  body[data-layout="codex"] .msg-user { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  body[data-layout="codex"] .msg-user p {
+    max-width: 85%; background: var(--muted-bg); border-radius: 16px 4px 16px 16px;
+    padding: 8px 14px; line-height: 1.75;
+  }
+  body[data-layout="codex"] .msg-assistant { display: flex; flex-direction: column; gap: 8px; }
+  body[data-layout="codex"] .msg-assistant > p { max-width: 46rem; line-height: 1.75; }
+
+  /* ---------- 经典布局：同宽段落 ---------- */
+  body[data-layout="classic"] .column { width: 100%; max-width: 48rem; gap: 24px; }
+  body[data-layout="classic"] .msg-user, body[data-layout="classic"] .msg-assistant { display: flex; flex-direction: column; gap: 6px; }
+  body[data-layout="classic"] .msg-user p, body[data-layout="classic"] .msg-assistant > p { max-width: none; line-height: 1.7; }
+  body[data-layout="classic"] .msg-user p { padding: 0; background: none; border-radius: 0; }
+
+  .who { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .chip { font-size: 10px; text-transform: none; background: var(--muted-bg); border-radius: 4px; padding: 1px 6px; letter-spacing: 0; }
+  .tool { border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
+  .tool-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; font-size: 13px; }
+  .tool-head .chev { color: var(--muted); font-size: 11px; }
+  .tool-head .name { font-weight: 500; }
+  .tool-head .target { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .tool-head .status { margin-left: auto; color: var(--muted); font-size: 11px; }
+  .tool-head .ok { width: 6px; height: 6px; border-radius: 3px; background: var(--success); }
+  .tool-body { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .tool-body .k { font-size: 11px; color: var(--muted); }
+  .tool-body pre { background: var(--code); border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; overflow-x: auto; }
+  .tool-body .code { border: 1px solid var(--line); border-radius: 6px; }
+  .tool-body .code .bar { display: flex; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+  .tool-body .code .lines { padding: 8px 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.6; }
+  .kw { color: var(--keyword); font-weight: 500; } .st { color: var(--string); }
+
+  .composer { flex: none; padding: 8px 16px 12px; }
+  .composer .box { max-width: 48rem; margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--card); }
+  .composer .ph { color: var(--muted); font-size: 14px; }
+  .composer .meta { display: flex; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+  .composer .meta .right { margin-left: auto; }
+  .footer { flex: none; height: 28px; border-top: 1px solid var(--line); background: var(--side); display: flex; align-items: center; gap: 16px; padding: 0 16px; font-size: 11px; color: var(--muted); }
+
+  /* ---------- 设置浮层：这就是要评审的开关 ---------- */
+  .panel { position: fixed; right: 24px; bottom: 56px; width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px #0000001f; padding: 14px; }
+  .panel h3 { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .panel p.hint { font-size: 11px; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+  .switch-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .switch-row + .switch-row { border-top: 1px solid var(--line); }
+  .switch-row .text { display: flex; flex-direction: column; gap: 2px; }
+  .switch-row .text b { font-size: 12px; font-weight: 500; }
+  .switch-row .text span { font-size: 10px; color: var(--muted); }
+  .switch { margin-left: auto; width: 34px; height: 20px; border-radius: 999px; background: #d9d9d9; position: relative; cursor: pointer; transition: background .15s; border: none; padding: 0; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px #0003; }
+  .switch[aria-checked="true"] { background: var(--accent); }
+  .switch[aria-checked="true"]::after { transform: translateX(14px); }
+  .seg { margin-left: auto; display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: none; background: var(--card); font-size: 11px; padding: 3px 8px; color: var(--muted); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+</style>
+</head>
+<body data-layout="codex">
+  <aside class="side">
+    <div class="brand"><b>rpiwork</b><span>消息布局原型</span></div>
+    <div><div class="label">项目</div><div class="row on">rpi-work</div><div class="row">pi-rust</div></div>
+    <div><div class="label">会话</div><div class="row on">为工作台添加深色模式</div><div class="row">梳理 Agent 架构</div></div>
+  </aside>
+
+  <div class="main">
+    <header class="head">
+      rpi-work / 为工作台添加深色模式
+      <span class="ghost">在线</span>
+      <span class="spacer"></span>
+      <span class="ghost">Codex 黑白</span>
+      <span class="ghost">运行</span>
+      <span class="ghost">文件</span>
+    </header>
+
+    <div class="scroll">
+      <div class="column">
+        <div class="msg-user">
+          <span class="who">你</span>
+          <p>帮我为工作台增加一个深色主题，并保持手机端可用。</p>
+        </div>
+
+        <div class="msg-assistant">
+          <span class="who">rpi <span class="chip">deepseek-v4-pro</span></span>
+          <p>主题切换已经准备好，接下来运行组件测试。深色模式复用同一套 token，手机端沿用 320px 断点。</p>
+
+          <div class="tool">
+            <div class="tool-head">
+              <span class="chev">▾</span><span class="name">read</span>
+              <span class="target">src/theme.rs</span>
+              <span class="status">12ms <span class="ok" style="display:inline-block"></span></span>
+            </div>
+            <div class="tool-body">
+              <span class="k">调用参数</span>
+              <pre>{ "path": "src/theme.rs" }</pre>
+              <span class="k">工具结果</span>
+              <div class="code">
+                <div class="bar">src/theme.rs</div>
+                <div class="lines">
+                  <div>1&nbsp;&nbsp;<span class="kw">pub fn</span> theme() -&gt; Tokens {</div>
+                  <div>2&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">let</span> light = Tokens::codex(<span class="kw">false</span>);</div>
+                  <div>3&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">let</span> dark = Tokens::codex(<span class="kw">true</span>);</div>
+                  <div>4&nbsp;&nbsp;&nbsp;&nbsp;Tokens { light, dark }</div>
+                  <div>5&nbsp;&nbsp;}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tool">
+            <div class="tool-head">
+              <span class="chev">▸</span><span class="name">bash</span>
+              <span class="target">cargo test -p work-ui --lib</span>
+              <span class="status">1.8s <span class="ok" style="display:inline-block"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="box">
+        <div class="ph">给 rpi 发消息…（⌘↵ 发送）</div>
+        <div class="meta"><span>deepseek-v4-pro</span><span>思考 high</span><span class="right">上下文 38%</span></div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <span>↑ 32k</span><span>↓ 4.8k</span><span>缓存 75%</span><span>上下文 38%</span>
+      <span style="margin-left:auto">HTML 原型 · 仅用于评审</span>
+    </footer>
+  </div>
+
+  <div class="panel" role="dialog" aria-label="外观设置">
+    <h3>外观</h3>
+    <p class="hint">这一版只评审消息区的读法：开关落在「设置 → 外观」里，持久化到本机。</p>
+
+    <div class="switch-row">
+      <div class="text"><b>消息布局</b><span>气泡 + 阅读列 / 经典同宽</span></div>
+      <div class="seg" role="group" aria-label="消息布局">
+        <button data-layout-pick="codex" aria-pressed="true">Codex</button>
+        <button data-layout-pick="classic" aria-pressed="false">经典</button>
+      </div>
+    </div>
+
+    <div class="switch-row">
+      <div class="text"><b>轮次分隔</b><span>长会话里显示轮次细线</span></div>
+      <button class="switch" role="switch" aria-checked="false" data-toggle="turn-divider"></button>
+    </div>
+
+    <div class="switch-row">
+      <div class="text"><b>代码块通栏</b><span>代码/工具卡允许略宽于正文</span></div>
+      <button class="switch" role="switch" aria-checked="false" data-toggle="bleed"></button>
+    </div>
+
+    <div class="switch-row">
+      <div class="text"><b>消息悬浮操作</b><span>hover 出现复制 / 引用</span></div>
+      <button class="switch" role="switch" aria-checked="true" data-toggle="hover-actions"></button>
+    </div>
+  </div>
+
+<script>
+  const body = document.body;
+  for (const button of document.querySelectorAll('[data-layout-pick]')) {
+    button.addEventListener('click', () => {
+      const value = button.dataset.layoutPick;
+      body.dataset.layout = value;
+      for (const other of document.querySelectorAll('[data-layout-pick]')) {
+        other.setAttribute('aria-pressed', String(other === button));
+      }
+    });
+  }
+  // 其余三个是评审用的占位开关：状态翻转但不改变布局，等评审通过再接实现。
+  for (const toggle of document.querySelectorAll('[data-toggle]')) {
+    toggle.addEventListener('click', () => {
+      toggle.setAttribute('aria-checked', String(toggle.getAttribute('aria-checked') !== 'true'));
+    });
+  }
+</script>
+</body>
+</html>
