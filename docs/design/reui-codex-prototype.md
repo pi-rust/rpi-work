@@ -176,6 +176,8 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 - 文件面板两个标签：**改动**（git status）与**目录**（`files()` 按需展开），点文件用 `file()`
   在面板内直接看源码（行号 + 语法高亮，配色同样来自主题契约）。
 - 「暂存」开关把 `staged` 透传到 `git_diff`，diff 顶部标题随所选文件更新。
+- 点击联动：树里的文件若同时出现在工作区改动里，直接打开它的 **diff**；否则打开源码。
+  这样"目录"和"改动"两个标签不再各说各话。
 - 目录已换成 **ReUI `Tree` + `@headless-tree/core`**（`asyncDataLoaderFeature`）：节点数据按需
   从 `files()` 拉取并按路径缓存，展开/折叠走 headless-tree 的状态机，行点击在 label 上处理
   （树自己的 click 只负责选中/焦点）。`npm run verify:tree` 覆盖根列表、懒加载、点文件看源码。

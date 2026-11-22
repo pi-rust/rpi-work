@@ -78,6 +78,8 @@ export function FilePanel({
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
   // Node directory entries are cached by path; headless-tree asks lazily.
   const entries = useRef(new Map<string, NodeFileEntry>())
+  // A file that is also changed should open its diff, not its saved source.
+  const changed = new Set(changes.map((change) => change.path))
   const tree = useTree<NodeFileEntry>({
     rootItemId: '',
     getItemName: (item) => item.getItemData()?.name ?? '',
@@ -163,6 +165,8 @@ export function FilePanel({
                     if (item.isFolder()) {
                       if (item.isExpanded()) item.collapse()
                       else item.expand()
+                    } else if (changed.has(item.getId())) {
+                      onOpen(item.getId())
                     } else {
                       onOpenSource(item.getId())
                     }

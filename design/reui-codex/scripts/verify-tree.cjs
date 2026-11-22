@@ -46,9 +46,11 @@ const wait = async u => { for (let i=0;i<100;i++){ try{ if((await fetch(u)).ok) 
   assert.match(after, /theme\.rs/, 'expanded folder shows its children');
   pass('expanding a directory loads its children lazily');
 
+  // The fixture's worktree lists src/theme.rs as modified, so the tree must
+  // route it to the diff instead of the saved source.
   await panel.getByText('theme.rs', { exact: true }).click();
-  await panel.getByText(/RPI Work/).waitFor();
-  pass('clicking a file renders its source in the panel');
+  await panel.getByText(/let theme = "dark"/).waitFor();
+  pass('clicking a changed file opens its diff from the tree');
 
   assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '));
   pass('no page errors');
