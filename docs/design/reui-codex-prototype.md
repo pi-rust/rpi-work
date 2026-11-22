@@ -74,8 +74,9 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
   手机扫描的 payload；浏览器端只用 `qrcode`（MIT）画图，不参与编码规则。
 - 设置页「生成一次性授权码」：二维码 + 5 分钟有效期提示 + 可滚动的 payload 文本。
 - 验收：`verify:live` 27 条（新增「一次性授权渲染 Rust 封装后的 QR」）。
-- Provider 目录的**成功路径**在独立探针里已验证（mock 命中、revision 与已配置/缺失都渲染），
-  但在 `verify:live` 长流程里该 mock 偶尔不命中，暂未纳入套件，记在缺口里。
+- Provider 目录的**成功路径**改由独立脚本覆盖：`npm run verify:settings` 用真实节点的响应形状
+  做 mock（`storedCredential: "none"/"apiKey"`、`models[].contextWindow/maxTokens` 都是必填键），
+  断言已配置/缺失、revision、诊断出现在 `title` 上，以及刷新会重新读取目录。
 
 ### P9 可访问性与 IME（已落地）
 
