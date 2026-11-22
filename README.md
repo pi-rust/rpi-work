@@ -78,6 +78,26 @@ RPI_WORK_HTTP_ASSETS=target/web-release/parity-web
 
 Android 原生 App 通过桌面或已登录 Web 入口生成的一次性授权二维码连接节点。授权码短期有效、只能兑换一次，不包含长期密码。首次连接失败时，可在连接页面手动输入地址、扫码或恢复上次连接；进入工作区后节点离线会从首页进入 **工作协同** 重新连接。
 
+## 原型（不进入安装包）
+
+| 目录 | 说明 | 运行 |
+| --- | --- | --- |
+| [`design/reui-codex`](design/reui-codex) | ReUI（MIT）+ Codex 布局的 Web 工作台；规则经 wasm 来自 `work-viewmodel` | `cd design/reui-codex && npm ci && npm run build:wasm && npm run dev` |
+| [`apps/work-gpui`](apps/work-gpui) | GPUI 桌面原型（独立 workspace，不进入 `cargo test --workspace`） | `cargo run --manifest-path apps/work-gpui/Cargo.toml` |
+
+ReUI 原型可由节点自己托管（同源，无需 `?live=1`）：
+
+```bash
+cd design/reui-codex && npm run build
+RPI_WORK_HTTP_BIND=127.0.0.1 RPI_WORK_HTTP_PORT=13031 RPI_WORK_WEB_LISTEN_PORT=13032 \
+RPI_WORK_HTTP_PASSWORD=… RPI_WORK_HTTP_ASSETS=$PWD/dist \
+  cargo run -p work-cli -- serve
+```
+
+设计与验收细节：[ReUI 原型](docs/design/reui-codex-prototype.md) ·
+[GPUI 原型](docs/design/gpui-desktop-prototype.md)。GPUI 只能做桌面（无移动端后端），
+移动端仍由 Dioxus/Web 承接。
+
 ## 架构与连接边界
 
 - `work-ui`：Dioxus 桌面、Android 和 Web 客户端。

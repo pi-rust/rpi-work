@@ -104,9 +104,13 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ### 未做（有意收尾）
 
-- **大 diff 的 ReUI `data-grid` 变更表**：插件需要 TanStack Table v9 + 虚拟化，接入成本不低于
-  一次独立迭代；当前改动列表（≤60 条）+ `CodeBlock` 的 `maxLines` 已覆盖常见工作区规模。
-  若之后要按千级改动浏览，再按 P6 的原计划接 `@reui/data-grid`。
+- **大 diff 的 ReUI `data-grid` 变更表**：`@reui/data-grid` 已能安装（拉入 TanStack Table v9 /
+  Virtual / dnd-kit），但 v9 的 `ColumnDef` 泛型是 **features-first**
+  （`ColumnDef<TFeatures, TData, TValue>`），直接按 v8 写法会报
+  `Type 'X' has no properties in common with type 'TableFeatures'`。需要照 ReUI 官网示例
+  写一份 `useTable({ features: dataGridFeatures, columns, data })` 的类型样板再接入；
+  当前改动列表（≤60 条）+ `CodeBlock.maxLines` 已覆盖常见工作区规模，因此本迭代未强上，
+  安装的组件与依赖已回滚，仓库保持干净。
 - **扫码接收端**：手机侧仍由现有 Android 客户端承接，Web 原型只负责生成授权码。
 
 ### P8 移动端（已落地）

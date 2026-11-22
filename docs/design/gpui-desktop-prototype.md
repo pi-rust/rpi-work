@@ -134,7 +134,15 @@ first frame: 4 rows (2 transcript + 2 tools), 2 projects, 4 sessions, metrics in
 - 功能对等（含扩展面板、内嵌浏览器、mermaid、扫码）：3–6 人月，且需要产品决策处理 WebView 能力缺口。
 - 长期成本：与 `apps/work-ui` **双份维护**，除非移动端也迁出 Dioxus（GPUI 无 Android 支持，短期不可能）。
 
-## 10. 风险
+## 10. 平台支持（实测）
+
+- macOS：可用（Metal；仅 Command Line Tools 时用 `runtime_shaders`）。
+- Linux / Windows：gpui 有后端，本机未验证。
+- **iOS / Android：不支持**。`gpui 0.2.2` 的 `src/platform/` 只有 `mac` / `linux` / `windows`，
+  源码里没有触摸事件类型（`TouchEvent` 0 命中），也没有移动端生命周期接入。
+  移动端继续由 `apps/work-ui`（Dioxus/Android）或 `design/reui-codex`（Web）承接。
+
+## 11. 风险
 
 | 风险 | 说明 |
 | --- | --- |
@@ -144,7 +152,7 @@ first frame: 4 rows (2 transcript + 2 tools), 2 projects, 4 sessions, metrics in
 | WebView 缺口 | 扩展面板协议（`index.html` + `bridge.js`）无法在窗口内合成 |
 | 无障碍 | GPUI 无障碍支持弱于 DOM |
 
-## 11. 验证
+## 12. 验证
 
 - `cargo build --manifest-path apps/work-gpui/Cargo.toml`
 - `cargo run --manifest-path apps/work-gpui/Cargo.toml`：窗口出现并渲染 fixture 工作台

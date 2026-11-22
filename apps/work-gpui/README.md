@@ -36,6 +36,18 @@ RPI_WORK_PASSWORD=... cargo run --manifest-path apps/work-gpui/Cargo.toml -- --c
   本工程用 `runtime_shaders` 在运行时编译着色器（见 `Cargo.toml` 注释）。
 - Linux：需要 X11/Wayland 与 Vulkan 开发包；本原型未在 Linux 上验证。
 
+## 平台支持
+
+| 平台 | 状态 |
+| --- | --- |
+| macOS | ✅ 本机验证（Metal；CLT-only 时用 `runtime_shaders`） |
+| Linux | ⚠️ 需要 X11/Wayland + Vulkan 开发包，未在本机验证 |
+| Windows | ⚠️ 未验证（gpui 有 DirectX 后端） |
+| **iOS / Android** | ❌ **不支持**：`gpui 0.2.2` 只有 mac/linux/windows 平台后端，源码里没有触摸事件类型，也没有 Activity/UIView 生命周期接入 |
+
+移动端继续走 `apps/work-ui`（Dioxus，Android）或 `design/reui-codex`（Web）；三条渲染器共用
+`work-viewmodel` / `work-client` 的规则。
+
 ## 首帧自检
 
 ```bash
