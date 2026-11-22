@@ -164,6 +164,10 @@ export class NodeConnection {
     return parse(await this.client.install_package(projectId, JSON.stringify(offer), scope))
   }
 
+  async dialogResponse(sessionId: string, requestId: string, values: string[]): Promise<void> {
+    await this.client.dialog_response(sessionId, requestId, JSON.stringify(values))
+  }
+
   async nodeInfo(): Promise<{
     ok: boolean
     service: string | null

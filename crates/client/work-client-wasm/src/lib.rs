@@ -249,6 +249,28 @@ impl NodeClient {
         })
     }
 
+    /// Answer a pending dialog (approval, selector, free-form).
+    ///
+    /// `values_json` is a JSON array of strings; the envelope shape
+    /// (`{values, kind:"selector"}`) is what the node expects for approvals.
+    pub fn dialog_response(
+        &self,
+        session_id: String,
+        request_id: String,
+        values_json: String,
+    ) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let values: Vec<String> = serde_json::from_str(&values_json).unwrap_or_default();
+            let answer = serde_json::json!({ "values": values, "kind": "selector" });
+            client
+                .dialog_response(&session_id, &request_id, answer)
+                .await
+                .map_err(|error| failure("提交回答失败", error))?;
+            Ok(JsValue::from_str("{\"ok\":true}"))
+        })
+    }
+
     /// Node identity and version, for the settings page.
     pub fn node_info(&self) -> Promise {
         let client = self.client.clone();

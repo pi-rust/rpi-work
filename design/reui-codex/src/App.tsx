@@ -335,6 +335,38 @@ export default function App() {
                   />
                 ) : (
                 <div className="mx-auto flex max-w-3xl flex-col gap-6">
+                  {workspace.dialogs.map((dialog) => (
+                    <div
+                      key={dialog.requestId}
+                      className="border-amber-500/40 bg-amber-500/5 flex flex-col gap-2 rounded-lg border p-3"
+                      role="group"
+                      aria-label="待批准的请求"
+                    >
+                      <div className="flex items-center gap-2 text-[12px] font-medium">
+                        <span className="size-1.5 rounded-full bg-amber-500" />
+                        需要你的批准
+                        {dialog.purpose ? (
+                          <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
+                            {dialog.purpose}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="text-[12px]">{dialog.question ?? '这个动作需要确认后才会执行。'}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {dialog.options.map((option) => (
+                          <Button
+                            key={option}
+                            size="sm"
+                            variant={option.includes('拒绝') ? 'outline' : 'default'}
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => void workspace.answerDialog(dialog.requestId, [option])}
+                          >
+                            {option}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                   {workspace.status === 'error' ? (
                     <ErrorState message={workspace.error ?? '未知错误'} onRetry={() => void workspace.connect(origin.trim() || window.location.origin)} />
                   ) : workspace.status === 'auth-required' ? (

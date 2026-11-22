@@ -29,6 +29,12 @@ import {
 } from '@/lib/viewmodel'
 import type { Block, HistoryMessage, Project, Session } from '@/data'
 
+export type PendingDialog = {
+  requestId: string
+  purpose: string | null
+  question: string | null
+  options: string[]
+}
 export type Source = { kind: 'fixture' } | { kind: 'live'; origin: string }
 export type Status = 'boot' | 'fixture' | 'connecting' | 'auth-required' | 'ready' | 'error'
 
@@ -61,6 +67,8 @@ export type Workspace = {
   saveProviderKey: (id: string, key: string) => Promise<boolean>
   providerNotice: string | null
   nodeInfo: { version: string | null; service: string | null; protocol: string | null; nodeId: string | null } | null
+  dialogs: PendingDialog[]
+  answerDialog: (requestId: string, values: string[]) => Promise<void>
   loadNodeInfo: () => Promise<void>
   offers: unknown[]
   bundle: { manifest: { id: string; title: string; version: string }; sources: Record<string, string>; sha256: string } | null
@@ -152,6 +160,7 @@ export function useWorkspace(): Workspace {
   const [providerError, setProviderError] = useState<string | null>(null)
   const [providerNotice, setProviderNotice] = useState<string | null>(null)
   const [nodeInfo, setNodeInfo] = useState<Workspace['nodeInfo']>(null)
+  const [dialogs, setDialogs] = useState<PendingDialog[]>([])
   const [offers, setOffers] = useState<unknown[]>([])
   const [bundle, setBundle] = useState<Workspace['bundle']>(null)
   const [reviewedOffer, setReviewedOffer] = useState<unknown>(null)
@@ -210,6 +219,33 @@ export function useWorkspace(): Workspace {
       // reconnects, so subscribing from 0 is safe.
       const scope = `${projectId}/${sessionId}`
       subscription.current = conn.subscribe(sessionId, 0, (event) => {
+        // Dialogs are data, not display rules: collect them as they arrive and
+        // drop them when the node says they closed.
+        const wire = event as { event_type?: string; data?: Record<string, unknown> }
+        const ui = (wire.data?.ui ?? wire.data) as
+          | { purpose?: string; question?: string; message?: string; options?: { label?: string; value?: string }[] }
+          | undefined
+        const requestId = (wire.data?.requestId ?? (wire.data as { id?: string })?.id) as string | undefined
+        if (wire.event_type === 'ui_dialog_request' && requestId) {
+          const options = (ui?.options ?? [])
+            .map((option) => option.label ?? option.value ?? '')
+            .filter((label) => label.length > 0)
+          setDialogs((current) =>
+            current.some((dialog) => dialog.requestId === requestId)
+              ? current
+              : [
+                  ...current,
+                  {
+                    requestId,
+                    purpose: ui?.purpose ?? null,
+                    question: ui?.question ?? ui?.message ?? null,
+                    options: options.length > 0 ? options : ['允许一次', '拒绝'],
+                  },
+                ],
+          )
+        } else if (wire.event_type === 'ui_dialog_closed' && requestId) {
+          setDialogs((current) => current.filter((dialog) => dialog.requestId !== requestId))
+        }
         const view = presenter.current?.applyEvents(scope, historyRef.current, [event])
         if (!view) return
         setLiveView(view)
@@ -406,6 +442,18 @@ export function useWorkspace(): Workspace {
     }
   }, [])
 
+  const answerDialog = useCallback(async (requestId: string, values: string[]) => {
+    const conn = connection.current
+    const sessionId = sessionIdRef.current
+    if (!conn || !sessionId) return
+    try {
+      await conn.dialogResponse(sessionId, requestId, values)
+      setDialogs((current) => current.filter((dialog) => dialog.requestId !== requestId))
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [])
+
   const saveProviderKey = useCallback(
     async (id: string, key: string) => {
       const conn = connection.current
@@ -416,6 +464,7 @@ export function useWorkspace(): Workspace {
       setProviderError(null)
       setProviderNotice(null)
     setNodeInfo(null)
+    setDialogs([])
       try {
         const receipt = await conn.setProviderKey(id, key, providerRevision)
         // The receipt carries the authoritative catalogue; use it as the truth.
@@ -603,6 +652,7 @@ export function useWorkspace(): Workspace {
     setProviderError(null)
     setProviderNotice(null)
     setNodeInfo(null)
+    setDialogs([])
     setOffers([])
     setBundle(null)
     setReviewedOffer(null)
@@ -691,6 +741,8 @@ export function useWorkspace(): Workspace {
     providerNotice,
     nodeInfo,
     loadNodeInfo,
+    dialogs,
+    answerDialog,
     offers,
     bundle,
     installing,

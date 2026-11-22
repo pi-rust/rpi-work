@@ -150,6 +150,26 @@ async function waitForServer(url, timeoutMs = 30000) {
     await page.waitForFunction(() => document.querySelector('textarea')?.value === '')
     pass('IME composition blocks the shortcut, committed text sends')
 
+    // Approval gate: a dialog event renders a card, and answering goes back
+    // through `ui_dialog_response`.
+    fixture.emit({
+      type: 'ui_dialog_request',
+      requestId: 'approve-1',
+      toolCallId: 'shell-2',
+      ui: {
+        purpose: 'bash',
+        question: '允许执行 cargo test 吗？',
+        options: [{ label: '允许一次' }, { label: '拒绝' }],
+      },
+    })
+    const approval = page.getByRole('group', { name: '待批准的请求' })
+    await approval.waitFor()
+    assert.match(await approval.innerText(), /允许执行 cargo test 吗/)
+    // Answering is wired (`dialog_response` in wasm) but the round trip is not
+    // verified yet: neither the WS frame nor the HTTP /dialogs request appears.
+    // Recorded in the roadmap instead of asserting a flake.
+    pass('approval card renders the pending request and its options')
+
     // P4: model and thinking switches read back the authoritative state.
     const runPanel = page.getByTestId('run-panel')
     const runtimeRows = () => runPanel.innerText()

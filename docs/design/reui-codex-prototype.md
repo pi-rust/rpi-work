@@ -67,6 +67,15 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P14 审批卡片（部分落地）
+
+- 实时流里的 `ui_dialog_request` 会渲染成「需要你的批准」卡片：purpose 徽标、问题文本、按节点
+  选项生成的按钮（无选项时回退为「允许一次 / 拒绝」）；`ui_dialog_closed` 自动移除。
+- `work-client-wasm::dialog_response(sessionId, requestId, values)` 已接上 `client.dialog_response`
+  并把回答包成 `{values, kind:"selector"}`。
+- **未验证**：点击后的回程。fixture 上既看不到 WS 帧也看不到 `/dialogs` 请求，说明发送条件
+  （能力/实时 mutation 判定）还没满足，下一轮从 `work-client` 的 `dialog_response` 分支查起。
+
 ### P13 命令面板（已落地）
 
 - ⌘K / Ctrl-K（或侧栏搜索按钮）打开命令面板：按标题与项目名过滤会话、↑↓ 移动、Enter 打开、

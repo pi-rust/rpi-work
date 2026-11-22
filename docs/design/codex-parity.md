@@ -77,7 +77,7 @@
 
 | 批次 | 内容 | 数据来源 | 验收方式 |
 | --- | --- | --- | --- |
-| A | 审批/授权面板：列出待批准动作、只读/可写、一次性授权记录 | 会话事件 + `node.sharing` 能力 | 原型 e2e：拒绝/批准各一条，事件流不变 |
+| A | 审批/授权面板 | 会话事件（`ui_dialog_request`/`ui_dialog_closed`）+ `work-client-wasm::dialog_response` | 🟡 卡片已渲染并有选项；**回答回程未验证**（既没有 WS 帧也没有 HTTP `/dialogs` 请求），下一步要查 `dialog_response` 的发送条件 |
 | B | 计划/任务清单面板（todo 投影） | `RunProjection` 的 todo 事件 | 原型 e2e：勾选状态持久 |
 | C | 资源作用域核对（全局/项目/会话） | `native_catalog` + 会话配置 | 已有 `verify:settings` 扩展 |
 | D | GPUI 连接 + 发送 + 实时流 | `work-client` 经 tokio 桥接 | 首帧 trace 后追加"发送→settled"断言 |
