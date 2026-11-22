@@ -100,6 +100,24 @@ async function waitForServer(url, timeoutMs = 30000) {
     await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。').waitFor()
     pass('switching back restores the first session through the same presenter')
 
+    // Layout parity: the prompt is a compact chip, the answer owns the column.
+    const geometry = await page.evaluate(() => {
+      const log = document.querySelector('[role="log"]')
+      const prose = log?.querySelector('p.whitespace-pre-wrap')
+      const user = [...(log?.querySelectorAll('p') ?? [])].find((node) => node.className.includes('bg-muted'))
+      const container = log?.firstElementChild
+      return {
+        proseWidth: prose ? Math.round(prose.getBoundingClientRect().width) : 0,
+        userWidth: user ? Math.round(user.getBoundingClientRect().width) : 0,
+        containerWidth: container ? Math.round(container.getBoundingClientRect().width) : 0,
+        gap: container ? getComputedStyle(container).rowGap : '',
+      }
+    })
+    assert(geometry.proseWidth > 0 && geometry.proseWidth <= 740, 'prose column: ' + JSON.stringify(geometry))
+    assert(geometry.userWidth > 0 && geometry.userWidth < geometry.proseWidth + 80, 'user chip stays compact: ' + JSON.stringify(geometry))
+    assert(parseFloat(geometry.gap) >= 24, 'turns are separated: ' + geometry.gap)
+    pass('message area keeps a compact prompt chip, a bounded prose column and turn spacing')
+
     // P3: live wire events replay through the Rust projection.
     await page.getByText('src/theme.rs', { exact: true }).first().waitFor()
     await page.getByText('cargo test -p work-ui --lib', { exact: true }).first().waitFor()

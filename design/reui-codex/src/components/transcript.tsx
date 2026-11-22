@@ -27,17 +27,21 @@ import { toolMeta } from '@/lib/viewmodel'
 import type { Block, HistoryMessage, RunStep, ToolBlock } from '@/data'
 
 export function UserRow({ message }: { message: HistoryMessage }) {
+  // Codex keeps the prompt visually distinct: a compact, right-aligned chip that
+  // never spans the reading column.
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
-        你
-      </span>
-      <p className="text-[15px] leading-7 whitespace-pre-wrap">{message.content}</p>
+    <div className="flex flex-col items-end gap-1">
+      <span className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">你</span>
+      <p className="bg-muted/70 max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[15px] leading-7 whitespace-pre-wrap">
+        {message.content}
+      </p>
     </div>
   )
 }
 
 export function AnswerRow({ text, model }: { text: string; model: string }) {
+  // Assistant prose owns the reading column; tool rows sit underneath at the same
+  // left edge so a turn reads as one block.
   return (
     <div className="flex flex-col gap-2">
       <span className="text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase">
@@ -46,7 +50,7 @@ export function AnswerRow({ text, model }: { text: string; model: string }) {
           {model.split('/')[1]}
         </Badge>
       </span>
-      <p className="text-[15px] leading-7 whitespace-pre-wrap">{text}</p>
+      <p className="max-w-[46rem] text-[15px] leading-7 whitespace-pre-wrap">{text}</p>
     </div>
   )
 }
