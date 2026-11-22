@@ -249,6 +249,54 @@ impl NodeClient {
         })
     }
 
+    /// Directory listing for a project path (`""` is the project root).
+    pub fn files(&self, project_id: String, path: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let listing = client
+                .files(&project_id, &path)
+                .await
+                .map_err(|error| failure("目录读取失败", error))?;
+            json_string(&listing)
+        })
+    }
+
+    /// One file's content, bounded by the node.
+    pub fn file(&self, project_id: String, path: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let file = client
+                .file(&project_id, &path)
+                .await
+                .map_err(|error| failure("文件读取失败", error))?;
+            json_string(&file)
+        })
+    }
+
+    /// Repository status for a project.
+    pub fn git_status(&self, project_id: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let status = client
+                .git_status(&project_id)
+                .await
+                .map_err(|error| failure("Git 状态读取失败", error))?;
+            json_string(&status)
+        })
+    }
+
+    /// Unified diff for one changed path.
+    pub fn git_diff(&self, project_id: String, path: String, staged: bool) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let diff = client
+                .diff(&project_id, &path, staged)
+                .await
+                .map_err(|error| failure("Diff 读取失败", error))?;
+            json_string(&diff)
+        })
+    }
+
     /// Queued prompts for the session.
     pub fn queue(&self, session_id: String) -> Promise {
         let client = self.client.clone();

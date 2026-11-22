@@ -174,6 +174,19 @@ async function waitForServer(url, timeoutMs = 30000) {
     pass('drafts are stored per origin/session and restored on switch')
     await composer.fill('')
 
+    // P6: changed files and diffs come from the node.
+    const panel = page.getByTestId('run-panel')
+    await page.getByRole('button', { name: '文件面板' }).click()
+    await panel.getByText('工作区改动', { exact: false }).waitFor()
+    await panel.getByText('src/theme.rs', { exact: false }).first().waitFor()
+    pass('file panel lists the node worktree changes')
+
+    await panel.getByText('src/theme.rs', { exact: false }).first().click()
+    await page.getByText(/let theme = "dark"/).waitFor()
+    assert.match(await panel.innerText(), /let theme = "light"/)
+    pass('diff for the selected change renders both sides')
+
+    await page.getByRole('button', { name: '运行面板' }).click()
     await page.screenshot({ path: '/tmp/reui-live.png' })
     await page.getByRole('button', { name: '断开节点' }).click()
     await page.getByText('rpiwork').first().waitFor()

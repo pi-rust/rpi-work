@@ -8,7 +8,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import * as fixture from '@/data'
-import { NodeConnection, type NodeModel, type NodeQueue, type NodeRuntime, type NodeSession } from '@/lib/node'
+import {
+  NodeConnection,
+  type NodeChangedFile,
+  type NodeFileEntry,
+  type NodeModel,
+  type NodeQueue,
+  type NodeRuntime,
+  type NodeSession,
+} from '@/lib/node'
 import { initViewModel, TranscriptPresenter, type LiveView, type RowRef } from '@/lib/viewmodel'
 import type { Block, HistoryMessage, Project, Session } from '@/data'
 
@@ -33,6 +41,15 @@ export type Workspace = {
   busy: boolean
   sendError: string | null
   queue: NodeQueue
+  changes: NodeChangedFile[]
+  files: NodeFileEntry[]
+  filePath: string | null
+  fileBody: string | null
+  fileDiff: string | null
+  loadChanges: () => Promise<void>
+  loadFiles: (path?: string) => Promise<void>
+  openChange: (path: string) => Promise<void>
+  openFile: (path: string) => Promise<void>
   refreshQueue: () => Promise<void>
   queueMessage: (text: string) => Promise<boolean>
   cancelQueued: (entryId: string) => Promise<void>
@@ -96,6 +113,11 @@ export function useWorkspace(): Workspace {
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [queue, setQueue] = useState<NodeQueue>({ items: [], count: 0 })
+  const [changes, setChanges] = useState<NodeChangedFile[]>([])
+  const [files, setFiles] = useState<NodeFileEntry[]>([])
+  const [filePath, setFilePath] = useState<string | null>(null)
+  const [fileBody, setFileBody] = useState<string | null>(null)
+  const [fileDiff, setFileDiff] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const sessionIdRef = useRef<string>('')
 
@@ -298,6 +320,63 @@ export function useWorkspace(): Workspace {
     }
   }, [])
 
+  const loadChanges = useCallback(async () => {
+    const conn = connection.current
+    if (!conn || !selected.project) return
+    try {
+      const status = await conn.gitStatus(selected.project)
+      setChanges(status.files.slice(0, 200))
+    } catch (cause) {
+      setSendError(String(cause))
+    }
+  }, [selected.project])
+
+  const loadFiles = useCallback(
+    async (path = '') => {
+      const conn = connection.current
+      if (!conn || !selected.project) return
+      try {
+        const listing = await conn.files(selected.project, path)
+        setFiles(listing.entries)
+      } catch (cause) {
+        setSendError(String(cause))
+      }
+    },
+    [selected.project],
+  )
+
+  const openChange = useCallback(
+    async (path: string) => {
+      const conn = connection.current
+      if (!conn || !selected.project) return
+      try {
+        const diff = await conn.gitDiff(selected.project, path)
+        setFilePath(path)
+        setFileDiff(diff.patch)
+        setFileBody(null)
+      } catch (cause) {
+        setSendError(String(cause))
+      }
+    },
+    [selected.project],
+  )
+
+  const openFile = useCallback(
+    async (path: string) => {
+      const conn = connection.current
+      if (!conn || !selected.project) return
+      try {
+        const file = await conn.file(selected.project, path)
+        setFilePath(path)
+        setFileBody(file.content)
+        setFileDiff(null)
+      } catch (cause) {
+        setSendError(String(cause))
+      }
+    },
+    [selected.project],
+  )
+
   const abort = useCallback(async () => {
     const conn = connection.current
     const sessionId = sessionIdRef.current
@@ -337,6 +416,11 @@ export function useWorkspace(): Workspace {
     setLiveView(null)
     setRuntime(null)
     setQueue({ items: [], count: 0 })
+    setChanges([])
+    setFiles([])
+    setFilePath(null)
+    setFileBody(null)
+    setFileDiff(null)
     setModels([])
     setThinkingLevels([])
     setSendError(null)
@@ -404,6 +488,15 @@ export function useWorkspace(): Workspace {
     busy,
     sendError,
     queue,
+    changes,
+    files,
+    filePath,
+    fileBody,
+    fileDiff,
+    loadChanges,
+    loadFiles,
+    openChange,
+    openFile,
     refreshQueue,
     queueMessage,
     cancelQueued,

@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { node, runSteps, statsPayload, contextPayload } from '@/data'
 import { Composer } from '@/components/composer'
 import { RunTimeline, rowElement } from '@/components/transcript'
+import { FilePanel } from '@/components/file-panel'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
@@ -20,6 +21,7 @@ export default function App() {
   const draftScope = `${workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}/${workspace.selected.session || 'none'}`
   const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
+  const [railTab, setRailTab] = useState<'run' | 'files'>('run')
   const [origin, setOrigin] = useState('')
   const [password, setPassword] = useState('')
 
@@ -164,13 +166,29 @@ export default function App() {
                 {theme.choice.compact ? '紧凑' : '标准'}
               </Button>
               <Button
-                variant={rail ? 'secondary' : 'ghost'}
+                variant={rail && railTab === 'run' ? 'secondary' : 'ghost'}
                 size="icon"
                 className="size-7"
                 aria-label="运行面板"
-                onClick={() => setRail((value) => !value)}
+                onClick={() => {
+                  setRail(true)
+                  setRailTab('run')
+                }}
               >
                 <PanelRight className="size-4" />
+              </Button>
+              <Button
+                variant={rail && railTab === 'files' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                aria-label="文件面板"
+                onClick={() => {
+                  setRail(true)
+                  setRailTab('files')
+                  if (live) void workspace.loadChanges()
+                }}
+              >
+                文件
               </Button>
             </div>
           </header>
@@ -249,9 +267,20 @@ export default function App() {
               <aside className="w-[300px] shrink-0 border-l" data-testid="run-panel">
                 <div className="flex h-full flex-col">
                   <div className="flex h-11 items-center justify-between border-b px-3 text-[12px] font-medium">
-                    运行
+                    {railTab === 'files' ? '文件' : '运行'}
                     <span className="text-muted-foreground font-normal">{live ? 'node' : 'fixture'}</span>
                   </div>
+                  {railTab === 'files' ? (
+                    <FilePanel
+                      live={live}
+                      changes={workspace.changes}
+                      filePath={workspace.filePath}
+                      fileDiff={workspace.fileDiff}
+                      fileBody={workspace.fileBody}
+                      onRefresh={() => void workspace.loadChanges()}
+                      onOpen={(path) => void workspace.openChange(path)}
+                    />
+                  ) : (
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
                     <RunTimeline steps={runSteps} />
                     <Separator className="my-3" />
@@ -301,6 +330,7 @@ export default function App() {
                       </pre>
                     </details>
                   </div>
+                  )}
                   <div className="text-muted-foreground border-t px-3 py-2 text-[11px]">上下文 {contextText}</div>
                 </div>
               </aside>

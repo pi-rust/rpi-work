@@ -43,6 +43,19 @@ export type NodeQueueItem = {
   status: string | null
 }
 export type NodeQueue = { items: NodeQueueItem[]; count: number }
+export type NodeFileEntry = { name: string; path: string; kind: string; size: number }
+export type NodeChangedFile = {
+  path: string
+  originalPath: string | null
+  status: string
+  staged: boolean
+  unstaged: boolean
+}
+export type NodeGitStatus = {
+  isRepository: boolean
+  branch: string | null
+  files: NodeChangedFile[]
+}
 export type NodeMessages = {
   messages: unknown[]
   firstId: string | null
@@ -120,6 +133,22 @@ export class NodeConnection {
 
   async setThinking(sessionId: string, level: string): Promise<NodeRuntime> {
     return parse<NodeRuntime>(await this.client.set_thinking(sessionId, level))
+  }
+
+  async files(projectId: string, path = ''): Promise<{ path: string; entries: NodeFileEntry[] }> {
+    return parse(await this.client.files(projectId, path))
+  }
+
+  async file(projectId: string, path: string): Promise<{ path: string; content: string }> {
+    return parse(await this.client.file(projectId, path))
+  }
+
+  async gitStatus(projectId: string): Promise<NodeGitStatus> {
+    return parse<NodeGitStatus>(await this.client.git_status(projectId))
+  }
+
+  async gitDiff(projectId: string, path: string, staged = false): Promise<{ path: string; patch: string }> {
+    return parse(await this.client.git_diff(projectId, path, staged))
   }
 
   async queue(sessionId: string): Promise<NodeQueue> {
