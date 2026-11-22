@@ -67,6 +67,19 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P9 可访问性与 IME（已落地）
+
+- 语义：会话区 `role="log" aria-live="polite" aria-label="会话记录"`，侧栏
+  `<nav aria-label="项目与会话">`，主区域保持单一 `<main>`；图标按钮全部有可访问名。
+- 键盘：composer ⌘↵ 发送（`aria-keyshortcuts`），Tab 从输入框进入控件行；焦点态沿用 shadcn。
+- 中文输入法：`compositionstart/compositionend` + `event.nativeEvent.isComposing` 双保险，
+  组合期间按 ⌘↵ 不发送，`compositionend` 后的已提交文本才发出。
+- 验收：`npm run verify:a11y`（5 条：landmark、图标按钮命名、⌘↵ 路径、Tab 顺序、零错误）+
+  `verify:live` 内的 IME 用例（组合期不发送、提交后发送且发送的是提交文本）。
+- CI：新增 `.github/workflows/reui-prototype.yml`（wasm 目标 + wasm-bindgen 版本对齐 +
+  Playwright chromium，跑 a11y/live/fixture/theme/mobile）；`verify:hosted` 需要节点二进制，
+  仍留在本地执行。
+
 ### P10 交付（已落地，同源托管）
 
 - `vite build` 的产物可直接作为节点的 Web assets：`RPI_WORK_HTTP_ASSETS=<dist>` 后由

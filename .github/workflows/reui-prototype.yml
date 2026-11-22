@@ -1,0 +1,98 @@
+name: ReUI prototype
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'design/reui-codex/**'
+      - 'crates/client/work-viewmodel/**'
+      - 'crates/client/work-viewmodel-wasm/**'
+      - 'crates/client/work-client/**'
+      - 'crates/client/work-client-wasm/**'
+      - 'crates/foundation/work-core/**'
+      - 'crates/foundation/work-node-api/**'
+      - '.github/workflows/reui-prototype.yml'
+  pull_request:
+    paths:
+      - 'design/reui-codex/**'
+      - 'crates/client/work-viewmodel/**'
+      - 'crates/client/work-viewmodel-wasm/**'
+      - 'crates/client/work-client/**'
+      - 'crates/client/work-client-wasm/**'
+      - 'crates/foundation/work-core/**'
+      - 'crates/foundation/work-node-api/**'
+      - '.github/workflows/reui-prototype.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reui-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wasm-and-browser:
+    name: wasm bindings + browser acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: reui-wasm
+          cache-on-failure: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wasm-bindgen CLI matching Cargo.lock
+        run: |
+          VERSION=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | head -2 | tail -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "wasm-bindgen $VERSION"
+          curl -sSfL "https://github.com/rustwasm/wasm-bindgen/releases/download/${VERSION}/wasm-bindgen-${VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/wasm-bindgen-${VERSION}-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+
+      - name: Build the view-model and client wasm bindings
+        run: cargo build -p work-viewmodel-wasm -p work-client-wasm --target wasm32-unknown-unknown --release --locked
+
+      - name: Install prototype and browser dependencies
+        run: |
+          npm ci --prefix tools
+          npx --prefix tools playwright install --with-deps chromium
+          npm ci --prefix design/reui-codex
+
+      - name: Build the prototype bundle
+        working-directory: design/reui-codex
+        run: npm run build
+
+      - name: Accessibility, fixture, theme and live acceptance
+        working-directory: design/reui-codex
+        run: |
+          node scripts/verify-a11y.cjs
+          node scripts/verify-live.cjs
+
+      - name: Fixture, theme and mobile acceptance
+        working-directory: design/reui-codex
+        run: |
+          npm run preview -- --port 5179 --strictPort &
+          sleep 5
+          REUI_URL=http://127.0.0.1:5179/ node scripts/verify-fixture.cjs
+          REUI_URL=http://127.0.0.1:5179/ node scripts/verify-theme.cjs
+          node scripts/verify-mobile.cjs
+          kill %1 || true
+
+      # verify-hosted needs a node binary and an isolated owner, so it stays a
+      # local acceptance step: `npm run verify:hosted` after `cargo build -p work-cli`.

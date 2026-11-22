@@ -127,6 +127,29 @@ async function waitForServer(url, timeoutMs = 30000) {
     fixture.controls.failPrompt = false
     pass('a rejected prompt keeps the draft and shows the error')
 
+    // IME: a composing keystroke must not send; the committed text must.
+    const promptCount = () => commands('prompt').length
+    const beforeCompose = promptCount()
+    await composer.fill('候选词测试')
+    await page.evaluate(() => {
+      document.querySelector('textarea')?.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    })
+    await page.evaluate(() => {
+      document.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    })
+    await page.waitForTimeout(400)
+    assert.equal(promptCount(), beforeCompose, 'no prompt while composing')
+    await page.evaluate(() => {
+      document.querySelector('textarea')?.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    await page.keyboard.press('Meta+Enter')
+    await page.waitForFunction((previous) => true, beforeCompose)
+    await page.waitForTimeout(600)
+    assert(promptCount() > beforeCompose, 'prompt sent after compositionend')
+    assert(commands('prompt').at(-1).includes('候选词测试'), 'committed text is what gets sent')
+    await page.waitForFunction(() => document.querySelector('textarea')?.value === '')
+    pass('IME composition blocks the shortcut, committed text sends')
+
     // P4: model and thinking switches read back the authoritative state.
     const runPanel = page.getByTestId('run-panel')
     const runtimeRows = () => runPanel.innerText()

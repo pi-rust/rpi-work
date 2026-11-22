@@ -275,7 +275,12 @@ export default function App() {
 
           <div className="flex min-h-0 flex-1">
             <div className="flex min-w-0 flex-1 flex-col">
-              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+              <div
+                className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
+                role="log"
+                aria-live="polite"
+                aria-label="会话记录"
+              >
                 {page === 'settings' ? (
                   <SettingsPage
                     live={live}

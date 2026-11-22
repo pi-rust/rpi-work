@@ -23,8 +23,10 @@ npm run build             # 先编 wasm，再 tsc + vite build
 验收脚本（需要仓库根目录 `npm ci --prefix tools`）：
 
 ```bash
+npm run verify:a11y              # 自包含：无障碍与键盘 5 条断言
 npm run verify:mobile            # 自包含：320/390 两档，7 条断言
 npm run verify:hosted            # 自包含：起隔离节点托管 dist/，5 条断言（需 cargo build -p work-cli）
+npm run verify:all               # 依次跑 a11y / fixture / theme / mobile / live / hosted
 npm run verify:live              # 自包含：起 fixture + preview，25 条断言
 npm run verify:fixture           # fixture 模式 6 条（需先启动 preview 到 5179）
 npm run verify:theme             # 主题契约 8 条（需先启动 preview 到 5179）

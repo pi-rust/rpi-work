@@ -80,6 +80,7 @@ export function Sidebar({
       </div>
 
       <ScrollArea className="mt-3 flex-1">
+        <nav aria-label="项目与会话" className="contents">
         <div className="flex flex-col gap-4 px-3 pb-4">
           {projects.map((item) => {
             const active = item.id === project
@@ -115,6 +116,7 @@ export function Sidebar({
             )
           })}
         </div>
+        </nav>
       </ScrollArea>
 
       {connection ? <div className="px-3 pb-2">{connection}</div> : null}

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { ArrowUp, Paperclip, SlidersHorizontal, Square } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -43,13 +44,22 @@ export function Composer({
   onModel,
   onThinking,
 }: Props) {
+  // IME candidates must not submit: only a committed composition can send.
+  const composing = useRef(false)
   return (
     <div className="bg-background/80 sticky bottom-0 px-3 pt-2 pb-2 backdrop-blur md:px-6 md:pb-3">
       <div className="border-input bg-card focus-within:border-ring/60 mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border p-2.5 shadow-sm md:p-3">
         <Textarea
           value={draft}
           onChange={(event) => onDraft(event.target.value)}
+          onCompositionStart={() => {
+            composing.current = true
+          }}
+          onCompositionEnd={() => {
+            composing.current = false
+          }}
           onKeyDown={(event) => {
+            if (composing.current || event.nativeEvent.isComposing) return
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
               event.preventDefault()
               onSend()
@@ -131,6 +141,7 @@ export function Composer({
               aria-label="发送"
               disabled={draft.trim().length === 0}
               onClick={onSend}
+              aria-keyshortcuts="Meta+Enter"
             >
               <ArrowUp className="size-4" />
             </Button>
