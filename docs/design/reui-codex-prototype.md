@@ -67,6 +67,12 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P13 命令面板（已落地）
+
+- ⌘K / Ctrl-K（或侧栏搜索按钮）打开命令面板：按标题与项目名过滤会话、↑↓ 移动、Enter 打开、
+  Esc 关闭；`role="dialog"` + `role="listbox"`/`role="option"` 让读屏可用。
+- 验收：`verify:a11y` 6 条（新增：⌘K 过滤到单条并用 Enter 打开）。
+
 ### P12 更新边界（已落地，只读）
 
 - 设置页新增「应用更新」，明确说明 **Web 入口不支持自更新**（升级桌面端/CLI），并展示节点

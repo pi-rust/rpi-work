@@ -102,6 +102,19 @@ async function waitForServer(url, timeoutMs = 30000) {
     assert(focusedAfterTab, 'tab moves focus out of the textarea: ' + focusedAfterTab)
     pass('tab order continues from the composer into the control row')
 
+    // Command palette: keyboard-only path to any session.
+    await page.keyboard.press('Meta+k')
+    const palette = page.getByRole('dialog', { name: '搜索项目与会话' })
+    await palette.waitFor()
+    await palette.getByPlaceholder('搜索会话或项目…').fill('RPC')
+    const options = await palette.getByRole('option').allInnerTexts()
+    assert.equal(options.length, 1, 'filter narrows to one session: ' + JSON.stringify(options))
+    assert.match(options[0], /验证 RPC 事件协议/)
+    await page.keyboard.press('Enter')
+    await palette.waitFor({ state: 'detached' })
+    await page.getByText('验证 RPC 事件协议').first().waitFor()
+    pass('⌘K palette filters and opens a session with the keyboard')
+
     assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '))
     pass('no page errors')
     console.log('RESULT', passed.length, 'checks passed')

@@ -21,6 +21,7 @@ type Props = {
   onProject: (id: string) => void
   onSession: (id: string) => void
   onNewChat: () => void
+  onSearch?: () => void
   className?: string
   /** Connection controls, rendered above the node row. */
   connection?: ReactNode
@@ -37,6 +38,7 @@ export function Sidebar({
   onProject,
   onSession,
   onNewChat,
+  onSearch,
   className,
   connection,
   nodeLabel = 'fixture-node',
@@ -62,6 +64,7 @@ export function Sidebar({
           size="icon"
           aria-label="搜索项目与会话"
           className="size-7"
+          onClick={onSearch}
         >
           <Search className="size-3.5" />
         </Button>

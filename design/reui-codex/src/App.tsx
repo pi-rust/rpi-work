@@ -11,6 +11,7 @@ import { Composer } from '@/components/composer'
 import { RunTimeline, rowElement } from '@/components/transcript'
 import { FilePanel } from '@/components/file-panel'
 import { ResourcesPage } from '@/components/resource-view'
+import { CommandPalette } from '@/components/command-palette'
 import { SettingsPage } from '@/components/settings-page'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { useWorkspace } from '@/lib/workspace'
@@ -28,6 +29,7 @@ export default function App() {
   const [page, setPage] = useState<'chat' | 'resources' | 'settings'>('chat')
   const isMobile = useIsMobile()
   const [drawer, setDrawer] = useState(false)
+  const [palette, setPalette] = useState(false)
   // The run panel is a side column on desktop and an overlay on phones, so it
   // must start closed on narrow viewports instead of covering the transcript.
   useEffect(() => {
@@ -57,6 +59,18 @@ export default function App() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ⌘K / Ctrl-K opens the palette; the sidebar search button does the same.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPalette((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   const ready = workspace.status === 'fixture' || workspace.status === 'ready'
@@ -116,6 +130,7 @@ export default function App() {
             setDraft('')
             if (isMobile) setDrawer(false)
           }}
+          onSearch={() => setPalette(true)}
           nodeLabel={workspace.source.kind === 'live' ? workspace.source.origin.replace(/^https?:\/\//, '') : 'fixture-node'}
           nodeState={live ? 'online' : 'fixture'}
           connection={
@@ -499,6 +514,17 @@ export default function App() {
           </footer>
         </main>
       </div>
+      <CommandPalette
+        open={palette}
+        projects={workspace.projects}
+        sessions={workspace.sessions}
+        onClose={() => setPalette(false)}
+        onSelect={(projectId, sessionId) => {
+          workspace.selectProject(projectId)
+          workspace.selectSession(sessionId)
+          if (isMobile) setDrawer(false)
+        }}
+      />
     </div>
   )
 }
