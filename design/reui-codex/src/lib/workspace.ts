@@ -48,8 +48,10 @@ export type Workspace = {
   fileDiff: string | null
   loadChanges: () => Promise<void>
   loadFiles: (path?: string) => Promise<void>
-  openChange: (path: string) => Promise<void>
+  openChange: (path: string, staged?: boolean) => Promise<void>
   openFile: (path: string) => Promise<void>
+  /** Read one directory without touching the panel's own listing. */
+  listDir: (path: string) => Promise<NodeFileEntry[]>
   refreshQueue: () => Promise<void>
   queueMessage: (text: string) => Promise<boolean>
   cancelQueued: (entryId: string) => Promise<void>
@@ -346,11 +348,11 @@ export function useWorkspace(): Workspace {
   )
 
   const openChange = useCallback(
-    async (path: string) => {
+    async (path: string, staged = false) => {
       const conn = connection.current
       if (!conn || !selected.project) return
       try {
-        const diff = await conn.gitDiff(selected.project, path)
+        const diff = await conn.gitDiff(selected.project, path, staged)
         setFilePath(path)
         setFileDiff(diff.patch)
         setFileBody(null)
@@ -373,6 +375,16 @@ export function useWorkspace(): Workspace {
       } catch (cause) {
         setSendError(String(cause))
       }
+    },
+    [selected.project],
+  )
+
+  const listDir = useCallback(
+    async (path: string) => {
+      const conn = connection.current
+      if (!conn || !selected.project) return []
+      const listing = await conn.files(selected.project, path)
+      return listing.entries
     },
     [selected.project],
   )
@@ -497,6 +509,7 @@ export function useWorkspace(): Workspace {
     loadFiles,
     openChange,
     openFile,
+    listDir,
     refreshQueue,
     queueMessage,
     cancelQueued,

@@ -177,14 +177,38 @@ async function waitForServer(url, timeoutMs = 30000) {
     // P6: changed files and diffs come from the node.
     const panel = page.getByTestId('run-panel')
     await page.getByRole('button', { name: '文件面板' }).click()
-    await panel.getByText('工作区改动', { exact: false }).waitFor()
-    await panel.getByText('src/theme.rs', { exact: false }).first().waitFor()
+    await panel.getByTestId('tab-changes').waitFor()
+    await panel.getByRole('button', { name: /src\/theme\.rs/ }).first().waitFor()
     pass('file panel lists the node worktree changes')
 
-    await panel.getByText('src/theme.rs', { exact: false }).first().click()
+    await panel.getByRole('button', { name: /src\/theme\.rs/ }).first().click()
     await page.getByText(/let theme = "dark"/).waitFor()
     assert.match(await panel.innerText(), /let theme = "light"/)
     pass('diff for the selected change renders both sides')
+
+    // P6b: staged toggle and the directory browser.
+    await panel.getByTestId('staged-toggle').check()
+    await page.waitForFunction(() => true)
+    await page.waitForTimeout(600)
+    assert(
+      fixture.requests.some((request) => request.path.includes('/git/diff') && request.query.includes('staged=true')),
+      'staged diff requested: ' + JSON.stringify(fixture.requests.filter((r) => r.path.includes('git/diff')).slice(-2)),
+    )
+    pass('staged toggle changes the diff request')
+    await panel.getByTestId('staged-toggle').uncheck()
+
+    fixture.controls.fileEntriesByPath = {
+      src: [{ name: 'theme.rs', path: 'src/theme.rs', kind: 'file', size: 12 }],
+    }
+    await panel.getByTestId('tab-tree').click()
+    await panel.getByText('src', { exact: true }).first().waitFor()
+    pass('directory browser lists the project root')
+
+    await panel.getByText('src', { exact: true }).first().click()
+    await panel.getByText('theme.rs', { exact: true }).waitFor()
+    await panel.getByText('theme.rs', { exact: true }).click()
+    await panel.getByText(/RPI Work/).waitFor()
+    pass('opening a file in the tree renders its source')
 
     await page.getByRole('button', { name: '运行面板' }).click()
     await page.screenshot({ path: '/tmp/reui-live.png' })
@@ -198,6 +222,9 @@ async function waitForServer(url, timeoutMs = 30000) {
     console.log('RESULT', passed.length, 'checks passed')
   } catch (error) {
     console.error('FAIL', error.message.split('\n')[0])
+    try {
+      console.error('panel now:', (await page.getByTestId('run-panel').innerText()).slice(0, 300).replace(/\n/g, ' | '))
+    } catch {}
     console.error('page errors:', errors.slice(0, 3))
     await page.screenshot({ path: '/tmp/reui-live-fail.png' })
     process.exitCode = 1

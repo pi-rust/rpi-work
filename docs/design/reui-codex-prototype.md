@@ -67,13 +67,22 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P6b 目录浏览与暂存（已落地）
+
+- 文件面板两个标签：**改动**（git status）与**目录**（`files()` 按需展开），点文件用 `file()`
+  在面板内直接看源码（行号 + 语法高亮，配色同样来自主题契约）。
+- 「暂存」开关把 `staged` 透传到 `git_diff`，diff 顶部标题随所选文件更新。
+- 目录选择器说明：ReUI 的 `tree` 组件依赖 `@headless-tree/core` 的 `ItemInstance` 状态机，
+  为一次原型引入整套异步加载状态机不值得；这里用同款缩进/箭头/选中样式的轻量实现，
+  `@reui/tree` 的安装已回滚以免留下死代码。若 P7 之后需要拖拽/多选，再接入 headless-tree。
+
 ### P6 文件与 Diff（已落地，变更视图）
 
 - `work-client-wasm` 增加 `files` / `file` / `git_status` / `git_diff`（`staged` 透传）。
 - 右栏新增「文件」标签：列出节点 worktree 的改动（状态字、已暂存标记、最多 60 条可滚动），
   点选后按 `git diff` 渲染 unified diff；文件读取（`file`）留作目录树（P6b）。
 - 验收：`verify:live` 18 条（新增「改动列表来自节点」「选中改动渲染两侧 diff」）。
-- 待做：目录树（ReUI `tree`）、大 diff 的 `data-grid` 变更表、暂存切换。
+
 
 ### P5 主题对齐（已落地）
 

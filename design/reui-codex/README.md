@@ -37,7 +37,7 @@ npm run verify:theme             # 主题契约 7 条（需先启动 preview 到
 | 转写区 | 用户/助手消息、模型徽标、工具卡（可折叠、耗时、状态、参数、结果） |
 | 代码 | ReUI `CodeBlock`（shiki 着色、行号、复制按钮）渲染 `read` 的工具结果 |
 | 运行面板 | ReUI `Timeline` 展示运行步骤 + 模型/思考/工具/缓存/成本/上下文、队列 |
-| 文件面板 | 节点 worktree 改动列表 + unified diff（`CodeBlock` 的 diff 语法） |
+| 文件面板 | 改动列表 + unified diff + 目录浏览（按需展开、看源码）+ 暂存开关 |
 | 输入区 | 圆角 composer、模型与思考等级 chip、上下文比例、发送态禁用逻辑 |
 | 底栏 | `↑ 32k ↓ 4.8k 缓存 75% 成本 $0.0184 上下文 38% 工具 2/失败 0` |
 
@@ -52,7 +52,7 @@ npm run verify:theme             # 主题契约 7 条（需先启动 preview 到
 - 已接实时节点：项目/会话/历史 + WebSocket 事件（工具卡来自真实事件流），密码登录与断开回退可用。
 - 可发送消息（⌘↵）、中止运行、切换模型与思考等级（均以节点回读为准）。
 - 队列：列出/取消/清空；草稿按 `origin/session` 本地保存，切会话自动恢复。
-- **还没有**目录树、暂存切换、资源/设置页（P6b + P7）；
+- **还没有**资源/设置页（P7）；
   运行面板的「步骤」列表仍是占位，指标在 live 模式已来自节点 `get_state`。
 - `src/pkg/` 需先执行 `npm run build:viewmodel`（约 70s，含 wasm 目标编译）。
 - 主题已接 `work-viewmodel` 契约（5 套内置预设 + 明暗 + 密度），代码着色通过 `--code-token-*` 跟随同一套 palette。

@@ -278,7 +278,9 @@ export default function App() {
                       fileDiff={workspace.fileDiff}
                       fileBody={workspace.fileBody}
                       onRefresh={() => void workspace.loadChanges()}
-                      onOpen={(path) => void workspace.openChange(path)}
+                      onOpen={(path, staged) => void workspace.openChange(path, staged)}
+                      onOpenSource={(path) => void workspace.openFile(path)}
+                      listDir={workspace.listDir}
                     />
                   ) : (
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
