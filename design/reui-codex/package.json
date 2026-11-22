@@ -13,7 +13,8 @@
     "verify:live": "node scripts/verify-live.cjs",
     "live:fixture": "node scripts/live-fixture.cjs",
     "verify:theme": "node scripts/verify-theme.cjs",
-    "verify:mobile": "node scripts/verify-mobile.cjs"
+    "verify:mobile": "node scripts/verify-mobile.cjs",
+    "verify:hosted": "node scripts/verify-hosted.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

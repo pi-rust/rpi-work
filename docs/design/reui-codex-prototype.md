@@ -67,6 +67,17 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P10 交付（已落地，同源托管）
+
+- `vite build` 的产物可直接作为节点的 Web assets：`RPI_WORK_HTTP_ASSETS=<dist>` 后由
+  `work-node-service` 同源托管，`/api/v1/*` 与 `/.well-known/rpi-work-entry` 都来自同一节点。
+- 应用启动时探测 `/.well-known/rpi-work-entry`：命中即自动连接本页 origin（静态服务器没有
+  这个文档时保持 fixture 模式），因此宿主部署不需要 `?live=1`。
+- 验收：`npm run verify:hosted`（新增，5 条）自起隔离 owner（独立数据目录/端口/密码）、
+  用 `work-cli project-create` + `session-create` 播种、托管 `dist/`，然后断言：
+  同源托管 200、播种成功、自动连接 + 密码登录进入工作台、列出播种的项目、零 page error。
+- 已知限制：CI 尚未接入（需要在 runner 上装 Node + Rust wasm 目标），脚本本身已可无人工重跑。
+
 ### P8 移动端（已落地）
 
 - `<768px`：侧栏变抽屉（点会话/新对话自动收起）、运行面板变全屏浮层（带关闭按钮）、

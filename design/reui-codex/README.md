@@ -24,6 +24,7 @@ npm run build             # 先编 wasm，再 tsc + vite build
 
 ```bash
 npm run verify:mobile            # 自包含：320/390 两档，7 条断言
+npm run verify:hosted            # 自包含：起隔离节点托管 dist/，5 条断言（需 cargo build -p work-cli）
 npm run verify:live              # 自包含：起 fixture + preview，25 条断言
 npm run verify:fixture           # fixture 模式 6 条（需先启动 preview 到 5179）
 npm run verify:theme             # 主题契约 8 条（需先启动 preview 到 5179）
@@ -62,3 +63,16 @@ npm run verify:theme             # 主题契约 8 条（需先启动 preview 到
 - 主题已接 `work-viewmodel` 契约（5 套内置预设 + 明暗 + 密度），代码着色通过 `--code-token-*` 跟随同一套 palette。
 - 未做 320/390 窄屏布局验收。
 - 右侧运行面板为静态数据，不随会话切换。
+
+## 部署（同源托管）
+
+```bash
+npm run build                       # 产出 dist/
+RPI_WORK_HTTP_BIND=127.0.0.1 RPI_WORK_HTTP_PORT=13031 \
+RPI_WORK_WEB_LISTEN_PORT=13032 RPI_WORK_HTTP_PASSWORD=... \
+RPI_WORK_HTTP_ASSETS=design/reui-codex/dist \
+  ../../target/debug/work-cli serve
+```
+
+浏览器打开 `http://127.0.0.1:13032/`：页面从 `/.well-known/rpi-work-entry` 发现自己由节点托管，
+自动连接同源 API 并提示输入节点密码。

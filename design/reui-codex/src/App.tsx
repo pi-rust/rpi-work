@@ -36,11 +36,25 @@ export default function App() {
   const [origin, setOrigin] = useState('')
   const [password, setPassword] = useState('')
 
-  // `?live=1` connects to the same origin through the Vite proxy, so the
-  // prototype can be pointed at an isolated owner without touching the UI.
+  // `?live=1` connects explicitly (dev server proxy path). When the bundle is
+  // hosted by a node, the entry document tells us so; then connecting to our
+  // own origin is the only sensible default.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('live') === '1') {
+    const explicit = new URLSearchParams(window.location.search).get('live') === '1'
+    if (explicit) {
       void workspace.connect(window.location.origin)
+      return
+    }
+    let cancelled = false
+    void fetch('/.well-known/rpi-work-entry', { headers: { accept: 'application/json' } })
+      .then((response) => {
+        if (!cancelled && response.ok) void workspace.connect(window.location.origin)
+      })
+      .catch(() => {
+        // A plain static server has no entry document: stay on the fixture.
+      })
+    return () => {
+      cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
