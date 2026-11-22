@@ -102,6 +102,13 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
   同源托管 200、播种成功、自动连接 + 密码登录进入工作台、列出播种的项目、零 page error。
 - 已知限制：CI 尚未接入（需要在 runner 上装 Node + Rust wasm 目标），脚本本身已可无人工重跑。
 
+### 未做（有意收尾）
+
+- **大 diff 的 ReUI `data-grid` 变更表**：插件需要 TanStack Table v9 + 虚拟化，接入成本不低于
+  一次独立迭代；当前改动列表（≤60 条）+ `CodeBlock` 的 `maxLines` 已覆盖常见工作区规模。
+  若之后要按千级改动浏览，再按 P6 的原计划接 `@reui/data-grid`。
+- **扫码接收端**：手机侧仍由现有 Android 客户端承接，Web 原型只负责生成授权码。
+
 ### P8 移动端（已落地）
 
 - `<768px`：侧栏变抽屉（点会话/新对话自动收起）、运行面板变全屏浮层（带关闭按钮）、
@@ -144,9 +151,9 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 - 文件面板两个标签：**改动**（git status）与**目录**（`files()` 按需展开），点文件用 `file()`
   在面板内直接看源码（行号 + 语法高亮，配色同样来自主题契约）。
 - 「暂存」开关把 `staged` 透传到 `git_diff`，diff 顶部标题随所选文件更新。
-- 目录选择器说明：ReUI 的 `tree` 组件依赖 `@headless-tree/core` 的 `ItemInstance` 状态机，
-  为一次原型引入整套异步加载状态机不值得；这里用同款缩进/箭头/选中样式的轻量实现，
-  `@reui/tree` 的安装已回滚以免留下死代码。若 P7 之后需要拖拽/多选，再接入 headless-tree。
+- 目录已换成 **ReUI `Tree` + `@headless-tree/core`**（`asyncDataLoaderFeature`）：节点数据按需
+  从 `files()` 拉取并按路径缓存，展开/折叠走 headless-tree 的状态机，行点击在 label 上处理
+  （树自己的 click 只负责选中/焦点）。`npm run verify:tree` 覆盖根列表、懒加载、点文件看源码。
 
 ### P6 文件与 Diff（已落地，变更视图）
 

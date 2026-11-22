@@ -1,5 +1,13 @@
-import { useState } from 'react'
-import { ChevronRight, File, Folder, RefreshCw } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
+import { useTree } from '@headless-tree/react'
+import {
+  asyncDataLoaderFeature,
+  hotkeysCoreFeature,
+  selectionFeature,
+} from '@headless-tree/core'
+
+import { Tree, TreeItem, TreeItemLabel } from '@/components/reui/tree'
 
 import {
   CodeBlock,
@@ -67,51 +75,29 @@ export function FilePanel({
 }: Props) {
   const [staged, setStaged] = useState(false)
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
-  const [expanded, setExpanded] = useState<Record<string, NodeFileEntry[]>>({})
-  const openDir = async (path: string) => {
-    if (expanded[path]) {
-      const next = { ...expanded }
-      delete next[path]
-      setExpanded(next)
-      return
-    }
-    try {
-      const entries = await listDir(path)
-      setExpanded((current) => ({ ...current, [path]: entries }))
-    } catch {
-      // A directory that cannot be read simply stays collapsed.
-    }
-  }
-  const renderDir = (path: string, depth: number): React.ReactNode => {
-    const entries = expanded[path]
-    if (!entries) return null
-    return entries.map((entry) => {
-      const isDir = entry.kind === 'directory'
-      const open = Boolean(expanded[entry.path])
-      return (
-        <div key={entry.path}>
-          <button
-            onClick={() => (isDir ? void openDir(entry.path) : onOpenSource(entry.path))}
-            className={cn(
-              'hover:bg-muted/60 flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-[11px]',
-              filePath === entry.path && 'bg-muted/70',
-            )}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-            title={entry.path}
-          >
-            {isDir ? (
-              <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-            ) : (
-              <span className="w-3" />
-            )}
-            {isDir ? <Folder className="size-3" /> : <File className="size-3" />}
-            <span className="truncate font-mono">{entry.name}</span>
-          </button>
-          {isDir && open ? renderDir(entry.path, depth + 1) : null}
-        </div>
-      )
-    })
-  }
+  // Node directory entries are cached by path; headless-tree asks lazily.
+  const entries = useRef(new Map<string, NodeFileEntry>())
+  const tree = useTree<NodeFileEntry>({
+    rootItemId: '',
+    getItemName: (item) => item.getItemData()?.name ?? '',
+    isItemFolder: (item) => item.getItemData()?.kind === 'directory',
+    dataLoader: {
+      getItem: (itemId) =>
+        entries.current.get(itemId) ?? {
+          name: itemId === '' ? '' : itemId,
+          path: itemId,
+          kind: itemId === '' ? 'directory' : 'file',
+          size: 0,
+        },
+      getChildren: async (itemId) => {
+        const children = await listDir(itemId)
+        for (const entry of children) entries.current.set(entry.path, entry)
+        return children.map((entry) => entry.path)
+      },
+    },
+    features: [asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
+  })
+
   if (!live) {
     return (
       <p className="text-muted-foreground p-3 text-[12px]">
@@ -134,7 +120,7 @@ export function FilePanel({
             data-testid="tab-tree"
             onClick={() => {
               setTab('tree')
-              if (!expanded['']) void openDir('')
+              tree.getItemInstance?.('')?.expand()
             }}
             className={cn('rounded px-1.5 py-0.5', tab === 'tree' ? 'bg-muted text-foreground' : 'text-muted-foreground')}
           >
@@ -162,7 +148,30 @@ export function FilePanel({
       </div>
       <div className="max-h-48 shrink-0 overflow-y-auto px-2 py-1">
         {tab === 'tree' ? (
-          renderDir('', 0)
+          <Tree tree={tree} className="py-1 text-[11px]">
+            {tree.getItems().map((item) => (
+              <TreeItem
+                key={item.getId()}
+                item={item}
+                className={cn(filePath === item.getId() && 'bg-muted/70')}
+              >
+                <TreeItemLabel
+                  className="w-full font-mono"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (item.isFolder()) {
+                      if (item.isExpanded()) item.collapse()
+                      else item.expand()
+                    } else {
+                      onOpenSource(item.getId())
+                    }
+                  }}
+                >
+                  {item.getItemName()}
+                </TreeItemLabel>
+              </TreeItem>
+            ))}
+          </Tree>
         ) : changes.length === 0 ? (
           <p className="text-muted-foreground px-1 py-2 text-[11px]">没有未提交的改动。</p>
         ) : (

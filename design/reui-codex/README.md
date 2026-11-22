@@ -24,6 +24,8 @@ npm run build             # 先编 wasm，再 tsc + vite build
 
 ```bash
 npm run verify:a11y              # 自包含：无障碍与键盘 5 条断言
+npm run verify:settings          # 自包含：Provider 目录 + 一次性授权 4 条断言
+npm run verify:tree              # 自包含：目录树懒加载 4 条断言
 npm run verify:mobile            # 自包含：320/390 两档，7 条断言
 npm run verify:hosted            # 自包含：起隔离节点托管 dist/，5 条断言（需 cargo build -p work-cli）
 npm run verify:all               # 依次跑 a11y / fixture / theme / mobile / live / hosted
@@ -41,7 +43,7 @@ npm run verify:theme             # 主题契约 8 条（需先启动 preview 到
 | 转写区 | 用户/助手消息、模型徽标、工具卡（可折叠、耗时、状态、参数、结果） |
 | 代码 | ReUI `CodeBlock`（shiki 着色、行号、复制按钮）渲染 `read` 的工具结果 |
 | 运行面板 | ReUI `Timeline` 展示运行步骤 + 模型/思考/工具/缓存/成本/上下文、队列 |
-| 文件面板 | 改动列表 + unified diff + 目录浏览（按需展开、看源码）+ 暂存开关 |
+| 文件面板 | 改动列表 + unified diff + ReUI Tree 目录浏览（懒加载、看源码）+ 暂存开关 |
 | 资源中心 | 节点 native catalog → 计数 + 表格（分组/命名/范围由 `work-viewmodel::resources` 提供） |
 | 安装 | 审阅 bundle（文件清单 + sha256）→ 选范围 → 勾选信任 → 获取/安装 → 目录回读 |
 | 设置 | 节点与协作事实 + 一次性授权二维码 + Provider 只读目录（已配置/缺失、诊断、revision） |
