@@ -164,6 +164,14 @@ export class NodeConnection {
     return parse(await this.client.install_package(projectId, JSON.stringify(offer), scope))
   }
 
+  async setProviderKey(
+    id: string,
+    key: string,
+    expectedRevision: string,
+  ): Promise<{ revision: string; providers: NodeProvider[]; requiresRestart: boolean }> {
+    return parse(await this.client.set_provider_key(id, key, expectedRevision))
+  }
+
   async issueQrAuthorization(): Promise<{ ticket: string; expiresAt: number; nodeId: string }> {
     return parse(await this.client.issue_qr_authorization())
   }

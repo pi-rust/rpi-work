@@ -148,6 +148,48 @@ const catalogue = {
     assert.match(await page.locator('main').innerText(), /5 分钟内有效/)
     pass('authorization ticket is sealed by Rust and rendered as a QR')
 
+    // Provider key write: CAS revision + fresh catalogue come back in one receipt.
+    const writes = []
+    await page.route(
+      (url) => url.pathname === '/api/v1/providers' && url.search === '',
+      async (route) => {
+        if (route.request().method() !== 'POST') return route.fallback()
+        writes.push(route.request().postDataJSON())
+        await route.fulfill({
+          json: {
+            requiresRestart: true,
+            catalog: {
+              revision: 'rev-settings-0043',
+              providers: [
+                {
+                  id: 'deepseek',
+                  definition: null,
+                  configured: true,
+                  configKeyPresent: true,
+                  storedCredential: 'apiKey',
+                  diagnostic: null,
+                },
+              ],
+            },
+          },
+        })
+      },
+    )
+    await page.getByRole('button', { name: '设置 deepseek 的密钥' }).click()
+    await page.getByLabel('deepseek 的 API 密钥').fill('sk-fixture-value')
+    await page.getByRole('button', { name: '保存 deepseek 的密钥' }).click()
+    await page.getByText(/已保存/).waitFor()
+    assert.equal(writes.length, 1, 'one write: ' + JSON.stringify(writes))
+    assert.equal(writes[0].expectedRevision, 'rev-settings-0042', 'CAS revision forwarded')
+    assert.equal(writes[0].action.type, 'setKey')
+    assert.equal(writes[0].action.id, 'deepseek')
+    assert.equal(writes[0].action.key, 'sk-fixture-value', 'key reaches the node verbatim')
+    const afterSave = await page.locator('main').innerText()
+    assert.doesNotMatch(afterSave, /magpie/, 'the receipt catalogue replaced the previous list')
+    assert.match(afterSave, /deepseek/, 'the written provider stays listed')
+    assert.match(afterSave, /已保存/, 'the restart hint is shown')
+    pass('provider key write uses the read revision and adopts the receipt catalogue')
+
     await page.screenshot({ path: '/tmp/reui-settings.png' })
     assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '))
     pass('no page errors')

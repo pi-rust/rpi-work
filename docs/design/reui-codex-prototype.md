@@ -67,6 +67,15 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 ## 3. 已完成
 
+### P11 Provider 密钥写入（已落地）
+
+- `work-client-wasm::set_provider_key(id, key, expected_revision)`：用读到的 revision 做 CAS，
+  返回的收据里**已经带着刷新后的目录**，UI 直接采用，不再二次猜测。
+- 设置页每行「设置密钥」→ 内存态输入（不落盘）→ 保存；`requiresRestart` 时提示「已保存，节点
+  需要重启后生效」。
+- 验收：`verify:settings` 5 条（新增：请求体带 `expectedRevision`/`action.type=setKey`/明文 key，
+  保存后列表被收据目录替换）。
+
 ### P9b 一次性授权（已落地）
 
 - `work-client-wasm::issue_qr_authorization`（`POST /api/v1/auth/qr`）拿票据，

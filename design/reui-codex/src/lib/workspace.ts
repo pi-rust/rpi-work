@@ -58,6 +58,8 @@ export type Workspace = {
   providerRevision: string | null
   providerError: string | null
   loadProviders: () => Promise<void>
+  saveProviderKey: (id: string, key: string) => Promise<boolean>
+  providerNotice: string | null
   offers: unknown[]
   bundle: { manifest: { id: string; title: string; version: string }; sources: Record<string, string>; sha256: string } | null
   installing: boolean
@@ -146,6 +148,7 @@ export function useWorkspace(): Workspace {
   const [authorizationError, setAuthorizationError] = useState<string | null>(null)
   const [providerRevision, setProviderRevision] = useState<string | null>(null)
   const [providerError, setProviderError] = useState<string | null>(null)
+  const [providerNotice, setProviderNotice] = useState<string | null>(null)
   const [offers, setOffers] = useState<unknown[]>([])
   const [bundle, setBundle] = useState<Workspace['bundle']>(null)
   const [reviewedOffer, setReviewedOffer] = useState<unknown>(null)
@@ -384,6 +387,32 @@ export function useWorkspace(): Workspace {
     }
   }, [])
 
+  const saveProviderKey = useCallback(
+    async (id: string, key: string) => {
+      const conn = connection.current
+      if (!conn || !providerRevision) {
+        setProviderError('还没有读取到 provider 目录，无法安全写入')
+        return false
+      }
+      setProviderError(null)
+      setProviderNotice(null)
+      try {
+        const receipt = await conn.setProviderKey(id, key, providerRevision)
+        // The receipt carries the authoritative catalogue; use it as the truth.
+        setProviders(receipt.providers)
+        setProviderRevision(receipt.revision)
+        setProviderNotice(
+          receipt.requiresRestart ? '已保存，节点需要重启后生效' : '已保存并生效',
+        )
+        return true
+      } catch (cause) {
+        setProviderError(String(cause))
+        return false
+      }
+    },
+    [providerRevision],
+  )
+
   const loadResources = useCallback(async () => {
     const conn = connection.current
     if (!conn || !selected.project) return
@@ -552,6 +581,7 @@ export function useWorkspace(): Workspace {
     setAuthorizationError(null)
     setProviderRevision(null)
     setProviderError(null)
+    setProviderNotice(null)
     setOffers([])
     setBundle(null)
     setReviewedOffer(null)
@@ -636,6 +666,8 @@ export function useWorkspace(): Workspace {
     providerRevision,
     providerError,
     loadProviders,
+    saveProviderKey,
+    providerNotice,
     offers,
     bundle,
     installing,

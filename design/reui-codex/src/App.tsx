@@ -294,6 +294,8 @@ export default function App() {
                     authorization={workspace.authorization}
                     authorizationError={workspace.authorizationError}
                     onIssueAuthorization={() => void workspace.issueAuthorization()}
+                    onSaveKey={workspace.saveProviderKey}
+                    notice={workspace.providerNotice}
                   />
                 ) : page === 'resources' ? (
                   <ResourcesPage

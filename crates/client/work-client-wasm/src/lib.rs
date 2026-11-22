@@ -249,6 +249,29 @@ impl NodeClient {
         })
     }
 
+    /// Store an API key for one provider.
+    ///
+    /// The node answers with a compare-and-swap receipt that already contains
+    /// the refreshed catalogue, so the UI never has to guess whether the write
+    /// landed.
+    pub fn set_provider_key(&self, id: String, key: String, expected_revision: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let receipt = client
+                .provider_mutate(work_core::api::ProviderMutation {
+                    expected_revision,
+                    action: work_core::api::ProviderAction::SetKey { id, key },
+                })
+                .await
+                .map_err(|error| failure("保存密钥失败", error))?;
+            json_string(&serde_json::json!({
+                "revision": receipt.catalog.revision,
+                "providers": receipt.catalog.providers,
+                "requiresRestart": receipt.requires_restart,
+            }))
+        })
+    }
+
     /// One-time authorization for a trusted device (QR payload lives in the
     /// view-model: the envelope is sealed there, not here).
     pub fn issue_qr_authorization(&self) -> Promise {

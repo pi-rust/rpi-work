@@ -4,6 +4,7 @@ import { QrCode } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import type { NodeProvider } from '@/lib/node'
@@ -20,6 +21,8 @@ type Props = {
   authorization: { payload: string; expiresAt: number } | null
   authorizationError: string | null
   onIssueAuthorization: () => void
+  onSaveKey: (id: string, key: string) => Promise<boolean>
+  notice: string | null
 }
 
 /** Settings: node/collaboration facts plus the provider catalogue (read-only). */
@@ -35,6 +38,8 @@ export function SettingsPage({
   authorization,
   authorizationError,
   onIssueAuthorization,
+  onSaveKey,
+  notice,
 }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
@@ -84,6 +89,7 @@ export function SettingsPage({
         }
       >
         {error ? <p className="text-destructive text-[12px]">{error}</p> : null}
+        {notice ? <p className="text-[12px] text-emerald-600">{notice}</p> : null}
         {!live ? (
           <p className="text-muted-foreground text-[12px]">连接节点后读取提供商目录。</p>
         ) : providers.length === 0 && !error ? (
@@ -113,12 +119,15 @@ export function SettingsPage({
                     ) : null}
                   </span>
                   <span className="text-muted-foreground text-[11px] tabular-nums">{models || '—'}</span>
-                  <Badge
-                    variant={ready ? 'secondary' : 'outline'}
-                    className={cn('h-5 w-fit px-1.5 text-[10px] font-normal', ready && 'text-emerald-600')}
-                  >
-                    {ready ? '已配置' : '缺失'}
-                  </Badge>
+                  <span className="flex items-center gap-2">
+                    <Badge
+                      variant={ready ? 'secondary' : 'outline'}
+                      className={cn('h-5 w-fit px-1.5 text-[10px] font-normal', ready && 'text-emerald-600')}
+                    >
+                      {ready ? '已配置' : '缺失'}
+                    </Badge>
+                    <ProviderKeyForm id={provider.id} onSave={onSaveKey} />
+                  </span>
                 </div>
               )
             })}
@@ -170,6 +179,67 @@ function AuthorizationQr({ payload, expiresAt }: { payload: string; expiresAt: n
         </code>
       </div>
     </div>
+  )
+}
+
+/** Inline key entry: memory-only input, cleared as soon as the write returns. */
+function ProviderKeyForm({ id, onSave }: { id: string; onSave: (id: string, key: string) => Promise<boolean> }) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  if (!open) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-5 px-1 text-[10px]"
+        aria-label={`设置 ${id} 的密钥`}
+        onClick={() => setOpen(true)}
+      >
+        设置密钥
+      </Button>
+    )
+  }
+  return (
+    <span className="flex items-center gap-1">
+      <Input
+        type="password"
+        autoComplete="off"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        aria-label={`${id} 的 API 密钥`}
+        className="h-6 w-40 text-[11px]"
+      />
+      <Button
+        size="sm"
+        className="h-6 px-2 text-[10px]"
+        disabled={busy || value.trim().length === 0}
+        aria-label={`保存 ${id} 的密钥`}
+        onClick={async () => {
+          setBusy(true)
+          const ok = await onSave(id, value)
+          setBusy(false)
+          if (ok) {
+            setValue('')
+            setOpen(false)
+          }
+        }}
+      >
+        {busy ? '保存中…' : '保存'}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1 text-[10px]"
+        aria-label="取消"
+        onClick={() => {
+          setValue('')
+          setOpen(false)
+        }}
+      >
+        取消
+      </Button>
+    </span>
   )
 }
 
