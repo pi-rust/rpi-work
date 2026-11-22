@@ -65,8 +65,9 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        // Always open: a toggle can close a palette that focus already lost.
         event.preventDefault()
-        setPalette((open) => !open)
+        setPalette(true)
       }
     }
     window.addEventListener('keydown', onKey)

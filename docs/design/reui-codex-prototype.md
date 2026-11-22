@@ -71,7 +71,9 @@ design/reui-codex (React)  调用 orderedRows() / toolTarget() / tokenize() / fo
 
 - ⌘K / Ctrl-K（或侧栏搜索按钮）打开命令面板：按标题与项目名过滤会话、↑↓ 移动、Enter 打开、
   Esc 关闭；`role="dialog"` + `role="listbox"`/`role="option"` 让读屏可用。
-- 验收：`verify:a11y` 6 条（新增：⌘K 过滤到单条并用 Enter 打开）。
+- 验收：`verify:a11y` 7 条（⌘K 过滤 + Enter 打开、再次 ⌘K 重开 + Esc 关闭）。
+- 修过的坑：⌘K 原来是 **toggle**，选中会话后焦点离开，再按会「打开又立刻关」；
+  改成**只打开**（关闭只走 Esc/选中/点遮罩），重开时序就稳定了。
 
 ### P12 更新边界（已落地，只读）
 

@@ -115,6 +115,13 @@ async function waitForServer(url, timeoutMs = 30000) {
     await page.getByText('验证 RPC 事件协议').first().waitFor()
     pass('⌘K palette filters and opens a session with the keyboard')
 
+    // Re-opening after a selection must work; ⌘K opens rather than toggles.
+    await page.keyboard.press('Meta+k')
+    await palette.waitFor()
+    await page.keyboard.press('Escape')
+    await palette.waitFor({ state: 'detached' })
+    pass('⌘K re-opens the palette and Escape closes it')
+
     assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '))
     pass('no page errors')
     console.log('RESULT', passed.length, 'checks passed')
