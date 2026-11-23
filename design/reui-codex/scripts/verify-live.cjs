@@ -189,6 +189,8 @@ async function waitForServer(url, timeoutMs = 30000) {
     pass('approval card renders the pending request and its options')
 
     // P4: model and thinking switches read back the authoritative state.
+    // Runtime diagnostics are now explicitly selected instead of the default browser.
+    await page.getByRole('button', { name: '运行面板', exact: true }).click()
     const runPanel = page.getByTestId('run-panel')
     const runtimeRows = () => runPanel.innerText()
     await page.getByLabel('选择模型').selectOption({ index: 1 })

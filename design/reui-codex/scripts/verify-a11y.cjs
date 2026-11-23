@@ -118,6 +118,8 @@ async function waitForServer(url, timeoutMs = 30000) {
     // Re-opening after a selection must work; ⌘K opens rather than toggles.
     await page.keyboard.press('Meta+k')
     await palette.waitFor()
+    // Escape dismisses the window even if input focus has not landed or was lost.
+    await page.evaluate(() => document.activeElement?.blur())
     await page.keyboard.press('Escape')
     await palette.waitFor({ state: 'detached' })
     pass('⌘K re-opens the palette and Escape closes it')

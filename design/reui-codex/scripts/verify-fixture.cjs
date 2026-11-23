@@ -40,6 +40,8 @@ const URL = process.env.REUI_URL || 'http://127.0.0.1:5178/';
     pass('metrics formatted by Rust (32k / 4.8k / 75% / 38% / $0.0184)');
 
     // theme token panel shows the generated contract
+    // The confirmed workbench defaults to its browser; runtime diagnostics stay available.
+    await page.getByRole('button', { name: '运行面板', exact: true }).click();
     await page.getByText('Rust 主题 token').click();
     await page.getByText('#ffffff').first().waitFor();
     pass('theme tokens read from theme_contract through wasm');
@@ -54,7 +56,7 @@ const URL = process.env.REUI_URL || 'http://127.0.0.1:5178/';
     pass('no page errors');
     console.log('RESULT', passed.length, 'checks passed');
   } catch (error) {
-    console.error('FAIL', error.message.split('\n')[0]);
+    console.error('FAIL', error.stack ?? error.message);
     console.error('page errors:', errors.slice(0, 3));
     process.exitCode = 1;
   } finally { await browser.close(); }

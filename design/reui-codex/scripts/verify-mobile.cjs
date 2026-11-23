@@ -100,7 +100,8 @@ async function waitForServer(url, timeoutMs = 30000) {
       await page.getByRole('button', { name: '运行面板' }).click()
       await page.getByTestId('run-panel').waitFor()
       await page.getByRole('button', { name: '关闭面板' }).click()
-      await page.getByTestId('run-panel').waitFor({ state: 'detached' })
+      // The inspector stays mounted to preserve embedded pages; closing hides it.
+      await page.getByTestId('run-panel').waitFor({ state: 'hidden' })
       pass(`${width}px: run panel opens and closes as an overlay`)
 
       overflow.scrollWidth <= overflow.innerWidth + 1

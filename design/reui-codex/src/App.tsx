@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Menu, Moon, PanelRight, Sun, Wifi, WifiOff, X } from 'lucide-react'
+import { Menu, Moon, PanelRight, Sun, Wifi, WifiOff, X, Globe } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,7 @@ import { node, runSteps, statsPayload, contextPayload } from '@/data'
 import { Composer } from '@/components/composer'
 import { RunTimeline, rowElement } from '@/components/transcript'
 import { FilePanel } from '@/components/file-panel'
+import { BrowserPanel } from '@/components/browser-panel'
 import { ResourcesPage } from '@/components/resource-view'
 import { CommandPalette } from '@/components/command-palette'
 import { SettingsPage } from '@/components/settings-page'
@@ -25,7 +26,7 @@ export default function App() {
   const draftScope = `${workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}/${workspace.selected.session || 'none'}`
   const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
-  const [railTab, setRailTab] = useState<'run' | 'files'>('run')
+  const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
   const [page, setPage] = useState<'chat' | 'resources' | 'settings'>('chat')
   const isMobile = useIsMobile()
   const [drawer, setDrawer] = useState(false)
@@ -64,6 +65,8 @@ export default function App() {
   // ⌘K / Ctrl-K opens the palette; the sidebar search button does the same.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Escape must also work before the palette's deferred input focus lands.
+      if (event.key === 'Escape') setPalette(false)
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         // Always open: a toggle can close a palette that focus already lost.
         event.preventDefault()
@@ -237,6 +240,15 @@ export default function App() {
                 {theme.choice.compact ? '紧凑' : '标准'}
               </Button>
               </div>
+              <Button
+                variant={rail && railTab === 'browser' ? 'secondary' : 'ghost'}
+                size="icon"
+                className="size-7"
+                aria-label="浏览器"
+                onClick={() => { setRail(true); setRailTab('browser') }}
+              >
+                <Globe className="size-4" />
+              </Button>
               <Button
                 variant={rail && railTab === 'run' ? 'secondary' : 'ghost'}
                 size="icon"
@@ -436,21 +448,22 @@ export default function App() {
               ) : null}
             </div>
 
-            {rail ? (
-              <div className={isMobile ? 'fixed inset-0 z-40 flex justify-end' : 'contents'}>
-                {isMobile ? (
-                  <div
-                    className="absolute inset-0 bg-black/40"
-                    aria-hidden
-                    onClick={() => setRail(false)}
-                  />
-                ) : null}
+            <div className={!rail ? 'hidden' : isMobile ? 'fixed inset-0 z-40 flex justify-end' : 'contents'}>
+              {isMobile ? (
+                <div
+                  className="absolute inset-0 bg-black/40"
+                  aria-hidden
+                  onClick={() => setRail(false)}
+                />
+              ) : null}
               <aside
-                className={isMobile ? 'bg-background relative z-50 h-full w-[86vw] max-w-[320px] border-l' : 'w-[300px] shrink-0 border-l'}
+                className={isMobile
+                  ? railTab === 'browser' ? 'bg-background relative z-50 h-full w-[94vw] max-w-[480px] border-l' : 'bg-background relative z-50 h-full w-[86vw] max-w-[320px] border-l'
+                  : railTab === 'browser' ? 'workbench-browser-inspector shrink-0 border-l' : 'w-[300px] shrink-0 border-l'}
                 data-testid="run-panel"
               >
                 <div className="flex h-full flex-col">
-                  <div className="flex h-11 items-center justify-between border-b px-3 text-[12px] font-medium">
+                  <div className={railTab === 'browser' ? 'hidden' : 'flex h-11 items-center justify-between border-b px-3 text-[12px] font-medium'}>
                     {railTab === 'files' ? '文件' : '运行'}
                     <span className="flex items-center gap-2">
                       <span className="text-muted-foreground font-normal">{live ? 'node' : 'fixture'}</span>
@@ -460,6 +473,9 @@ export default function App() {
                         </Button>
                       ) : null}
                     </span>
+                  </div>
+                  <div className="real-browser-host" hidden={railTab !== 'browser'}>
+                    <BrowserPanel onClose={() => setRail(false)} />
                   </div>
                   {railTab === 'files' ? (
                     <FilePanel
@@ -473,7 +489,7 @@ export default function App() {
                       onOpenSource={(path) => void workspace.openFile(path)}
                       listDir={workspace.listDir}
                     />
-                  ) : (
+                  ) : railTab === 'run' ? (
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
                     <RunTimeline steps={runSteps} />
                     <Separator className="my-3" />
@@ -523,12 +539,11 @@ export default function App() {
                       </pre>
                     </details>
                   </div>
-                  )}
-                  <div className="text-muted-foreground border-t px-3 py-2 text-[11px]">上下文 {contextText}</div>
+                  ) : null}
+                  {railTab !== 'browser' ? <div className="text-muted-foreground border-t px-3 py-2 text-[11px]">上下文 {contextText}</div> : null}
                 </div>
               </aside>
-              </div>
-            ) : null}
+            </div>
           </div>
 
           <footer className="text-muted-foreground flex h-7 shrink-0 items-center gap-4 border-t px-4 text-[11px] tabular-nums">

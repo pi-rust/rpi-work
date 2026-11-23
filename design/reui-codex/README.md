@@ -1,6 +1,8 @@
-# ReUI · Codex 布局原型
+# ReUI · 工作台迁移工作区（未正式发布）
 
-用 [ReUI](https://reui.io)（MIT 的 shadcn 生态组件库）+ Codex 式布局，实现一版工作台界面。数据来自 `src/data.ts`，与 `tests/fixtures/ui-fixture.cjs`、`apps/work-gpui` 原型同内容，便于三个渲染器横向比对。
+已确认的 1:1 目标是 `design/reui-message-layout/`，不是本目录的早期 Codex 外壳。迁移范围、真实接口和未完成项见 [迁移清单](../../docs/design/confirmed-workbench-migration.md)。当前首批接入真实右侧浏览器；整窗、消息和设置仍在迁移，尚不能作为完整交付或正式客户端发布。
+
+本目录使用 [ReUI](https://reui.io)（MIT 的 shadcn 生态组件库）和 Rust WASM。fixture 数据来自 `src/data.ts`，与 `tests/fixtures/ui-fixture.cjs`、`apps/work-gpui` 原型同内容，仅用于隔离测试，不代表真实节点状态。
 
 ```bash
 cd design/reui-codex
@@ -28,7 +30,8 @@ npm run verify:settings          # 自包含：Provider 目录 + 一次性授权
 npm run verify:tree              # 自包含：目录树懒加载 4 条断言
 npm run verify:mobile            # 自包含：320/390 两档，7 条断言
 npm run verify:hosted            # 自包含：起隔离节点托管 dist/，5 条断言（需 cargo build -p work-cli）
-npm run verify:all               # 依次跑 a11y / fixture / theme / mobile / live / hosted
+npm run verify:browser           # 自包含：隔离真实 HTTP 页面、URL/沙箱、历史/标签/表单保留及明暗响应式
+npm run verify:all               # 依次跑全部测试；fixture/theme 需 REUI_URL 指向本目录构建的 preview
 npm run verify:live              # 自包含：起 fixture + preview，25 条断言
 npm run verify:fixture           # fixture 模式 6 条（需先启动 preview 到 5179）
 npm run verify:theme             # 主题契约 8 条（需先启动 preview 到 5179）
@@ -40,7 +43,8 @@ npm run verify:theme             # 主题契约 8 条（需先启动 preview 到
 | --- | --- |
 | 左侧栏 | 工作区切换、`新对话 ⌘J`、项目折叠列表（含会话计数）、会话选中、节点状态、设置入口 |
 | 命令面板 | ⌘K 搜索项目与会话，↑↓ 选择、Enter 打开、Esc 关闭 |
-| 顶栏 | `项目 / 会话` 面包屑、在线状态、明暗主题切换、右侧运行面板开关 |
+| 顶栏 | `项目 / 会话` 面包屑、在线状态、明暗主题切换、浏览器 / 运行 / 文件面板入口 |
+| 浏览器 | 真实 HTTP(S) iframe、多标签、地址栏导航历史、刷新、页面历史选择、自适应 / 移动视口；切主题/标签/面板保持 DOM 和未保存表单 |
 | 转写区 | 用户/助手消息、模型徽标、工具卡（可折叠、耗时、状态、参数、结果） |
 | 代码 | ReUI `CodeBlock`（shiki 着色、行号、复制按钮）渲染 `read` 的工具结果 |
 | 运行面板 | ReUI `Timeline` 展示运行步骤 + 模型/思考/工具/缓存/成本/上下文、队列 |
@@ -67,8 +71,10 @@ npm run verify:theme             # 主题契约 8 条（需先启动 preview 到
   运行面板的「步骤」列表仍是占位，指标在 live 模式已来自节点 `get_state`。
 - `src/pkg/` 需先执行 `npm run build:viewmodel`（约 70s，含 wasm 目标编译）。
 - 主题已接 `work-viewmodel` 契约（5 套内置预设 + 明暗 + 密度），代码着色通过 `--code-token-*` 跟随同一套 palette。
-- 未做 320/390 窄屏布局验收。
-- 右侧运行面板为静态数据，不随会话切换。
+- 浏览器保持 `sandbox="allow-scripts"` 与 `referrerPolicy="no-referrer"`，拒绝危险协议和 URL 内显式账户/密码，不注入节点认证或父页面桥；新窗口使用 `noopener noreferrer`。Web 隔离意味着只能记录地址栏发起的历史，不能读取跨源页内导航，也不能可靠检测 CSP/X-Frame-Options 拒绝；始终提供新窗口恢复路径，不把 load 事件称为成功。浏览器自身的 Cookie/网络策略仍由浏览器管理，并非原生完整浏览器引擎。
+- 嵌入目标由用户显式打开；不启动开发进程，不伪造项目首页，不因换主题、隐藏面板或改变视口自动刷新。Chromium 既有重绘诊断与布局截图分开，截图从新的页面上下文生成。
+- 已验 320/390 的旧外壳及新浏览器交互，不代表已通过确认原型的整窗像素对照。
+- 右侧运行面板的步骤仍为静态数据，不随会话切换。
 
 ## 部署（同源托管）
 

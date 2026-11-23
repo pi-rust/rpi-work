@@ -16,9 +16,10 @@
     "verify:mobile": "node scripts/verify-mobile.cjs",
     "verify:hosted": "node scripts/verify-hosted.cjs",
     "verify:a11y": "node scripts/verify-a11y.cjs",
-    "verify:all": "node scripts/verify-a11y.cjs && node scripts/verify-fixture.cjs && node scripts/verify-theme.cjs && node scripts/verify-mobile.cjs && node scripts/verify-settings.cjs && node scripts/verify-tree.cjs && node scripts/verify-live.cjs && node scripts/verify-hosted.cjs",
+    "verify:all": "node scripts/verify-a11y.cjs && node scripts/verify-fixture.cjs && node scripts/verify-theme.cjs && node scripts/verify-mobile.cjs && node scripts/verify-settings.cjs && node scripts/verify-tree.cjs && node scripts/verify-live.cjs && node scripts/verify-hosted.cjs && node scripts/verify-browser.cjs",
     "verify:settings": "node scripts/verify-settings.cjs",
-    "verify:tree": "node scripts/verify-tree.cjs"
+    "verify:tree": "node scripts/verify-tree.cjs",
+    "verify:browser": "node scripts/verify-browser.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
