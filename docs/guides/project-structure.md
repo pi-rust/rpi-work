@@ -16,6 +16,7 @@ apps/
         settings/        连接、Provider、更新设置
         observability/   用量、上下文与会话追踪
       shared/            公共组件、状态辅助和主题
+  workbench-ui/         已确认工作台的React/ReUI源码和Web构建入口；Native/Android迁移未完成
   work-gpui/             GPUI 桌面原型（独立 workspace，不进入安装包与根测试）
   work-cli/              节点诊断 CLI
 crates/
@@ -40,7 +41,7 @@ crates/
     work-update/         签名更新与安装适配
 assets/vendor/           正式应用使用的二维码、Mermaid 库及许可证
 design/prototype/        冻结的 HTML 原型和原型资源
-design/reui-codex/       ReUI + Codex 布局的 Web 原型（独立 npm 工程，不进入产物）
+design/reui-codex/       仅保留迁移链接；应用源码与构建已在apps/workbench-ui/
 tests/
   e2e/                   正式应用的集成回归
   design/                HTML 原型及设计对照测试

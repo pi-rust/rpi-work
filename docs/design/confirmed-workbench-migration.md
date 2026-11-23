@@ -4,9 +4,9 @@
 
 用户已确认 `design/reui-message-layout/` 当前完整工作台原型（含右侧浏览器、节点项目列表和工作协同），要求 1:1 实现真实 UI。该确认取代先前“等待设计评审”的阶段状态，不代表演示状态机成为生产协议。
 
-当前施工入口是已接入 Rust WASM 的 React/ReUI 前端 `design/reui-codex/`。保留旧 `apps/work-ui`、主 checkout、4193/4181 服务及既有未跟踪截图；仅在 `feat/next-iteration` 本地提交，不推送。整套真实 UI 尚未完成，不能以局部功能或 fixture 截图宣称交付。
+当前唯一实现/构建入口是已接入 Rust WASM 的 React/ReUI 前端 `apps/workbench-ui/`，`design/reui-codex/` 只保留迁移说明。保留旧 `apps/work-ui`、主 checkout、4193/4181 服务及既有未跟踪截图；仅在 `feat/next-iteration` 本地提交，不推送。整套真实 UI 尚未完成，不能以局部功能或 fixture 截图宣称交付。
 
-正式发布前必须将新 UI 移出 `design/` 并接入正式构建与托管；不得让正式应用依赖设计目录。Desktop/Web/Android 应使用同一 presentation，差异限于平台能力适配。当前 React 工程的 Web 运行不等于桌面本机桥接和 Android 已完成，不能让桌面本机经回环 HTTP 绕过既有 owner 门面。
+新 UI 源码和产品构建已移出 `design/`，产品模块图不导入测试样例；正式打包/发行仍未完成。Desktop/Web/Android 应使用同一 presentation，差异限于平台能力适配。当前 React 工程的 Web 运行不等于桌面本机桥接和 Android 已完成，不能让桌面本机经回环 HTTP 绕过既有 owner 门面。
 
 ## 已有真实链路
 
@@ -28,7 +28,7 @@
 | 工作协同与多节点 | 原型里的发现/开关/授权为 fixture，不得照搬为真实成功 | 真实节点授权、独立入口、过期/撤销与权限隔离；不支持时明确禁用 |
 | 项目添加与本机 rpi 设置 | typed 项目登记/会话创建已接通；目录/程序选择、安装仍需平台桥，原型下载是假流程 | 能力明确、真实校验；浏览器不能假装发现绝对路径或执行安装 |
 | 终端、Git/Worktree、调度与扩展 | 逐项核对既有 typed API；不猜 endpoint | 未支持则说明/禁用；不添加模拟后端或第二个 owner/调度器 |
-| 入口与部署 | 当前 React 默认 fixture，生产不能静默显示样例冒充真实数据 | fixture 显式隔离，认证/加载/错误/空态；正式目录、同源托管、能力适配 |
+| 入口与部署 | 第四批已迁至apps/workbench-ui，产品无样例依赖，fixture仅独立构建+显式参数启用；正式打包与平台桥待完成 | 认证/加载/错误/空态、同源托管、完整发行与Native/Android能力验收 |
 | 可访问性、响应式与验收 | 保留旧回归并新增原型对照门槛 | 320/390/700/1024/1440、明暗、键盘、触控、真实测试与 fixture 结果分别记录 |
 
 ## 第一批：真实浏览器（565d3ac）
@@ -58,4 +58,13 @@
 - 空项目草稿按节点/项目隔离，会话草稿按节点/会话隔离；草稿值随scope同步派生，不等effect再显示旧scope文字。修复存储被拒时切会话丢失内存草稿的问题。创建、拒绝、切换和返回不会用“清草稿”冒充新建。
 - 新增 `verify:creation` 10组：成功与拒绝、同回合重复激活、未知结果锁/只GET核对、已提交但读回失败、迟到成功/拒绝、同地址重连、迟到历史、存储拒绝、空项目及三宽×明暗弹窗。完整11组前端套件、WASM/TypeScript/Vite构建通过；lint72警告、0错误。Rust binding 2个单测及原生 `session_services` 合同测试通过，WASM binding及原生fixture严格Clippy通过；格式检查针对两个修改的Rust文件，未宣称全workspace测试已跑。
 - **收紧hosted验收隔离**：旧脚本虽隔离Work数据，但未固定rpi程序/Agent目录，先前结果不能证明原生环境隔离。本批强制独立Work/Agent目录及现有无凭据RPC fixture；实测RPC-only fixture因缺少安全资源CLI返回501，没有退回已安装Agent。仅对专用fixture副本名增加只读空目录profile（`loadedFacts=false`，不支持安装、构建、网络或exact selection），默认fixture行为不变。当前真实Rust owner + 合成原生协议后端的8项托管/创建/草稿验收通过；这不是实际rpi、模型或资源安装验收。
-- CI补入 settings/tree/browser/shell/creation；未推送或声称远程CI已运行。截图只在 `artifacts/confirmed-workbench/`，正式发布、默认fixture隔离、完整权限/结算链、消息/设置视觉、真实协同及Native/Android能力仍待后续批次。
+- CI补入 settings/tree/browser/shell/creation；未推送或声称远程CI已运行。截图只在 `artifacts/confirmed-workbench/`，该批结束时正式发布、默认fixture隔离、完整权限/结算链、消息/设置视觉、真实协同及Native/Android能力仍待后续批次。
+
+## 第四批：正式源码入口与编译隔离的样例
+
+- 唯一React实现迁至 `apps/workbench-ui/`，旧design目录仅保留迁移说明；没有复制第二套UI，也未改旧 `apps/work-ui`。产品build/preview与同源托管只使用新目录的 `dist/`，`dist-fixture/` 为独立测试构建，不覆盖或分发给产品。旧根Task的Dioxus启动路径未擅自替换，目录迁出不是完整安装/发布声明。
+- Vite按构建mode选择初始快照adapter：产品模块图只导入空快照，测试构建才导入 `tests/fixtures/workspace.ts`，且还须 `?fixture=1`。生产URL加此参数也不能启用样例。默认、静态托管和断开都是零项目/零会话/未知指标；未连接不显示虚构节点组。开发代理移除隐含13031，必须显式配置 `RPI_NODE_URL`；真正托管只探测自己origin的公开入口元数据，认证及协议仍走Rust客户端。
+- 样例明确标注“示例 · 未连接”，发送/创建不假装可用；只在显式重新打开样例入口时恢复它自己的显示偏好。运行观察缺失不再回落样例模型/思考/成本/上下文，真实模式不填入样例步骤或工具耗时；认证拒绝显示真实错误并保留草稿。
+- 新增 `verify:entry` 8项：产品默认与伪fixture参数不出样例、产品JS无样例载荷、测试构建需显式启用、认证失败无可写回退、节点模型已观察但指标/上下文缺失保持未知、显示WASM迟到仍呈现权威历史、迟到合成ACK保护后来编辑、同地址重连区分未连接与节点会话草稿。先跑旧逻辑实证默认入口失败，再修复；另以HEAD旧草稿hook复现发送A后编辑B再改回A，被迟到ACK清空，新hook以每次本地编辑对象作令牌，阻止此丢稿，不在TS新造执行状态机。延迟真实显示WASM也先复现历史不可见，再让现有loadSession等待显示初始化并把展示就绪加入行投影依赖，避免提前订阅丢事件。
+- `verify:all` 现在自起free-port测试预览，按序运行12组，记录并仅清理自己启动的进程组；自包含脚本直接启动Vite进程，避免只杀npm父进程。全部12组本地通过，产品/fixture的Rust WASM+TypeScript+Vite构建通过，lint71警告/0错误；hosted仍为隔离真实Rust owner + 无凭据合成RPC后端8项，entry的prompt ACK来自HTTP/WS协议fixture，不是模型或真实Agent执行证明。
+- CI改用 `workbench-ui.yml`，按新目录分别构建产品和fixture，新增入口隔离验收；未运行远程CI、未推送。确认原型、4193/4181与原有三张未跟踪截图保留。**仍待完成**：完整SessionAccess/权限/accepted与settlement链，阅读/经典消息及滚动、居中设置、真实协同、Native本机/Android桥接、依赖许可分发核对和最终完整UI验收。

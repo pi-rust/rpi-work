@@ -78,23 +78,35 @@ RPI_WORK_HTTP_ASSETS=target/web-release/parity-web
 
 Android 原生 App 通过桌面或已登录 Web 入口生成的一次性授权二维码连接节点。授权码短期有效、只能兑换一次，不包含长期密码。首次连接失败时，可在连接页面手动输入地址、扫码或恢复上次连接；进入工作区后节点离线会从首页进入 **工作协同** 重新连接。
 
+## 已确认的新工作台（迁移中）
+
+[`apps/workbench-ui`](apps/workbench-ui) 是确认原型 `design/reui-message-layout/` 的唯一 React/ReUI 实现入口，复用 Rust `work-client-wasm` / `work-viewmodel-wasm`。源码和产品构建已迁出 `design/`；这不表示整套视觉、权限/结算、原生桥接或 Android 已完成，也尚未替换旧 `task dev` / `task desktop` 的 Dioxus 发布路径。
+
+```bash
+cd apps/workbench-ui
+npm ci
+npm run build             # 产品 dist/；不含测试样例，不默认代理本机节点
+npm run build:fixture     # 独立 dist-fixture/；还需 ?fixture=1 才显示样例
+npm run verify:all        # 自起隔离预览；hosted需先构建仓库的CLI和RPC fixture
+```
+
+产品产物可由既有无头 owner 同源托管（在仓库根目录执行，需已通过环境配置非空 `RPI_WORK_HTTP_PASSWORD`）：
+
+```bash
+RPI_WORK_HTTP_BIND=127.0.0.1 RPI_WORK_HTTP_PORT=13031 RPI_WORK_WEB_LISTEN_PORT=13032 \
+RPI_WORK_HTTP_ASSETS="$PWD/apps/workbench-ui/dist" \
+  cargo run -p work-cli --locked -- serve
+```
+
+不要与另一个 `task dev` / `task desktop` 共用数据目录同时启动 owner。托管页面通过公开入口元数据连接同源 typed API；普通静态托管保持未连接，不静默展示样例。开发代理必须显式配置 `RPI_NODE_URL`。范围及未完成项见[迁移清单](docs/design/confirmed-workbench-migration.md)。
+
 ## 原型（不进入安装包）
 
 | 目录 | 说明 | 运行 |
 | --- | --- | --- |
-| [`design/reui-codex`](design/reui-codex) | ReUI（MIT）+ Codex 布局的 Web 工作台；规则经 wasm 来自 `work-viewmodel` | `cd design/reui-codex && npm ci && npm run build:wasm && npm run dev` |
 | [`apps/work-gpui`](apps/work-gpui) | GPUI 桌面原型（独立 workspace，不进入 `cargo test --workspace`） | `cargo run --manifest-path apps/work-gpui/Cargo.toml` |
 
-ReUI 原型可由节点自己托管（同源，无需 `?live=1`）：
-
-```bash
-cd design/reui-codex && npm run build
-RPI_WORK_HTTP_BIND=127.0.0.1 RPI_WORK_HTTP_PORT=13031 RPI_WORK_WEB_LISTEN_PORT=13032 \
-RPI_WORK_HTTP_PASSWORD=… RPI_WORK_HTTP_ASSETS=$PWD/dist \
-  cargo run -p work-cli -- serve
-```
-
-设计与验收细节：[ReUI 原型](docs/design/reui-codex-prototype.md) ·
+历史设计与验收细节：[ReUI 原型](docs/design/reui-codex-prototype.md) ·
 [GPUI 原型](docs/design/gpui-desktop-prototype.md)。GPUI 只能做桌面（无移动端后端），
 移动端仍由 Dioxus/Web 承接。
 

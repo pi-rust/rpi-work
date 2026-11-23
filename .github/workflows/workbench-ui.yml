@@ -1,0 +1,110 @@
+name: Workbench UI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'apps/workbench-ui/**'
+      - 'crates/client/work-viewmodel/**'
+      - 'crates/client/work-viewmodel-wasm/**'
+      - 'crates/client/work-client/**'
+      - 'crates/client/work-client-wasm/**'
+      - 'crates/foundation/work-core/**'
+      - 'crates/foundation/work-node-api/**'
+      - '.github/workflows/workbench-ui.yml'
+  pull_request:
+    paths:
+      - 'apps/workbench-ui/**'
+      - 'crates/client/work-viewmodel/**'
+      - 'crates/client/work-viewmodel-wasm/**'
+      - 'crates/client/work-client/**'
+      - 'crates/client/work-client-wasm/**'
+      - 'crates/foundation/work-core/**'
+      - 'crates/foundation/work-node-api/**'
+      - '.github/workflows/workbench-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workbench-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wasm-and-browser:
+    name: product/fixture isolation + browser acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workbench-wasm
+          cache-on-failure: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wasm-bindgen CLI matching Cargo.lock
+        run: |
+          VERSION=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | head -2 | tail -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "wasm-bindgen $VERSION"
+          curl -sSfL "https://github.com/rustwasm/wasm-bindgen/releases/download/${VERSION}/wasm-bindgen-${VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/wasm-bindgen-${VERSION}-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+
+      - name: Install UI and browser dependencies
+        run: |
+          npm ci --prefix tools
+          npx --prefix tools playwright install --with-deps chromium
+          npm ci --prefix apps/workbench-ui
+
+      - name: Build separate product and fixture bundles
+        working-directory: apps/workbench-ui
+        run: |
+          npm run build
+          npm run build:fixture
+          npm run lint
+
+      - name: Product startup, fixture isolation and keyboard acceptance
+        working-directory: apps/workbench-ui
+        run: |
+          node scripts/verify-entry.cjs
+          node scripts/verify-a11y.cjs
+          node scripts/verify-live.cjs
+
+      - name: Fixture, theme and mobile acceptance
+        working-directory: apps/workbench-ui
+        run: |
+          node node_modules/vite/bin/vite.js preview --mode fixture --port 5179 --strictPort &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+          sleep 5
+          REUI_URL=http://127.0.0.1:5179/ node scripts/verify-fixture.cjs
+          REUI_URL=http://127.0.0.1:5179/ node scripts/verify-theme.cjs
+          node scripts/verify-mobile.cjs
+
+      - name: Settings, files, browser, confirmed shell and creation acceptance
+        working-directory: apps/workbench-ui
+        run: |
+          node scripts/verify-settings.cjs
+          node scripts/verify-tree.cjs
+          node scripts/verify-browser.cjs
+          node scripts/verify-shell.cjs
+          node scripts/verify-creation.cjs
+
+      # Hosted acceptance remains local: build work-cli and the isolated
+      # work-server-rpc-fixture binary, then run npm run verify:hosted.
+      # It never uses an installed rpi or the user's agent configuration.

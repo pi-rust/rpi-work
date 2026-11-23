@@ -1,4 +1,6 @@
-# ReUI · Codex 桌面 Web 原型（500 轮计划）
+# ReUI · Codex 桌面 Web 原型（历史500轮计划）
+
+> 本文保留早期原型计划，不再约束当前修改目录或代表当前能力。已确认基准现为 `design/reui-message-layout/`，唯一实现/构建入口已迁至 [apps/workbench-ui](../../apps/workbench-ui)，当前范围以[迁移清单](confirmed-workbench-migration.md)为准；旧“仅限design目录”的限制已被确认迁移替代。
 
 > 目标：在 `design/reui-codex/` 用 **ReUI**（MIT 的 shadcn 生态组件库）实现一版 **Codex 式布局**的工作台前端，并逐步接到真实节点。
 > 预算：500 轮。一轮 = 一次可合并的改动 + 一次可复现验收（`npm run build` + Playwright 截图 + 必要单测）。
