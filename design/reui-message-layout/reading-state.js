@@ -14,6 +14,7 @@ const readingState = (() => {
     positions.set(session.id, {
       top: conversation.scrollTop,
       bottom: conversation.scrollHeight - conversation.clientHeight - conversation.scrollTop < 48,
+      known: [...transcript.querySelectorAll('details[data-activity]')].map(node => node.dataset.activity),
       open: [...transcript.querySelectorAll('details[data-activity][open]')].map(node => node.dataset.activity),
       anchor: index < 0 ? null : {
         index, text: nodes[index].textContent.slice(0, 80),
@@ -27,6 +28,9 @@ const readingState = (() => {
     const saved = positions.get(session?.id);
     if (!saved) { scrollToLatestTurn(); return; }
     for (const detail of transcript.querySelectorAll('details[data-activity]')) detail.open = saved.open.includes(detail.dataset.activity);
+    for (const execution of transcript.querySelectorAll('.turn-execution')) {
+      if (!saved.known.includes(execution.dataset.activity) && execution.querySelector('details[open]')) execution.open = true;
+    }
     if (saved.bottom) { conversation.scrollTop = conversation.scrollHeight; return; }
     conversation.scrollTop = saved.top;
     const node = saved.anchor && anchors()[saved.anchor.index];

@@ -790,11 +790,14 @@ function renderTurn(turn) {
     message.prepend(element('span', 'guidance-label', '本轮引导'));
     article.append(message);
   }
-  const card = element('div', 'turn-activity');
-  const heading = element('div', 'turn-heading');
+  const completed = turn.phase === 'completed';
+  const card = element(completed ? 'details' : 'div', completed ? 'turn-activity turn-execution' : 'turn-activity');
+  if (completed) card.dataset.activity = 'execution:' + turn.id;
+  const heading = element(completed ? 'summary' : 'div', 'turn-heading');
   const mark = element('span', 'agent-mark');
   mark.innerHTML = icon('terminal');
   heading.append(mark, element('strong', '', phaseLabels[turn.phase]));
+  if (completed) heading.insertAdjacentHTML('beforeend', icon('chevron-right', 'execution-chevron'));
   if (turn.model && turn.effort) heading.append(element('small', 'turn-model', `${turn.model} · ${turn.effort}`));
   card.append(heading);
   const plan = element('ol', 'turn-plan');
@@ -832,20 +835,20 @@ function renderTurn(turn) {
     approval.append(label, command, meta, actions);
     card.append(approval);
   }
-  if (turn.response) card.append(element('p', 'turn-response', turn.response));
   if (turn.decision) card.append(element('p', 'runtime-label', turn.decision));
   if (turn.phase === 'failed') {
     const retry = actionButton('重试', 'retry-turn');
     retry.dataset.turnId = turn.id;
     card.append(retry);
   }
-  if (turn.mode === 'plan' && turn.phase === 'completed') {
+  article.append(card);
+  if (turn.response) article.append(element('p', 'turn-response', turn.response));
+  if (turn.mode === 'plan' && completed) {
     const implement = actionButton('开始实施', 'implement-plan', 'action-button primary');
     implement.dataset.turnId = turn.id;
-    card.append(implement);
+    article.append(implement);
   }
-  article.append(card);
-  if (turn.phase === 'completed') article.append(replyActions(turn.id));
+  if (completed) article.append(replyActions(turn.id));
   return article;
 }
 
@@ -875,9 +878,13 @@ function updateTurnView(thread, turn, jump = false) {
   if (session !== thread || historyPreview.blocked()) return;
   const follow = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 48;
   const previous = transcript.querySelector(`[data-turn="${turn.id}"]`);
-  const outputWasOpen = previous?.querySelector('details[open]');
+  const openActivities = new Set([...(previous?.querySelectorAll('details[data-activity][open]') ?? [])].map(node => node.dataset.activity));
   const view = renderTurn(turn);
-  if (outputWasOpen && view.querySelector('details')) view.querySelector('details').open = true;
+  for (const detail of view.querySelectorAll('details[data-activity]')) detail.open = openActivities.has(detail.dataset.activity);
+  // Completing a run must not hide tool output the reader has explicitly opened.
+  if (!previous?.querySelector('.turn-execution') && previous?.querySelector('details.activity[open]')) {
+    view.querySelector('.turn-execution')?.setAttribute('open', '');
+  }
   if (previous) previous.replaceWith(view);
   else transcript.append(view);
   updateRunState();

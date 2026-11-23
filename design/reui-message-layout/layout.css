@@ -834,6 +834,18 @@ dialog::backdrop, .scrim { background: #0005; }
 #project-menu button:hover, #project-menu button:focus-visible { background: var(--hover); }
 #project-menu .icon { width: 15px; height: 15px; }
 
+/* Completed process is a disclosure; the actual answer stays on the reading edge. */
+.turn-execution { display: block; margin-left: 0; padding-left: 0; border-left: 0; }
+.turn-execution > .turn-heading { min-height: 28px; color: var(--dim); cursor: pointer; list-style: none; }
+.turn-execution > .turn-heading::-webkit-details-marker { display: none; }
+.turn-execution > .turn-heading:hover { color: var(--ink); }
+.execution-chevron { width: 12px; height: 12px; flex: none; }
+.turn-execution[open] > .turn-heading .execution-chevron { transform: rotate(90deg); }
+.turn-execution > .turn-plan { margin-top: 8px; padding-block: 4px; border-left: 2px solid var(--line); }
+.turn-execution > .activity, .turn-execution > .runtime-label { padding: 8px 0 0 14px; border-left: 2px solid var(--line); }
+.demo-turn > .turn-response { margin: 16px 0 0; line-height: 1.85; }
+.demo-turn > [data-action="implement-plan"] { margin-top: 14px; }
+
 /* Layout is independent of font size, theme and density; no transcript re-render. */
 :root[data-message-layout="classic"] .prompt-line { flex-direction: column; align-items: stretch; justify-content: flex-start; }
 :root[data-message-layout="classic"] .prompt-line::before { content: "你"; color: var(--dim); font-size: 11px; margin-bottom: 6px; }

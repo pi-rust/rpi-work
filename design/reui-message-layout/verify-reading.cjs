@@ -39,15 +39,15 @@ async function checkReadingRestoration(browser, url) {
     await draft.fill('验证上翻时保留阅读位置');
     await draft.press('Enter');
     await page.clock.runFor(700);
-    await page.locator('.demo-turn details summary').click();
+    await page.locator('.demo-turn details.activity summary').click();
     await scroll(0);
     await page.clock.runFor(1100);
     nearly(await top(), 0);
-    assert.equal(await page.locator('.demo-turn details').evaluate(node => node.open), true);
+    assert.equal(await page.locator('.demo-turn details.activity').evaluate(node => node.open), true);
     await thread('connection').click();
     await thread('layout').click();
     nearly(await top(), 0);
-    assert.equal(await page.locator('.demo-turn details').evaluate(node => node.open), true);
+    assert.equal(await page.locator('.demo-turn details.activity').evaluate(node => node.open), true);
 
     await draft.fill('后台执行第二轮');
     await draft.press('Enter');
