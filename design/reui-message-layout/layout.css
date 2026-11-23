@@ -306,6 +306,11 @@ dialog::backdrop, .scrim { background: #0005; }
 .project-heading .sidebar-label { margin-bottom: 0; }
 .project-heading .icon-button { width: 24px; height: 24px; }
 .project-heading .icon { width: 13px; height: 13px; }
+.add-project-button { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.add-project-button:hover { background: var(--hover); color: var(--ink); }
+.project-dialog-description { margin: 0 0 18px; color: var(--muted); font-size: .8125rem; line-height: 1.6; }
+.project-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.project-form-error { margin: 2px 0; color: var(--bad); font-size: .8125rem; line-height: 1.5; }
 .workspace { grid-template-rows: 52px minmax(0,1fr) auto auto; }
 .conversation { grid-row: 2; }
 .compose-area { grid-row: 3; }

@@ -814,15 +814,32 @@ function initializeWorkbench() {
     if (value === 'browser') renderBrowser(false);
   }
 
+  function clearProjectError() {
+    for (const input of [$('#project-name'), $('#project-path')]) {
+      input.setCustomValidity('');
+      input.removeAttribute('aria-invalid');
+    }
+    $('#project-error').textContent = '';
+    $('#project-error').hidden = true;
+  }
+
+  function showProjectError(input, message) {
+    input.setCustomValidity(message);
+    input.setAttribute('aria-invalid', 'true');
+    $('#project-error').textContent = message;
+    $('#project-error').hidden = false;
+    input.focus();
+  }
+
   $('#project-form').addEventListener('submit', event => {
     event.preventDefault();
     const name = $('#project-name').value.trim();
     const path = $('#project-path').value.trim();
-    $('#project-name').setCustomValidity('');
-    if (!name || !path) return;
+    clearProjectError();
+    if (!name) return showProjectError($('#project-name'), '请输入项目名称');
+    if (!path) return showProjectError($('#project-path'), '请输入项目路径');
     if (projects.some(project => project.name === name)) {
-      $('#project-name').setCustomValidity('项目名称已存在');
-      $('#project-name').reportValidity();
+      showProjectError($('#project-name'), '项目名称已存在');
       return;
     }
     const project = { name, path, branch: 'main' };
@@ -831,11 +848,15 @@ function initializeWorkbench() {
     saveWorkbench();
     $('#project-dialog').close();
     welcomeProject = name;
+    $('#chat-filter-mode').value = 'all';
+    collapsedSections.delete('projects');
+    saveNavigation();
     showSession(null);
+    $(`[data-project-group="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'nearest' });
     toast('已添加演示项目');
     draft.focus();
   });
-  $('#project-name').addEventListener('input', () => $('#project-name').setCustomValidity(''));
+  for (const input of [$('#project-name'), $('#project-path')]) input.addEventListener('input', clearProjectError);
 
   $('#automation-form').addEventListener('submit', event => {
     event.preventDefault();
@@ -1102,7 +1123,11 @@ function initializeWorkbench() {
         break;
       case 'add-project':
         $('#project-form').reset();
+        clearProjectError();
         $('#project-dialog').showModal();
+        break;
+      case 'cancel-add-project':
+        $('#project-dialog').close();
         break;
       case 'terminal': openTerminal(terminal.hidden); break;
       case 'close-terminal': openTerminal(false); break;

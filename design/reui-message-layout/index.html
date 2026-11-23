@@ -117,7 +117,7 @@
           <div id="pinned-threads"></div>
         </section>
         <section aria-label="最近">
-          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="projects" aria-expanded="true"><span>最近</span><i data-icon="chevron-down"></i></button></h2><button class="icon-button" data-action="add-project" aria-label="添加项目"><i data-icon="plus"></i></button></div>
+          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="projects" aria-expanded="true"><span>最近</span><i data-icon="chevron-down"></i></button></h2><button type="button" class="add-project-button" data-action="add-project" aria-label="添加项目" aria-haspopup="dialog" aria-controls="project-dialog"><i data-icon="plus"></i><span>添加项目</span></button></div>
           <div id="projects"></div>
         </section>
       </div>
@@ -396,12 +396,15 @@
     <div class="dialog-heading"><h2 id="context-title">会话上下文</h2><form method="dialog"><button class="icon-button" aria-label="关闭上下文"><i data-icon="x"></i></button></form></div>
     <dl id="context-details" class="context-details"></dl>
   </dialog>
-  <dialog id="project-dialog" aria-labelledby="project-dialog-title">
+  <dialog id="project-dialog" aria-labelledby="project-dialog-title" aria-describedby="project-dialog-description">
     <div class="dialog-heading"><h2 id="project-dialog-title">添加项目</h2><form method="dialog"><button class="icon-button" aria-label="关闭添加项目"><i data-icon="x"></i></button></form></div>
+    <p id="project-dialog-description" class="project-dialog-description">将已有项目加入工作台，添加后即可开始对话。</p>
     <form id="project-form" class="dialog-form">
-      <label for="project-name">名称</label><input id="project-name" required maxlength="50" placeholder="my-project">
-      <label for="project-path">项目路径</label><input id="project-path" required maxlength="300" placeholder="~/Projects/my-project">
-      <p class="settings-note">路径用于演示项目归属。</p><button type="submit" class="action-button primary">添加项目</button>
+      <label for="project-name">名称</label><input id="project-name" required maxlength="50" placeholder="my-project" aria-describedby="project-error" autofocus>
+      <label for="project-path">项目路径</label><input id="project-path" required maxlength="300" placeholder="~/Projects/my-project" aria-describedby="project-path-help project-error">
+      <p id="project-path-help" class="settings-note">此原型仅在浏览器中保存名称和路径，不会创建目录或读取本地文件。</p>
+      <p id="project-error" class="project-form-error" role="alert" hidden></p>
+      <div class="project-dialog-actions"><button type="button" class="action-button" data-action="cancel-add-project">取消</button><button type="submit" class="action-button primary">添加项目</button></div>
     </form>
   </dialog>
   <dialog id="automation-dialog" aria-labelledby="automation-title">
