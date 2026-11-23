@@ -10,6 +10,7 @@ const { checkMessageTypography } = require('./verify-typography.cjs');
 const { checkDiffReading } = require('./verify-diff.cjs');
 const { checkReadingContrast } = require('./verify-contrast.cjs');
 const { checkClipboardFeedback } = require('./verify-clipboard.cjs');
+const { checkCodeFocus } = require('./verify-code-focus.cjs');
 const playwright = process.env.RPI_LAYOUT_PLAYWRIGHT ?? '../../tools/node_modules/playwright';
 const { chromium } = require(playwright);
 const url = pathToFileURL(path.join(__dirname, 'index.html')).href;
@@ -1065,6 +1066,7 @@ async function main() {
     await checkDiffReading(browser, url);
     await checkReadingContrast(browser, url);
     await checkClipboardFeedback(browser, url);
+    await checkCodeFocus(browser, url);
   } finally {
     await browser.close();
   }

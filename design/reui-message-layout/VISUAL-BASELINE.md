@@ -107,6 +107,16 @@ RPI_WORKBENCH_SHOTS=/tmp/rpi-ui-visual-baseline node design/reui-message-layout/
 
 截图为 `copy-code-failure.png`、`copy-diff-retry-failure-light.png` 和 `copy-diff-retry-failure-dark.png`。这些是浏览器内反馈/文本回归，不是原生剪贴板权限弹窗、真实系统粘贴、所有异步操作顺序或辅助技术的实机覆盖；没有添加权限请求、静默降级或演示后端状态。
 
+## 代码区域的键盘焦点可见性
+
+代码已有 `tabIndex=0`，不是缺失键盘入口；初次Tab聚焦和ArrowRight横滚探针也已正常。整窗截图发现的是视觉问题：默认2px焦点框向外偏移3px，外层圆角容器的 `overflow:hidden` 裁掉左、右、下三边，只在代码标题下方留一条线。仅将 `.message-code pre:focus-visible` 的 `outline-offset` 改为 `-3px`，保留原有颜色、粗细、尺寸和原生滚动，不放宽外层裁切。
+
+`verify-code-focus.cjs` 用明暗×阅读/经典×1440/1024宽×原始/超长首行，共16组独立文档检查Tab进入、离开和Shift+Tab返回，以及草稿/选区和页面横向边界。直接解码代码区域的原始PNG，在四边内侧5px条带中数焦点色像素，忽略8px角落；每边至少达到直边长度的75%，不靠计算样式推断已经绘出。1440px浅色阅读布局下，516×189裁切的上/下各1000、左/右各346个焦点色像素；旧样式内侧条带均为0，但整窗仍有标题下的一条外侧线，并非完全无标记。用隔离浏览器拦截CSS请求载入已提交旧样式，可确认当前测试确实拒绝旧版并接受修正，不改预览服务或用户页面。
+
+初次ArrowRight的局部横滚、正文纵向位置不变另用一个独立新窗口验证。重复复用/重置原生滚动节点的自动化尝试曾发生等待超时，尚不能将其归为应用缺陷；没有据此添加JS滚动替代或浏览器修复。当前测试不承诺连续原生键滚、所有浏览器/设备或完整焦点无障碍符合性。
+
+输出为 `code-focus-*.png`、`code-focus-window.png` 和 `code-focus-metrics.json`。长行仅是本地压力夹具，不增加消息协议或演示功能。
+
 ## 下一次严格对照还需要什么
 
 - 同一目标应用版本、主题、字体、缩放/DPR和窗口客户区尺寸。

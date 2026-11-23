@@ -447,6 +447,7 @@ dialog::backdrop, .scrim { background: #0005; }
 .message-code-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; font-size: .6875rem; color: var(--muted); }
 .message-code-header button { border: 0; background: transparent; }
 .message-code pre { margin: 0; padding: 8px 16px 16px; overflow: auto; font-size: .8125rem; line-height: 1.8; }
+.message-code pre:focus-visible { outline-offset: -3px; }
 .message-code pre code { padding: 0; background: none; font-size: inherit; }
 .message-actions { margin-top: 12px; display: flex; }
 .message-actions .icon { width: 14px; height: 14px; }
