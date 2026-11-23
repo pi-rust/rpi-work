@@ -422,18 +422,14 @@
     <div class="dialog-heading"><h2 id="runtime-title">配置 rpi</h2><form method="dialog"><button class="icon-button" aria-label="关闭 rpi 配置"><i data-icon="x"></i></button></form></div>
     <p class="runtime-boundary" id="runtime-boundary">浏览器原型：检测、下载和版本验证均为演示。不扫描本机、不联网下载、不执行程序；选择文件或目录仅记录名称。</p>
     <div id="runtime-phase" class="runtime-phase" role="status"></div>
-    <progress id="runtime-progress" aria-label="rpi 设置进度（演示）" hidden></progress>
-    <section id="runtime-download" class="runtime-option">
-      <h3>下载 rpi</h3><p>桌面端将下载官方发布包并验证校验和。此处只演示流程。</p>
-      <label for="runtime-install-dir">安装目录（可选）</label><div class="runtime-path-row"><input id="runtime-install-dir" placeholder="默认安装位置由桌面端确定"><button type="button" class="action-button" data-runtime-action="install-directory">选择安装目录</button></div>
-      <div class="runtime-option-actions"><button type="button" class="action-button primary" data-runtime-action="download">演示下载</button><a href="https://github.com/bigfish1913/pi-rust/releases" target="_blank" rel="noopener noreferrer">查看官方发布页</a></div>
-    </section>
     <section id="runtime-manual" class="runtime-option">
-      <h3>使用已有 rpi</h3><p>选择 rpi 程序或包含它的安装目录，也可手动填写位置。</p>
-      <label for="runtime-location">rpi 位置</label><input id="runtime-location" placeholder="选择程序、目录，或输入路径" aria-describedby="runtime-selection-note runtime-error">
-      <div class="runtime-option-actions"><button type="button" class="action-button" data-runtime-action="program">选择 rpi 程序</button><button type="button" class="action-button" data-runtime-action="directory">选择 rpi 目录</button></div>
-      <p id="runtime-selection-note" class="settings-note">浏览器不能检查文件是否可执行，也不能确认目录中是否存在 rpi。</p>
+      <label for="runtime-location">rpi 路径</label>
+      <div class="runtime-path-row"><input id="runtime-location" placeholder="选择已有程序，或下载后自动填入" aria-describedby="runtime-selection-note runtime-error"><button type="button" class="action-button" data-runtime-action="program">选择 rpi 程序</button></div>
+      <div class="runtime-option-actions"><button type="button" class="action-button primary" data-runtime-action="download">演示下载</button><button type="button" class="action-button" data-runtime-action="directory">选择 rpi 目录</button><a href="https://github.com/bigfish1913/pi-rust/releases" target="_blank" rel="noopener noreferrer">官方发布页</a></div>
+      <p id="runtime-selection-note" class="settings-note">已有 rpi 可选择程序、目录或填写路径；没有则直接下载，完成后自动回填。浏览器仅记录选择名称，下载及回填路径均为演示。</p>
     </section>
+    <p id="runtime-progress-label" hidden></p>
+    <progress id="runtime-progress" max="100" aria-label="rpi 设置进度（演示）" aria-describedby="runtime-progress-label" hidden></progress>
     <p id="runtime-error" class="project-form-error" role="alert" hidden></p>
     <div class="runtime-dialog-actions"><button type="button" class="action-button" data-runtime-action="recheck">重新检测（演示）</button><button type="button" class="action-button primary" data-runtime-action="verify" disabled>演示验证</button><button type="button" class="action-button primary" data-runtime-action="done" hidden>返回工作台</button></div>
     <details class="runtime-demo-options"><summary>演示场景</summary><label for="runtime-scenario">操作结果</label><select id="runtime-scenario"><option value="success">成功</option><option value="download-error">下载失败</option><option value="verify-error">验证失败</option></select></details>

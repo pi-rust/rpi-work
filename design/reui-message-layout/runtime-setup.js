@@ -3,7 +3,8 @@
   const dialog = document.querySelector('#runtime-dialog');
   const card = document.querySelector('#runtime-card');
   const locationInput = document.querySelector('#runtime-location');
-  const installInput = document.querySelector('#runtime-install-dir');
+  const progress = document.querySelector('#runtime-progress');
+  const progressLabel = document.querySelector('#runtime-progress-label');
   const scenario = document.querySelector('#runtime-scenario');
   const key = 'rpi-work-runtime-setup-demo-v1';
   const fixture = new URLSearchParams(location.search).get('runtime');
@@ -20,14 +21,13 @@
   let timer;
   let returnFocus = null;
   let pickerTicket = 0;
-  let directoryTarget = 'location';
+  let downloadProgress = 0;
   const action = name => dialog.querySelector(`[data-runtime-action="${name}"]`);
   const busy = () => ['checking', 'downloading', 'validating'].includes(stage);
   const messages = {
     checking: '正在检查启动环境（演示）；不会扫描本机 PATH 或执行程序。',
     missing: '未找到 rpi（演示）。可下载配置，或选择已有的 rpi 程序 / 安装目录。',
     downloading: '正在下载官方发布包（演示）；未发起网络请求，也未写入磁盘。',
-    downloaded: '下载完成（演示），请继续演示验证。真实安装须验证校验和及可执行性。',
     locating: '已选择安装位置，等待演示验证。浏览器无法确认其内容或版本。',
     validating: '正在验证版本与可执行性（演示）；没有运行 rpi。',
     ready: 'rpi 配置已保存（演示）。真实检测、安装及执行仍需接入桌面运行服务。',
@@ -45,13 +45,15 @@
     open.textContent = stage === 'ready' ? '查看配置' : '下载引导';
     for (const button of card.querySelectorAll('button')) button.disabled = busy();
     document.querySelector('#runtime-phase').textContent = messages[stage] + (stage === 'ready' && confirmed ? ' 位置：' + confirmed.label : '');
-    document.querySelector('#runtime-progress').hidden = !busy();
+    progress.hidden = progressLabel.hidden = !busy();
+    if (stage === 'downloading' || (stage === 'validating' && selection?.kind === 'download-demo')) progress.value = downloadProgress;
+    else progress.removeAttribute('value');
+    progressLabel.textContent = stage === 'downloading' ? `正在下载 · ${downloadProgress}%（演示）` : stage === 'validating' ? '正在自动校验，完成后回填路径（演示）' : '正在检测（演示）';
     for (const control of dialog.querySelectorAll('[data-runtime-action], .runtime-option input, #runtime-scenario')) control.disabled = busy();
     action('verify').disabled = busy() || !selection || stage === 'ready';
-    action('verify').hidden = stage === 'ready';
+    action('verify').hidden = !selection || stage === 'ready' || stage === 'downloading' || selection?.kind === 'download-demo';
     action('done').hidden = stage !== 'ready';
-    document.querySelector('#runtime-download').hidden = stage === 'ready';
-    document.querySelector('#runtime-manual').hidden = stage === 'ready';
+    action('download').hidden = stage === 'ready';
   }
   function later(callback, delay = 700) {
     clearTimeout(timer);
@@ -71,27 +73,56 @@
       returnFocus = { node, start: node.selectionStart, end: node.selectionEnd, direction: node.selectionDirection };
     }
     error();
-    if (manual) {
-      stage = selection ? 'locating' : 'missing';
-      locationInput.value = selection?.label ?? '';
-    }
+    if (manual) stage = selection ? 'locating' : 'missing';
+    locationInput.value = selection?.label ?? '';
     render();
     if (!dialog.open) dialog.showModal();
     (manual ? locationInput : action(stage === 'ready' ? 'done' : 'download')).focus();
   }
-  function select(label, kind, target = 'location') {
+  function select(label, kind) {
     ++pickerTicket;
     error();
-    if (target === 'install') {
-      installInput.value = label;
-    } else {
-      locationInput.value = label;
-      selection = { demo: true, kind, label };
-      stage = 'locating'; render();
-    }
+    locationInput.value = label;
+    selection = { demo: true, kind, label };
+    stage = 'locating'; render();
   }
-  async function directory(target) {
-    directoryTarget = target;
+  function verify() {
+    if (!selection) return;
+    ++pickerTicket;
+    error(); stage = 'validating'; render();
+    later(() => {
+      if (!dialog.open) return;
+      if (scenario.value === 'verify-error') {
+        stage = 'error'; error('验证失败（演示）。未确认 rpi 的版本或可执行性，请重新选择或重试。');
+      } else {
+        confirmed = { ...selection, demo: true };
+        locationInput.value = confirmed.label;
+        try { localStorage.setItem(key, JSON.stringify(confirmed)); } catch { /* Session-only setup remains usable. */ }
+        stage = 'ready';
+      }
+      render();
+    });
+  }
+  function download() {
+    ++pickerTicket;
+    downloadProgress = 0;
+    error(); selection = null; stage = 'downloading'; render();
+    const tick = () => {
+      if (!dialog.open) return;
+      downloadProgress += 20;
+      if (downloadProgress < 100) {
+        render(); later(tick, 200);
+      } else if (scenario.value === 'download-error') {
+        stage = 'error'; error('下载失败（演示）。未写入任何文件，可重试下载或手动定位 rpi。'); render();
+      } else {
+        // Example result from a future desktop installer, not a real local path.
+        selection = { demo: true, kind: 'download-demo', label: '~/.local/bin/rpi' };
+        verify();
+      }
+    };
+    later(tick, 200);
+  }
+  async function directory() {
     const ticket = ++pickerTicket;
     if (typeof window.showDirectoryPicker !== 'function') {
       document.querySelector('#runtime-directory-picker').dataset.ticket = String(ticket);
@@ -102,7 +133,7 @@
       const handle = await window.showDirectoryPicker({ mode: 'read' });
       if (ticket !== pickerTicket || !dialog.open) return;
       if (handle.kind !== 'directory' || !handle.name) throw new Error('Invalid directory');
-      select(handle.name + '/', 'directory-name', target);
+      select(handle.name + '/', 'directory-name');
     } catch (failure) {
       if (ticket === pickerTicket && dialog.open && failure.name !== 'AbortError') error('无法打开目录选择器，可手动填写位置。已有选择未改变。');
     }
@@ -117,41 +148,13 @@
         document.querySelector('#runtime-program-picker').dataset.ticket = String(++pickerTicket);
         document.querySelector('#runtime-program-picker').click();
         break;
-      case 'directory': directory('location'); break;
-      case 'install-directory': directory('install'); break;
+      case 'directory': directory(); break;
       case 'done': dialog.close(); break;
       case 'recheck': check(); break;
-      case 'download':
-        ++pickerTicket;
-        error(); selection = null; stage = 'downloading'; render();
-        later(() => {
-          if (scenario.value === 'download-error') {
-            stage = 'error'; error('下载失败（演示）。未写入任何文件，可重试下载或手动定位 rpi。');
-          } else {
-            selection = { demo: true, kind: 'download-demo', label: installInput.value.trim() || '默认安装位置（演示）' };
-            stage = 'downloaded';
-          }
-          render();
-        }, 1000);
-        break;
-      case 'verify':
-        if (!selection) return;
-        ++pickerTicket;
-        error(); stage = 'validating'; render();
-        later(() => {
-          if (scenario.value === 'verify-error') {
-            stage = 'error'; error('验证失败（演示）。未确认 rpi 的版本或可执行性，请重新选择或重试。');
-          } else {
-            confirmed = { ...selection, demo: true };
-            try { localStorage.setItem(key, JSON.stringify(confirmed)); } catch { /* Session-only setup remains usable. */ }
-            stage = 'ready';
-          }
-          render();
-        });
-        break;
+      case 'download': download(); break;
+      case 'verify': verify(); break;
     }
   });
-  installInput.addEventListener('input', () => { ++pickerTicket; });
   locationInput.addEventListener('input', () => {
     ++pickerTicket;
     error();
@@ -168,7 +171,7 @@
   document.querySelector('#runtime-directory-picker').addEventListener('change', event => {
     const name = event.target.files[0]?.webkitRelativePath.split('/')[0];
     event.target.value = '';
-    if (name && dialog.open && !busy() && Number(event.target.dataset.ticket) === pickerTicket) select(name + '/', 'directory-name', directoryTarget);
+    if (name && dialog.open && !busy() && Number(event.target.dataset.ticket) === pickerTicket) select(name + '/', 'directory-name');
   });
   dialog.addEventListener('close', () => {
     clearTimeout(timer); ++pickerTicket;

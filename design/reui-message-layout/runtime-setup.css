@@ -13,7 +13,8 @@
 #runtime-dialog { width: min(560px, calc(100vw - 24px)); max-height: min(760px, calc(100dvh - 32px)); padding: 22px; }
 .runtime-boundary { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .runtime-phase { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--subtle); font-size: 13px; line-height: 1.6; }
-#runtime-progress { width: 100%; height: 5px; margin-top: 10px; accent-color: var(--accent); }
+#runtime-progress { width: 100%; height: 5px; margin-top: 4px; accent-color: var(--accent); }
+#runtime-progress-label { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
 .runtime-option { margin-top: 16px; }
 .runtime-option h3 { margin: 0; font-size: 14px; font-weight: 550; }
 .runtime-option p { margin: 5px 0 9px; color: var(--muted); font-size: 12px; line-height: 1.6; }
