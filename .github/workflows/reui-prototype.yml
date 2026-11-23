@@ -94,5 +94,15 @@ jobs:
           node scripts/verify-mobile.cjs
           kill %1 || true
 
-      # verify-hosted needs a node binary and an isolated owner, so it stays a
-      # local acceptance step: `npm run verify:hosted` after `cargo build -p work-cli`.
+      - name: Settings, files, browser, confirmed shell and creation acceptance
+        working-directory: design/reui-codex
+        run: |
+          node scripts/verify-settings.cjs
+          node scripts/verify-tree.cjs
+          node scripts/verify-browser.cjs
+          node scripts/verify-shell.cjs
+          node scripts/verify-creation.cjs
+
+      # Hosted acceptance remains local: build work-cli and the isolated
+      # work-server-rpc-fixture binary, then run `npm run verify:hosted`.
+      # It never uses an installed rpi or the user's agent configuration.

@@ -17,6 +17,7 @@ type Props = {
   onSend: () => void
   onAbort: () => void
   onQueue?: () => void
+  sendDisabledReason?: string
   busy: boolean
   error: string | null
   modelLabel: string
@@ -35,6 +36,7 @@ export function Composer({
   onSend,
   onAbort,
   onQueue,
+  sendDisabledReason,
   busy,
   error,
   modelLabel,
@@ -59,7 +61,7 @@ export function Composer({
             composing.current = false
           }}
           onKeyDown={(event) => {
-            if (composing.current || event.nativeEvent.isComposing) return
+            if (composing.current || event.nativeEvent.isComposing || sendDisabledReason) return
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
               event.preventDefault()
               onSend()
@@ -122,7 +124,8 @@ export function Composer({
               size="sm"
               className="h-7 px-2 text-[11px]"
               onClick={onQueue}
-              disabled={draft.trim().length === 0}
+              disabled={!!sendDisabledReason || draft.trim().length === 0}
+              title={sendDisabledReason}
             >
               加入队列
             </Button>
@@ -139,7 +142,8 @@ export function Composer({
               size="icon"
               className="size-7 rounded-full"
               aria-label="发送"
-              disabled={draft.trim().length === 0}
+              disabled={!!sendDisabledReason || draft.trim().length === 0}
+              title={sendDisabledReason}
               onClick={onSend}
               aria-keyshortcuts="Meta+Enter"
             >

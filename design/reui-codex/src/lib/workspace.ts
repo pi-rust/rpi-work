@@ -40,6 +40,11 @@ export type Status = 'boot' | 'fixture' | 'connecting' | 'auth-required' | 'read
 
 export type Workspace = {
   status: Status
+  connectionId: number
+  creation: { busy: boolean; uncertain: boolean; message: string | null }
+  createProject: (name: string, path: string) => Promise<boolean>
+  createSession: () => Promise<boolean>
+  recheckCreation: () => Promise<boolean>
   source: Source
   error: string | null
   projects: Project[]
@@ -144,6 +149,12 @@ export function useWorkspace(): Workspace {
   const [blocks, setBlocks] = useState<Block[]>(fixture.blocks)
   const [selected, setSelected] = useState({ project: 'rpi-work', session: 'dark' })
   const connection = useRef<NodeConnection | null>(null)
+  const epoch = useRef(0)
+  const sessionTicket = useRef(0)
+  const [connectionId, setConnectionId] = useState(0)
+  const [creation, setCreation] = useState<Workspace['creation']>({ busy: false, uncertain: false, message: null })
+  type Creation = { conn: NodeConnection; epoch: number; ticket: number; kind: 'project' | 'session'; id?: string; reading?: boolean }
+  const creationRequest = useRef<Creation | null>(null)
   const pendingOrigin = useRef<string>('')
   const presenter = useRef<TranscriptPresenter | null>(null)
   const historyRef = useRef<HistoryMessage[]>(fixture.history)
@@ -179,7 +190,7 @@ export function useWorkspace(): Workspace {
   useEffect(() => {
     void initViewModel().then(() => {
       presenter.current = new TranscriptPresenter()
-      setStatus('fixture')
+      if (epoch.current === 0) setStatus('fixture')
     })
   }, [])
 
@@ -190,11 +201,41 @@ export function useWorkspace(): Workspace {
     subscription.current = null
   }, [])
 
-  const loadSession = useCallback(async (conn: NodeConnection, sessionId: string, projectId: string) => {
+  const clearSession = useCallback((project: string) => {
     stopLive()
+    sessionTicket.current++
+    sessionIdRef.current = ''
+    historyRef.current = []
+    setSelected({ project, session: '' })
+    setHistory([])
+    setBlocks([])
+    setLiveView(null)
+    setRuntime(null)
+    setModels([])
+    setThinkingLevels([])
+    setQueue({ items: [], count: 0 })
+    setDialogs([])
+    setBusy(false)
+    setSendError(null)
+    setChanges([])
+    setFiles([])
+    setFilePath(null)
+    setFileBody(null)
+    setFileDiff(null)
+    setResources({ rows: [], counts: [0, 0, 0] })
+  }, [stopLive])
+
+  const loadSession = useCallback(async (conn: NodeConnection, sessionId: string, projectId: string) => {
+    if (conn !== connection.current) return
+    clearSession(projectId)
+    const generation = epoch.current
+    const ticket = sessionTicket.current
+    const current = () => connection.current === conn && epoch.current === generation && sessionTicket.current === ticket
+    setSelected({ project: projectId, session: sessionId })
     setStatus('connecting')
     try {
       const page = await conn.messages(sessionId)
+      if (!current()) return
       const messages = asHistory(page.messages)
       historyRef.current = messages
       setHistory(messages)
@@ -205,22 +246,24 @@ export function useWorkspace(): Workspace {
       setStatus('ready')
       void conn
         .queue(sessionId)
-        .then(setQueue)
-        .catch(() => setQueue({ items: [], count: 0 }))
+        .then(value => { if (current()) setQueue(value) })
+        .catch(() => { if (current()) setQueue({ items: [], count: 0 }) })
       // Runtime state, model catalogue and thinking levels come from the node.
       void Promise.all([conn.runtimeState(sessionId), conn.models(sessionId), conn.thinkingLevels(sessionId)])
         .then(([state, catalogue, levels]) => {
+          if (!current()) return
           setRuntime(state)
           setModels(catalogue)
           setThinkingLevels(levels)
         })
         .catch(() => {
-          // Older nodes may not expose the catalogue; the header keeps the defaults.
+          // Unknown observations stay empty; never retain another session's catalogue.
         })
       // Live events replay through the Rust projection; the presenter dedupes
       // reconnects, so subscribing from 0 is safe.
-      const scope = `${projectId}/${sessionId}`
+      const scope = `${generation}:${conn.origin}/${projectId}/${sessionId}`
       subscription.current = conn.subscribe(sessionId, 0, (event) => {
+        if (!current()) return
         // Dialogs are data, not display rules: collect them as they arrive and
         // drop them when the node says they closed.
         const wire = event as { event_type?: string; data?: Record<string, unknown> }
@@ -254,52 +297,57 @@ export function useWorkspace(): Workspace {
         setBlocks(view.blocks as Block[])
       })
     } catch (cause) {
+      if (!current()) return
       setError(String(cause))
       setStatus('error')
     }
-  }, [stopLive])
+  }, [clearSession])
+
+  const finishConnect = useCallback(async (conn: NodeConnection, generation: number) => {
+    const [nodeProjects, nodeSessions] = await Promise.all([conn.projects(), conn.sessions()])
+    if (connection.current !== conn || epoch.current !== generation) return
+    const mappedSessions = nodeSessions.map(asSession)
+    setSource({ kind: 'live', origin: conn.origin })
+    setProjects(nodeProjects.map(({ id, name }) => ({ id, name })))
+    setSessions(mappedSessions)
+    const first = mappedSessions.find(session => !session.archived)
+    if (first) await loadSession(conn, first.id, first.projectId)
+    else {
+      clearSession(nodeProjects[0]?.id ?? '')
+      setStatus('ready')
+    }
+  }, [clearSession, loadSession])
 
   const openNode = useCallback(
     async (origin: string) => {
+      const generation = ++epoch.current
+      setConnectionId(generation)
+      clearSession('')
+      connection.current = null
+      creationRequest.current = null
+      setCreation({ busy: false, uncertain: false, message: null })
       setError(null)
       setStatus('connecting')
       pendingOrigin.current = origin
       try {
         const conn = await NodeConnection.open(origin)
+        if (epoch.current !== generation) return
         connection.current = conn
         const auth = await conn.auth()
+        if (connection.current !== conn || epoch.current !== generation) return
         if (auth.required && !auth.authenticated) {
           setStatus('auth-required')
           return
         }
-        await finishConnect(conn)
+        await finishConnect(conn, generation)
       } catch (cause) {
+        if (epoch.current !== generation) return
         setError(String(cause))
         setStatus('error')
       }
     },
-    // finishConnect is stable through useCallback below
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [clearSession, finishConnect],
   )
-
-  const finishConnect = useCallback(async (conn: NodeConnection) => {
-    const [nodeProjects, nodeSessions] = await Promise.all([conn.projects(), conn.sessions()])
-    const mappedProjects = nodeProjects
-    const mappedSessions = nodeSessions.map(asSession)
-    setSource({ kind: 'live', origin: conn.origin })
-    setProjects(mappedProjects.map(({ id, name }) => ({ id, name })))
-    setSessions(mappedSessions)
-    const first = mappedSessions[0]
-    if (first) {
-      await loadSession(conn, first.id, first.projectId)
-    } else {
-      setHistory([])
-      setBlocks([])
-      setSelected({ project: mappedProjects[0]?.id ?? '', session: '' })
-      setStatus('ready')
-    }
-  }, [loadSession])
 
   const connect = useCallback(
     async (origin: string) => {
@@ -311,12 +359,15 @@ export function useWorkspace(): Workspace {
   const submitpassword = useCallback(
     async (password: string) => {
       const conn = connection.current
+      const generation = epoch.current
       if (!conn) return
       setStatus('connecting')
       try {
         await conn.login(password)
+        if (connection.current !== conn || epoch.current !== generation) return
         await openNode(conn.origin)
       } catch (cause) {
+        if (connection.current !== conn || epoch.current !== generation) return
         setError(String(cause))
         setStatus('auth-required')
       }
@@ -642,6 +693,10 @@ export function useWorkspace(): Workspace {
 
   const disconnect = useCallback(() => {
     stopLive()
+    setConnectionId(++epoch.current)
+    sessionTicket.current++
+    creationRequest.current = null
+    setCreation({ busy: false, uncertain: false, message: null })
     connection.current = null
     setLiveView(null)
     setRuntime(null)
@@ -677,21 +732,99 @@ export function useWorkspace(): Workspace {
     setSelected({ project: 'rpi-work', session: 'dark' })
     setError(null)
     setStatus('fixture')
-  }, [])
+  }, [stopLive])
+
+  // A committed create is not inserted optimistically. Reconcile by its exact
+  // node-returned ID; an unknown outcome stays locked and is never re-posted.
+  const readCreation = useCallback(async (request: Creation): Promise<boolean> => {
+    if (request.reading) return false
+    request.reading = true
+    const current = () => connection.current === request.conn && epoch.current === request.epoch && creationRequest.current === request
+    try {
+      const [nodeProjects, nodeSessions] = await Promise.all([request.conn.projects(), request.conn.sessions()])
+      if (!current()) return false
+      setProjects(nodeProjects.map(({ id, name }) => ({ id, name })))
+      const mapped = nodeSessions.map(asSession)
+      setSessions(mapped)
+      if (!request.id) {
+        setCreation({ busy: false, uncertain: true, message: '已刷新列表，但创建结果仍未确认。请在节点核对，勿重复提交；重连不会取消原请求。' })
+        return false
+      }
+      const verified = request.kind === 'project' ? nodeProjects.some(item => item.id === request.id) : mapped.some(item => item.id === request.id)
+      if (!verified) throw new Error(`列表尚未包含节点返回的 ${request.id}`)
+      const sameSelection = sessionTicket.current === request.ticket
+      if (sameSelection) {
+        if (request.kind === 'project') {
+          clearSession(request.id)
+          setStatus('ready')
+        } else {
+          const session = mapped.find(item => item.id === request.id)!
+          await loadSession(request.conn, session.id, session.projectId)
+        }
+      }
+      if (!current()) return false
+      creationRequest.current = null
+      setCreation({ busy: false, uncertain: false, message: null })
+      return sameSelection && sessionTicket.current === request.ticket + 1
+    } catch (cause) {
+      if (current()) setCreation({ busy: false, uncertain: true, message: `创建已返回 ${request.id ?? '未知结果'}，但尚未核对：${String(cause)}。不要重复创建，请先核对列表。` })
+      return false
+    } finally {
+      request.reading = false
+    }
+  }, [clearSession, loadSession])
+
+  const create = useCallback(async (kind: 'project' | 'session', name = '', path = ''): Promise<boolean> => {
+    const conn = connection.current
+    if (!conn || source.kind !== 'live' || status !== 'ready' || creationRequest.current) return false
+    if (kind === 'session' && !projects.some(project => project.id === selected.project)) return false
+    if (kind === 'project' && (!name.trim() || !path.trim())) {
+      setCreation({ busy: false, uncertain: false, message: '请填写项目名称和目标节点上的目录路径。' })
+      return false
+    }
+    const request: Creation = { conn, epoch: epoch.current, ticket: sessionTicket.current, kind }
+    creationRequest.current = request
+    const current = () => connection.current === conn && epoch.current === request.epoch && creationRequest.current === request
+    setCreation({ busy: true, uncertain: false, message: '正在创建并核对节点列表；关闭窗口不会取消节点请求。' })
+    try {
+      const reply = kind === 'project' ? await conn.createProject(name.trim(), path) : await conn.createSession(selected.project)
+      if (!current()) return false
+      if (reply.outcome !== 'created') {
+        if (reply.outcome === 'rejected') creationRequest.current = null
+        const message = reply.outcome === 'rejected' && sessionTicket.current !== request.ticket ? null : `${reply.error}${reply.outcome === 'unknown' ? '。先前创建请求的结果未确认，勿重复提交，请先核对节点。' : ''}`
+        setCreation({ busy: false, uncertain: reply.outcome === 'unknown', message })
+        return false
+      }
+      request.id = typeof reply.value === 'string' ? reply.value : reply.value.id
+      if (!request.id) throw new Error('节点未返回有效创建ID')
+      return await readCreation(request)
+    } catch (cause) {
+      if (current()) setCreation({ busy: false, uncertain: true, message: `创建结果未确认：${String(cause)}。勿重复提交，请先核对节点。` })
+      return false
+    }
+  }, [source, status, projects, selected.project, readCreation])
+
+  const createProject = useCallback((name: string, path: string) => create('project', name, path), [create])
+  const createSession = useCallback(() => create('session'), [create])
+  const recheckCreation = useCallback(async () => {
+    const request = creationRequest.current
+    if (!request || creation.busy) return false
+    setCreation({ busy: true, uncertain: true, message: '正在核对列表；不会重新发送创建请求。' })
+    return readCreation(request)
+  }, [creation.busy, readCreation])
 
   const selectProject = useCallback(
     (id: string) => {
-      const next = sessions.find((session) => session.projectId === id)
+      const next = sessions.find((session) => session.projectId === id && !session.archived)
       if (!next) {
-        setSelected({ project: id, session: '' })
-        setHistory([])
-        setBlocks([])
+        clearSession(id)
+        if (source.kind === 'live') setStatus('ready')
         return
       }
       void selectSession(next.id)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessions, source],
+    [sessions, source, clearSession],
   )
 
   const selectSession = useCallback(
@@ -711,11 +844,17 @@ export function useWorkspace(): Workspace {
     if (liveView && source.kind === 'live') return liveView.rows
     const instance = presenter.current
     if (!instance || (status !== 'fixture' && status !== 'ready')) return []
-    return instance.rows(`${selected.project}/${selected.session || 'none'}`, history, blocks)
-  }, [liveView, source, status, selected, history, blocks])
+    const nodeScope = source.kind === 'live' ? `${connectionId}:${source.origin}` : 'fixture'
+    return instance.rows(`${nodeScope}/${selected.project}/${selected.session || 'none'}`, history, blocks)
+  }, [liveView, source, connectionId, status, selected, history, blocks])
 
   return {
     status,
+    connectionId,
+    creation,
+    createProject,
+    createSession,
+    recheckCreation,
     source,
     error,
     projects,

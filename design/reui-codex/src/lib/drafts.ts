@@ -4,7 +4,7 @@
  * Drafts are local to this device and keyed by `origin/session`, so switching
  * sessions or nodes never leaks text into another conversation.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 const KEY = 'rpi-work-reui-drafts-v1'
 const MAX_DRAFT = 32_000
@@ -36,27 +36,25 @@ function write(drafts: Drafts) {
 }
 
 export function useDraft(scope: string) {
-  const [draft, setDraft] = useState('')
-  const drafts = useRef<Drafts>({})
-
-  useEffect(() => {
-    drafts.current = read()
-    setDraft(drafts.current[scope] ?? '')
-  }, [scope])
+  // Derive from the scope in the same render, rather than showing the previous
+  // scope's text until an effect runs. The ref also keeps in-memory drafts when
+  // storage is blocked, and makes consecutive edits merge without stale state.
+  const [drafts, setDrafts] = useState<Drafts>(read)
+  const current = useRef(drafts)
 
   const update = useCallback(
     (value: string) => {
-      setDraft(value)
-      const next = { ...drafts.current }
-      if (value.trim().length === 0) delete next[scope]
-      else next[scope] = value.slice(0, MAX_DRAFT)
-      drafts.current = next
-      write(next)
+      const next = { ...current.current, [scope]: value }
+      current.current = next
+      setDrafts(next)
+      write(Object.fromEntries(Object.entries(next)
+        .filter(([, text]) => text.trim().length > 0)
+        .map(([key, text]) => [key, text.slice(0, MAX_DRAFT)])))
     },
     [scope],
   )
 
   const clear = useCallback(() => update(''), [update])
 
-  return { draft, setDraft: update, clear }
+  return { draft: drafts[scope] ?? '', setDraft: update, clear }
 }

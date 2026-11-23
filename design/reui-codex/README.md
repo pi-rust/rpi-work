@@ -1,13 +1,13 @@
 # ReUI · 工作台迁移工作区（未正式发布）
 
-已确认的 1:1 目标是 `design/reui-message-layout/`，不是本目录的早期 Codex 外壳。迁移范围、真实接口和未完成项见 [迁移清单](../../docs/design/confirmed-workbench-migration.md)。已迁入真实右侧浏览器、整窗顶栏/快捷栏和独立项目/置顶/最近列表；消息、居中设置、完整真实能力和正式发布仍未完成。
+已确认的 1:1 目标是 `design/reui-message-layout/`，不是本目录的早期 Codex 外壳。迁移范围、真实接口和未完成项见 [迁移清单](../../docs/design/confirmed-workbench-migration.md)。已迁入真实右侧浏览器、整窗顶栏/快捷栏和独立项目/置顶/最近列表，并接通 typed 项目登记/会话创建及权威回读；消息视觉、居中设置、完整权限门槛和正式发布仍未完成。
 
 本目录使用 [ReUI](https://reui.io)（MIT 的 shadcn 生态组件库）和 Rust WASM。fixture 数据来自 `src/data.ts`，与 `tests/fixtures/ui-fixture.cjs`、`apps/work-gpui` 原型同内容，仅用于隔离测试，不代表真实节点状态。
 
 ```bash
 cd design/reui-codex
 npm ci
-npm run build:viewmodel   # cargo build -p work-viewmodel-wasm + wasm-bindgen → src/pkg/
+npm run build:wasm        # 编 work-viewmodel-wasm / work-client-wasm，再生成 src/pkg/
 npm run dev               # http://localhost:5173
 npm run build             # 先编 wasm，再 tsc + vite build
 ```
@@ -25,25 +25,29 @@ npm run build             # 先编 wasm，再 tsc + vite build
 验收脚本（需要仓库根目录 `npm ci --prefix tools`）：
 
 ```bash
-npm run verify:a11y              # 自包含：无障碍与键盘 5 条断言
-npm run verify:settings          # 自包含：Provider 目录 + 一次性授权 4 条断言
+npm run verify:a11y              # 自包含：无障碍与键盘 7 条断言
+npm run verify:settings          # 自包含：Provider 目录 + 一次性授权 6 条断言
 npm run verify:tree              # 自包含：目录树懒加载 4 条断言
 npm run verify:mobile            # 自包含：320/390 两档，7 条断言
-npm run verify:hosted            # 自包含：起隔离节点托管 dist/，5 条断言（需 cargo build -p work-cli）
+npm run verify:hosted            # 真实隔离Rust节点 + 合成RPC原生后端，托管/创建/草稿 8 条（构建要求见下）
 npm run verify:browser           # 自包含：隔离真实 HTTP 页面、URL/沙箱、历史/标签/表单保留及明暗响应式
 npm run verify:shell             # 自包含：7宽×2主题几何、项目置顶/折叠、节点会话元数据、空态与草稿保留
+npm run verify:creation          # 自包含：创建/拒绝/未知结果、仅GET核对、迟到回调/重连/草稿、弹窗明暗响应式
 npm run verify:all               # 依次跑全部测试；fixture/theme 需 REUI_URL 指向本目录构建的 preview
-npm run verify:live              # 自包含：起 fixture + preview，25 条断言
+npm run verify:live              # 自包含：起 fixture + preview，22 条断言
 npm run verify:fixture           # fixture 模式 6 条（需先启动 preview 到 5179）
 npm run verify:theme             # 主题契约 8 条（需先启动 preview 到 5179）
 ```
+
+hosted 验收先在仓库根目录构建 `cargo build -p work-cli --locked` 及 `cargo build -p work-node-service --bin work-server-rpc-fixture --locked`。脚本固定独立 Work/Agent 目录和 RPC fixture 程序，不使用已安装 rpi、真实凭据或模型；测试用空资源目录 CLI 仅对 fixture 的专用副本名启用，不代表真实 rpi 或资源安装验收。当前全部11组本地通过；CI新增 settings/tree/browser/shell/creation，hosted仍需本地节点二进制，不宣称已执行远程CI。
 
 ## 已实现
 
 | 区域 | 实现 |
 | --- | --- |
 | 左侧栏 | 52px 快捷栏、275px 项目/置顶/最近独立列表；折叠和项目置顶为按节点入口隔离的设备偏好，置顶/归档会话读取节点事实 |
-| 未接入入口 | 新对话、添加项目、状态筛选、归档管理、会话目标、计划任务及会话导航历史暂时禁用并解释原因，不清空草稿或伪造成功 |
+| 创建 | 已连接节点上的项目登记/会话创建，Rust保留API协议和拒绝/未知结果区分；按返回ID回读列表后切换，不清空旧草稿，不在本地造项目/会话；未知写入结果锁定，仅GET核对 |
+| 未接入入口 | 系统目录选择、目录创建、状态筛选、归档管理、会话目标、计划任务及会话导航历史暂时禁用并解释原因；新建仅在真实连接和项目上下文中开放 |
 | 命令面板 | ⌘K 搜索项目与会话，↑↓ 选择、Enter 打开、Esc 关闭 |
 | 顶栏 | 跨整窗46px工具栏（手机44px）、居中会话标题、真实连接状态、浏览器/运行/文件入口；主题/密度等收进显示选项弹层 |
 | 浏览器 | 真实 HTTP(S) iframe、多标签、地址栏导航历史、刷新、页面历史选择、自适应 / 移动视口；切主题/标签/面板保持 DOM 和未保存表单 |

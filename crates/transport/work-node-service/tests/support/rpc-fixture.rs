@@ -3,8 +3,51 @@ use std::io::{self, BufRead, Write};
 
 use serde_json::{Value, json};
 
+// Opt-in native CLI fragment for browser creation integration only. It reports
+// an empty synthetic catalogue, not installed/loaded resources, and advertises
+// no install, exact-selection, build, network, or saved-session capabilities.
+// All existing RPC-only fixtures keep their Unsupported behaviour unchanged.
+fn creation_catalog_fixture() -> bool {
+    let mut arguments = std::env::args();
+    if !arguments
+        .next()
+        .is_some_and(|name| name.contains("creation-native-queries-fixture"))
+    {
+        return false;
+    }
+    let parameters: Vec<_> = arguments.collect();
+    let output = match parameters.as_slice() {
+        [flag] if flag == "--help" => "--resource-capabilities".to_owned(),
+        [flag] if flag == "--resource-capabilities" => json!({
+            "version":1,"type":"resource_capabilities","loadedFacts":false,
+            "management":{"version":1,"command":"resource","operations":["list"],
+                "scopes":["project","global"],"kinds":[],"explicitScopeRequired":true,
+                "build":false,"network":false}
+        })
+        .to_string(),
+        [command, operation, flag, scope]
+            if command == "resource"
+                && operation == "list"
+                && flag == "--scope"
+                && matches!(scope.as_str(), "project" | "global") =>
+        {
+            json!({
+                "version":1,"success":true,"operation":"list","scope":scope,
+                "kind":null,"name":null,"data":{"resources":[]}
+            })
+            .to_string()
+        }
+        _ => return false,
+    };
+    println!("{output}");
+    true
+}
+
 #[allow(clippy::too_many_lines)]
 fn main() {
+    if creation_catalog_fixture() {
+        return;
+    }
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout());
     let mut hanging = false;

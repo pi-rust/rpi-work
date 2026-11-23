@@ -23,7 +23,9 @@ const assert = require('node:assert/strict')
 const { chromium } = require(resolvePlaywright())
 const appRoot = path.resolve(__dirname, '..')
 const repoRoot = path.resolve(appRoot, '../..')
-const cli = path.join(repoRoot, 'target/debug/work-cli')
+const suffix = process.platform === 'win32' ? '.exe' : ''
+const cli = path.join(repoRoot, `target/debug/work-cli${suffix}`)
+const rpc = path.join(repoRoot, `target/debug/work-server-rpc-fixture${suffix}`)
 const password = 'hosted-verify-token'
 
 function freePort() {
@@ -52,7 +54,13 @@ async function waitForServer(url, timeoutMs = 60000) {
 
 ;(async () => {
   if (!fs.existsSync(cli)) throw new Error(`缺少 ${cli}；先 cargo build -p work-cli`)
-  const data = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'rpi-work-hosted-'))
+  if (!fs.existsSync(rpc)) throw new Error('先 cargo build -p work-node-service --bin work-server-rpc-fixture --locked')
+  const data = fs.realpathSync(fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'rpi-work-hosted-')))
+  // The existing credential-free RPC fixture opts into native queries by argv.
+  // A copied executable name supplies that flag without a platform shell wrapper.
+  const isolatedRpc = path.join(data, `creation-native-queries-fixture${suffix}`)
+  fs.copyFileSync(rpc, isolatedRpc)
+  fs.mkdirSync(path.join(data, 'agent'), { recursive: true })
   fs.writeFileSync(path.join(data, 'sharing.json'), '{"allow_sharing":true}')
   fs.writeFileSync(path.join(data, 'web-sharing.json'), '{"allow_sharing":true}')
   const apiPort = await freePort()
@@ -64,26 +72,30 @@ async function waitForServer(url, timeoutMs = 60000) {
     console.log('PASS', name)
   }
 
-  const server = spawn(cli, ['serve'], {
+  const server = spawn(cli, ['serve', '--shutdown-stdin'], {
     env: {
       ...process.env,
       RPI_WORK_DATA_DIR: data,
+      RPI_CODING_AGENT_DIR: path.join(data, 'agent'),
+      RPI_WORK_RPI_BIN: isolatedRpc,
       RPI_WORK_HTTP_BIND: '127.0.0.1',
       RPI_WORK_HTTP_PORT: String(apiPort),
       RPI_WORK_WEB_LISTEN_PORT: String(webPort),
       RPI_WORK_HTTP_PASSWORD: password,
       RPI_WORK_HTTP_ASSETS: path.join(appRoot, 'dist'),
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   })
+  const exited = new Promise(resolve => server.once('exit', () => resolve(true)))
   let log = ''
   server.stdout.on('data', (chunk) => (log += chunk))
   server.stderr.on('data', (chunk) => (log += chunk))
 
   const api = `http://127.0.0.1:${apiPort}`
   const web = `http://127.0.0.1:${webPort}`
-  const browser = await chromium.launch({ headless: true })
+  let browser
   try {
+    browser = await chromium.launch({ headless: true })
     await waitForServer(`${web}/`)
     pass('the node serves the built prototype same-origin')
 
@@ -119,17 +131,58 @@ async function waitForServer(url, timeoutMs = 60000) {
     assert.match(body, new RegExp(projectId), 'project renders: ' + body.slice(0, 120))
     pass('node-hosted bundle lists the seeded project')
 
-    await page.screenshot({ path: '/tmp/reui-hosted.png' })
+    // Real browser writes -> existing Rust client -> real isolated owner. Its
+    // agent protocol is synthetic and credential-free, never an installed rpi.
+    await page.locator('textarea').fill('real owner: preserve the seeded draft')
+    const browserProjectPath = path.join(data, 'browser-project')
+    fs.mkdirSync(browserProjectPath)
+    const requests = []
+    page.on('request', request => requests.push(request.url()))
+    await page.getByRole('button', { name: '添加项目', exact: true }).click()
+    const modal = page.getByRole('dialog', { name: '添加项目', exact: true })
+    await modal.getByLabel('名称', { exact: true }).fill('browser-created')
+    await modal.getByLabel('项目路径', { exact: true }).fill(browserProjectPath)
+    await modal.getByRole('button', { name: '添加项目', exact: true }).click()
+    await modal.waitFor({ state: 'hidden' })
+    const created = JSON.parse(run(['projects'])).find(item => item.path === browserProjectPath)
+    assert(created, 'Browser-created project is in the real owner list')
+    await page.locator('.wb-project').filter({ hasText: created.name }).waitFor()
+    assert.equal(await page.locator('textarea').inputValue(), '')
+    pass('browser registers an existing directory and reconciles the real owner project ID')
+    const sessionCount = JSON.parse(run(['sessions'])).length
+    await page.getByRole('button', { name: '新对话', exact: true }).click()
+    await page.getByText('在线', { exact: true }).waitFor()
+    await page.locator('.wb-thread[aria-current="true"]').waitFor()
+    const realSessions = JSON.parse(run(['sessions']))
+    assert.equal(realSessions.length, sessionCount + 1)
+    const createdSession = realSessions.find(item => item.projectId === created.id)
+    assert(createdSession, 'Real node session has the returned project binding')
+    assert(requests.some(url => url.includes(`/sessions/${createdSession.sessionId}/message-summaries`)))
+    assert.equal(await page.locator('textarea').inputValue(), '')
+    pass('browser creates and opens one real owner session without a prompt or model call')
+    await page.locator('.wb-project').filter({ hasText: 'hosted-fixture' }).click()
+    await page.getByText('在线', { exact: true }).waitFor()
+    assert.equal(await page.locator('textarea').inputValue(), 'real owner: preserve the seeded draft')
+    pass('returning to the original real owner session restores its draft')
+    const shots = path.join(repoRoot, 'artifacts/confirmed-workbench')
+    fs.mkdirSync(shots, { recursive: true })
+    await page.screenshot({ path: path.join(shots, 'creation-hosted.png'), animations: 'disabled' })
     assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '))
     pass('no page errors while running from the node')
     console.log('RESULT', passed.length, 'checks passed')
   } catch (error) {
     console.error('FAIL', error.message.split('\n')[0])
+    if (error.stderr) console.error('isolated CLI diagnostic:', error.stderr.toString().slice(0, 1500))
     console.error('page errors:', errors.slice(0, 3))
     console.error('server log tail:', log.split('\n').slice(-6).join(' | '))
     process.exitCode = 1
   } finally {
-    await browser.close()
-    server.kill()
+    await browser?.close()
+    server.stdin.end()
+    if (!await Promise.race([exited, new Promise(resolve => { const timer = setTimeout(() => resolve(false), 10000); timer.unref() })])) {
+      server.kill('SIGTERM')
+      await exited
+    }
+    fs.rmSync(data, { recursive: true, force: true })
   }
 })()

@@ -1,0 +1,19 @@
+.wb-project-dialog { position: fixed; inset: 0; margin: auto; width: min(450px,calc(100vw - 24px)); max-height: min(490px,calc(100dvh - 24px)); overflow: auto; padding: 16px; border: 1px solid var(--input); border-radius: 13px; background: var(--background); color: var(--foreground); box-shadow: 0 15px 60px #0002; }
+.wb-project-dialog::backdrop { background: #0005; }
+.wb-dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.wb-dialog-heading h2 { margin: 0; font-size: .9375rem; font-weight: 600; }
+#wb-project-description { margin: 0 0 18px; color: var(--muted-foreground); font-size: .8125rem; line-height: 1.6; }
+.wb-dialog-form { display: grid; gap: 7px; margin-bottom: 12px; font-size: .8125rem; }
+.wb-dialog-form input, .wb-dialog-form select { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--input); border-radius: 6px; background: var(--background); }
+.wb-project-path-row { display: flex; gap: 7px; min-width: 0; }
+.wb-project-dialog button:not(.wb-icon), .wb-creation-message button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; padding: 6px 10px; border: 1px solid var(--input); border-radius: 6px; font-size: .75rem; }
+.wb-project-dialog svg { width: 14px; height: 14px; }
+.wb-project-dialog button:disabled, .wb-dialog-form input:disabled { opacity: .5; }
+.wb-project-dialog button:not(:disabled), .wb-creation-message button:not(:disabled) { cursor: pointer; }
+.wb-project-dialog :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+#wb-project-help { color: var(--muted-foreground); font-size: .75rem; line-height: 1.6; }
+.wb-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.wb-dialog-primary { color: var(--primary-foreground); background: var(--primary); }
+.wb-creation-message { overflow-wrap: anywhere; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: .8125rem; line-height: 1.6; }
+.wb-creation-message button { margin-top: 6px; }
+@media (max-width: 700px) { .wb-dialog-form input, .wb-dialog-form select { font-size: 16px; min-height: 44px; } .wb-project-dialog button:not(.wb-icon) { min-height: 44px; } }

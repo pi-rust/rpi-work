@@ -8,6 +8,9 @@ import clientWasmUrl from '../pkg/work_client_bg.wasm?url'
 import initClient, { NodeClient } from '../pkg/work_client.js'
 
 export type NodeProject = { id: string; name: string; path: string }
+export type CreationReply<T> =
+  | { outcome: 'created'; value: T }
+  | { outcome: 'rejected' | 'unknown'; error: string }
 
 export type NodeSession = {
   sessionId: string
@@ -110,6 +113,14 @@ export class NodeConnection {
 
   async sessions(): Promise<NodeSession[]> {
     return parse<NodeSession[]>(await this.client.sessions())
+  }
+
+  async createProject(name: string, path: string): Promise<CreationReply<NodeProject>> {
+    return parse(await this.client.create_project(name, path))
+  }
+
+  async createSession(projectId: string): Promise<CreationReply<string>> {
+    return parse(await this.client.create_session(projectId))
   }
 
   async messages(sessionId: string, limit = 60): Promise<NodeMessages> {

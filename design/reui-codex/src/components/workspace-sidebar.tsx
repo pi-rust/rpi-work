@@ -15,13 +15,13 @@ function readPreferences(scope: string): Preferences {
 type Props = {
   projects: Project[]; sessions: Session[]; project: string; session: string
   onProject: (id: string) => void; onSession: (id: string) => void
-  onNewChat?: () => void; onSearch?: () => void; onClose: () => void
+  onNewChat?: () => void; onAddProject?: () => void; creationHint?: string; onSearch?: () => void; onClose: () => void
   className?: string; connection?: ReactNode; nodeLabel: string; scope: string
   nodeState: 'fixture' | 'online' | 'offline'
 }
 
 /** Presentation-only preferences; session pin/archive facts remain node-owned. */
-export function Sidebar({ projects, sessions, project, session, onProject, onSession, onNewChat, onSearch, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
+export function Sidebar({ projects, sessions, project, session, onProject, onSession, onNewChat, onAddProject, creationHint, onSearch, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
   const [preferences, setPreferences] = useState(() => readPreferences(scope))
   function save(next: Preferences) {
     setPreferences(next)
@@ -45,10 +45,10 @@ export function Sidebar({ projects, sessions, project, session, onProject, onSes
         <button type="button" className="wb-icon" aria-label="搜索项目与会话" title="搜索会话" onClick={onSearch}><Search aria-hidden="true" /></button>
         <button type="button" className="wb-icon" aria-label="收起会话侧栏" title="收起会话侧栏" onClick={onClose}><PanelLeftClose aria-hidden="true" /></button>
       </div></div>
-      <button type="button" className="wb-new-chat" onClick={onNewChat} disabled={!onNewChat} title={!onNewChat ? '真实会话创建尚未接入；不会清空当前草稿' : undefined}><SquarePen aria-hidden="true" />新对话</button>
+      <button type="button" className="wb-new-chat" onClick={onNewChat} disabled={!onNewChat} title={!onNewChat ? creationHint ?? '请先连接节点并选择项目；不会清空当前草稿' : undefined}><SquarePen aria-hidden="true" />新对话</button>
       <nav className="wb-project-scroll" aria-label="项目与会话">
         <section aria-label="项目" className="wb-sidebar-section">
-          <div className="wb-project-heading">{heading('projects', '项目')}<button type="button" className="wb-icon" aria-label="添加项目" disabled title="项目创建与目录选择尚未接入真实客户端"><Plus aria-hidden="true" /></button></div>
+          <div className="wb-project-heading">{heading('projects', '项目')}<button type="button" className="wb-icon" aria-label="添加项目" onClick={onAddProject} disabled={!onAddProject} title={!onAddProject ? creationHint ?? '请先连接真实节点' : '添加目标节点上的已有项目'}><Plus aria-hidden="true" /></button></div>
           <div id="wb-projects" hidden={preferences.folded.projects}>
             <button type="button" className="wb-node-toggle" aria-label={`节点项目 ${nodeLabel}`} aria-expanded={!preferences.folded.node} aria-controls="wb-node" onClick={() => toggle('node')}><ChevronDown aria-hidden="true" /><Network aria-hidden="true" /><span>{nodeLabel}</span>{nodeState === 'fixture' ? <small>示例</small> : null}<small>{projects.length}</small></button>
             <div id="wb-node" hidden={preferences.folded.node}>

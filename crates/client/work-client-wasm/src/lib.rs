@@ -2,8 +2,8 @@
 //!
 //! A Web renderer must not re-implement the node protocol (paths, command
 //! envelopes, retries) in TypeScript; that is exactly the duplication the
-//! view-model split exists to avoid. This crate exposes the desktop client's
-//! read-only surface as promises.
+//! view-model split exists to avoid. This crate exposes the client's typed
+//! surface as promises.
 //!
 //! Every method returns a JSON string so the JS wrapper stays trivial and the
 //! payload shape stays owned by `work-node-api` types.
@@ -27,6 +27,40 @@ fn json_string<T: serde::Serialize>(value: &T) -> Result<JsValue, JsValue> {
 
 fn failure(context: &str, error: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&format!("{context}：{error}"))
+}
+
+/// Creation has no idempotency key: a transport/server failure may follow a
+/// committed write. Keep this distinction in Rust, never parse error text in UI.
+#[derive(serde::Serialize)]
+#[serde(tag = "outcome", rename_all = "camelCase")]
+enum CreationReply<T> {
+    Created { value: T },
+    Rejected { error: String },
+    Unknown { error: String },
+}
+
+fn creation_reply<T>(result: Result<T, work_client::ClientError>) -> CreationReply<T> {
+    match result {
+        Ok(value) => CreationReply::Created { value },
+        Err(error) => {
+            let rejected = match &error {
+                work_client::ClientError::Api { status, .. } => {
+                    matches!(
+                        status.as_u16(),
+                        400 | 401 | 403 | 404 | 405 | 409 | 422 | 429
+                    )
+                }
+                work_client::ClientError::Unsupported { .. } => true,
+                _ => false,
+            };
+            let error = error.to_string();
+            if rejected {
+                CreationReply::Rejected { error }
+            } else {
+                CreationReply::Unknown { error }
+            }
+        }
+    }
 }
 
 /// One authenticated (or pending) connection to a node origin.
@@ -131,6 +165,25 @@ impl NodeClient {
                         "pinned": session.pinned,
                     }))
                     .collect::<Vec<_>>()
+            ))
+        })
+    }
+
+    /// Register a directory on the target node; no browser-local path guessing.
+    pub fn create_project(&self, name: String, path: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            json_string(&creation_reply(
+                client.create_project(&name, Some(&path), false).await,
+            ))
+        })
+    }
+
+    pub fn create_session(&self, project_id: Option<String>) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            json_string(&creation_reply(
+                client.create_session(project_id.as_deref()).await,
             ))
         })
     }
@@ -639,5 +692,40 @@ impl NodeClient {
                 "leafId": page.leaf_id,
             }))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CreationReply, creation_reply};
+    use work_client::ClientError;
+
+    #[test]
+    fn creation_ack_is_an_id_not_a_verified_list() {
+        let reply = serde_json::to_value(creation_reply(Ok("node-session-id"))).unwrap();
+        assert_eq!(reply["outcome"], "created");
+        assert_eq!(reply["value"], "node-session-id");
+    }
+
+    #[test]
+    fn only_explicit_admission_rejections_allow_another_submission() {
+        for status in [400, 401, 403, 404, 405, 409, 422, 429] {
+            let reply = creation_reply::<()>(Err(ClientError::Api {
+                status: status.try_into().unwrap(),
+                message: "rejected".into(),
+            }));
+            assert!(matches!(reply, CreationReply::Rejected { .. }));
+        }
+        for status in [408, 500, 502, 504] {
+            let reply = creation_reply::<()>(Err(ClientError::Api {
+                status: status.try_into().unwrap(),
+                message: "may have committed".into(),
+            }));
+            assert!(matches!(reply, CreationReply::Unknown { .. }));
+        }
+        assert!(matches!(
+            creation_reply::<()>(Err(ClientError::Protocol("malformed reply".into()))),
+            CreationReply::Unknown { .. }
+        ));
     }
 }

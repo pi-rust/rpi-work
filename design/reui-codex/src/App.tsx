@@ -16,6 +16,7 @@ import { CommandPalette } from '@/components/command-palette'
 import { SettingsPage } from '@/components/settings-page'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { ActivityRail } from '@/components/activity-rail'
+import { ProjectDialog } from '@/components/project-dialog'
 import './workbench-shell.css'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
@@ -25,7 +26,7 @@ import { useIsMobile, useMediaQuery } from '@/lib/viewport'
 
 export default function App() {
   const workspace = useWorkspace()
-  const draftScope = `${workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}/${workspace.selected.session || 'none'}`
+  const draftScope = `${workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}/${workspace.selected.session || `project:${workspace.selected.project || 'none'}`}`
   const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
@@ -35,6 +36,7 @@ export default function App() {
   const [drawer, setDrawer] = useState(false)
   const [navigation, setNavigation] = useState(true)
   const [palette, setPalette] = useState(false)
+  const [projectDialogFor, setProjectDialogFor] = useState<number | null>(null)
   // The run panel is a side column on desktop and an overlay on phones, so it
   // must start closed on narrow viewports instead of covering the transcript.
   useEffect(() => {
@@ -109,6 +111,7 @@ export default function App() {
     provider: model.provider,
   }))
   const live = workspace.source.kind === 'live'
+  const canCreate = live && workspace.status === 'ready' && !workspace.creation.busy && !workspace.creation.uncertain
   const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
 
   return (
@@ -139,6 +142,9 @@ export default function App() {
             if (isMobile) setDrawer(false)
           }}
           onSearch={() => setPalette(true)}
+          onNewChat={canCreate && workspace.selected.project ? () => { setPage('chat'); if (isMobile) setDrawer(false); void workspace.createSession() } : undefined}
+          onAddProject={canCreate ? () => { setPage('chat'); setProjectDialogFor(workspace.connectionId) } : undefined}
+          creationHint={!live ? '示例模式不创建真实数据；请连接节点' : workspace.creation.busy ? '正在创建并核对，请勿重复提交' : workspace.creation.uncertain ? '上次创建结果尚未确认，请先核对' : '请先连接节点并选择项目'}
           nodeLabel={workspace.source.kind === 'live' ? workspace.source.origin.replace(/^https?:\/\//, '') : 'fixture-node'}
           nodeState={live ? workspace.status === 'ready' ? 'online' : 'offline' : 'fixture'}
           connection={
@@ -338,6 +344,7 @@ export default function App() {
                   />
                 ) : (
                 <div className="mx-auto flex w-full max-w-[48rem] flex-col gap-8">
+                  {workspace.creation.message ? <div className="wb-creation-message" role={workspace.creation.busy ? 'status' : 'alert'}><p>{workspace.creation.message}</p>{workspace.creation.uncertain ? <button type="button" disabled={workspace.creation.busy} onClick={() => void workspace.recheckCreation()}>核对创建结果</button> : null}</div> : null}
                   {workspace.dialogs.map((dialog) => (
                     <div
                       key={dialog.requestId}
@@ -396,7 +403,7 @@ export default function App() {
                         rowElement(row, workspace.history as never, workspace.blocks as never, node.model),
                       )
                     ) : (
-                      <EmptyState live={live} />
+                      <EmptyState live={live} hasSession={!!workspace.selected.session} />
                     )
                   ) : (
                     <p className="text-muted-foreground text-[13px]">正在加载 work-viewmodel…</p>
@@ -408,6 +415,7 @@ export default function App() {
               <Composer
                 draft={draft}
                 onDraft={setDraft}
+                sendDisabledReason={live && !workspace.selected.session ? '请先在侧栏创建真实会话；当前草稿会保留' : undefined}
                 context={context ?? { used: null, window: null, percent: null, threshold: null, percentText: '—' }}
                 onSend={() => {
                   void workspace.send(draft).then((ok) => {
@@ -553,6 +561,16 @@ export default function App() {
           </footer>
         </main>
       </div>
+      {projectDialogFor === workspace.connectionId && live && workspace.status === 'ready' ? <ProjectDialog
+        key={workspace.connectionId}
+        nodeLabel={workspace.source.kind === 'live' ? workspace.source.origin : ''}
+        busy={workspace.creation.busy}
+        uncertain={workspace.creation.uncertain}
+        message={workspace.creation.message}
+        onCreate={workspace.createProject}
+        onRecheck={workspace.recheckCreation}
+        onClose={() => setProjectDialogFor(null)}
+      /> : null}
       <CommandPalette
         open={palette}
         projects={workspace.projects}
@@ -568,11 +586,11 @@ export default function App() {
   )
 }
 
-function EmptyState({ live }: { live: boolean }) {
+function EmptyState({ live, hasSession }: { live: boolean; hasSession: boolean }) {
   return (
     <div className="text-muted-foreground mx-auto flex flex-col items-center gap-2 py-24 text-center text-[13px]">
-      <span className="text-[15px] font-medium">这个会话还没有消息</span>
-      <span>{live ? '从节点读取到 0 条消息；P3 会接实时事件。' : 'fixture 会话没有内容。'}</span>
+      <span className="text-[15px] font-medium">{hasSession ? '这个会话还没有消息' : '尚未选择会话'}</span>
+      <span>{!hasSession && live ? '请在侧栏点击“新对话”创建真实会话；当前草稿会保留。' : live ? '从节点读取到 0 条消息。' : 'fixture 会话没有内容。'}</span>
     </div>
   )
 }
