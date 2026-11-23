@@ -67,7 +67,7 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .brand-symbol { font: 750 22px/1 ui-monospace, monospace; letter-spacing: -.14em; width: 22px; color: var(--ink); }
 .brand strong { font-size: .875rem; font-weight: 650; letter-spacing: -.02em; }
 .sidebar-close { display: none !important; margin-left: auto; }
-.sidebar-actions { display: grid; grid-template-columns: minmax(0, 1fr) 32px; align-items: center; gap: 2px; }
+.sidebar-actions { display: grid; gap: 2px; }
 .new-chat, .sidebar-button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 35px; padding: 0 10px; border-radius: 7px; font-size: .8125rem; text-align: left; }
 .new-chat:hover, .sidebar-button:hover { background: var(--hover); }
 .new-chat { font-weight: 550; }
@@ -76,16 +76,9 @@ kbd { margin-inline-start: auto; font-size: .6875rem; line-height: 1.3; font-fam
 .sidebar-actions button:hover kbd, .sidebar-actions button:focus-visible kbd { opacity: 1; }
 .project-scroll { flex: 1; min-height: 0; overflow: auto; margin-top: 16px; }
 .sidebar-label { margin: 0 10px 9px; color: var(--dim); font-size: .75rem; font-weight: 500; }
-.project { margin-bottom: 14px; }
-.project summary { list-style: none; display: flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 6px; font-size: .8125rem; font-weight: 550; cursor: pointer; color: var(--muted); border-radius: 6px; }
-.project summary::-webkit-details-marker { display: none; }
-.project summary:hover { background: var(--hover); }
-.project-toggle { display: inline-flex; }
-.project-toggle .icon { width: 12px; height: 12px; }
-.project[open] .project-toggle { transform: rotate(90deg); }
 .project-folder { display: inline-flex; }
 .project-folder .icon { width: 15px; height: 15px; }
-.project-threads { display: grid; gap: 2px; margin-top: 3px; }
+.thread-list { display: grid; gap: 1px; }
 .thread-button { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px; align-items: center; min-height: 35px; padding: 0 9px 0 29px; border-radius: 7px; color: var(--muted); text-align: left; font-size: .8125rem; }
 .thread-button:hover { background: var(--hover); }
 .thread-button[aria-current="true"] { color: var(--ink); background: var(--hover); }
@@ -306,7 +299,6 @@ dialog::backdrop, .scrim { background: #0005; }
 .project-heading .sidebar-label { margin-bottom: 0; }
 .project-heading .icon-button { width: 24px; height: 24px; }
 .project-heading .icon { width: 13px; height: 13px; }
-.sidebar-actions .add-project-button { width: 32px; height: 32px; }
 .project-dialog-description { margin: 0 0 18px; color: var(--muted); font-size: .8125rem; line-height: 1.6; }
 .project-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .project-form-error { margin: 2px 0; color: var(--bad); font-size: .8125rem; line-height: 1.5; }
@@ -561,7 +553,6 @@ dialog::backdrop, .scrim { background: #0005; }
 .rail-button[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--strong-line); background: var(--surface); }
 .thread-button { font-size: .8125rem; padding-left: 26px; min-height: 34px; }
 .thread-button[aria-current="true"] { font-weight: 550; }
-.project summary { padding-block: 2px; }
 .sidebar-footer { margin-top: 10px; }
 .brand strong { font-size: .875rem; }
 .activity summary { min-height: 31px; font-size: .8125rem; }
@@ -649,19 +640,12 @@ dialog::backdrop, .scrim { background: #0005; }
 .history-controls button { width: 26px; height: 26px; }
 .history-controls .icon { width: 15px; height: 15px; }
 .history-controls button:disabled { opacity: .3; }
-.sidebar-actions, .project-threads { display: grid; gap: 1px; }
-.sidebar-button, .new-chat, .thread-button, .project summary { min-height: 36px; font-size: 14px; }
+.sidebar-actions { display: grid; gap: 1px; }
+.sidebar-button, .new-chat, .thread-button { min-height: 36px; font-size: 14px; }
 .new-chat, .sidebar-button { font-weight: 450; color: var(--ink); }
 .sidebar-button .icon, .new-chat .icon { width: 16px; height: 16px; }
 .project-heading { height: 30px; margin: 6px 5px 0 0; }
 .project-scroll { margin-top: 18px; }
-.project { margin-bottom: 8px; }
-.project summary { position: relative; font-weight: 500; color: var(--ink); gap: 8px; padding-inline: 10px 4px; }
-.project-toggle { display: none; }
-.project summary:hover .project-toggle, .project summary:focus-within .project-toggle { display: inline-flex; width: 16px; justify-content: center; }
-.project summary:hover .project-folder, .project summary:focus-within .project-folder { display: none; }
-.project-compose { margin-left: auto; opacity: 0; width: 26px; height: 26px; }
-.project summary:hover .project-compose, .project summary:focus-within .project-compose { opacity: 1; }
 .project-compose .icon { width: 14px; height: 14px; }
 .thread-button { padding-left: 33px; width: 100%; }
 .thread-button[aria-current="true"] { background: var(--hover); font-weight: 500; }
@@ -769,7 +753,7 @@ dialog::backdrop, .scrim { background: #0005; }
 .chat-filter select { background: var(--subtle); border: 0; border-radius: 5px; padding: 3px; }
 #filter-chats[aria-pressed="true"] { background: var(--hover); }
 .filter-empty { color: var(--dim); font-size: 12px; padding-inline: 10px; }
-.sidebar .sidebar-button, .sidebar .new-chat, .thread-button, .project summary { min-height: 30px; border-radius: 10px; }
+.sidebar .sidebar-button, .sidebar .new-chat, .thread-button { min-height: 30px; border-radius: 10px; }
 .project-compose { height: 24px; }
 #pinned-threads .thread-button { padding-left: 11px; }
 .project-scroll { margin-top: 16px; }
@@ -817,14 +801,18 @@ dialog::backdrop, .scrim { background: #0005; }
 }
 .sidebar-section-toggle .icon { width: 12px; height: 12px; color: var(--dim); }
 .sidebar-section-toggle[aria-expanded="false"] .icon { transform: rotate(-90deg); }
+#projects-section { margin-bottom: 14px; }
 .sidebar-project { position: relative; }
-.sidebar-project .project summary { padding-right: 54px; }
-.project-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 58px 0 10px; border-radius: 10px; color: var(--ink); font-size: 14px; text-align: left; }
+.project-entry:hover, .project-entry[aria-current="true"] { background: var(--hover); }
+.project-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-pin { display: inline-flex; color: var(--muted); }
+.project-pin .icon { width: 12px; height: 12px; }
 .project-tools { position: absolute; top: 3px; right: 3px; display: flex; gap: 1px; opacity: 0; }
 .sidebar-project:hover .project-tools, .sidebar-project:focus-within .project-tools { opacity: 1; }
 .project-tools .icon-button { width: 24px; height: 24px; opacity: 1; }
 .project-tools .icon { width: 14px; height: 14px; }
-#pinned-threads .project-threads .thread-button { padding-left: 33px; }
+.thread-list .thread-button { padding-left: 11px; }
 #project-menu {
   position: fixed;
   inset: auto;

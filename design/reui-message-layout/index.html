@@ -103,7 +103,6 @@
       </div>
       <div class="sidebar-actions">
         <button type="button" class="new-chat" data-action="new"><i data-icon="compose"></i>新对话<kbd>⌘ N</kbd></button>
-        <button type="button" class="icon-button add-project-button" data-action="add-project" aria-label="添加项目" title="添加项目" aria-haspopup="dialog" aria-controls="project-dialog"><i data-icon="plus"></i></button>
       </div>
       <nav class="workspace-nav mobile-navigation" aria-label="工作台">
         <button class="sidebar-button" data-page="chat"><i data-icon="message-circle"></i>会话</button>
@@ -112,13 +111,17 @@
         <button class="sidebar-button" data-page="resources"><i data-icon="blocks"></i>技能与插件</button>
       </nav>
       <div class="project-scroll">
-        <section id="pinned-section" aria-label="置顶" hidden>
-          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="pinned-threads" aria-expanded="true"><span>置顶</span><i data-icon="chevron-down"></i></button></h2></div>
-          <div id="pinned-threads"></div>
-        </section>
-        <section aria-label="最近">
-          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="projects" aria-expanded="true"><span>最近</span><i data-icon="chevron-down"></i></button></h2></div>
+        <section id="projects-section" aria-label="项目">
+          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="projects" aria-expanded="true" aria-label="项目列表"><span>项目</span><i data-icon="chevron-down"></i></button></h2><button type="button" class="icon-button add-project-button" data-action="add-project" aria-label="添加项目" title="添加项目" aria-haspopup="dialog" aria-controls="project-dialog"><i data-icon="plus"></i></button></div>
           <div id="projects"></div>
+        </section>
+        <section id="pinned-section" aria-label="置顶会话" hidden>
+          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="pinned-threads" aria-expanded="true"><span>置顶</span><i data-icon="chevron-down"></i></button></h2></div>
+          <div id="pinned-threads" class="thread-list"></div>
+        </section>
+        <section id="recent-section" aria-label="最近会话">
+          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="recent-threads" aria-expanded="true"><span>最近</span><i data-icon="chevron-down"></i></button></h2></div>
+          <div id="recent-threads" class="thread-list"></div>
         </section>
       </div>
       <div popover="auto" role="menu" aria-label="项目操作" id="project-menu">

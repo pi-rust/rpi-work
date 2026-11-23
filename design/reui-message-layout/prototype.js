@@ -102,7 +102,6 @@ const sessions = [
 ];
 
 const viewState = new Map();
-const collapsedProjects = new Set();
 const collapsedSections = new Set();
 const pinnedProjects = new Set();
 const navigationKey = 'rpi-work-layout-navigation-v1';
@@ -111,16 +110,19 @@ try {
   const pins = Array.isArray(saved?.pins) ? saved.pins : (localStorage.getItem('rpi-work-layout-sessions-v1') ? [] : ['rpi-work']);
   for (const name of pins) if (projects.some(project => project.name === name)) pinnedProjects.add(name);
   if (Array.isArray(saved?.collapsed)) {
-    for (const id of saved.collapsed) if (id === 'projects' || id === 'pinned-threads') collapsedSections.add(id);
+    for (const id of saved.collapsed) {
+      const section = saved.version !== 2 && id === 'projects' ? 'recent-threads' : id;
+      if (['projects', 'recent-threads', 'pinned-threads'].includes(section)) collapsedSections.add(section);
+    }
   }
-  if (!saved) saveNavigation();
+  if (saved?.version !== 2) saveNavigation();
 } catch {
   pinnedProjects.add('rpi-work');
 }
 
 function saveNavigation() {
   try {
-    localStorage.setItem(navigationKey, JSON.stringify({pins: [...pinnedProjects], collapsed: [...collapsedSections]}));
+    localStorage.setItem(navigationKey, JSON.stringify({version: 2, pins: [...pinnedProjects], collapsed: [...collapsedSections]}));
   } catch {}
 }
 
@@ -249,27 +251,28 @@ function setPanel(panel, open, moveFocus = true) {
 function threadButton(thread) {
   const button = element('button', 'thread-button');
   button.dataset.session = thread.id;
+  button.title = thread.project + ' · ' + thread.title;
   if (thread === session) button.setAttribute('aria-current', 'true');
   button.append(element('span', 'thread-title', thread.title), element('span', 'thread-age', threadStatus(thread)));
   return button;
 }
 
-function projectRow(project, chats) {
+function projectRow(project) {
   const group = element('div', 'sidebar-project');
   group.dataset.projectGroup = project.name;
-  const details = element('details', 'project');
-  const summary = element('summary');
-  summary.innerHTML = `<span class="project-toggle">${icon('chevron-right')}</span><span class="project-folder">${icon('folder')}</span>`;
-  summary.append(element('span', 'project-name', project.name));
-  details.open = !collapsedProjects.has(project.name);
-  details.addEventListener('toggle', () => {
-    if (!details.isConnected) return;
-    if (details.open) collapsedProjects.delete(project.name);
-    else collapsedProjects.add(project.name);
-  });
-  const list = element('div', 'project-threads');
-  list.append(...chats.map(threadButton));
-  details.append(summary, list);
+  const entry = actionButton('', 'project-chat', 'project-entry');
+  entry.dataset.project = project.name;
+  entry.setAttribute('aria-label', '打开项目 ' + project.name);
+  entry.title = project.path ?? project.name;
+  if (project.name === (session?.project ?? welcomeProject)) entry.setAttribute('aria-current', 'true');
+  entry.innerHTML = `<span class="project-folder">${icon('folder')}</span>`;
+  entry.append(element('span', 'project-name', project.name));
+  if (pinnedProjects.has(project.name)) {
+    const pin = element('span', 'project-pin');
+    pin.innerHTML = icon('pin');
+    pin.title = '已置顶项目';
+    entry.append(pin);
+  }
 
   const tools = element('div', 'project-tools');
   const compose = actionButton('', 'project-chat', 'icon-button project-compose');
@@ -284,7 +287,7 @@ function projectRow(project, chats) {
   menu.setAttribute('aria-haspopup', 'menu');
   menu.setAttribute('aria-expanded', 'false');
   menu.setAttribute('aria-controls', 'project-menu');
-  group.append(details, tools);
+  group.append(entry, tools);
   return group;
 }
 
@@ -302,21 +305,22 @@ function renderNavigation() {
     const phase = stateFor(thread.id).active?.phase;
     return !thread.archived && (filter === 'all' || (filter === 'running' ? Boolean(phase) : phase === 'approval'));
   });
-  const pinned = visible.filter(thread => thread.pinned && !pinnedProjects.has(thread.project)).map(threadButton);
-  const recent = [];
-  for (const project of projects) {
-    const inPinned = pinnedProjects.has(project.name);
-    const chats = visible.filter(thread => thread.project === project.name && (inPinned || !thread.pinned));
-    if (filter === 'all' || chats.length) (inPinned ? pinned : recent).push(projectRow(project, chats));
-  }
+  const pinned = visible.filter(thread => thread.pinned).map(threadButton);
+  const recent = visible.filter(thread => !thread.pinned).map(threadButton);
+  const projectRows = [...projects]
+    .sort((left, right) => Number(pinnedProjects.has(right.name)) - Number(pinnedProjects.has(left.name)))
+    .map(projectRow);
   $('#pinned-section').hidden = !pinned.length;
-  if (filter !== 'all' && !visible.length) {
-    recent.push(element('p', 'filter-empty', filter === 'running' ? '没有正在执行的会话' : '没有等待审批的会话'));
+  if (!recent.length) {
+    recent.push(element('p', 'filter-empty', filter !== 'all' && !visible.length
+      ? (filter === 'running' ? '没有正在执行的会话' : '没有等待审批的会话') : '暂无最近会话'));
   }
+  $('#projects').replaceChildren(...projectRows);
   $('#pinned-threads').replaceChildren(...pinned);
-  $('#projects').replaceChildren(...recent);
-  syncSection('pinned-threads');
+  $('#recent-threads').replaceChildren(...recent);
   syncSection('projects');
+  syncSection('pinned-threads');
+  syncSection('recent-threads');
 }
 
 function projectMenuTrigger(name) {
@@ -714,10 +718,7 @@ function showSession(next, fromHistory = false) {
   readingState.capture();
   session = next;
   historyPreview.select(next);
-  if (next) {
-    welcomeProject = next.project;
-    collapsedProjects.delete(next.project);
-  }
+  if (next) welcomeProject = next.project;
   updateTrail(fromHistory);
   selectedFile = 0;
   if (mobile.matches) setPanel('navigation', false, false);
@@ -1239,15 +1240,12 @@ document.addEventListener('click', event => {
     case 'browse-projects': {
       setPanel('navigation', true, false);
       const name = session?.project ?? welcomeProject;
-      const section = pinnedProjects.has(name) ? 'pinned-threads' : 'projects';
-      collapsedSections.delete(section);
-      $('#chat-filter-mode').value = 'all';
-      $('#filter-chats').setAttribute('aria-pressed', 'false');
+      collapsedSections.delete('projects');
       $('#chat-filter').hidden = true;
       $('#filter-chats').setAttribute('aria-expanded', 'false');
       renderNavigation();
       saveNavigation();
-      $(`[data-project-group="${CSS.escape(name)}"] summary`)?.focus();
+      $(`[data-project-group="${CSS.escape(name)}"] .project-entry`)?.focus();
       break;
     }
     case 'project-menu':
@@ -1258,7 +1256,7 @@ document.addEventListener('click', event => {
       projectMenu.hidePopover();
       if (pinnedProjects.has(name)) pinnedProjects.delete(name);
       else pinnedProjects.add(name);
-      collapsedSections.delete(pinnedProjects.has(name) ? 'pinned-threads' : 'projects');
+      collapsedSections.delete('projects');
       saveNavigation();
       renderNavigation();
       projectMenuTrigger(name)?.focus();

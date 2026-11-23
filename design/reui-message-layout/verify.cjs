@@ -260,8 +260,8 @@ async function checkWorkbenchFlows(browser) {
     await button('关闭设置').click();
     const projectEntry = page.locator('[data-action="add-project"]');
     const projectDialog = page.getByRole('dialog', { name: '添加项目', exact: true });
-    assert.equal(await page.locator('.sidebar-actions > [data-action="add-project"]').count(), 1);
-    assert.equal(await page.locator('.project-scroll [data-action="add-project"]').count(), 0);
+    assert.equal(await page.locator('#projects-section > .project-heading [data-action="add-project"]').count(), 1);
+    assert.equal(await page.locator('#recent-section [data-action="add-project"], .sidebar-actions [data-action="add-project"]').count(), 0);
     assert.equal(await projectEntry.getAttribute('aria-label'), '添加项目');
     assert.equal(await projectEntry.getAttribute('title'), '添加项目');
     assert.equal(await projectEntry.locator('svg').count(), 1);
@@ -306,15 +306,19 @@ async function checkWorkbenchFlows(browser) {
     await page.locator('#filter-chats').click();
     await page.locator('#chat-filter-mode').selectOption('running');
     assert.equal(await page.locator('#chat-filter').isHidden(), true);
-    const recentToggle = page.locator('[data-action="toggle-section"][aria-controls="projects"]');
+    const recentToggle = page.locator('[data-action="toggle-section"][aria-controls="recent-threads"]');
+    const projectsToggle = page.locator('[data-action="toggle-section"][aria-controls="projects"]');
     if (await recentToggle.getAttribute('aria-expanded') === 'true') await recentToggle.click();
+    if (await projectsToggle.getAttribute('aria-expanded') === 'true') await projectsToggle.click();
     await projectEntry.click();
     await page.getByLabel('名称', { exact: true }).fill('demo-project');
     await page.getByLabel('项目路径').fill('~/Projects/demo-project');
     await button('添加项目', projectDialog).click();
     assert.equal(await page.getByLabel('选择项目').inputValue(), 'demo-project');
-    assert.equal(await page.locator('#chat-filter-mode').inputValue(), 'all');
-    assert.equal(await recentToggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(await page.locator('#chat-filter-mode').inputValue(), 'running');
+    assert.equal(await recentToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await projectsToggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(await page.locator('#projects [data-session], #recent-threads [data-project-group]').count(), 0);
     assert.equal(await page.locator('[data-project-group="demo-project"]').isVisible(), true);
     assert.equal(await page.locator('[data-project-group]').count(), projectCount + 1);
     await draft.fill('新项目任务');
@@ -323,6 +327,9 @@ async function checkWorkbenchFlows(browser) {
     await button('允许一次').click();
     await page.clock.runFor(1100);
     await page.reload();
+    assert.equal(await recentToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.locator('#projects [data-project-group="demo-project"]').isVisible(), true);
+    await recentToggle.click();
     assert.equal(await page.getByRole('button',{name:/新项目任务/}).count(),1);
     assert.equal(await page.locator('#font-size').inputValue(),'18');
     await button('技能与插件').click();
@@ -725,49 +732,90 @@ async function checkReadingAndWorkflows(browser) {
 
 async function checkProjectNavigation(browser) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
   try {
     await page.goto(url);
     const button = name => page.getByRole('button', { name, exact: true });
+    const projectList = page.locator('#projects');
     const pinned = page.locator('#pinned-threads');
-    const recent = page.locator('#projects');
+    const recent = page.locator('#recent-threads');
     const folder = '[data-project-group="rpi-work"]';
     const chat = '[data-session="release"]';
     const menuTrigger = button('rpi-work 项目操作');
-    assert.equal(await pinned.locator(folder + ' ' + chat).count(), 1);
-    await button('最近').click();
-    await page.reload();
-    assert.equal(await button('最近').getAttribute('aria-expanded'), 'false');
-    await button('置顶').click();
-    assert.equal(await pinned.isVisible(), false);
-    await button('收起会话侧栏').click();
-    await button('项目').click();
-    assert.equal(await pinned.locator(folder + ' summary').evaluate(node => node === document.activeElement), true);
+    const chatIds = root => root.locator('[data-session]').evaluateAll(nodes => nodes.map(node => node.dataset.session));
+    const projectNames = () => projectList.locator('[data-project-group]').evaluateAll(nodes => nodes.map(node => node.dataset.projectGroup));
+    assert.deepEqual(await projectNames(), ['rpi-work', 'pi-rust']);
+    assert.equal(await projectList.locator('[data-session]').count(), 0);
+    assert.equal(await page.locator('#recent-threads [data-project-group], #pinned-threads [data-project-group]').count(), 0);
+    assert.deepEqual(await chatIds(recent), ['layout', 'connection', 'runtime']);
+    assert.deepEqual(await chatIds(pinned), ['release']);
+    assert.equal(await recent.locator('[data-session="runtime"]').getAttribute('title'), 'pi-rust · 梳理运行时入口');
 
     await menuTrigger.focus();
     await page.keyboard.press('Enter');
     await page.keyboard.press('End');
     assert.equal(await page.getByRole('menuitem', { name: '取消置顶项目' }).evaluate(node => node === document.activeElement), true);
     await page.keyboard.press('Enter');
-    assert.equal(await recent.locator(folder).isVisible(), true);
-    assert.equal(await pinned.locator(chat).count(), 1);
-    assert.equal(await recent.locator(chat).count(), 0);
-    await page.reload();
-    assert.equal(await recent.locator(folder).isVisible(), true);
-
-    await menuTrigger.click();
+    assert.equal(await projectList.locator(folder + ' .project-pin').count(), 0);
+    await button('pi-rust 项目操作').click();
     await page.getByRole('menuitem', { name: '置顶项目', exact: true }).click();
-    assert.equal(await pinned.locator(folder + ' ' + chat).count(), 1);
+    assert.deepEqual(await projectNames(), ['pi-rust', 'rpi-work']);
+    assert.deepEqual(await chatIds(recent), ['layout', 'connection', 'runtime']);
+    assert.deepEqual(await chatIds(pinned), ['release']);
     assert.equal(await page.locator('.project-scroll ' + chat).count(), 1);
     await page.reload();
-    assert.equal(await pinned.locator(folder).count(), 1);
+    assert.deepEqual(await projectNames(), ['pi-rust', 'rpi-work']);
+    assert.equal(await projectList.locator('[data-project-group="pi-rust"] .project-pin').count(), 1);
+    assert.equal(await projectList.locator(folder + ' .project-pin').count(), 0);
+
+    await button('打开项目 pi-rust').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('#project-picker').inputValue(), 'pi-rust');
     await menuTrigger.click();
     await page.getByRole('menuitem', { name: '新建对话', exact: true }).click();
     assert.equal(await page.locator('#project-picker').inputValue(), 'rpi-work');
+    assert.deepEqual(await chatIds(recent), ['layout', 'connection', 'runtime']);
+
+    await button('最近').click();
+    assert.equal(await recent.isVisible(), false);
+    assert.equal(await projectList.isVisible(), true);
+    await button('项目列表').click();
+    await page.reload();
+    assert.equal(await button('最近').getAttribute('aria-expanded'), 'false');
+    assert.equal(await button('项目列表').getAttribute('aria-expanded'), 'false');
+    await button('置顶').click();
+    await button('收起会话侧栏').click();
+    await button('项目').click();
+    assert.equal(await projectList.locator(folder + ' .project-entry').evaluate(node => node === document.activeElement), true);
+    assert.equal(await recent.isVisible(), false);
+    assert.equal(await pinned.isVisible(), false);
+
+    await button('筛选会话').click();
+    await page.getByLabel('显示会话').selectOption('approval');
+    assert.equal(await projectList.locator(folder).isVisible(), true);
+    await button('项目').click();
+    assert.equal(await page.getByLabel('显示会话').inputValue(), 'approval');
+    assert.equal(await recent.isVisible(), false);
+
+    await page.evaluate(() => localStorage.setItem('rpi-work-layout-navigation-v1', JSON.stringify({ pins: ['pi-rust'], collapsed: ['projects', 'pinned-threads'] })));
+    await page.reload();
+    assert.equal(await button('项目列表').getAttribute('aria-expanded'), 'true');
+    assert.equal(await button('最近').getAttribute('aria-expanded'), 'false');
+    assert.equal(await button('置顶').getAttribute('aria-expanded'), 'false');
+    assert.deepEqual(await projectNames(), ['pi-rust', 'rpi-work']);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('rpi-work-layout-navigation-v1')).version), 2);
+    await button('项目列表').click();
+    await page.reload();
+    assert.equal(await button('项目列表').getAttribute('aria-expanded'), 'false');
+    assert.equal(await button('最近').getAttribute('aria-expanded'), 'false');
+    await button('项目').click();
     await page.setViewportSize({ width: 390, height: 800 });
     await button('切换会话侧栏').click();
     await button('项目').click();
-    assert.equal(await pinned.locator(folder + ' summary').evaluate(node => node === document.activeElement), true);
-    console.log('Project groups, persistent pins, independent chat pins and keyboard project navigation passed.');
+    assert.equal(await projectList.locator(folder + ' .project-entry').evaluate(node => node === document.activeElement), true);
+    assert.deepEqual(errors, []);
+    console.log('Independent project list, flat recent/pinned chats, project-only pins, section persistence/migration and keyboard project navigation passed.');
   } finally {
     await page.close();
   }

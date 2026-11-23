@@ -848,7 +848,6 @@ function initializeWorkbench() {
     saveWorkbench();
     $('#project-dialog').close();
     welcomeProject = name;
-    $('#chat-filter-mode').value = 'all';
     collapsedSections.delete('projects');
     saveNavigation();
     showSession(null);
