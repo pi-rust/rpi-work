@@ -42,7 +42,19 @@ async function checkProjectNodes(browser, url) {
     await mode('flat');
     assert.equal(await page.locator('.project-node-group').count(), 0);
     assert.equal(await page.locator('#projects > .sidebar-project').count(), 2);
-    assert.equal(await page.locator('[data-project-group="pi-rust"] .project-node-label').textContent(), '开发主机 · 演示');
+    const localIcon = page.locator('[data-project-group="rpi-work"] .project-node-icon');
+    const remoteIcon = page.locator('[data-project-group="pi-rust"] .project-node-icon');
+    assert.equal(await page.locator('.project-node-label').count(), 0);
+    for (const indicator of [localIcon, remoteIcon]) {
+      assert.equal(await indicator.getAttribute('role'), 'img');
+      assert.equal(await indicator.locator('svg').count(), 1);
+      assert.equal(await indicator.textContent(), '');
+    }
+    assert.equal(await localIcon.getAttribute('title'), '所属节点：此电脑');
+    assert.equal(await remoteIcon.getAttribute('title'), '所属节点：开发主机（演示）');
+    assert.equal(await remoteIcon.getAttribute('aria-label'), '所属节点：开发主机（演示）');
+    assert.notEqual(await localIcon.innerHTML(), await remoteIcon.innerHTML());
+    assert.equal(await button('打开项目 pi-rust').getAttribute('aria-description'), '所属节点：开发主机（演示）');
     assert.match(await button('打开项目 pi-rust').getAttribute('title'), /开发主机（演示）/);
     assert.equal(await draft.inputValue(), '节点显示切换不改变草稿');
     assert.deepEqual(await draft.evaluate(input => [input.selectionStart, input.selectionEnd]), [2, 5]);

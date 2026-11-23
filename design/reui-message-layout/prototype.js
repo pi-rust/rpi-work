@@ -275,15 +275,18 @@ function projectRow(project) {
   entry.innerHTML = `<span class="project-folder">${icon('folder')}</span>`;
   entry.append(element('span', 'project-name', project.name));
   if (workbench.projectGrouping === 'flat') {
-    const label = element('span', 'project-node-label', node.name + (node.demo ? ' · 演示' : ''));
-    label.title = entry.title;
-    entry.append(label);
+    const indicator = element('span', 'project-node-icon');
+    indicator.title = entry.getAttribute('aria-description');
+    indicator.setAttribute('role', 'img');
+    indicator.setAttribute('aria-label', indicator.title);
+    indicator.innerHTML = icon(node.icon);
+    entry.append(indicator);
   }
   if (pinnedProjects.has(project.name)) {
     const pin = element('span', 'project-pin');
     pin.innerHTML = icon('pin');
     pin.title = '已置顶项目';
-    entry.append(pin);
+    entry.insertBefore(pin, entry.querySelector('.project-node-icon'));
   }
 
   const tools = element('div', 'project-tools');
