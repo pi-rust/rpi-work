@@ -1,0 +1,102 @@
+/* Visibility preference is independent of page-level toolbar visibility. */
+:root[data-bottom-control="false"] .chat-header-action[data-action="terminal"] { display: none; }
+
+/* Desktop settings share the dimensions of the in-app settings dialog. */
+#settings-dialog {
+  inset: 0;
+  width: min(92vw, 1200px);
+  height: min(85dvh, 784px);
+  margin: auto;
+  border-radius: 20px;
+  outline: 1px solid var(--line);
+  box-shadow: 0 18px 85px #0002;
+  color: var(--ink);
+  background: var(--surface);
+}
+#settings-dialog[open] { display: block; }
+#settings-dialog::backdrop { background: rgb(0 0 0 / 18%); backdrop-filter: blur(3px); }
+#settings-dialog .settings-layout { grid-template-columns: min(33.333%, 275px) minmax(0, 1fr); height: 100%; }
+#settings-dialog .settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 12px 0 0;
+  background: var(--nav);
+  border-inline-end: 1px solid var(--line);
+  overflow: hidden;
+}
+.preference-nav-header { display: flex; align-items: center; gap: 6px; padding: 1px 14px 9px; }
+#settings-dialog .preference-nav-header h2 { display: block; margin: 0; padding-left: 4px; font-weight: 600; color: var(--ink); font-size: 16px; }
+.preference-nav-header form { margin-inline-start: auto; }
+#settings-dialog .preference-nav-header button { display: grid; place-content: center; padding: 4px; border-radius: 7px; }
+#settings-dialog .preference-nav-header .preference-navigation { display: none; }
+#settings-nav-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.preference-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 0 10px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+}
+.preference-search:focus-within { outline: 2px solid var(--strong-line); outline-offset: 1px; }
+.preference-search .icon { width: 15px; height: 15px; }
+.preference-search input { font: inherit; font-size: 13px; min-width: 0; width: 100%; color: var(--ink); outline: 0; border: 0; background: transparent; }
+.preference-nav-scroll { overflow: auto; min-height: 0; padding: 2px 10px 12px; }
+.preference-nav-group + .preference-nav-group { margin-top: 14px; }
+.preference-nav-group h3 { margin: 2px 8px 5px; font-size: 12px; line-height: 18px; font-weight: 500; color: var(--dim); }
+#settings-dialog .preference-nav-scroll button {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  padding: 5px 9px;
+  font-size: 13px;
+  font-weight: 400;
+  border-radius: 8px;
+}
+.preference-nav-scroll button .icon { width: 17px; height: 17px; flex-shrink: 0; }
+#settings-dialog .preference-nav-scroll button[aria-current="page"] { background: var(--hover); }
+#settings-dialog .preference-nav-scroll button:hover { background: var(--subtle); }
+.preference-search-result span { display: grid; }
+.preference-search-result small { color: var(--dim); font-size: 11px; }
+#settings-dialog .settings-content { padding: 40px 24px; min-height: 0; min-width: 0; }
+#settings-dialog .settings-content section { max-width: none; }
+#settings-dialog .settings-content h3 { font-family: inherit; font-weight: 400; font-size: 28px; line-height: 1.25; letter-spacing: -.035em; margin: 0 0 24px; }
+#settings-dialog .settings-content h4 { color: var(--ink); font-size: 15px; font-weight: 550; margin: 24px 0 7px; }
+.preference-group { border-top: 1px solid var(--line); }
+#settings-dialog .settings-row { min-height: 64px; padding: 12px 0; margin: 0; border: 0; }
+#settings-dialog .settings-row + .settings-row { border-top: 1px solid var(--line); }
+#settings-dialog .settings-row > span:first-child { min-width: 0; }
+#settings-dialog .settings-row > span > strong { font-size: 14px; }
+#settings-dialog .settings-row > span > small { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+#settings-dialog .select-control { flex: none; }
+#settings-dialog .select-control select { font: inherit; font-size: 13px; max-width: 100%; border-radius: 7px; }
+#settings-dialog .shortcut-list div { min-height: 44px; align-items: center; }
+#settings-dialog kbd { background: var(--subtle); padding: 2px 5px; border-radius: 4px; font-family: inherit; font-size: 12px; }
+#settings-dialog .dialog-form { max-width: 660px; }
+#settings-dialog .dialog-form button { justify-self: start; }
+#settings-dialog .connection-row { min-width: 0; }
+#settings-dialog .connection-row:first-child { border-top: 0; }
+#settings-dialog .settings-description { font-size: 14px; }
+#settings-dialog .preference-empty { color: var(--muted); font-size: 13px; margin: 16px 0; }
+#settings-search-results .preference-empty { padding-inline: 8px; }
+@media (max-width: 700px) {
+  #settings-dialog { width: 100vw; height: 100dvh; border-radius: 0; margin: 0; box-shadow: none; }
+  #settings-dialog .settings-layout { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
+  #settings-dialog .settings-nav { padding: 0; border: 0; border-bottom: 1px solid var(--line); }
+  .preference-nav-header { padding: 8px 12px; }
+  #settings-dialog .preference-nav-header .preference-navigation { display: flex; gap: 3px; align-items: center; padding: 4px 8px; font-size: 13px; }
+  #settings-nav-body { display: none; }
+  #settings-dialog[data-browse="true"] #settings-nav-body { display: flex; max-height: min(50dvh,400px); }
+  #settings-dialog .settings-content { padding: 24px 18px; }
+  #settings-dialog .settings-content h3 { font-size: 24px; }
+  #settings-dialog .settings-row { gap: 12px; }
+  #settings-dialog .connection-row { display: flex; flex-wrap: wrap; }
+}

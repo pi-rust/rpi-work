@@ -1,108 +1,426 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>RPI Work · 消息布局评审</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>RPI Work · 工作台原型</title>
   <link rel="stylesheet" href="layout.css">
-  <link rel="stylesheet" href="states.css">
+  <link rel="stylesheet" href="settings.css">
+  <link rel="stylesheet" href="inspector.css">
+  <script src="inspector.js" defer></script>
+  <script src="workbench.js" defer></script>
   <script src="prototype.js" defer></script>
-  <script src="states.js" defer></script>
+  <script src="composer.js" defer></script>
 </head>
-<body data-layout="codex" data-theme="light" data-divider="false" data-bleed="false" data-actions="true" data-activity="true" data-rail="none">
-  <aside class="sidebar" aria-label="项目与会话">
-    <div class="workspace"><span class="workspace-mark">rp</span><b>rpiwork</b><i data-icon="chevron-down"></i><button class="icon-button push" aria-label="搜索会话" data-action="search"><i data-icon="search"></i></button></div>
-    <button class="new-thread" data-action="new"><i data-icon="plus"></i>新对话<kbd>⌘J</kbd></button>
-    <div class="sidebar-scroll">
-      <div class="section-caption">项目<button class="icon-button" aria-label="新建项目（演示）" data-action="new"><i data-icon="plus"></i></button></div>
-      <details class="project" open>
-        <summary><i data-icon="chevron-down"></i><i data-icon="folder"></i><b>rpi-work</b><span class="count">3</span></summary>
-        <div class="thread-list">
-          <button class="thread selected" aria-current="page"><span>为工作台添加深色模式</span><time>现在</time></button>
-          <button class="thread"><span>梳理 Agent 架构</span><time>2h</time></button>
-          <button class="thread"><span>优化会话历史加载</span><time>昨天</time></button>
-        </div>
-      </details>
-      <details class="project" open>
-        <summary><i data-icon="chevron-down"></i><i data-icon="folder"></i><b>pi-rust</b><span class="count">1</span></summary>
-        <div class="thread-list"><button class="thread"><span>验证 RPC 事件协议</span><time>昨天</time></button></div>
-      </details>
-    </div>
-    <div class="sidebar-bottom"><button class="sidebar-link" data-action="settings"><i data-icon="settings"></i>设置<span class="muted push">外观与布局</span></button><div class="node"><span class="status-dot"></span>本地节点<span class="muted push">演示数据</span></div></div>
-  </aside>
+<body>
+  <!-- Icon paths from Lucide 0.468.0 (ISC), assets/icons/LICENSE. -->
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" class="icon-symbols">
+    <defs>
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+      <symbol id="icon-panel-left" viewBox="0 0 24 24"><g transform="translate(24 0) scale(-1 1)"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></g></symbol>
+      <symbol id="icon-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+      <symbol id="icon-panel-right" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+      <symbol id="icon-paperclip" viewBox="0 0 24 24"><path d="M13.234 20.252 21 12.3"/><path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="icon-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+      <symbol id="icon-square" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+      <symbol id="icon-git-branch" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+      <symbol id="icon-git-pull-request" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/></symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+      <symbol id="icon-list-checks" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></symbol>
+      <symbol id="icon-file-diff" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/></symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+      <symbol id="icon-message-circle" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="icon-ellipsis" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+<symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+<symbol id="icon-blocks" viewBox="0 0 24 24"><rect width="7" height="7" x="14" y="3" rx="1"/><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"/></symbol>
+<symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+<symbol id="icon-code-xml" viewBox="0 0 24 24"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></symbol>
+<symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
+      <symbol id="icon-compose" viewBox="0 0 24 24"><path d="M12 4H6a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h11a3 3 0 0 0 3-3v-6M10 14l1-4 8-8 3 3-8 8z"/></symbol>
+      <symbol id="icon-pin" viewBox="0 0 24 24"><path d="m15 3 6 6-3 1-4 4-.5 3.5-7-7L10 10l4-4zM10 14l-6 6"/></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+      <symbol id="icon-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="m7 4 12 8-12 8z"/></symbol>
+      <symbol id="icon-history-back" viewBox="0 0 24 24"><path d="m11 5-7 7 7 7M4 12h16"/></symbol>
+      <symbol id="icon-history-forward" viewBox="0 0 24 24"><path d="m13 5 7 7-7 7M20 12H4"/></symbol>
+      <symbol id="icon-workspace" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
+      <symbol id="icon-appearance" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></symbol>
+      <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M5 16c2-2 2-4 2-7a5 5 0 1 1 10 0c0 3 0 5 2 7l.5 1H4.5zM10 20a2 2 0 0 0 4 0"/></symbol>
+      <symbol id="icon-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M6 9h1m3 0h1m3 0h1m2 0h1M6 12h1m3 0h1m3 0h1m2 0h1m-9 3h7"/></symbol>
+      <symbol id="icon-archive-box" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></symbol>
+      <symbol id="icon-thumb" viewBox="0 0 24 24"><path d="M7 10v10H4V10zM8 10l5-6c1-2 3-1 3 1l-1 4h4a2 2 0 0 1 2 2l-1 7a2 2 0 0 1-2 2h-6l-4-1z"/></symbol>
+      <symbol id="icon-fork" viewBox="0 0 24 24"><path d="M4 6h5c2 0 3 1 4 3l3 6c1 2 2 3 4 3M4 18h5c1 0 2-1 3-3m2-5 2-3c1-1 2-2 4-2M16 3l4 2-2 4m-2 6 4 3-3 3"/></symbol>
+    </defs>
+  </svg>
+  <div class="shell" data-navigation="open" data-inspector="open">
+      <header class="workspace-header">
+        <div class="window-marks" aria-hidden="true"><b></b><b></b><b></b></div>
+        <div class="history-controls"><button type="button" class="icon-button" data-history="-1" aria-label="上一个会话" title="上一个会话" disabled><i data-icon="history-back"></i></button><button type="button" class="icon-button" data-history="1" aria-label="下一个会话" title="下一个会话" disabled><i data-icon="history-forward"></i></button></div>
+        <button type="button" class="icon-button nav-toggle" data-action="navigation" aria-label="切换会话侧栏" aria-controls="navigation"><i data-icon="panel-left"></i></button>
+        <div class="header-title"><h1 id="current-title"></h1><span id="current-project"></span><button type="button" class="icon-button chat-header-action" data-action="thread-actions" aria-label="会话操作" aria-haspopup="dialog"><i data-icon="ellipsis"></i></button></div>
+        <button type="button" class="tool-button chat-header-action" data-action="browser" aria-label="打开浏览器" title="打开浏览器"><i data-icon="globe"></i><span>浏览器</span></button>
+        <button type="button" class="tool-button chat-header-action" data-action="code-panel" aria-label="打开代码"><i data-icon="code-xml"></i><span>代码</span></button>
+        <button type="button" class="icon-button chat-header-action" data-action="terminal" aria-label="打开终端" aria-expanded="false"><i data-icon="terminal"></i></button>
 
-  <main class="main">
-    <header class="header">
-      <button class="icon-button" aria-label="切换侧栏" data-action="sidebar"><i data-icon="panel-left"></i></button>
-      <span class="breadcrumb">rpi-work<span>/</span></span><h1>为工作台添加深色模式</h1><span class="online"><span class="status-dot"></span>演示</span>
-      <div class="header-actions"><label class="preview-picker"><span>预览</span><select id="preview-state" aria-label="预览消息状态"><option value="complete">已完成</option><option value="running">执行中</option><option value="failed">工具失败</option><option value="long">长回答</option></select></label><button class="icon-button" aria-label="切换深色模式" data-action="theme"><i data-icon="moon"></i></button><button class="text-button" data-action="settings"><i data-icon="sliders"></i>外观</button><button class="text-button" aria-pressed="false" data-panel="run"><i data-icon="activity"></i>运行</button><button class="text-button" aria-pressed="false" data-panel="files"><i data-icon="panel-right"></i>文件<span class="count">3</span></button></div>
-    </header>
-    <div class="workarea">
-      <section class="conversation" aria-label="会话">
-        <div class="transcript-scroll" tabindex="0" aria-label="消息记录">
-          <div class="reading-column" id="messages">
-            <article class="turn" aria-label="第 1 轮">
-              <div class="user-message message" data-copy="帮我为工作台增加一个深色主题，复用现有的 Rust 主题 token。">
-                <div class="user-bubble">帮我为工作台增加一个深色主题，复用现有的 Rust 主题 token。</div>
-                <div class="message-actions"><button class="icon-button" aria-label="复制用户消息" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用用户消息" data-action="quote"><i data-icon="quote"></i></button></div>
-              </div>
-              <div class="assistant-message">
-                <p class="commentary">我会先检查主题契约和设置入口，再补上明暗切换。颜色继续由 Rust 提供，不在界面层维护第二份。</p>
-                <div class="activity-group">
-                  <details class="activity-summary">
-                    <summary><i data-icon="chevron-right"></i><span>已探索 <b>3</b> 个文件，<b>1</b> 次搜索</span><span class="duration push">8s</span></summary>
-                    <div class="activity-list">
-                      <details class="tool-call"><summary><i data-icon="file"></i><span>已读取 <code>theme_contract.rs</code></span><span class="duration push">12ms</span><i data-icon="chevron-right"></i></summary><div class="tool-output"><div class="code-caption"><span>theme_contract.rs</span><button class="icon-button push" aria-label="复制工具输出" data-action="copy-code"><i data-icon="copy"></i></button></div><pre><code><span class="line-no">1</span><span class="syntax-keyword">pub fn</span> build_tokens(preset: &amp;ThemePreset, dark: bool) {
-<span class="line-no">2</span>    <span class="syntax-keyword">let</span> palette = <span class="syntax-keyword">if</span> dark { &amp;preset.dark } <span class="syntax-keyword">else</span> { &amp;preset.light };
-<span class="line-no">3</span>    palette.tokens()
-<span class="line-no">4</span>}</code></pre></div></details>
-                      <details class="tool-call"><summary><i data-icon="search"></i><span>已搜索 <code>ThemeChoice · 4 处匹配</code></span><span class="duration push">18ms</span><i data-icon="chevron-right"></i></summary><div class="tool-output"><pre><code>src/lib/theme.ts:22       type ThemeChoice
-src/lib/theme.ts:38       function read()
-src/lib/theme.ts:55       function persist()
-src/App.tsx:80            useTheme()</code></pre></div></details>
-                      <div class="activity-item"><i data-icon="file"></i><span>已读取 <code>theme.ts</code>、<code>settings-page.tsx</code></span><span class="duration push">21ms</span></div>
-                    </div>
-                  </details>
-                  <details class="tool-call command"><summary><i data-icon="terminal"></i><span>已运行 <code>cargo test -p work-viewmodel --lib</code></span><span class="duration push">1.8s</span><i class="success" data-icon="check"></i><i data-icon="chevron-right"></i></summary><div class="tool-output"><div class="code-caption">终端输出<span class="push">exit 0</span></div><pre><code>running 129 tests
-<span class="syntax-string">test result: ok. 129 passed; 0 failed; 0 ignored</span></code></pre></div></details>
-                </div>
-                <div class="turn-duration"><span></span>已完成 · 24 秒<span></span></div>
-                <div class="answer message" data-copy="已接入深色模式，沿用共享的 Rust 主题 token。设置保存到本机，重启后仍然生效。">
-                  <div class="prose"><p>已接入深色模式，沿用共享的 Rust 主题 token。</p><ul><li><strong>统一颜色来源</strong>：正文、代码和工具输出都跟随同一套调色板。</li><li><strong>保留当前选择</strong>：外观设置保存到本机，重启后仍然生效。</li><li><strong>不改变执行逻辑</strong>：仅调整展示，不影响节点连接和会话状态。</li></ul><p>测试通过：<code>129 passed</code>，无新增依赖。</p></div>
-                  <details class="change-card"><summary><i data-icon="chevron-right"></i><i data-icon="files"></i><span>3 个文件已更改</span><span class="diff-count push"><span>+48</span><span>−12</span></span></summary><div class="change-list"><button data-open-file="theme.ts"><i data-icon="file"></i><span>src/lib/theme.ts</span><span class="diff-count push"><span>+24</span><span>−8</span></span></button><button data-open-file="settings-page.tsx"><i data-icon="file"></i><span>src/components/settings-page.tsx</span><span class="diff-count push"><span>+18</span><span>−4</span></span></button><button data-open-file="App.tsx"><i data-icon="file"></i><span>src/App.tsx</span><span class="diff-count push"><span>+6</span></span></button></div></details>
-                  <div class="message-actions"><button class="icon-button" aria-label="复制回答" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用回答" data-action="quote"><i data-icon="quote"></i></button><span>16:22</span></div>
-                </div>
-              </div>
-            </article>
-            <article class="turn" aria-label="第 2 轮">
-              <div class="user-message message" data-copy="消息区域也做成可切换的布局，先给我看 HTML 原型。"><div class="user-bubble">消息区域也做成可切换的布局，先给我看 HTML 原型。</div><div class="message-actions"><button class="icon-button" aria-label="复制用户消息" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用用户消息" data-action="quote"><i data-icon="quote"></i></button></div></div>
-              <div class="assistant-message">
-                <div class="answer message" data-copy="可以。布局只改变呈现，不改变消息顺序。阅读布局与经典布局可以在外观设置中即时切换。"><div class="prose"><p>可以。布局只改变呈现，不改变消息顺序。</p><p>右上角 <strong>外观</strong> 可以即时对照两种布局；工具输出默认收起，正文保留 Markdown 层次，输入框与阅读列共用同一条对齐线。</p><div class="code-block wide-content"><div class="code-caption"><span>Rust · 布局设置示意</span><button class="icon-button push" aria-label="复制代码" data-action="copy-code"><i data-icon="copy"></i></button></div><pre><code><span class="syntax-keyword">enum</span> MessageLayout {
-    Reading,  <span class="syntax-comment">// 气泡 + 阅读列</span>
-    Classic,  <span class="syntax-comment">// 同宽段落</span>
-}</code></pre></div><p class="muted small">这是交互评审稿，使用演示数据，不会向节点或模型发送请求。</p></div><div class="message-actions"><button class="icon-button" aria-label="复制回答" data-action="copy"><i data-icon="copy"></i></button><button class="icon-button" aria-label="引用回答" data-action="quote"><i data-icon="quote"></i></button><span>16:23</span></div></div>
-              </div>
-            </article>
+        <button type="button" class="review-toggle" data-action="inspector" aria-label="审阅变更" aria-controls="inspector" aria-expanded="true"><i data-icon="file-diff"></i><span>变更</span><small id="header-diff"></small></button>
+      </header>
+    <div class="scrim" hidden></div>
+    <aside class="activity-rail" aria-label="快捷导航">
+
+      <nav aria-label="工作台快捷入口">
+        <button class="rail-button" data-page="chat" aria-label="会话" title="会话"><i data-icon="terminal"></i></button>
+        <button class="rail-button" data-action="browse-projects" aria-label="项目" title="项目" aria-controls="navigation"><i data-icon="folder"></i></button>
+        <button class="rail-button" data-composer-action="goal" aria-label="会话目标" title="会话目标"><i data-icon="target"></i></button>
+        <button class="rail-button" data-page="automations" aria-label="计划任务" title="计划任务"><i data-icon="clock"></i></button>
+        <button class="rail-button" data-page="resources" aria-label="技能与插件" title="技能与插件"><i data-icon="blocks"></i></button>
+        <span class="rail-separator"></span>
+        <button class="rail-button" data-action="browser" aria-label="浏览器预览" title="浏览器预览"><i data-icon="globe"></i></button>
+        <button class="rail-button" data-action="code-panel" aria-label="代码工作区" title="代码工作区"><i data-icon="code-xml"></i></button>
+      </nav>
+      <button class="rail-button rail-settings" data-action="settings" aria-label="设置" title="设置"><i data-icon="settings"></i></button>
+    </aside>
+    <aside class="sidebar" id="navigation" aria-label="项目和会话">
+      <div class="brand">
+
+        <strong>RPI Work</strong>
+        <div class="sidebar-utilities"><button class="icon-button" id="filter-chats" aria-label="筛选会话" title="筛选会话" aria-expanded="false"><i data-icon="list-checks"></i></button>
+        <button class="icon-button" data-action="search" aria-label="搜索会话" title="搜索会话"><i data-icon="search"></i><kbd hidden></kbd></button>
+        <button class="icon-button sidebar-fold" data-action="close-navigation" aria-label="收起会话侧栏" title="收起会话侧栏"><i data-icon="panel-left"></i></button></div>
+        <div class="chat-filter" id="chat-filter" hidden><label for="chat-filter-mode">显示会话</label><select id="chat-filter-mode"><option value="all">全部会话</option><option value="running">执行中</option><option value="approval">待审批</option></select></div>
+
+        <button type="button" class="icon-button sidebar-close" data-action="close-navigation" aria-label="关闭会话侧栏"><i data-icon="x"></i></button>
+      </div>
+      <div class="sidebar-actions">
+        <button type="button" class="new-chat" data-action="new"><i data-icon="compose"></i>新对话<kbd>⌘ N</kbd></button>
+
+      </div>
+      <nav class="workspace-nav mobile-navigation" aria-label="工作台">
+        <button class="sidebar-button" data-page="chat"><i data-icon="message-circle"></i>会话</button>
+        <button class="sidebar-button" data-action="browse-projects" aria-controls="projects"><i data-icon="folder"></i>项目</button>
+        <button class="sidebar-button" data-page="automations"><i data-icon="clock"></i>计划任务</button>
+        <button class="sidebar-button" data-page="resources"><i data-icon="blocks"></i>技能与插件</button>
+      </nav>
+      <div class="project-scroll">
+        <section id="pinned-section" aria-label="置顶" hidden>
+          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="pinned-threads" aria-expanded="true"><span>置顶</span><i data-icon="chevron-down"></i></button></h2></div>
+          <div id="pinned-threads"></div>
+        </section>
+        <section aria-label="最近">
+          <div class="project-heading"><h2 class="sidebar-label"><button class="sidebar-section-toggle" data-action="toggle-section" aria-controls="projects" aria-expanded="true"><span>最近</span><i data-icon="chevron-down"></i></button></h2><button class="icon-button" data-action="add-project" aria-label="添加项目"><i data-icon="plus"></i></button></div>
+          <div id="projects"></div>
+        </section>
+      </div>
+      <div popover="auto" role="menu" aria-label="项目操作" id="project-menu">
+        <button type="button" role="menuitem" data-action="project-chat"><i data-icon="compose"></i>新建对话</button>
+        <button type="button" role="menuitem" data-action="pin-project"><i data-icon="pin"></i><span></span></button>
+      </div>
+      <footer class="sidebar-footer">
+        <button type="button" class="sidebar-button" data-action="archives"><i data-icon="folder"></i>已归档会话</button>
+        <button type="button" class="sidebar-button mobile-navigation" data-action="settings"><i data-icon="settings"></i>设置</button>
+
+      </footer>
+    </aside>
+    <main class="workspace" aria-label="会话工作区">
+
+      <section id="page-content" class="page-content" tabindex="-1" hidden></section>
+      <section class="conversation" aria-label="对话记录" tabindex="0">
+        <div class="reading-width" id="transcript"></div>
+      </section>
+      <div class="compose-area">
+        <div class="goal-progress reading-width" id="goal-progress" hidden>
+          <i data-icon="target"></i><button type="button" class="goal-label" data-composer-action="goal" title="编辑目标"><strong id="goal-status"></strong><span id="goal-text"></span></button><button type="button" class="icon-button" id="goal-toggle" data-composer-action="toggle-goal"></button>
+        </div>
+        <div id="queue" class="queue reading-width" aria-label="后续消息队列" hidden></div>
+        <form class="composer reading-width" aria-label="消息输入">
+          <div class="composer-menu" id="composer-menu" role="listbox" aria-label="输入操作" hidden></div>
+          <label class="sr-only" for="draft">消息</label>
+          <textarea id="draft" rows="2" placeholder="继续这个任务，或 @ 引用文件…"></textarea>
+          <div id="attachments" class="attachments" hidden></div>
+          <div class="composer-tools">
+            <button type="button" class="icon-button add-control" aria-label="添加到对话" title="添加到对话" aria-haspopup="listbox" aria-controls="composer-menu" aria-expanded="false"><i data-icon="plus"></i></button>
+            <input type="file" id="attach" aria-label="选择附件" multiple hidden>
+            <div class="composer-selects">
+              <label class="select-control mode-control"><span class="sr-only">工作模式</span><select id="collaboration-mode" aria-label="工作模式"><option value="code">编码</option><option value="plan">计划</option></select><i data-icon="chevron-down"></i></label>
+              <label class="select-control"><span class="sr-only">模型</span><select id="model" aria-label="模型"><option>GPT-5.4</option><option>GPT-5.3-Codex</option></select><i data-icon="chevron-down"></i></label>
+              <label class="select-control effort"><span class="sr-only">推理强度</span><select id="effort" aria-label="推理强度"><option>中</option><option>高</option><option>低</option></select><i data-icon="chevron-down"></i></label>
+            </div>
+            <label class="select-control busy-control" id="busy-control" hidden><span class="sr-only">执行中的消息</span><select id="busy-mode"><option value="queue">排队</option><option value="steer">引导本轮</option></select><i data-icon="chevron-down"></i></label>
+            <button type="submit" class="send-button" aria-label="发送" disabled><i data-icon="arrow-up"></i></button>
+            <button type="button" class="send-button stop-button" data-action="stop" aria-label="停止演示" hidden><i data-icon="square"></i></button>
+          </div>
+        </form>
+        <div class="composer-context reading-width">
+          <span class="execution-context"><i data-icon="workspace"></i>
+            <span id="current-environment"></span><i data-icon="git-branch"></i><span id="current-branch"></span>
+            <label class="select-control" id="environment-picker"><span class="sr-only">执行位置</span><select id="environment"><option value="local">本地</option><option value="worktree">Worktree</option></select><i data-icon="chevron-down"></i></label>
+            <label class="select-control" id="base-picker" hidden><span class="sr-only">起始分支</span><select id="base-branch"></select><i data-icon="chevron-down"></i></label>
+          </span>
+          <span class="context-actions"><button type="button" data-action="show-context" class="context-button" aria-label="查看上下文">上下文</button><span id="run-state" role="status">本地演示</span></span>
+        </div>
+      </div>
+      <section class="terminal-panel" id="terminal-panel" aria-label="终端演示" hidden>
+        <header class="terminal-header"><span><i data-icon="terminal"></i>终端 <small>本地演示</small></span><div><button class="icon-button" data-action="clear-terminal" aria-label="清空终端"><i data-icon="refresh"></i></button><button class="icon-button" data-action="close-terminal" aria-label="关闭终端"><i data-icon="x"></i></button></div></header>
+        <pre id="terminal-output" tabindex="0" aria-label="终端输出"></pre>
+        <form id="terminal-form"><label for="terminal-command" id="terminal-prompt"></label><input id="terminal-command" placeholder="试试 pwd、ls、git status 或 npm test" autocomplete="off" spellcheck="false" aria-label="终端命令"><button class="sr-only" type="submit">运行命令</button></form>
+      </section>
+    </main>
+    <aside class="inspector" id="inspector" aria-label="工作区面板">
+      <div class="inspector-divider" role="separator" tabindex="0" aria-label="调整右侧面板宽度" aria-controls="inspector" aria-orientation="vertical" aria-valuemin="320" aria-valuemax="1000" aria-valuenow="480" title="拖动调整宽度，双击还原"></div>
+      <header class="inspector-header">
+        <h2 class="sr-only">工作区面板</h2>
+        <div class="inspector-tabs" role="tablist" aria-label="文件面板">
+          <button role="tab" aria-selected="false" data-inspector-tab="browser" data-browser-id="0" aria-label="浏览器" aria-controls="browser-content"><i data-icon="globe"></i><span>项目概览</span></button>
+          <button role="tab" aria-selected="false" data-inspector-tab="files" aria-controls="files-content"><i data-icon="code-xml"></i>文件</button>
+          <button role="tab" aria-selected="true" data-inspector-tab="changes" aria-controls="review-content"><i data-icon="file-diff"></i>变更</button>
+        </div>
+        <button type="button" class="icon-button dock-add" data-action="new-browser-tab" aria-label="新建浏览器标签页" title="新建浏览器标签页"><i data-icon="plus"></i></button>
+        <div class="dock-actions">
+          <button type="button" class="icon-button" data-action="close-browser-tab" aria-label="关闭当前标签页" title="关闭当前标签页" hidden><i data-icon="x"></i></button>
+          <button type="button" class="icon-button" data-action="expand-inspector" aria-label="进入完整视图" title="进入完整视图"><i data-icon="panel-right"></i></button>
+          <button type="button" class="icon-button" data-action="close-inspector" aria-label="关闭右侧面板" title="关闭右侧面板"><i data-icon="x"></i></button>
+        </div>
+      </header>
+      <div class="inspector-content" id="review-content"></div>
+      <input id="source-folder-picker" type="file" aria-label="选择本地源码文件夹" webkitdirectory multiple hidden>
+      <div class="inspector-content" id="files-content" hidden></div>
+      <section class="browser-panel" id="browser-content" aria-label="浏览器预览" hidden>
+        <form class="browser-toolbar" id="browser-form">
+          <button class="icon-button" type="button" data-action="browser-back" aria-label="后退" disabled><span aria-hidden="true">‹</span></button>
+          <button class="icon-button" type="button" data-action="browser-forward" aria-label="前进" disabled><span aria-hidden="true">›</span></button>
+          <button class="icon-button" type="button" data-action="browser-reload" aria-label="刷新预览"><i data-icon="refresh"></i></button>
+          <label class="sr-only" for="browser-address">预览地址</label><input id="browser-address" value="rpi://project/" autocomplete="off" spellcheck="false">
+          <button class="sr-only" type="submit">打开地址</button>
+          <button type="button" class="annotate-button" aria-pressed="false" data-action="annotate" title="选择页面元素并反馈到对话"><i data-icon="message-circle"></i><span>批注</span></button>
+        </form>
+        <div class="browser-stage"><iframe title="页面预览" sandbox="allow-scripts"></iframe></div>
+        <footer class="browser-controls">
+          <div class="browser-status" role="status">本地预览</div>
+          <a id="open-address" hidden target="_blank" rel="noopener noreferrer">在新窗口打开</a><label>页面<select id="browser-route" aria-label="页面"><option value="/">项目首页</option><option value="/settings">项目设置</option></select></label>
+          <label>视口<select id="browser-viewport" aria-label="视口"><option value="responsive">自适应</option><option value="mobile">移动设备</option></select></label>
+        </footer>
+      </section>
+    </aside>
+  </div>
+
+  <dialog id="goal-dialog" aria-labelledby="goal-title">
+    <div class="dialog-heading"><h2 id="goal-title">设定目标</h2><form method="dialog"><button class="icon-button" aria-label="关闭目标"><i data-icon="x"></i></button></form></div>
+    <form id="goal-form" class="dialog-form"><label for="goal-input">完成这个任务需要达到什么结果？</label><textarea id="goal-input" rows="4" required maxlength="2000"></textarea><div class="goal-form-actions"><button type="button" class="action-button" data-composer-action="clear-goal" hidden>清除目标</button><button type="submit" class="action-button primary">开始目标</button></div></form>
+  </dialog>
+  <dialog id="search-dialog" aria-labelledby="search-title">
+    <div class="dialog-heading"><h2 id="search-title">搜索与操作</h2><form method="dialog"><button class="icon-button" aria-label="关闭搜索"><i data-icon="x"></i></button></form></div>
+    <label class="dialog-search"><i data-icon="search"></i><span class="sr-only">项目名或会话名</span><input type="search" id="search-input" placeholder="搜索会话、项目或操作" autocomplete="off"></label>
+    <div id="search-results" class="search-results"></div>
+  </dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="settings-layout">
+      <nav class="settings-nav" aria-label="设置分类">
+        <div class="preference-nav-header">
+          <h2 id="settings-title">设置</h2>
+          <button type="button" class="preference-navigation" aria-controls="settings-nav-body" aria-expanded="false">浏览分类<i data-icon="chevron-down"></i></button>
+          <form method="dialog"><button class="icon-button preference-close" aria-label="关闭设置" title="关闭设置"><i data-icon="x"></i></button></form>
+        </div>
+        <div id="settings-nav-body">
+          <label class="preference-search"><i data-icon="search"></i><input id="settings-search" type="search" placeholder="搜索" aria-label="搜索设置" autocomplete="off"></label>
+          <div class="preference-nav-scroll">
+            <div id="settings-search-results" hidden></div>
+            <div id="settings-destinations">
+            <div class="preference-nav-group"><h3>应用</h3>
+              <button type="button" data-settings-tab="general" aria-current="page"><i data-icon="settings"></i><span>常规</span></button>
+              <button type="button" data-settings-tab="appearance"><i data-icon="appearance"></i><span>外观</span></button>
+              <button type="button" data-settings-tab="notifications"><i data-icon="bell"></i><span>通知</span></button>
+              <button type="button" data-settings-tab="agent"><i data-icon="code-xml"></i><span>配置</span></button>
+              <button type="button" data-settings-tab="shortcuts"><i data-icon="keyboard"></i><span>键盘快捷键</span></button>
+            </div>
+            <div class="preference-nav-group"><h3>数据与隐私</h3>
+              <button type="button" data-settings-tab="archives"><i data-icon="archive-box"></i><span>已归档的聊天</span></button>
+            </div>
+            <div class="preference-nav-group"><h3>集成</h3>
+              <button type="button" data-settings-tab="plugins"><i data-icon="blocks"></i><span>插件</span></button>
+              <button type="button" data-settings-tab="mcp"><i data-icon="terminal"></i><span>MCP 服务器</span></button>
+              <button type="button" data-settings-tab="skills"><i data-icon="list-checks"></i><span>技能</span></button>
+            </div>
+            <div class="preference-nav-group"><h3>编码</h3>
+              <button type="button" data-settings-tab="connections"><i data-icon="globe"></i><span>连接</span></button>
+              <button type="button" data-settings-tab="review"><i data-icon="file-diff"></i><span>代码审查</span></button>
+              <button type="button" data-settings-tab="environment"><i data-icon="folder"></i><span>环境</span></button>
+            </div>
+            </div>
           </div>
         </div>
-        <div class="composer-region"><button class="jump-bottom icon-button" aria-label="回到最新消息" data-action="bottom"><i data-icon="arrow-down"></i></button><form class="composer" id="composer"><label class="sr-only" for="draft">消息输入</label><textarea id="draft" rows="2" placeholder="继续这个任务…" spellcheck="false"></textarea><div id="attachment-list" class="attachment-list" hidden></div><div class="composer-toolbar"><button type="button" class="icon-button" aria-label="添加附件" data-action="attach"><i data-icon="plus"></i></button><label class="composer-select"><span class="sr-only">选择模型</span><select id="model"><option>deepseek-v4-pro</option><option>GPT-5.3-Codex</option></select><i data-icon="chevron-down"></i></label><label class="composer-select"><span class="sr-only">思考等级</span><select id="thinking"><option>高</option><option>中</option><option>低</option></select><i data-icon="chevron-down"></i></label><span class="context-label push" title="38,000 / 100,000 tokens"><span class="context-ring"></span>38%</span><button type="button" class="stop-button" aria-label="停止本地演示" data-demo="stop" hidden><span></span></button><button type="submit" class="send-button" aria-label="发送演示消息" disabled><i data-icon="arrow-up"></i></button></div></form><div class="composer-subline"><span><i data-icon="git"></i>feat/next-iteration<i data-icon="chevron-down"></i></span><span>HTML 原型 · ⌘↵ 演示发送</span></div><input type="file" id="attachments" multiple hidden></div>
-      </section>
-      <aside class="right-rail" aria-label="详情面板" hidden>
-        <div class="rail-header"><div class="rail-tabs"><button data-panel="run" aria-pressed="false">运行</button><button data-panel="files" aria-pressed="false">文件 <span class="count">3</span></button></div><button class="icon-button push" aria-label="关闭详情面板" data-action="close-rail"><i data-icon="x"></i></button></div>
-        <div id="run-content" class="rail-content"><div class="rail-caption">本轮活动<span class="push">已完成</span></div><ol class="timeline"><li><i data-icon="check"></i><span>检查主题契约</span><time>16:21</time></li><li><i data-icon="check"></i><span>更新外观设置</span><time>16:21</time></li><li><i data-icon="check"></i><span>运行组件测试</span><time>16:22</time></li><li><i data-icon="check"></i><span>输出结果</span><time>16:22</time></li></ol><dl class="runtime-stats"><div><dt>模型</dt><dd id="runtime-model">deepseek-v4-pro</dd></div><div><dt>思考</dt><dd id="runtime-thinking">高</dd></div><div><dt>工具调用</dt><dd>5 次 · 失败 0</dd></div><div><dt>缓存命中</dt><dd>75%</dd></div><div><dt>成本</dt><dd>$0.0184</dd></div></dl><div class="rail-caption">队列<span class="push">0</span></div><p class="muted small">没有排队中的消息</p></div>
-        <div id="files-content" class="rail-content" hidden><div class="rail-caption">工作区更改<span class="push diff-count"><span>+48</span><span>−12</span></span></div><div class="file-tree"><button data-open-file="theme.ts"><i data-icon="file"></i>theme.ts<span class="push success">M</span></button><button data-open-file="settings-page.tsx"><i data-icon="file"></i>settings-page.tsx<span class="push success">M</span></button><button data-open-file="App.tsx"><i data-icon="file"></i>App.tsx<span class="push success">M</span></button></div><div class="diff-preview"><div class="code-caption" id="diff-filename">theme.ts</div><pre><code><span class="diff-hunk">@@ -22,3 +22,5 @@</span>
-<span class="diff-remove">− const dark = false</span>
-<span class="diff-add">+ const dark = choice.dark</span>
-<span class="diff-add">+ const tokens = themeTokens(choice)</span>
-  return buildTheme(tokens)</code></pre></div><p class="muted small">演示 diff，不读取本机工作区。</p></div>
-        <div class="rail-footer">上下文 38k / 100k · 38%</div>
-      </aside>
+      </nav>
+      <div class="settings-content">
+        <section data-settings-section="general">
+          <h3>常规</h3>
+          <h4>聊天</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>后续消息处理方式</strong><small>选择新聊天在任务运行时如何处理下一条消息。</small></span><span class="select-control"><select id="follow-up-default" aria-label="后续消息处理方式"><option value="queue">加入队列</option><option value="steer">引导当前任务</option></select><i data-icon="chevron-down"></i></span></label>
+            <label class="settings-row"><span><strong>显示上下文窗口使用情况</strong><small>在输入框下方显示当前聊天的上下文入口。</small></span><input type="checkbox" role="switch" id="show-context-control" aria-label="显示上下文窗口使用情况"></label>
+          </div>
+          <h4>工作区</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>底部面板</strong><small>在窗口标题栏中显示终端按钮。</small></span><input id="show-bottom-control" type="checkbox" role="switch" aria-label="底部面板"></label>
+            <label class="settings-row"><span><strong>审查结果呈现方式</strong><small>在当前聊天中审查代码，或启动单独的审查聊天。</small></span><span class="select-control"><select id="general-review-delivery" aria-label="审查结果呈现方式"><option value="inline">当前聊天</option><option value="detached">独立聊天</option></select><i data-icon="chevron-down"></i></span></label>
+          </div>
+          <h4>原型运行</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>下一轮演示</strong><small>选择下一次发送消息时使用的本地执行流程。</small></span><span class="select-control"><select id="scenario" aria-label="下一轮演示"><option value="normal">正常执行</option><option value="approval">命令需要审批</option><option value="failure">工具执行失败</option></select><i data-icon="chevron-down"></i></span></label>
+          </div>
+        </section>
+        <section data-settings-section="appearance" hidden>
+          <h3>外观</h3>
+          <h4>主题</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>颜色模式</strong><small>选择应用主题，或使用设备的外观设置。</small></span><span class="select-control"><select id="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select><i data-icon="chevron-down"></i></span></label>
+          </div>
+          <h4>字体与阅读</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>消息字号</strong><small>调整聊天正文的文字大小。</small></span><span class="select-control"><select id="font-size" aria-label="消息字号"><option value="16">16 px</option><option value="18">18 px</option></select><i data-icon="chevron-down"></i></span></label>
+            <label class="settings-row"><span><strong>阅读密度</strong><small>调整正文的行距与轮次间隔。</small></span><span class="select-control"><select id="reading-density" aria-label="阅读密度"><option value="comfortable">舒适</option><option value="compact">紧凑</option></select><i data-icon="chevron-down"></i></span></label>
+            <label class="settings-row"><span><strong>代码行号</strong><small>在消息中的代码块显示行号。</small></span><input type="checkbox" role="switch" id="code-numbers" aria-label="代码行号"></label>
+          </div>
+        </section>
+        <section data-settings-section="notifications" hidden>
+          <h3>通知</h3>
+          <h4>桌面应用</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>任务完成提示</strong><small>在工作台内显示完成、失败或停止的提示。</small></span><input type="checkbox" role="switch" id="notify-finish" aria-label="任务完成提示"></label>
+          </div>
+        </section>
+        <section data-settings-section="agent" hidden>
+          <h3>配置</h3>
+          <h4>新聊天</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>默认模型</strong><small>选择新聊天使用的模型。</small></span><span class="select-control"><select id="default-model" aria-label="默认模型"><option value="GPT-5.4">GPT-5.4</option><option value="GPT-5.3-Codex">GPT-5.3-Codex</option></select><i data-icon="chevron-down"></i></span></label>
+            <label class="settings-row"><span><strong>默认推理强度</strong><small>按任务复杂度调整推理强度。</small></span><span class="select-control"><select id="default-effort" aria-label="默认推理强度"><option value="低">低</option><option value="中">中</option><option value="高">高</option></select><i data-icon="chevron-down"></i></span></label>
+          </div>
+          <h4>权限</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>执行权限</strong><small><span id="permissions-note"></span></small></span><span class="select-control"><select id="permissions" aria-label="执行权限"><option value="readonly">只读</option><option value="workspace">工作区可写</option><option value="full">完全访问</option></select><i data-icon="chevron-down"></i></span></label>
+            <label class="settings-row"><span><strong>遇到命令先询问</strong><small>显示命令执行前的审批请求。</small></span><input type="checkbox" role="switch" id="ask-commands" aria-label="遇到命令先询问"></label>
+          </div>
+        </section>
+        <section data-settings-section="shortcuts" hidden>
+          <h3>键盘快捷键</h3>
+          <dl class="shortcut-list">
+            <div><dt>搜索与操作</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>K</kbd></dd></div>
+            <div><dt>新对话</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>N</kbd></dd></div>
+            <div><dt>切换侧栏</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>B</kbd></dd></div>
+            <div><dt>切换底部终端</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>J</kbd></dd></div>
+            <div><dt>浏览器</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Shift</kbd> <kbd>B</kbd></dd></div>
+            <div><dt>设置</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>,</kbd></dd></div>
+            <div><dt>关闭面板</dt><dd><kbd>Esc</kbd></dd></div>
+            <div><dt>换行</dt><dd><kbd>Shift</kbd> <kbd>Enter</kbd></dd></div>
+          </dl>
+        </section>
+        <section data-settings-section="archives" hidden>
+          <h3>已归档的聊天</h3>
+          <div id="preference-archives" class="preference-group"></div>
+        </section>
+        <section data-settings-section="plugins" hidden>
+          <h3>插件</h3>
+          <div class="preference-group" data-settings-resources="plugins"></div>
+        </section>
+        <section data-settings-section="mcp" hidden>
+          <h3>MCP 服务器</h3>
+          <div class="preference-group" data-settings-resources="mcp"></div>
+        </section>
+        <section data-settings-section="skills" hidden>
+          <h3>技能</h3>
+          <div class="preference-group" data-settings-resources="skills"></div>
+        </section>
+        <section data-settings-section="connections" hidden>
+          <h3>连接</h3>
+          <p class="settings-description">管理本地和 SSH 主机的演示连接。</p>
+          <div id="connection-list" class="preference-group"></div>
+        </section>
+        <section data-settings-section="review" hidden>
+          <h3>代码审查</h3>
+          <h4>结果</h4>
+          <div class="preference-group">
+            <label class="settings-row"><span><strong>审查结果呈现方式</strong><small>选择审查发现的显示位置。</small></span><span class="select-control"><select id="review-delivery" aria-label="审阅会话"><option value="inline">当前会话</option><option value="detached">独立会话</option></select><i data-icon="chevron-down"></i></span></label>
+          </div>
+        </section>
+        <section data-settings-section="environment" hidden>
+          <h3>环境</h3>
+          <p class="settings-description">为当前项目保存 Worktree 准备脚本和常用测试操作。</p>
+          <form id="environment-form" class="dialog-form">
+            <label for="setup-script">准备脚本</label><textarea id="setup-script" rows="3" spellcheck="false"></textarea>
+            <label for="test-command">测试操作</label><input id="test-command" required maxlength="200">
+            <button class="action-button primary" type="submit">保存环境配置</button>
+            <output id="environment-feedback" role="status"></output>
+          </form>
+        </section>
+      </div>
     </div>
-    <footer class="statusbar"><span>↑ 32k</span><span>↓ 4.8k</span><span>缓存 75%</span><span>成本 $0.0184</span><span>上下文 38%</span><span>工具 5 / 失败 0</span><span class="push">布局评审 · 演示数据</span></footer>
-  </main>
+  </dialog>
+  <dialog id="thread-dialog" aria-labelledby="thread-actions-title">
+    <div class="dialog-heading"><h2 id="thread-actions-title">会话操作</h2><form method="dialog"><button class="icon-button" aria-label="关闭会话操作"><i data-icon="x"></i></button></form></div>
+    <form id="rename-thread" class="dialog-form">
+      <label for="thread-name">会话名称</label>
+      <div class="dialog-input-row"><input id="thread-name" maxlength="100" required><button class="action-button primary" type="submit">保存</button></div>
+    </form>
+    <div class="thread-actions">
+      <button class="action-button" type="button" data-action="pin-thread">置顶会话</button>
+      <button class="action-button" type="button" data-action="fork">从历史分叉</button>
+      <button class="action-button" type="button" data-action="handoff"></button>
+      <button class="action-button" type="button" data-action="archive">归档会话</button>
+    </div>
+  </dialog>
+  <dialog id="archive-dialog" aria-labelledby="archive-title">
+    <div class="dialog-heading"><h2 id="archive-title">已归档会话</h2><form method="dialog"><button class="icon-button" aria-label="关闭归档列表"><i data-icon="x"></i></button></form></div>
+    <div id="archived-threads"></div>
+  </dialog>
+  <dialog id="comment-dialog" aria-labelledby="comment-title">
+    <div class="dialog-heading"><h2 id="comment-title">行内反馈</h2><form method="dialog"><button class="icon-button" aria-label="关闭行内反馈"><i data-icon="x"></i></button></form></div>
+    <form id="review-comment-form" class="dialog-form">
+      <label for="review-comment" id="comment-location"></label>
+      <textarea id="review-comment" rows="3" maxlength="2000" required></textarea>
+      <button class="action-button primary" type="submit">加入下一条消息</button>
+    </form>
+  </dialog>
 
-  <dialog class="settings-dialog" aria-labelledby="settings-title"><div class="settings-title"><div><h2 id="settings-title">外观与布局</h2><p>即时预览，自动保存在当前浏览器。</p></div><button class="icon-button" aria-label="关闭外观设置" data-action="close-settings"><i data-icon="x"></i></button></div><div class="settings-body"><div class="setting"><div><h3>消息布局</h3><p>阅读布局突出正文；经典布局保留同宽段落。</p></div><div class="segmented" role="group" aria-label="消息布局"><button data-layout-pick="codex" aria-pressed="true">阅读</button><button data-layout-pick="classic" aria-pressed="false">经典</button></div></div><div class="setting"><div><h3>轮次分隔</h3><p>在每轮消息之间显示一条细线。</p></div><button class="switch" role="switch" aria-label="轮次分隔" aria-checked="false" data-setting="divider"></button></div><div class="setting"><div><h3>代码块通栏</h3><p>宽屏时让代码比正文向两侧各延伸 24px。</p></div><button class="switch" role="switch" aria-label="代码块通栏" aria-checked="false" data-setting="bleed"></button></div><div class="setting"><div><h3>消息悬浮操作</h3><p>悬浮或键盘聚焦时显示复制、引用。</p></div><button class="switch" role="switch" aria-label="消息悬浮操作" aria-checked="true" data-setting="actions"></button></div><div class="setting"><div><h3>紧凑活动视图</h3><p>将读取与搜索聚合成摘要，展开查看详情。</p></div><button class="switch" role="switch" aria-label="紧凑活动视图" aria-checked="true" data-setting="activity"></button></div><div class="setting"><div><h3>深色模式</h3><p>正文、代码、diff 和输入区同步切换。</p></div><button class="switch" role="switch" aria-label="深色模式" aria-checked="false" data-setting="dark"></button></div></div><div class="settings-footer"><button class="text-button" data-action="reset-settings">恢复默认</button><span class="muted small push">仅本原型生效</span><button class="primary-button" data-action="close-settings">完成</button></div></dialog>
-  <dialog class="search-dialog" aria-labelledby="search-title"><div class="search-box"><i data-icon="search"></i><label class="sr-only" for="search">搜索会话</label><input id="search" placeholder="搜索项目或会话…"><button class="icon-button" data-action="close-search" aria-label="关闭搜索"><i data-icon="x"></i></button></div><h2 id="search-title" class="sr-only">搜索会话</h2><div id="search-results"></div></dialog>
-  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="context-dialog" aria-labelledby="context-title">
+    <div class="dialog-heading"><h2 id="context-title">会话上下文</h2><form method="dialog"><button class="icon-button" aria-label="关闭上下文"><i data-icon="x"></i></button></form></div>
+    <dl id="context-details" class="context-details"></dl>
+  </dialog>
+  <dialog id="project-dialog" aria-labelledby="project-dialog-title">
+    <div class="dialog-heading"><h2 id="project-dialog-title">添加项目</h2><form method="dialog"><button class="icon-button" aria-label="关闭添加项目"><i data-icon="x"></i></button></form></div>
+    <form id="project-form" class="dialog-form">
+      <label for="project-name">名称</label><input id="project-name" required maxlength="50" placeholder="my-project">
+      <label for="project-path">项目路径</label><input id="project-path" required maxlength="300" placeholder="~/Projects/my-project">
+      <p class="settings-note">路径用于演示项目归属。</p><button type="submit" class="action-button primary">添加项目</button>
+    </form>
+  </dialog>
+  <dialog id="automation-dialog" aria-labelledby="automation-title">
+    <div class="dialog-heading"><h2 id="automation-title">新建计划任务</h2><form method="dialog"><button class="icon-button" aria-label="关闭计划任务"><i data-icon="x"></i></button></form></div>
+    <form id="automation-form" class="dialog-form">
+      <input type="hidden" id="automation-id">
+      <label for="automation-name">任务名称</label><input id="automation-name" required maxlength="80" placeholder="每日变更审阅">
+      <label for="automation-prompt">任务说明</label><textarea id="automation-prompt" rows="4" required maxlength="4000" placeholder="审阅最近的改动，指出回归并汇总测试结果。"></textarea>
+      <div class="form-columns"><label>项目<select id="automation-project" aria-label="项目"></select></label><label>频率<select id="automation-frequency" aria-label="频率"><option>每天</option><option>工作日</option><option>每周一</option></select></label><label>时间<input id="automation-time" type="time" value="09:00" required></label></div>
+      <p class="settings-note">计划保存在浏览器中。可手动运行演示，到时自动触发需要接入调度服务。</p>
+      <button class="action-button primary" type="submit">保存任务</button>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <template id="welcome-template">
+    <div class="welcome">
+      <h2 class="welcome-title"><span>你想在</span> <label class="welcome-project"><span class="sr-only">选择项目</span><span class="select-control"><select id="project-picker"><option>rpi-work</option><option>pi-rust</option></select><i data-icon="chevron-down"></i></span></label> <span>中构建什么？</span></h2>
+      <div class="suggestions" aria-label="填入任务建议">
+        <button type="button" data-suggestion="梳理项目结构，列出主要入口和模块边界。"><i data-icon="folder"></i>梳理项目结构</button>
+        <button type="button" data-suggestion="审阅当前工作区变更，指出可能的回归。"><i data-icon="git-pull-request"></i>审阅当前变更</button>
+        <button type="button" data-suggestion="找出当前功能缺少的测试覆盖。"><i data-icon="list-checks"></i>检查测试覆盖</button>
+      </div>
+    </div>
+  </template>
 </body>
 </html>
