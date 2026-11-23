@@ -833,6 +833,12 @@ dialog::backdrop, .scrim { background: #0005; }
 #project-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
 #project-menu button:hover, #project-menu button:focus-visible { background: var(--hover); }
 #project-menu .icon { width: 15px; height: 15px; }
+
+/* Layout is independent of font size, theme and density; no transcript re-render. */
+:root[data-message-layout="classic"] .prompt-line { flex-direction: column; align-items: stretch; justify-content: flex-start; }
+:root[data-message-layout="classic"] .prompt-line::before { content: "你"; color: var(--dim); font-size: 11px; margin-bottom: 6px; }
+:root[data-message-layout="classic"] .prompt { max-width: none; width: 100%; padding: 0; border-radius: 0; background: transparent; }
+
 @media (hover: none) {
   .project-tools { opacity: 1; }
 }

@@ -835,6 +835,124 @@ async function checkDeveloperPreview(browser) {
   }
 }
 
+async function checkMessageLayoutsAndEmptyPanel(browser) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 940 } });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const button = name => page.getByRole('button', { name, exact: true });
+  const shot = async name => {
+    if (process.env.RPI_WORKBENCH_SHOTS) await page.screenshot({ path: path.join(process.env.RPI_WORKBENCH_SHOTS, name + '.png') });
+  };
+  const appearance = async () => { await button('设置').click(); await button('外观').click(); };
+  try {
+    await page.goto(url);
+    await page.getByRole('tab', { name: '变更', exact: true }).click();
+    const transcript = await page.locator('#transcript').textContent();
+    const draft = page.getByRole('textbox', { name: '消息', exact: true });
+    await draft.fill('切换布局时保留的草稿');
+    await page.getByText('检查了 3 个文件', { exact: true }).click();
+    await page.locator('.conversation').evaluate(node => { node.scrollTop = 0; });
+    const anchorTop = await page.locator('.prompt').first().evaluate(node => node.getBoundingClientRect().top);
+    await shot('message-reading');
+    await appearance();
+    await page.getByLabel('消息布局', { exact: true }).selectOption('classic');
+    await button('关闭设置').click();
+    assert.ok(Math.abs(await page.locator('.prompt').first().evaluate(node => node.getBoundingClientRect().top) - anchorTop) <= 1);
+    assert.equal(await page.locator('#transcript').textContent(), transcript);
+    assert.equal(await draft.inputValue(), '切换布局时保留的草稿');
+    assert.equal(await page.locator('.activity').first().getAttribute('open'), '');
+    const geometry = await page.locator('.prompt').first().evaluate(node => ({
+      x: node.getBoundingClientRect().x, width: node.getBoundingClientRect().width,
+      background: getComputedStyle(node).backgroundColor, font: getComputedStyle(node).fontSize,
+    }));
+    const bounds = await page.locator('#transcript').boundingBox();
+    assert.equal(geometry.x, bounds.x);
+    assert.equal(geometry.width, bounds.width);
+    assert.equal(geometry.background, 'rgba(0, 0, 0, 0)');
+    assert.equal(geometry.font, '16px');
+    await page.locator('.conversation').evaluate(node => { node.scrollTop = 0; });
+    await shot('message-classic');
+    await page.reload();
+    assert.equal(await page.locator('html').getAttribute('data-message-layout'), 'classic');
+    assert.equal(await page.locator('html').getAttribute('data-density'), 'comfortable');
+    assert.equal(await draft.inputValue(), '切换布局时保留的草稿');
+    await appearance();
+    assert.equal(await page.getByLabel('消息布局', { exact: true }).inputValue(), 'classic');
+    await page.getByLabel('阅读密度', { exact: true }).selectOption('compact');
+    await page.getByLabel('消息字号', { exact: true }).selectOption('18');
+    await page.locator('#theme').selectOption('dark');
+    await button('关闭设置').click();
+    await shot('message-classic-dark');
+    for (const width of [1440, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 940 });
+      await checkViewport(page);
+    }
+    await page.setViewportSize({ width: 1440, height: 940 });
+    await appearance();
+    await page.getByLabel('消息布局', { exact: true }).selectOption('reading');
+    await page.locator('#theme').selectOption('light');
+    await button('关闭设置').click();
+    await page.reload();
+    assert.equal(await page.locator('html').getAttribute('data-message-layout'), 'reading');
+    assert.equal(await page.locator('html').getAttribute('data-density'), 'compact');
+    assert.equal(await page.locator('.prompt').first().evaluate(node => getComputedStyle(node).fontSize), '18px');
+    const prompt = await page.locator('.prompt').first().boundingBox();
+    assert.ok(prompt.width < (await page.locator('#transcript').boundingBox()).width);
+
+    const shell = page.locator('.shell');
+    await page.getByRole('tab', { name: '变更', exact: true }).click();
+    const splitWidth = (await page.locator('#transcript').boundingBox()).width;
+    await page.getByRole('button', { name: /^新对话/ }).click();
+    assert.equal(await shell.getAttribute('data-inspector'), 'closed');
+    assert.ok((await page.locator('#transcript').boundingBox()).width > splitWidth);
+    await checkViewport(page);
+    await shot('new-chat-empty-changes');
+    await page.locator('[data-session="layout"]').click();
+    assert.equal(await shell.getAttribute('data-inspector'), 'open');
+    await page.getByRole('button', { name: /^新对话/ }).click();
+    await button('审阅变更').click();
+    assert.equal(await shell.getAttribute('data-inspector'), 'open');
+    await button('关闭右侧面板').click();
+    await page.locator('[data-session="layout"]').click();
+    assert.equal(await shell.getAttribute('data-inspector'), 'closed');
+    await button('审阅变更').click();
+    await page.getByRole('button', { name: /^新对话/ }).click();
+    await page.keyboard.press('Control+Shift+B');
+    assert.equal(await shell.getAttribute('data-inspector'), 'open');
+    await page.keyboard.press('Control+Shift+B');
+    await page.locator('[data-session="layout"]').click();
+    assert.equal(await shell.getAttribute('data-inspector'), 'closed');
+
+    await button('打开浏览器').click();
+    await page.getByRole('button', { name: /^新对话/ }).click();
+    assert.equal(await shell.getAttribute('data-inspector'), 'open');
+    assert.equal(await page.locator('#browser-content').isVisible(), true);
+    await shot('new-chat-browser-preserved');
+    await page.locator('[data-session="layout"]').click();
+    await button('打开代码').click();
+    await page.locator('.source-file-tab[aria-selected="true"]').waitFor();
+    const source = await page.locator('.source-file-tab[aria-selected="true"]').textContent();
+    await page.getByRole('button', { name: /^新对话/ }).click();
+    assert.equal(await shell.getAttribute('data-inspector'), 'open');
+    assert.equal(await page.locator('#files-content').isVisible(), true);
+    assert.equal(await page.locator('.source-file-tab[aria-selected="true"]').textContent(), source);
+    await shot('new-chat-source-preserved');
+
+    await page.evaluate(() => {
+      const key = 'rpi-workbench-v1';
+      const saved = JSON.parse(localStorage.getItem(key));
+      saved.messageLayout = 'unsupported';
+      localStorage.setItem(key, JSON.stringify(saved));
+    });
+    await page.reload();
+    assert.equal(await page.locator('html').getAttribute('data-message-layout'), 'reading');
+    assert.deepEqual(errors, []);
+    console.log('Reading/classic layouts, persistence, draft/details retention, desktop widths and context-sensitive new-chat panels passed.');
+  } finally {
+    await page.close();
+  }
+}
+
 async function main() {
   const browser = await chromium.launch();
   try {
@@ -928,6 +1046,7 @@ async function main() {
     await checkDockFlows(browser);
     await checkSettingsAndDefaultPanel(browser);
     await checkReadingAndWorkflows(browser);
+    await checkMessageLayoutsAndEmptyPanel(browser);
   } finally {
     await browser.close();
   }

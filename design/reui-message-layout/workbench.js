@@ -1,7 +1,7 @@
 // This prototype owns browser-local state. Commands and integrations use fixtures.
 const workbench = {
   projects: [], fontSize: '16', permissions: 'workspace', askCommands: false, reviewDelivery: 'inline',
-  density: 'comfortable', codeNumbers: true, notifyFinish: false, defaultModel: 'GPT-5.4', defaultEffort: '中',
+  density: 'comfortable', messageLayout: 'reading', codeNumbers: true, notifyFinish: false, defaultModel: 'GPT-5.4', defaultEffort: '中',
   followUpMode: 'queue', showContext: true, showBottomControl: true,
   environments: {}, resources: {}, connections: {}, sourceDrafts: {}, automations: [],
 };
@@ -23,6 +23,7 @@ try {
     workbench.askCommands = Boolean(saved.askCommands);
     if (['inline', 'detached'].includes(saved.reviewDelivery)) workbench.reviewDelivery = saved.reviewDelivery;
     if (['compact', 'comfortable'].includes(saved.density)) workbench.density = saved.density;
+    if (['reading', 'classic'].includes(saved.messageLayout)) workbench.messageLayout = saved.messageLayout;
     if (typeof saved.codeNumbers === 'boolean') workbench.codeNumbers = saved.codeNumbers;
     workbench.notifyFinish = Boolean(saved.notifyFinish);
     if (typeof saved.showBottomControl === 'boolean') workbench.showBottomControl = saved.showBottomControl;
@@ -57,6 +58,7 @@ function initializeWorkbench() {
   let selectedResource = 'code-review';
   let reviewWasOpen = reviewing;
   let inspectorTab = 'changes';
+  let autoClosedChanges = false;
   let sourceIndex = 0;
   const unsavedSources = new Map();
   let pickerProject;
@@ -434,6 +436,7 @@ function initializeWorkbench() {
     $('#ask-commands').checked = workbench.askCommands;
     $('#review-delivery').value = workbench.reviewDelivery;
     $('#reading-density').value = workbench.density;
+    $('#message-layout').value = workbench.messageLayout;
     $('#code-numbers').checked = workbench.codeNumbers;
     $('#notify-finish').checked = workbench.notifyFinish;
     $('#default-model').value = workbench.defaultModel;
@@ -877,6 +880,18 @@ function initializeWorkbench() {
       saveWorkbench();
     });
   }
+  $('#message-layout').addEventListener('change', event => {
+    const atBottom = conversation.scrollHeight - conversation.clientHeight - conversation.scrollTop < 40;
+    const viewport = conversation.getBoundingClientRect();
+    const anchor = [...$('#transcript').querySelectorAll('.prompt, .assistant > p, .reply h2, .reply p, .activity > summary, .turn-response')]
+      .find(node => { const rect = node.getBoundingClientRect(); return rect.bottom > viewport.top + 8 && rect.top < viewport.bottom; });
+    const top = anchor?.getBoundingClientRect().top;
+    workbench.messageLayout = event.target.value;
+    document.documentElement.dataset.messageLayout = workbench.messageLayout;
+    if (atBottom) conversation.scrollTop = conversation.scrollHeight;
+    else if (anchor) conversation.scrollTop += anchor.getBoundingClientRect().top - top;
+    saveWorkbench();
+  });
   $('#reading-density').addEventListener('change', event => {
     workbench.density = event.target.value;
     document.documentElement.dataset.density = workbench.density;
@@ -961,6 +976,16 @@ function initializeWorkbench() {
   });
   document.addEventListener('sessionchange', () => {
     setPage('chat', false);
+    // Empty changes should not consume half of a new conversation. Preserve
+    // browser/source workspaces, and restore changes when returning to a thread
+    // with files unless the user explicitly chose another panel state.
+    if (!session && inspectorTab === 'changes' && reviewing) {
+      autoClosedChanges = true;
+      setPanel('inspector', false, false);
+    } else if (session && autoClosedChanges) {
+      autoClosedChanges = false;
+      if (session.files?.length && inspectorTab === 'changes' && !narrow.matches) setPanel('inspector', true, false);
+    }
     if (inspectorTab === 'files') renderFiles();
     setAnnotationMode(false);
     renderBrowser(false);
@@ -973,6 +998,7 @@ function initializeWorkbench() {
   document.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button) return;
+    if (button.dataset.inspectorTab || button.dataset.file !== undefined || ['inspector', 'close-inspector', 'browser', 'code-panel', 'new-browser-tab'].includes(button.dataset.action)) autoClosedChanges = false;
     if (button.dataset.page) setPage(button.dataset.page);
     if (button.dataset.inspectorTab) {
       const changed = button.dataset.browserId !== undefined && preview.id !== button.dataset.browserId;
@@ -1161,6 +1187,7 @@ function initializeWorkbench() {
   });
   document.addEventListener('keydown', event => {
     if (event.isComposing || $('dialog[open]')) return;
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.code === 'KeyB') autoClosedChanges = false;
     const tab = event.target.closest('[role="tab"]');
     if (tab && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
       event.preventDefault();
@@ -1177,6 +1204,7 @@ function initializeWorkbench() {
   });
   document.documentElement.style.setProperty('--message-size', workbench.fontSize + 'px');
   document.documentElement.dataset.density = workbench.density;
+  document.documentElement.dataset.messageLayout = workbench.messageLayout;
   document.documentElement.dataset.codeNumbers = String(workbench.codeNumbers);
   renderSettings();
   setPage('chat', false);
