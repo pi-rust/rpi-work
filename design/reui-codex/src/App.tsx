@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Menu, Moon, PanelRight, Sun, Wifi, WifiOff, X, Globe } from 'lucide-react'
+import { Menu, Moon, PanelRight, Sun, Wifi, WifiOff, X, Globe, ArrowLeft, ArrowRight, Ellipsis } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,11 +15,13 @@ import { ResourcesPage } from '@/components/resource-view'
 import { CommandPalette } from '@/components/command-palette'
 import { SettingsPage } from '@/components/settings-page'
 import { Sidebar } from '@/components/workspace-sidebar'
+import { ActivityRail } from '@/components/activity-rail'
+import './workbench-shell.css'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
 import { useTheme } from '@/lib/theme'
 import { contextFrom, formatTokens, metricsFrom } from '@/lib/viewmodel'
-import { useIsMobile } from '@/lib/viewport'
+import { useIsMobile, useMediaQuery } from '@/lib/viewport'
 
 export default function App() {
   const workspace = useWorkspace()
@@ -29,13 +31,15 @@ export default function App() {
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
   const [page, setPage] = useState<'chat' | 'resources' | 'settings'>('chat')
   const isMobile = useIsMobile()
+  const isPanelOverlay = useMediaQuery('(max-width: 900px)')
   const [drawer, setDrawer] = useState(false)
+  const [navigation, setNavigation] = useState(true)
   const [palette, setPalette] = useState(false)
   // The run panel is a side column on desktop and an overlay on phones, so it
   // must start closed on narrow viewports instead of covering the transcript.
   useEffect(() => {
-    if (isMobile) setRail(false)
-  }, [isMobile])
+    if (isPanelOverlay) setRail(false)
+  }, [isPanelOverlay])
   const [origin, setOrigin] = useState('')
   const [password, setPassword] = useState('')
 
@@ -108,9 +112,9 @@ export default function App() {
   const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
 
   return (
-    <div className={dark ? 'dark h-dvh' : 'h-dvh'} style={theme.style} data-density={theme.choice.compact ? 'compact' : 'standard'}>
-      <div className="bg-background text-foreground flex h-full overflow-hidden">
-        {(!isMobile || drawer) && (
+    <div className={dark ? 'dark h-dvh' : 'h-dvh'} style={theme.style} data-palette={theme.choice.id} data-density={theme.choice.compact ? 'compact' : 'standard'}>
+      <div className="workbench-shell bg-background text-foreground" data-navigation={navigation ? 'open' : 'closed'}>
+        {((!isMobile && navigation) || (isMobile && drawer)) && (
         <div className={isMobile ? 'fixed inset-0 z-40 flex' : 'contents'}>
           {isMobile ? (
             <div
@@ -120,23 +124,23 @@ export default function App() {
             />
           ) : null}
         <Sidebar
+          key={workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}
+          scope={workspace.source.kind === 'live' ? workspace.source.origin : 'fixture'}
+          onClose={() => isMobile ? setDrawer(false) : setNavigation(false)}
           className={isMobile ? 'relative z-50 h-full shadow-xl' : undefined}
           projects={workspace.projects}
           sessions={workspace.sessions}
           project={workspace.selected.project}
           session={workspace.selected.session}
-          onProject={workspace.selectProject}
+          onProject={(id) => { workspace.selectProject(id); setPage('chat'); if (isMobile) setDrawer(false) }}
           onSession={(id) => {
             workspace.selectSession(id)
-            if (isMobile) setDrawer(false)
-          }}
-          onNewChat={() => {
-            setDraft('')
+            setPage('chat')
             if (isMobile) setDrawer(false)
           }}
           onSearch={() => setPalette(true)}
           nodeLabel={workspace.source.kind === 'live' ? workspace.source.origin.replace(/^https?:\/\//, '') : 'fixture-node'}
-          nodeState={live ? 'online' : 'fixture'}
+          nodeState={live ? workspace.status === 'ready' ? 'online' : 'offline' : 'fixture'}
           connection={
             live ? (
               <Button
@@ -179,25 +183,33 @@ export default function App() {
         </div>
         )}
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:gap-3 md:px-4">
-            {isMobile ? (
+        <ActivityRail page={page}
+          onChat={() => setPage('chat')}
+          onProjects={() => { if (isMobile) setDrawer(true); else setNavigation(true) }}
+          onBrowser={() => { setRail(true); setRailTab('browser') }}
+          onFiles={() => { setRail(true); setRailTab('files'); if (live) void workspace.loadChanges() }}
+          onResources={() => { setPage('resources'); if (live) void workspace.loadResources() }}
+          onSettings={() => { setPage('settings'); if (live) { void workspace.loadProviders(); void workspace.loadNodeInfo() } }}
+        />
+        <main className="wb-shell-main">
+          <header className="wb-window-header">
+            <div className="wb-window-marks" aria-hidden="true"><span /><span /><span /></div>
+            <div className="wb-history-controls"><button type="button" className="wb-icon" aria-label="上一个会话" disabled title="会话导航历史待接入"><ArrowLeft aria-hidden="true" /></button><button type="button" className="wb-icon" aria-label="下一个会话" disabled title="会话导航历史待接入"><ArrowRight aria-hidden="true" /></button></div>
               <Button
                 variant="ghost"
                 size="icon"
                 className="size-8"
-                aria-label="打开侧栏"
-                onClick={() => setDrawer(true)}
+                aria-label={isMobile ? '打开侧栏' : '切换会话侧栏'}
+                onClick={() => isMobile ? setDrawer(true) : setNavigation(!navigation)}
               >
                 <Menu className="size-4" />
               </Button>
-            ) : null}
-            <span className="text-muted-foreground hidden text-[13px] md:inline">{workspace.selected.project}</span>
-            <span className="text-muted-foreground/50 hidden text-[13px] md:inline">/</span>
-            <span className="truncate text-[13px] font-medium">{title}</span>
+            <div className="wb-window-title">
+            <span className="sr-only">{workspace.selected.project}</span>
+            <span className="truncate text-[14px] font-medium">{title}</span>
             <Badge variant="outline" className="ml-1 h-5 gap-1 px-1.5 text-[10px] font-normal">
-              <span className={`size-1.5 rounded-full ${ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-              {workspace.status === 'connecting'
+              <span className={`size-1.5 rounded-full ${live && workspace.status === 'ready' ? 'bg-emerald-500' : workspace.status === 'fixture' ? 'bg-muted-foreground' : 'bg-amber-500'}`} />
+              {workspace.status === 'boot' ? '加载中' : workspace.status === 'connecting'
                 ? '连接中'
                 : workspace.status === 'auth-required'
                   ? '需要密码'
@@ -207,7 +219,8 @@ export default function App() {
                       ? '在线'
                       : 'fixture'}
             </Badge>
-            <div className="ml-auto flex items-center gap-1">
+            </div>
+            <div className="wb-header-tools">
               <Button
                 variant="ghost"
                 size="icon"
@@ -217,7 +230,9 @@ export default function App() {
               >
                 {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </Button>
-              <div className="hidden items-center gap-1 md:flex">
+              <button type="button" className="wb-icon" aria-label="打开显示选项" title="显示选项" popoverTarget="wb-display-options"><Ellipsis aria-hidden="true" /></button>
+              <div popover="auto" id="wb-display-options" className="wb-display-options" role="group" aria-label="工作台显示选项">
+              <div className="flex items-center gap-1">
               <select
                 aria-label="选择主题"
                 value={theme.choice.id}
@@ -239,6 +254,9 @@ export default function App() {
               >
                 {theme.choice.compact ? '紧凑' : '标准'}
               </Button>
+              </div>
+              <Button type="button" variant="ghost" aria-label="资源中心" popoverTarget="wb-display-options" popoverTargetAction="hide" onClick={() => { setPage(page === 'resources' ? 'chat' : 'resources'); if (live) void workspace.loadResources() }}>技能与插件</Button>
+              <Button type="button" variant="ghost" aria-label="设置" popoverTarget="wb-display-options" popoverTargetAction="hide" onClick={() => { setPage(page === 'settings' ? 'chat' : 'settings'); if (live) { void workspace.loadProviders(); void workspace.loadNodeInfo() } }}>设置</Button>
               </div>
               <Button
                 variant={rail && railTab === 'browser' ? 'secondary' : 'ghost'}
@@ -262,33 +280,6 @@ export default function App() {
                 <PanelRight className="size-4" />
               </Button>
               <Button
-                variant={page === 'resources' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 px-2 text-[11px]"
-                aria-label="资源中心"
-                onClick={() => {
-                  setPage(page === 'resources' ? 'chat' : 'resources')
-                  if (live) void workspace.loadResources()
-                }}
-              >
-                资源
-              </Button>
-              <Button
-                variant={page === 'settings' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 px-2 text-[11px]"
-                aria-label="设置"
-                onClick={() => {
-                  setPage(page === 'settings' ? 'chat' : 'settings')
-                  if (live) {
-                    void workspace.loadProviders()
-                    void workspace.loadNodeInfo()
-                  }
-                }}
-              >
-                设置
-              </Button>
-              <Button
                 variant={rail && railTab === 'files' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="h-7 px-2 text-[11px]"
@@ -304,7 +295,7 @@ export default function App() {
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1">
+          <div className="wb-body">
             <div className="flex min-w-0 flex-1 flex-col">
               <div
                 className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
@@ -448,8 +439,8 @@ export default function App() {
               ) : null}
             </div>
 
-            <div className={!rail ? 'hidden' : isMobile ? 'fixed inset-0 z-40 flex justify-end' : 'contents'}>
-              {isMobile ? (
+            <div className={!rail ? 'hidden' : isPanelOverlay ? 'fixed inset-0 z-40 flex justify-end' : 'contents'}>
+              {isPanelOverlay ? (
                 <div
                   className="absolute inset-0 bg-black/40"
                   aria-hidden
@@ -457,9 +448,9 @@ export default function App() {
                 />
               ) : null}
               <aside
-                className={isMobile
+                className={isPanelOverlay
                   ? railTab === 'browser' ? 'bg-background relative z-50 h-full w-[94vw] max-w-[480px] border-l' : 'bg-background relative z-50 h-full w-[86vw] max-w-[320px] border-l'
-                  : railTab === 'browser' ? 'workbench-browser-inspector shrink-0 border-l' : 'w-[300px] shrink-0 border-l'}
+                  : railTab !== 'run' ? 'workbench-browser-inspector shrink-0 border-l' : 'w-[300px] shrink-0 border-l'}
                 data-testid="run-panel"
               >
                 <div className="flex h-full flex-col">

@@ -264,7 +264,7 @@ async function waitForServer(url, timeoutMs = 30000) {
     await page.getByRole('button', { name: '运行面板' }).click()
     await page.screenshot({ path: '/tmp/reui-live.png' })
     await page.getByRole('button', { name: '断开节点' }).click()
-    await page.getByText('rpiwork').first().waitFor()
+    await page.getByTestId('sidebar-brand').waitFor()
     assert.match(await page.locator('header').innerText(), /fixture/)
     pass('disconnect falls back to the fixture without a reload')
 

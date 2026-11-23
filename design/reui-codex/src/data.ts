@@ -7,7 +7,7 @@
  */
 
 export type Project = { id: string; name: string }
-export type Session = { id: string; projectId: string; title: string; updatedAt: number }
+export type Session = { id: string; projectId: string; title: string; updatedAt: number; pinned?: boolean; archived?: boolean }
 
 export type HistoryMessage = { id: string; role: 'user' | 'assistant'; content: string }
 

@@ -1,6 +1,6 @@
 # ReUI · 工作台迁移工作区（未正式发布）
 
-已确认的 1:1 目标是 `design/reui-message-layout/`，不是本目录的早期 Codex 外壳。迁移范围、真实接口和未完成项见 [迁移清单](../../docs/design/confirmed-workbench-migration.md)。当前首批接入真实右侧浏览器；整窗、消息和设置仍在迁移，尚不能作为完整交付或正式客户端发布。
+已确认的 1:1 目标是 `design/reui-message-layout/`，不是本目录的早期 Codex 外壳。迁移范围、真实接口和未完成项见 [迁移清单](../../docs/design/confirmed-workbench-migration.md)。已迁入真实右侧浏览器、整窗顶栏/快捷栏和独立项目/置顶/最近列表；消息、居中设置、完整真实能力和正式发布仍未完成。
 
 本目录使用 [ReUI](https://reui.io)（MIT 的 shadcn 生态组件库）和 Rust WASM。fixture 数据来自 `src/data.ts`，与 `tests/fixtures/ui-fixture.cjs`、`apps/work-gpui` 原型同内容，仅用于隔离测试，不代表真实节点状态。
 
@@ -31,6 +31,7 @@ npm run verify:tree              # 自包含：目录树懒加载 4 条断言
 npm run verify:mobile            # 自包含：320/390 两档，7 条断言
 npm run verify:hosted            # 自包含：起隔离节点托管 dist/，5 条断言（需 cargo build -p work-cli）
 npm run verify:browser           # 自包含：隔离真实 HTTP 页面、URL/沙箱、历史/标签/表单保留及明暗响应式
+npm run verify:shell             # 自包含：7宽×2主题几何、项目置顶/折叠、节点会话元数据、空态与草稿保留
 npm run verify:all               # 依次跑全部测试；fixture/theme 需 REUI_URL 指向本目录构建的 preview
 npm run verify:live              # 自包含：起 fixture + preview，25 条断言
 npm run verify:fixture           # fixture 模式 6 条（需先启动 preview 到 5179）
@@ -41,9 +42,10 @@ npm run verify:theme             # 主题契约 8 条（需先启动 preview 到
 
 | 区域 | 实现 |
 | --- | --- |
-| 左侧栏 | 工作区切换、`新对话 ⌘J`、项目折叠列表（含会话计数）、会话选中、节点状态、设置入口 |
+| 左侧栏 | 52px 快捷栏、275px 项目/置顶/最近独立列表；折叠和项目置顶为按节点入口隔离的设备偏好，置顶/归档会话读取节点事实 |
+| 未接入入口 | 新对话、添加项目、状态筛选、归档管理、会话目标、计划任务及会话导航历史暂时禁用并解释原因，不清空草稿或伪造成功 |
 | 命令面板 | ⌘K 搜索项目与会话，↑↓ 选择、Enter 打开、Esc 关闭 |
-| 顶栏 | `项目 / 会话` 面包屑、在线状态、明暗主题切换、浏览器 / 运行 / 文件面板入口 |
+| 顶栏 | 跨整窗46px工具栏（手机44px）、居中会话标题、真实连接状态、浏览器/运行/文件入口；主题/密度等收进显示选项弹层 |
 | 浏览器 | 真实 HTTP(S) iframe、多标签、地址栏导航历史、刷新、页面历史选择、自适应 / 移动视口；切主题/标签/面板保持 DOM 和未保存表单 |
 | 转写区 | 用户/助手消息、模型徽标、工具卡（可折叠、耗时、状态、参数、结果） |
 | 代码 | ReUI `CodeBlock`（shiki 着色、行号、复制按钮）渲染 `read` 的工具结果 |
@@ -53,7 +55,7 @@ npm run verify:theme             # 主题契约 8 条（需先启动 preview 到
 | 安装 | 审阅 bundle（文件清单 + sha256）→ 选范围 → 勾选信任 → 获取/安装 → 目录回读 |
 | 设置 | 节点与协作事实 + 一次性授权二维码 + Provider 目录与**密钥写入**（CAS revision、回执目录、重启提示） |
 | 输入区 | 圆角 composer、模型与思考等级 chip、上下文比例、发送态禁用逻辑 |
-| 底栏 | `↑ 32k ↓ 4.8k 缓存 75% 成本 $0.0184 上下文 38% 工具 2/失败 0` |
+| 指标 | 原底栏保留为屏幕阅读器摘要，视觉指标在运行面板读取 Rust contract，不额外占用确认原型的整窗底边 |
 
 ## 组件来源
 

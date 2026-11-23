@@ -29,6 +29,7 @@ const { chromium } = require(resolvePlaywright());
     assert.equal(codexBg, '#ffffff', 'codex light bg token: ' + codexBg);
     pass('codex theme CSS variables come from the Rust token map');
 
+    await page.getByRole('button', { name: '打开显示选项', exact: true }).click();
     const options = await page.getByLabel('选择主题').locator('option').allTextContents();
     assert(options.length >= 5, 'preset catalogue loaded: ' + options.join(','));
     pass(`theme catalogue exposes ${options.length} presets from theme_contract`);
@@ -48,6 +49,7 @@ const { chromium } = require(resolvePlaywright());
 
     // density scales the root font size through density-factor
     const baseSize = await page.evaluate(() => getComputedStyle(document.querySelector('.h-dvh')).fontSize);
+    await page.getByRole('button', { name: '打开显示选项', exact: true }).click();
     await page.getByRole('button', { name: '切换密度' }).click();
     await page.waitForFunction(prev => getComputedStyle(document.querySelector('.h-dvh')).fontSize !== prev, baseSize);
     const compactSize = await page.evaluate(() => getComputedStyle(document.querySelector('.h-dvh')).fontSize);
@@ -59,6 +61,7 @@ const { chromium } = require(resolvePlaywright());
     assert(persisted && persisted.includes('"compact":true'), 'persisted: ' + persisted);
     await page.reload();
     await page.getByText('主题切换已经准备好').waitFor();
+    await page.getByRole('button', { name: '打开显示选项', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: '切换密度' }).innerText(), '紧凑');
     pass('theme choice persists across reloads');
 

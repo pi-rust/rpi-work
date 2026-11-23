@@ -136,6 +136,7 @@ const catalogue = {
 
     await page.goto(`${origin}/?live=1`)
     await page.getByText('在线', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '打开显示选项', exact: true }).click()
     await page.locator('header').getByRole('button', { name: '设置', exact: true }).click()
     await page.getByText('节点与协作', { exact: true }).waitFor()
     await page.getByText('magpie', { exact: true }).waitFor()

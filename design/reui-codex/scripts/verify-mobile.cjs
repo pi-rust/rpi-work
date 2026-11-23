@@ -81,7 +81,7 @@ async function waitForServer(url, timeoutMs = 30000) {
       )
 
       // The sidebar must start hidden and open as a drawer.
-      const brand = page.getByRole('button', { name: /rpiwork/ })
+      const brand = page.getByTestId('sidebar-brand')
       assert.equal(await brand.count(), 0, `${width}: sidebar hidden`)
       await page.getByRole('button', { name: '打开侧栏' }).click()
       await brand.waitFor()

@@ -1,23 +1,16 @@
-/**
- * Viewport helpers.
- *
- * The prototype renders a single tree and switches presentation by width; the
- * breakpoint matches the `md` Tailwind step the layout already uses.
- */
+/** Match the confirmed shell: navigation drawer at 700px, preview overlay at 900px. */
 import { useEffect, useState } from 'react'
 
-export const MOBILE_QUERY = '(max-width: 767px)'
-
-export function useIsMobile(): boolean {
-  const [mobile, setMobile] = useState(() =>
-    typeof window === 'undefined' ? false : window.matchMedia(MOBILE_QUERY).matches,
-  )
+export const MOBILE_QUERY = '(max-width: 700px)'
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
   useEffect(() => {
-    const query = window.matchMedia(MOBILE_QUERY)
-    const update = () => setMobile(query.matches)
+    const media = window.matchMedia(query)
+    const update = () => setMatches(media.matches)
     update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-  return mobile
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [query])
+  return matches
 }
+export function useIsMobile(): boolean { return useMediaQuery(MOBILE_QUERY) }

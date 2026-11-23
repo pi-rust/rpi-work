@@ -109,6 +109,8 @@ const asSession = (session: NodeSession): Session => ({
   projectId: session.projectId ?? '',
   title: session.title ?? '(未命名会话)',
   updatedAt: session.updatedAt,
+  pinned: session.pinned,
+  archived: session.archived,
 })
 
 const asHistory = (messages: unknown[]): HistoryMessage[] =>
@@ -283,7 +285,7 @@ export function useWorkspace(): Workspace {
 
   const finishConnect = useCallback(async (conn: NodeConnection) => {
     const [nodeProjects, nodeSessions] = await Promise.all([conn.projects(), conn.sessions()])
-    const mappedProjects = nodeProjects.length > 0 ? nodeProjects : [{ id: '', name: '(空节点)', path: '' }]
+    const mappedProjects = nodeProjects
     const mappedSessions = nodeSessions.map(asSession)
     setSource({ kind: 'live', origin: conn.origin })
     setProjects(mappedProjects.map(({ id, name }) => ({ id, name })))
