@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { withQuery } = require('./verify-url.cjs');
 
 async function checkReadingRestoration(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 940 } });
@@ -72,7 +73,7 @@ async function checkReadingRestoration(browser, url) {
     await thread('layout').click();
     nearly(await page.locator('.prompt').first().evaluate(node => node.getBoundingClientRect().top), offset);
 
-    await page.goto(url + '?history=loading');
+    await page.goto(withQuery(url, { history: 'loading' }));
     await page.clock.runFor(800);
     await initial.locator('summary').click();
     await scroll(70);

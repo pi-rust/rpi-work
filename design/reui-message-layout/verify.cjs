@@ -12,9 +12,11 @@ const { checkReadingContrast } = require('./verify-contrast.cjs');
 const { checkClipboardFeedback } = require('./verify-clipboard.cjs');
 const { checkCodeFocus } = require('./verify-code-focus.cjs');
 const { checkSetup } = require('./verify-setup.cjs');
+const { withQuery } = require('./verify-url.cjs');
 const playwright = process.env.RPI_LAYOUT_PLAYWRIGHT ?? '../../tools/node_modules/playwright';
 const { chromium } = require(playwright);
-const url = pathToFileURL(path.join(__dirname, 'index.html')).href;
+// Workbench regressions run after successful startup; setup tests cover both branches.
+const url = withQuery(pathToFileURL(path.join(__dirname, 'index.html')).href, { runtime: 'ready' });
 
 async function checkViewport(page) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -919,7 +921,7 @@ async function checkDeveloperPreview(browser) {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', resolve);
     });
-    await page.goto(url + '?panel=code');
+    await page.goto(withQuery(url, { panel: 'code' }));
     assert.equal(await page.locator('#files-content').isVisible(), true);
     await page.getByRole('button', { name: '打开浏览器', exact: true }).click();
     const address = page.getByLabel('预览地址');
@@ -934,7 +936,7 @@ async function checkDeveloperPreview(browser) {
     await address.fill('file:///unsupported');
     await address.press('Enter');
     assert.equal(await address.evaluate(input => input.validity.valid), false);
-    await page.goto(url + '?view=settings');
+    await page.goto(withQuery(url, { view: 'settings' }));
     assert.equal(await page.locator('#settings-dialog').isVisible(), true);
     console.log('Live loopback page rendering, browser history and direct preview links passed.');
   } finally {

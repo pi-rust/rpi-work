@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { withQuery } = require('./verify-url.cjs');
 const { createRequire } = require('node:module');
 const driverRequire = createRequire(require.resolve(process.env.RPI_LAYOUT_PLAYWRIGHT ?? '../../tools/node_modules/playwright'));
 const { PNG } = driverRequire('playwright-core/lib/utilsBundle');
@@ -66,7 +67,7 @@ async function checkPreviewPixels(browser, url) {
     };
     try {
       if (controlled) await page.clock.install();
-      await page.goto(url + '?view=new');
+      await page.goto(withQuery(url, { view: 'new' }));
       await frame.getByRole('heading', { name: '项目概览', exact: true }).waitFor();
       const baseline = await sample('overview-light');
       await theme('light');

@@ -3,8 +3,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { withQuery } = require('./verify-url.cjs');
 
 async function checkSetup(browser, url) {
+  url = withQuery(url, { runtime: null });
   const page = await browser.newPage({ viewport: { width: 1440, height: 940 } });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rpi-setup-'));
   const projectDir = path.join(root, 'picker-project');
@@ -33,16 +35,28 @@ async function checkSetup(browser, url) {
   };
   try {
     await page.clock.install();
+    await page.goto(withQuery(url, { runtime: 'ready' }));
+    assert.equal(await stage(), 'checking');
+    assert.equal(await dialog.isVisible(), false);
+    await page.clock.runFor(1400);
+    assert.equal(await stage(), 'ready');
+    assert.equal(await dialog.isVisible(), false, 'Detected rpi must not open startup setup');
+    assert.equal(await page.locator('#draft').isEnabled(), true);
+    await shot('rpi-startup-ready');
+
     await page.goto(url);
     assert.equal(await stage(), 'checking');
-    await page.clock.runFor(700);
-    assert.equal(await stage(), 'missing');
     assert.equal(await dialog.isVisible(), false);
-    assert.equal(await button('下载引导').isVisible(), true);
     const draft = page.locator('#draft');
     await draft.fill('安装引导不应清空草稿');
     await draft.evaluate(input => input.setSelectionRange(2, 5));
-    await button('下载引导').click();
+    await page.clock.runFor(700);
+    assert.equal(await stage(), 'missing');
+    assert.equal(await dialog.isVisible(), true, 'Missing rpi must automatically offer setup choices');
+    assert.equal(await button('演示下载', dialog).isVisible(), true);
+    assert.equal(await button('选择 rpi 程序', dialog).isVisible(), true);
+    assert.equal(await button('选择 rpi 目录', dialog).isVisible(), true);
+    assert.equal(await button('演示下载', dialog).evaluate(node => node === document.activeElement), true);
     assert.match(await page.locator('#runtime-boundary').textContent(), /不扫描本机、不联网下载、不执行程序/);
     assert.equal(await button('演示验证', dialog).isDisabled(), true);
     await shot('rpi-startup-missing');
@@ -59,12 +73,15 @@ async function checkSetup(browser, url) {
     assert.equal((await cache()).kind, 'download-demo');
     await shot('rpi-setup-ready');
     await button('返回工作台', dialog).click();
+    // Native close is asynchronous; restoration runs in its close event.
+    await page.waitForFunction(() => !document.querySelector('#runtime-dialog').open && document.querySelector('#draft').selectionStart === 2);
     assert.equal(await draft.inputValue(), '安装引导不应清空草稿');
     assert.deepEqual(await draft.evaluate(input => [input.selectionStart, input.selectionEnd]), [2, 5]);
-    assert.equal(await button('查看配置').evaluate(node => node === document.activeElement), true);
+    assert.equal(await draft.evaluate(node => node === document.activeElement), true);
     await page.reload();
     await page.clock.runFor(700);
     assert.equal(await stage(), 'ready');
+    assert.equal(await dialog.isVisible(), false, 'A saved demo installation must enter silently on reload');
 
     // File picking is real, but application code must not read file contents.
     await page.evaluate(() => { File.prototype.text = File.prototype.arrayBuffer = File.prototype.stream = () => { throw new Error('Unexpected file read'); }; });
@@ -104,7 +121,7 @@ async function checkSetup(browser, url) {
     // Reset only this test's demo runtime record, not unrelated app preferences.
     await page.evaluate(() => { for (const [key, value] of Object.entries(localStorage)) { try { if (JSON.parse(value)?.demo === true) localStorage.removeItem(key); } catch {} } });
     await page.reload(); await page.clock.runFor(700);
-    await button('下载引导').click();
+    assert.equal(await dialog.isVisible(), true);
     await dialog.locator('.runtime-demo-options summary').click();
     await page.locator('#runtime-scenario').selectOption('download-error');
     await button('演示下载', dialog).click(); await page.clock.runFor(1000);
@@ -146,10 +163,16 @@ async function checkSetup(browser, url) {
     await page.reload(); await page.clock.runFor(700);
     assert.equal(await stage(), 'ready');
     assert.equal((await cache()).label, 'rpi-install/');
-    await page.goto(url + '?runtime=missing'); await page.clock.runFor(700);
+    await page.goto(withQuery(url, { runtime: 'missing' })); await page.clock.runFor(700);
     assert.equal(await stage(), 'missing');
-    await page.goto(url + '?runtime=ready'); await page.clock.runFor(700);
+    assert.equal(await dialog.isVisible(), true);
+    await page.keyboard.press('Escape');
+    await page.clock.runFor(1400);
+    assert.equal(await dialog.isVisible(), false, 'Dismissed startup setup must not reopen itself');
+    assert.equal(await button('下载引导').isVisible(), true);
+    await page.goto(withQuery(url, { runtime: 'ready' })); await page.clock.runFor(700);
     assert.equal(await stage(), 'ready');
+    assert.equal(await dialog.isVisible(), false);
     assert.deepEqual(errors, []);
     assert.deepEqual(requests, []);
     console.log('Project directory/native/fallback/cancel/stale picking and rpi startup, demo download/verify failures, cancellation, manual file/directory selection and persistence passed without file reads or network downloads.');

@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { withQuery } = require('./verify-url.cjs');
 
 async function checkHistoryViews(browser, baseUrl, checkViewport) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 940 } });
@@ -13,7 +14,7 @@ async function checkHistoryViews(browser, baseUrl, checkViewport) {
   };
   try {
     await page.clock.install();
-    await page.goto(baseUrl + '?history=loading&panel=changes');
+    await page.goto(withQuery(baseUrl, { history: 'loading', panel: 'changes' }));
     assert.equal(await phase(), 'loading');
     assert.equal(await page.locator('#transcript').getAttribute('aria-busy'), 'true');
     assert.equal(await page.getByRole('heading', { name: '正在加载会话记录', exact: true }).isVisible(), true);
@@ -32,7 +33,7 @@ async function checkHistoryViews(browser, baseUrl, checkViewport) {
     assert.equal(await button('发送').isEnabled(), true);
     assert.equal(await draft.inputValue(), '加载过程中编辑的草稿');
 
-    await page.goto(baseUrl + '?history=error&panel=changes');
+    await page.goto(withQuery(baseUrl, { history: 'error', panel: 'changes' }));
     await draft.fill('失败重试也不能丢失');
     await page.locator('#attach').setInputFiles({ name: 'draft-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('local fixture') });
     await page.clock.runFor(800);
@@ -96,7 +97,7 @@ async function checkHistoryViews(browser, baseUrl, checkViewport) {
       await page.setViewportSize({ width, height: 940 });
       await checkViewport(page);
     }
-    await page.goto(baseUrl + '?view=new&history=loading');
+    await page.goto(withQuery(baseUrl, { view: 'new', history: 'loading' }));
     await page.clock.runFor(1200);
     assert.equal(await phase(), 'ready');
     assert.equal(await page.locator('.welcome').isVisible(), true);

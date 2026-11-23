@@ -18,6 +18,7 @@
   let stage = 'checking';
   let selection = confirmed;
   let timer;
+  let returnFocus = null;
   let pickerTicket = 0;
   let directoryTarget = 'location';
   const action = name => dialog.querySelector(`[data-runtime-action="${name}"]`);
@@ -56,12 +57,19 @@
     clearTimeout(timer);
     timer = setTimeout(callback, delay);
   }
-  function check() {
+  function check(showIfMissing = false) {
     error();
     stage = 'checking'; render();
-    later(() => { stage = confirmed ? 'ready' : 'missing'; render(); });
+    later(() => {
+      stage = confirmed ? 'ready' : 'missing'; render();
+      if (showIfMissing && stage === 'missing') open();
+    });
   }
   function open(manual = false) {
+    if (!dialog.open) {
+      const node = document.activeElement;
+      returnFocus = { node, start: node.selectionStart, end: node.selectionEnd, direction: node.selectionDirection };
+    }
     error();
     if (manual) {
       stage = selection ? 'locating' : 'missing';
@@ -168,6 +176,12 @@
     selection = confirmed;
     locationInput.value = confirmed?.label ?? '';
     error(); render();
+    const previous = returnFocus;
+    returnFocus = null;
+    if (previous?.node.isConnected) {
+      previous.node.focus({ preventScroll: true });
+      if (typeof previous.start === 'number') previous.node.setSelectionRange(previous.start, previous.end, previous.direction);
+    }
   });
-  check();
+  check(true);
 })();

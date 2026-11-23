@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { withQuery } = require('./verify-url.cjs');
 
 async function checkTurnHierarchy(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 940 }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: 'reduce' });
@@ -41,7 +42,7 @@ async function checkTurnHierarchy(browser, url) {
   };
   try {
     await page.clock.install();
-    await page.goto(url + '?view=new');
+    await page.goto(withQuery(url, { view: 'new' }));
     await draft.fill('整理消息区的视觉层次');
     await draft.press('Enter');
     const threadId = await page.locator('.thread-button[aria-current="true"]').getAttribute('data-session');
