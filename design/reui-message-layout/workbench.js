@@ -831,6 +831,51 @@ function initializeWorkbench() {
     input.focus();
   }
 
+  const projectPathHelp = $('#project-path-help').textContent;
+  let pickedProjectName = '';
+  let projectPickerTicket = 0;
+  function selectProjectDirectory(name) {
+    if (!$('#project-dialog').open || !name) return;
+    clearProjectError();
+    if (!$('#project-name').value.trim() || $('#project-name').value === pickedProjectName) $('#project-name').value = name;
+    pickedProjectName = name;
+    $('#project-path').value = name + '/';
+    $('#project-path-help').textContent = `已选择「${name}」。浏览器只提供目录名；绝对路径由桌面端接入后返回，不读取文件内容。`;
+  }
+  $('#choose-project-folder').addEventListener('click', async () => {
+    const ticket = ++projectPickerTicket;
+    if (typeof window.showDirectoryPicker !== 'function') {
+      $('#project-folder-picker').dataset.ticket = String(ticket);
+      $('#project-folder-picker').click();
+      return;
+    }
+    $('#choose-project-folder').disabled = true;
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'read' });
+      if (ticket !== projectPickerTicket || !$('#project-dialog').open) return;
+      if (handle.kind !== 'directory' || !handle.name) throw new Error('Invalid directory');
+      selectProjectDirectory(handle.name);
+    } catch (failure) {
+      if (ticket === projectPickerTicket && $('#project-dialog').open && failure.name !== 'AbortError') {
+        $('#project-error').textContent = '无法打开文件夹选择器，可手动填写项目路径。已有填写未改变。';
+        $('#project-error').hidden = false;
+      }
+    } finally { if (ticket === projectPickerTicket) $('#choose-project-folder').disabled = false; }
+  });
+  $('#project-folder-picker').addEventListener('change', event => {
+    const name = event.target.files[0]?.webkitRelativePath.split('/')[0];
+    event.target.value = '';
+    if (Number(event.target.dataset.ticket) === projectPickerTicket) selectProjectDirectory(name);
+  });
+  $('#project-form').addEventListener('reset', () => {
+    pickedProjectName = '';
+    $('#project-path-help').textContent = projectPathHelp;
+  });
+  $('#project-dialog').addEventListener('close', () => {
+    ++projectPickerTicket;
+    $('#choose-project-folder').disabled = false;
+  });
+
   $('#project-form').addEventListener('submit', event => {
     event.preventDefault();
     const name = $('#project-name').value.trim();
