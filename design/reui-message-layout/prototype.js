@@ -428,7 +428,11 @@ function updateRunState() {
   const awaitingApproval = data.active?.phase === 'approval';
   const mode = awaitingApproval ? 'queue' : data.busyMode;
   const send = $('button[type="submit"]', form);
-  send.disabled = !draft.value.trim();
+  const historyBlocked = historyPreview.blocked();
+  send.disabled = historyBlocked || !draft.value.trim();
+  const hint = $('#history-input-hint');
+  hint.hidden = !historyBlocked;
+  hint.textContent = historyBlocked ? (historyPreview.phase() === 'error' ? '会话记录未加载，重试后可发送；草稿已保留。' : '会话记录加载中，可编辑草稿，暂不可发送。') : '';
   send.setAttribute('aria-label', busy ? (mode === 'steer' ? '引导本轮' : '加入队列') : '发送');
   send.title = send.getAttribute('aria-label');
   $('[data-action="stop"]').hidden = !busy;
@@ -437,7 +441,7 @@ function updateRunState() {
   $('#busy-mode').value = mode;
   model.disabled = busy && mode === 'steer';
   effort.disabled = model.disabled;
-  $('#run-state').textContent = awaitingApproval ? '等待审批' : busy ? '演示执行中' : '本地演示';
+  $('#run-state').textContent = historyBlocked ? (historyPreview.phase() === 'error' ? '加载失败' : '加载中') : awaitingApproval ? '等待审批' : busy ? '演示执行中' : '本地演示';
 }
 
 function promptLine(text, attachments = [], comments = []) {
@@ -495,6 +499,7 @@ function replyActions(replyId) {
 }
 
 function renderTranscript() {
+  if (historyPreview.render(transcript)) return;
   if (!session) {
     transcript.replaceChildren($('#welcome-template').content.cloneNode(true));
     $('#project-picker').replaceChildren(...projects.map(project => new Option(project.name, project.name)));
@@ -584,6 +589,10 @@ function renderTranscript() {
 
 function renderReview() {
   const review = $('#review-content');
+  if (historyPreview.blocked()) {
+    review.replaceChildren(element('p', 'review-empty', '加载会话记录后显示变更。'));
+    return;
+  }
   if (!session?.files.length) {
     review.replaceChildren(element('p', 'review-empty', '当前会话没有演示变更。'));
     return;
@@ -701,6 +710,7 @@ function updateTrail(fromHistory) {
 
 function showSession(next, fromHistory = false) {
   session = next;
+  historyPreview.select(next);
   if (next) {
     welcomeProject = next.project;
     collapsedProjects.delete(next.project);
@@ -838,7 +848,7 @@ function renderTurn(turn) {
 function renderQueue() {
   const panel = $('#queue');
   const data = state();
-  panel.hidden = !data.queue.length;
+  panel.hidden = !data.queue.length || historyPreview.blocked();
   panel.replaceChildren();
   if (!data.queue.length) return;
   const heading = element('div', 'queue-heading');
@@ -858,7 +868,7 @@ function renderQueue() {
 
 function updateTurnView(thread, turn, jump = false) {
   saveHistory();
-  if (session !== thread) return;
+  if (session !== thread || historyPreview.blocked()) return;
   const follow = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 48;
   const previous = transcript.querySelector(`[data-turn="${turn.id}"]`);
   const outputWasOpen = previous?.querySelector('details[open]');
@@ -965,6 +975,7 @@ function ensureThread(text) {
 
 function submitMessage(event) {
   event.preventDefault();
+  if (historyPreview.blocked()) return;
   const text = draft.value.trim();
   if (!text) return;
   ensureThread(text);
@@ -989,6 +1000,7 @@ function submitMessage(event) {
 }
 
 function sendOrQueue(input) {
+  if (historyPreview.blocked()) { toast('请先加载会话记录'); return; }
   const data = state();
   if (data.active || data.queue.length) {
     data.queue.push(input);
@@ -1433,6 +1445,7 @@ $('[data-action="new"] kbd').textContent = shortcut + ' N';
 $('[data-action="search"] kbd').textContent = shortcut + ' K';
 mountIcons();
 restoreHistory();
+historyPreview.seed(sessions);
 syncPanels();
 showSession(sessions.find(thread => !thread.archived) ?? null);
 initializeWorkbench();

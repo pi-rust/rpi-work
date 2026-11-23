@@ -1,0 +1,12 @@
+/* Pending/error history occupies the existing reading column, not a new shell. */
+.history-state { padding: 56px 0 32px; color: var(--muted); }
+.history-state h2 { margin: 0 0 12px; color: var(--ink); font-size: 18px; font-weight: 600; }
+.history-state p { max-width: 36rem; margin: 0 0 20px; font-size: 14px; line-height: 1.8; }
+.history-fixture-note { display: block; margin-top: 24px; color: var(--dim); font-size: 11px; }
+.history-retry { border: 1px solid var(--strong-line); border-radius: 8px; padding: 8px 13px; background: var(--surface); color: var(--ink); font-size: 13px; }
+.history-retry:hover { background: var(--subtle); }
+.history-skeleton { display: grid; gap: 12px; max-width: 36rem; padding-block: 12px; }
+.history-skeleton span { display: block; width: 88%; height: 12px; border-radius: 4px; background: var(--subtle); }
+.history-skeleton span:first-child { width: 45%; }
+.history-skeleton span:last-child { width: 68%; }
+.history-input-hint { margin: 0 3px 8px; color: var(--dim); font-size: 12px; line-height: 1.6; }

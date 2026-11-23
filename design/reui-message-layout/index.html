@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="layout.css">
   <link rel="stylesheet" href="settings.css">
   <link rel="stylesheet" href="inspector.css">
+  <link rel="stylesheet" href="history-preview.css">
+  <script src="history-preview.js" defer></script>
   <script src="inspector.js" defer></script>
   <script src="workbench.js" defer></script>
   <script src="prototype.js" defer></script>
@@ -142,7 +144,8 @@
         <form class="composer reading-width" aria-label="消息输入">
           <div class="composer-menu" id="composer-menu" role="listbox" aria-label="输入操作" hidden></div>
           <label class="sr-only" for="draft">消息</label>
-          <textarea id="draft" rows="2" placeholder="继续这个任务，或 @ 引用文件…"></textarea>
+          <p id="history-input-hint" class="history-input-hint" role="status" hidden></p>
+          <textarea id="draft" rows="2" aria-describedby="history-input-hint" placeholder="继续这个任务，或 @ 引用文件…"></textarea>
           <div id="attachments" class="attachments" hidden></div>
           <div class="composer-tools">
             <button type="button" class="icon-button add-control" aria-label="添加到对话" title="添加到对话" aria-haspopup="listbox" aria-controls="composer-menu" aria-expanded="false"><i data-icon="plus"></i></button>
