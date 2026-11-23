@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { checkHistoryViews } = require('./verify-history.cjs');
+const { checkComposerCaret } = require('./verify-composer.cjs');
 const playwright = process.env.RPI_LAYOUT_PLAYWRIGHT ?? '../../tools/node_modules/playwright';
 const { chromium } = require(playwright);
 const url = pathToFileURL(path.join(__dirname, 'index.html')).href;
@@ -1049,6 +1050,7 @@ async function main() {
     await checkReadingAndWorkflows(browser);
     await checkMessageLayoutsAndEmptyPanel(browser);
     await checkHistoryViews(browser, url, checkViewport);
+    await checkComposerCaret(browser, url);
   } finally {
     await browser.close();
   }

@@ -118,6 +118,8 @@
     const item = choices[index];
     if (!item) return;
     if (!fromAdd) {
+      const query = queryAtCursor();
+      if (!query || draft.selectionStart - query.length !== tokenStart) { closeMenu(); return; }
       draft.setRangeText('', tokenStart, draft.selectionEnd, 'end');
       draft.dispatchEvent(new Event('input'));
     }
@@ -138,7 +140,15 @@
   draft.setAttribute('aria-autocomplete', 'list');
   draft.setAttribute('aria-controls', menu.id);
   draft.addEventListener('input', event => { if (!event.isComposing) refreshQuery(); });
+  draft.addEventListener('compositionstart', closeMenu);
   draft.addEventListener('compositionend', refreshQuery);
+  draft.addEventListener('keyup', event => {
+    if (!event.isComposing && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)
+      && !event.defaultPrevented && !fromAdd) {
+      // Up/down navigate the open menu; only refresh when moving the caret.
+      if (menu.hidden || event.shiftKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) refreshQuery();
+    }
+  });
   draft.addEventListener('click', refreshQuery);
   document.addEventListener('pointerdown', event => {
     if (!menu.contains(event.target) && !addButton.contains(event.target) && event.target !== draft) closeMenu();
