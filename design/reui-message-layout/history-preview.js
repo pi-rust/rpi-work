@@ -27,7 +27,7 @@ const historyPreview = (() => {
       renderQueue();
       renderReview();
       if (!fail) {
-        scrollToLatestTurn();
+        readingState.restore();
         if (focusDraft && document.activeElement === conversation) draft.focus({ preventScroll: true });
       }
     }, 800);

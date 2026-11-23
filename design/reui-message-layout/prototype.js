@@ -514,6 +514,7 @@ function renderTranscript() {
     if (session.commentary) {
       assistant.append(element('p', '', session.commentary));
       const activity = element('details', 'activity');
+      activity.dataset.activity = 'initial';
       const summary = element('summary');
       summary.innerHTML = icon('terminal');
       summary.append(element('span', '', session.activity), element('span', 'activity-meta', session.duration));
@@ -558,6 +559,7 @@ function renderTranscript() {
       const reply = element('article', 'assistant followup-reply');
       reply.append(element('p', '', followup.commentary));
       const activity = element('details', 'activity');
+      activity.dataset.activity = 'followup';
       const summary = element('summary');
       summary.innerHTML = icon('list-checks');
       summary.append(element('span', '', '验证了 3 种消息状态'), element('span', 'activity-meta', '示例验证'));
@@ -709,6 +711,7 @@ function updateTrail(fromHistory) {
 }
 
 function showSession(next, fromHistory = false) {
+  readingState.capture();
   session = next;
   historyPreview.select(next);
   if (next) {
@@ -724,8 +727,8 @@ function showSession(next, fromHistory = false) {
   renderTranscript();
   renderComposer();
   renderReview();
-  scrollToLatestTurn();
   document.dispatchEvent(new Event('sessionchange'));
+  readingState.restore();
 }
 
 function scrollToLatestTurn() {
@@ -807,6 +810,7 @@ function renderTurn(turn) {
   card.append(plan);
   if (turn.step > 0 || turn.phase === 'failed') {
     const output = element('details', 'activity');
+    output.dataset.activity = turn.id;
     const summary = element('summary', '', '工具输出');
     const log = turn.phase === 'failed' ? 'npm test\n退出码 1 · 有一项示例断言失败' : '检查项目入口\n读取工作区示例文件';
     output.append(summary, element('pre', '', log));

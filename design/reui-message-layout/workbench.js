@@ -118,6 +118,7 @@ function initializeWorkbench() {
   function setPage(value, focus = true) {
     if (!['chat', 'resources', 'automations'].includes(value)) return;
     if (currentPage === 'chat' && value !== 'chat') {
+      readingState.capture();
       reviewWasOpen = reviewing;
       setPanel('inspector', false, false);
     }
@@ -135,6 +136,7 @@ function initializeWorkbench() {
     if (mobile.matches) setPanel('navigation', false, false);
     if (value === 'chat') {
       renderHeader();
+      if (returning) readingState.restore();
       if (focus) conversation.focus({ preventScroll: true });
     } else {
       $('#current-title').textContent = value === 'resources' ? '技能与插件' : '计划任务';
