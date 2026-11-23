@@ -1037,7 +1037,14 @@ function initializeWorkbench() {
     const value = button.dataset.value;
     switch (button.dataset.action) {
       case 'copy-code': copyText(session.code); break;
-      case 'copy-reply': copyText(button.closest('.assistant, .demo-turn').querySelector('.reply, .turn-response').innerText); break;
+      case 'copy-reply': {
+        const answer = button.closest('.assistant, .demo-turn').querySelector('.reply, .turn-response');
+        // Copy answer content, not code-header buttons or workspace widgets.
+        const sections = answer.matches('.reply')
+          ? [...answer.children].filter(node => node.matches('h2, p, ul, .message-code')) : [answer];
+        copyText(sections.map(node => node.matches('.message-code') ? $('pre', node).innerText : node.innerText).join('\n\n'));
+        break;
+      }
       case 'settings': renderSettings(); break;
       case 'settings-restore-thread': {
         const thread = sessions.find(item => item.id === value && item.archived);

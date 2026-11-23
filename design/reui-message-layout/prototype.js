@@ -1416,6 +1416,7 @@ async function copyDiff(button) {
   } catch {
     button.setAttribute('aria-label', '无法复制，可手动选择差异文本');
     button.title = '无法复制，可手动选择差异文本';
+    button.innerHTML = icon('copy');
   }
 }
 
