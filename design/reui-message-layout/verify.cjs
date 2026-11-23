@@ -6,6 +6,7 @@ const { checkComposerCaret } = require('./verify-composer.cjs');
 const { checkReadingRestoration } = require('./verify-reading.cjs');
 const { checkTurnHierarchy } = require('./verify-hierarchy.cjs');
 const { checkPreviewPixels } = require('./verify-preview-pixels.cjs');
+const { checkMessageTypography } = require('./verify-typography.cjs');
 const playwright = process.env.RPI_LAYOUT_PLAYWRIGHT ?? '../../tools/node_modules/playwright';
 const { chromium } = require(playwright);
 const url = pathToFileURL(path.join(__dirname, 'index.html')).href;
@@ -1057,6 +1058,7 @@ async function main() {
     await checkReadingRestoration(browser, url);
     await checkTurnHierarchy(browser, url);
     await checkPreviewPixels(browser, url);
+    await checkMessageTypography(browser, url);
   } finally {
     await browser.close();
   }

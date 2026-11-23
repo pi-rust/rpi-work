@@ -869,9 +869,21 @@ function initializeWorkbench() {
     saveWorkbench();
     $('#environment-feedback').textContent = '已保存环境配置';
   });
+  function withReadingAnchor(change) {
+    const atBottom = conversation.scrollHeight - conversation.clientHeight - conversation.scrollTop < 40;
+    const viewport = conversation.getBoundingClientRect();
+    const anchor = [...$('#transcript').querySelectorAll('.prompt, .assistant > p, .reply h2, .reply p, .reply > ul, .message-code, .activity > summary, .turn-response')]
+      .find(node => { const rect = node.getBoundingClientRect(); return rect.bottom > viewport.top + 8 && rect.top < viewport.bottom; });
+    const top = anchor?.getBoundingClientRect().top;
+    change();
+    if (atBottom) conversation.scrollTop = conversation.scrollHeight;
+    else if (anchor) conversation.scrollTop += anchor.getBoundingClientRect().top - top;
+  }
   $('#font-size').addEventListener('change', event => {
-    workbench.fontSize = event.target.value;
-    document.documentElement.style.setProperty('--message-size', workbench.fontSize + 'px');
+    withReadingAnchor(() => {
+      workbench.fontSize = event.target.value;
+      document.documentElement.style.setProperty('--message-size', workbench.fontSize + 'px');
+    });
     saveWorkbench();
   });
   for (const select of [$('#review-delivery'), $('#general-review-delivery')]) {
@@ -883,20 +895,17 @@ function initializeWorkbench() {
     });
   }
   $('#message-layout').addEventListener('change', event => {
-    const atBottom = conversation.scrollHeight - conversation.clientHeight - conversation.scrollTop < 40;
-    const viewport = conversation.getBoundingClientRect();
-    const anchor = [...$('#transcript').querySelectorAll('.prompt, .assistant > p, .reply h2, .reply p, .activity > summary, .turn-response')]
-      .find(node => { const rect = node.getBoundingClientRect(); return rect.bottom > viewport.top + 8 && rect.top < viewport.bottom; });
-    const top = anchor?.getBoundingClientRect().top;
-    workbench.messageLayout = event.target.value;
-    document.documentElement.dataset.messageLayout = workbench.messageLayout;
-    if (atBottom) conversation.scrollTop = conversation.scrollHeight;
-    else if (anchor) conversation.scrollTop += anchor.getBoundingClientRect().top - top;
+    withReadingAnchor(() => {
+      workbench.messageLayout = event.target.value;
+      document.documentElement.dataset.messageLayout = workbench.messageLayout;
+    });
     saveWorkbench();
   });
   $('#reading-density').addEventListener('change', event => {
-    workbench.density = event.target.value;
-    document.documentElement.dataset.density = workbench.density;
+    withReadingAnchor(() => {
+      workbench.density = event.target.value;
+      document.documentElement.dataset.density = workbench.density;
+    });
     saveWorkbench();
   });
   $('#code-numbers').addEventListener('change', event => {

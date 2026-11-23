@@ -614,7 +614,8 @@ dialog::backdrop, .scrim { background: #0005; }
 .settings-nav button[aria-current="page"] { font-weight: 550; }
 :root[data-density="compact"] .reply p,
 :root[data-density="compact"] .reply ul,
-:root[data-density="compact"] .assistant > p { line-height: 1.55; }
+:root[data-density="compact"] .assistant > p,
+:root[data-density="compact"] .turn-response { line-height: 1.55; }
 :root[data-density="compact"] .assistant { margin-bottom: 22px; }
 :root[data-density="compact"] .prompt { margin-bottom: 20px; }
 :root[data-density="compact"] .activity { margin-bottom: 18px; }
@@ -682,7 +683,7 @@ dialog::backdrop, .scrim { background: #0005; }
   .workspace-header .tool-button, .workspace-header .review-toggle { padding-inline: 5px; }
 }
 .prompt { border-radius: 19px; background: var(--subtle); padding: 10px 15px; line-height: 1.55; }
-.assistant > p, .reply p, .reply ul { line-height: 1.65; }
+.assistant > p, .reply p, .reply ul, .turn-response { line-height: 1.65; }
 .activity { margin: 5px 0 19px; }
 .activity summary { display: inline-flex; gap: 7px; color: var(--dim); }
 .activity summary .chevron { width: 12px; margin-left: 1px; }
@@ -843,7 +844,7 @@ dialog::backdrop, .scrim { background: #0005; }
 .turn-execution[open] > .turn-heading .execution-chevron { transform: rotate(90deg); }
 .turn-execution > .turn-plan { margin-top: 8px; padding-block: 4px; border-left: 2px solid var(--line); }
 .turn-execution > .activity, .turn-execution > .runtime-label { padding: 8px 0 0 14px; border-left: 2px solid var(--line); }
-.demo-turn > .turn-response { margin: 16px 0 0; line-height: 1.85; }
+.demo-turn > .turn-response { margin: 16px 0 0; }
 .demo-turn > [data-action="implement-plan"] { margin-top: 14px; }
 
 /* Layout is independent of font size, theme and density; no transcript re-render. */
