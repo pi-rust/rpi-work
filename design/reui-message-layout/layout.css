@@ -261,7 +261,7 @@ dialog::backdrop, .scrim { background: #0005; }
 .dialog-form { display: grid; gap: 7px; margin-bottom: 12px; font-size: .8125rem; }
 .dialog-form > .action-button { justify-self: end; }
 .dialog-input-row { display: flex; gap: 6px; }
-.dialog-form input, .dialog-form textarea { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--strong-line); border-radius: 6px; background: var(--surface); }
+.dialog-form input, .dialog-form textarea, #project-node { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--strong-line); border-radius: 6px; background: var(--surface); }
 .dialog-form textarea { resize: vertical; }
 #comment-location { overflow-wrap: anywhere; }
 .archive-row { display: flex; gap: 9px; justify-content: space-between; align-items: center; padding-block: 7px; font-size: .8125rem; }
@@ -805,7 +805,17 @@ dialog::backdrop, .scrim { background: #0005; }
 .sidebar-project { position: relative; }
 .project-entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 58px 0 10px; border-radius: 10px; color: var(--ink); font-size: 14px; text-align: left; }
 .project-entry:hover, .project-entry[aria-current="true"] { background: var(--hover); }
-.project-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-node-label { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.project-node-group + .project-node-group { margin-top: 6px; }
+.project-node-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; padding: 3px 10px; border-radius: 7px; color: var(--muted); font-size: 12px; text-align: left; }
+.project-node-toggle:hover { background: var(--hover); }
+.project-node-toggle .icon { flex: none; width: 13px; height: 13px; }
+.project-node-toggle .icon:first-child { width: 10px; height: 10px; }
+.project-node-toggle[aria-expanded="false"] .icon:first-child { transform: rotate(-90deg); }
+.project-node-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-node-demo, .project-node-count { font-size: 11px; }
+.project-node-projects { margin-left: 12px; }
 .project-pin { display: inline-flex; color: var(--muted); }
 .project-pin .icon { width: 12px; height: 12px; }
 .project-tools { position: absolute; top: 3px; right: 3px; display: flex; gap: 1px; opacity: 0; }

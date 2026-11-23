@@ -1,8 +1,16 @@
 // This prototype owns browser-local state. Commands and integrations use fixtures.
+const projectNodes = [
+  { id: 'local', name: '此电脑', detail: '本地工作区', icon: 'terminal' },
+  { id: 'devbox', name: '开发主机', detail: 'SSH · devbox.local', icon: 'globe', demo: true },
+];
+function projectNode(project) {
+  const id = project?.nodeId || 'local';
+  return projectNodes.find(node => node.id === id) ?? { id, name: '未知节点', icon: 'globe', demo: true };
+}
 const workbench = {
   projects: [], fontSize: '16', permissions: 'workspace', askCommands: false, reviewDelivery: 'inline',
   density: 'comfortable', messageLayout: 'reading', codeNumbers: true, notifyFinish: false, defaultModel: 'GPT-5.4', defaultEffort: '中',
-  followUpMode: 'queue', showContext: true, showBottomControl: true,
+  followUpMode: 'queue', showContext: true, showBottomControl: true, projectGrouping: 'node',
   environments: {}, resources: {}, connections: {}, sourceDrafts: {}, automations: [],
 };
 try {
@@ -10,6 +18,7 @@ try {
   if (saved && typeof saved === 'object') {
     workbench.projects = Array.isArray(saved.projects)
       ? saved.projects.filter(item => item && typeof item.name === 'string' && typeof item.path === 'string' && item.branch === 'main')
+        .map(item => ({ ...item, nodeId: typeof item.nodeId === 'string' && item.nodeId.trim() ? item.nodeId.trim() : 'local' }))
       : [];
     workbench.automations = Array.isArray(saved.automations)
       ? saved.automations.filter(item => item && typeof item.id === 'string' && typeof item.name === 'string'
@@ -24,6 +33,7 @@ try {
     if (['inline', 'detached'].includes(saved.reviewDelivery)) workbench.reviewDelivery = saved.reviewDelivery;
     if (['compact', 'comfortable'].includes(saved.density)) workbench.density = saved.density;
     if (['reading', 'classic'].includes(saved.messageLayout)) workbench.messageLayout = saved.messageLayout;
+    if (['node', 'flat'].includes(saved.projectGrouping)) workbench.projectGrouping = saved.projectGrouping;
     if (typeof saved.codeNumbers === 'boolean') workbench.codeNumbers = saved.codeNumbers;
     workbench.notifyFinish = Boolean(saved.notifyFinish);
     if (typeof saved.showBottomControl === 'boolean') workbench.showBottomControl = saved.showBottomControl;
@@ -401,6 +411,12 @@ function initializeWorkbench() {
     saveWorkbench();
     if (currentPage === 'resources') renderResourceList();
   });
+  $('#project-grouping').addEventListener('change', event => {
+    if (!['node', 'flat'].includes(event.target.value)) return;
+    workbench.projectGrouping = event.target.value;
+    saveWorkbench();
+    renderNavigation();
+  });
   $('#follow-up-default').addEventListener('change', event => {
     workbench.followUpMode = event.target.value;
     if (!session) {
@@ -428,6 +444,7 @@ function initializeWorkbench() {
     $('#show-bottom-control').checked = workbench.showBottomControl;
     document.documentElement.dataset.bottomControl = String(workbench.showBottomControl);
     $('#general-review-delivery').value = workbench.reviewDelivery;
+    $('#project-grouping').value = workbench.projectGrouping;
     $('#follow-up-default').value = workbench.followUpMode;
     $('#show-context-control').checked = workbench.showContext;
     $('.context-button').hidden = !workbench.showContext;
@@ -454,13 +471,10 @@ function initializeWorkbench() {
   }
 
   function renderConnections() {
-    const rows = [
-      { id: 'local', title: '此电脑', detail: '本地工作区', icon: 'terminal' },
-      { id: 'devbox', title: '开发主机', detail: 'SSH · devbox.local', icon: 'globe' },
-    ].map(item => {
+    const rows = projectNodes.map(item => {
       const row = element('div', 'connection-row');
       const words = element('div');
-      words.append(element('strong', '', item.title), element('small', '', item.detail));
+      words.append(element('strong', '', item.name), element('small', '', item.detail));
       const connected = workbench.connections[item.id] ?? item.id === 'local';
       const button = controls(connected ? '模拟断开' : '模拟连接', 'connection-toggle', item.id);
       row.innerHTML = icon(item.icon);
@@ -815,7 +829,7 @@ function initializeWorkbench() {
   }
 
   function clearProjectError() {
-    for (const input of [$('#project-name'), $('#project-path')]) {
+    for (const input of [$('#project-name'), $('#project-path'), $('#project-node')]) {
       input.setCustomValidity('');
       input.removeAttribute('aria-invalid');
     }
@@ -832,10 +846,19 @@ function initializeWorkbench() {
   }
 
   const projectPathHelp = $('#project-path-help').textContent;
+  $('#project-node').replaceChildren(...projectNodes.map(node => new Option(node.name + (node.demo ? '（演示）' : ''), node.id)));
   let pickedProjectName = '';
   let projectPickerTicket = 0;
+  function projectNodeChanged() {
+    ++projectPickerTicket;
+    clearProjectError();
+    const local = $('#project-node').value === 'local';
+    $('#choose-project-folder').disabled = !local;
+    $('#project-path-help').textContent = local ? projectPathHelp : '请填写所选节点上的项目路径，并确认已有填写属于该节点。远程节点为演示，不访问远程文件系统，也不使用本机文件夹选择器。';
+  }
+  $('#project-node').addEventListener('change', projectNodeChanged);
   function selectProjectDirectory(name) {
-    if (!$('#project-dialog').open || !name) return;
+    if (!$('#project-dialog').open || $('#project-node').value !== 'local' || !name) return;
     clearProjectError();
     if (!$('#project-name').value.trim() || $('#project-name').value === pickedProjectName) $('#project-name').value = name;
     pickedProjectName = name;
@@ -843,6 +866,7 @@ function initializeWorkbench() {
     $('#project-path-help').textContent = `已选择「${name}」。浏览器只提供目录名；绝对路径由桌面端接入后返回，不读取文件内容。`;
   }
   $('#choose-project-folder').addEventListener('click', async () => {
+    if ($('#project-node').value !== 'local') return;
     const ticket = ++projectPickerTicket;
     if (typeof window.showDirectoryPicker !== 'function') {
       $('#project-folder-picker').dataset.ticket = String(ticket);
@@ -869,6 +893,7 @@ function initializeWorkbench() {
   });
   $('#project-form').addEventListener('reset', () => {
     pickedProjectName = '';
+    $('#choose-project-folder').disabled = false;
     $('#project-path-help').textContent = projectPathHelp;
   });
   $('#project-dialog').addEventListener('close', () => {
@@ -880,20 +905,22 @@ function initializeWorkbench() {
     event.preventDefault();
     const name = $('#project-name').value.trim();
     const path = $('#project-path').value.trim();
+    const nodeId = $('#project-node').value;
     clearProjectError();
+    if (!projectNodes.some(node => node.id === nodeId)) return showProjectError($('#project-node'), '请选择所属节点');
     if (!name) return showProjectError($('#project-name'), '请输入项目名称');
     if (!path) return showProjectError($('#project-path'), '请输入项目路径');
     if (projects.some(project => project.name === name)) {
       showProjectError($('#project-name'), '项目名称已存在');
       return;
     }
-    const project = { name, path, branch: 'main' };
+    const project = { name, path, branch: 'main', nodeId };
     projects.push(project);
     workbench.projects.push(project);
     saveWorkbench();
     $('#project-dialog').close();
     welcomeProject = name;
-    collapsedSections.delete('projects');
+    expandProjectNode(name);
     saveNavigation();
     showSession(null);
     $(`[data-project-group="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'nearest' });

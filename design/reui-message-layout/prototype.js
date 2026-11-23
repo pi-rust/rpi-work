@@ -16,8 +16,8 @@ const mobile = matchMedia('(max-width: 700px)');
 const narrow = matchMedia('(max-width: 900px)');
 const compact = matchMedia('(max-width: 1199px)');
 const projects = [
-  { name: 'rpi-work', branch: 'feat/next-iteration' },
-  { name: 'pi-rust', branch: 'main' },
+  { name: 'rpi-work', branch: 'feat/next-iteration', nodeId: 'local' },
+  { name: 'pi-rust', branch: 'main', nodeId: 'devbox' },
   ...workbench.projects,
 ];
 
@@ -103,6 +103,7 @@ const sessions = [
 
 const viewState = new Map();
 const collapsedSections = new Set();
+const collapsedProjectNodes = new Set();
 const pinnedProjects = new Set();
 const navigationKey = 'rpi-work-layout-navigation-v1';
 try {
@@ -115,6 +116,9 @@ try {
       if (['projects', 'recent-threads', 'pinned-threads'].includes(section)) collapsedSections.add(section);
     }
   }
+  for (const id of Array.isArray(saved?.collapsedNodes) ? saved.collapsedNodes : []) {
+    if (projects.some(project => projectNode(project).id === id)) collapsedProjectNodes.add(id);
+  }
   if (saved?.version !== 2) saveNavigation();
 } catch {
   pinnedProjects.add('rpi-work');
@@ -122,7 +126,7 @@ try {
 
 function saveNavigation() {
   try {
-    localStorage.setItem(navigationKey, JSON.stringify({version: 2, pins: [...pinnedProjects], collapsed: [...collapsedSections]}));
+    localStorage.setItem(navigationKey, JSON.stringify({version: 2, pins: [...pinnedProjects], collapsed: [...collapsedSections], collapsedNodes: [...collapsedProjectNodes]}));
   } catch {}
 }
 
@@ -263,10 +267,18 @@ function projectRow(project) {
   const entry = actionButton('', 'project-chat', 'project-entry');
   entry.dataset.project = project.name;
   entry.setAttribute('aria-label', '打开项目 ' + project.name);
-  entry.title = project.path ?? project.name;
+  const node = projectNode(project);
+  group.dataset.nodeId = node.id;
+  entry.title = node.name + (node.demo ? '（演示）' : '') + ' · ' + (project.path ?? project.name);
+  entry.setAttribute('aria-description', '所属节点：' + node.name + (node.demo ? '（演示）' : ''));
   if (project.name === (session?.project ?? welcomeProject)) entry.setAttribute('aria-current', 'true');
   entry.innerHTML = `<span class="project-folder">${icon('folder')}</span>`;
   entry.append(element('span', 'project-name', project.name));
+  if (workbench.projectGrouping === 'flat') {
+    const label = element('span', 'project-node-label', node.name + (node.demo ? ' · 演示' : ''));
+    label.title = entry.title;
+    entry.append(label);
+  }
   if (pinnedProjects.has(project.name)) {
     const pin = element('span', 'project-pin');
     pin.innerHTML = icon('pin');
@@ -297,6 +309,42 @@ function syncSection(id) {
   $(`[data-action="toggle-section"][aria-controls="${id}"]`).setAttribute('aria-expanded', String(open));
 }
 
+function expandProjectNode(name) {
+  collapsedSections.delete('projects');
+  collapsedProjectNodes.delete(projectNode(projects.find(project => project.name === name)).id);
+}
+
+function projectNodeRows(sorted) {
+  const nodes = new Map(projectNodes.map(node => [node.id, node]));
+  for (const project of projects) {
+    const node = projectNode(project);
+    nodes.set(node.id, node);
+  }
+  return [...nodes.values()].flatMap(node => {
+    const items = sorted.filter(project => projectNode(project).id === node.id);
+    if (!items.length) return [];
+    const group = element('section', 'project-node-group');
+    group.dataset.projectNode = node.id;
+    group.setAttribute('aria-label', node.name + '的项目');
+    const list = element('div', 'project-node-projects');
+    list.id = 'project-node-' + encodeURIComponent(node.id);
+    list.hidden = collapsedProjectNodes.has(node.id);
+    const toggle = actionButton('', 'toggle-project-node', 'project-node-toggle');
+    toggle.dataset.nodeId = node.id;
+    toggle.setAttribute('aria-controls', list.id);
+    toggle.setAttribute('aria-expanded', String(!list.hidden));
+    toggle.setAttribute('aria-label', node.name + '的项目');
+    toggle.title = node.detail ?? node.id;
+    toggle.innerHTML = icon('chevron-down') + icon(node.icon);
+    toggle.append(element('span', 'project-node-name', node.name));
+    if (node.demo) toggle.append(element('span', 'project-node-demo', '演示'));
+    toggle.append(element('span', 'project-node-count', String(items.length)));
+    list.append(...items.map(projectRow));
+    group.append(toggle, list);
+    return [group];
+  });
+}
+
 function renderNavigation() {
   const menu = $('#project-menu');
   if (menu.matches(':popover-open')) menu.hidePopover();
@@ -307,9 +355,10 @@ function renderNavigation() {
   });
   const pinned = visible.filter(thread => thread.pinned).map(threadButton);
   const recent = visible.filter(thread => !thread.pinned).map(threadButton);
-  const projectRows = [...projects]
-    .sort((left, right) => Number(pinnedProjects.has(right.name)) - Number(pinnedProjects.has(left.name)))
-    .map(projectRow);
+  const sorted = [...projects]
+    .sort((left, right) => Number(pinnedProjects.has(right.name)) - Number(pinnedProjects.has(left.name)));
+  const projectRows = workbench.projectGrouping === 'flat' ? sorted.map(projectRow) : projectNodeRows(sorted);
+  $('#projects').dataset.layout = workbench.projectGrouping;
   $('#pinned-section').hidden = !pinned.length;
   if (!recent.length) {
     recent.push(element('p', 'filter-empty', filter !== 'all' && !visible.length
@@ -1237,10 +1286,20 @@ document.addEventListener('click', event => {
       saveNavigation();
       break;
     }
+    case 'toggle-project-node': {
+      const id = button.dataset.nodeId;
+      const collapsing = !collapsedProjectNodes.has(id);
+      if (collapsing) collapsedProjectNodes.add(id);
+      else collapsedProjectNodes.delete(id);
+      document.getElementById(button.getAttribute('aria-controls')).hidden = collapsing;
+      button.setAttribute('aria-expanded', String(!collapsing));
+      saveNavigation();
+      break;
+    }
     case 'browse-projects': {
       setPanel('navigation', true, false);
       const name = session?.project ?? welcomeProject;
-      collapsedSections.delete('projects');
+      expandProjectNode(name);
       $('#chat-filter').hidden = true;
       $('#filter-chats').setAttribute('aria-expanded', 'false');
       renderNavigation();

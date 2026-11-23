@@ -12,6 +12,7 @@ const { checkReadingContrast } = require('./verify-contrast.cjs');
 const { checkClipboardFeedback } = require('./verify-clipboard.cjs');
 const { checkCodeFocus } = require('./verify-code-focus.cjs');
 const { checkSetup } = require('./verify-setup.cjs');
+const { checkProjectNodes } = require('./verify-project-nodes.cjs');
 const { withQuery } = require('./verify-url.cjs');
 const playwright = process.env.RPI_LAYOUT_PLAYWRIGHT ?? '../../tools/node_modules/playwright';
 const { chromium } = require(playwright);
@@ -740,6 +741,10 @@ async function checkProjectNavigation(browser) {
   try {
     await page.goto(url);
     const button = name => page.getByRole('button', { name, exact: true });
+    // This gate checks global project pin ordering in the supported flat mode.
+    await button('设置').click();
+    await page.getByLabel('项目列表显示', { exact: true }).selectOption('flat');
+    await button('关闭设置').click();
     const projectList = page.locator('#projects');
     const pinned = page.locator('#pinned-threads');
     const recent = page.locator('#recent-threads');
@@ -1169,6 +1174,7 @@ async function main() {
     await checkClipboardFeedback(browser, url);
     await checkCodeFocus(browser, url);
     await checkSetup(browser, url);
+    await checkProjectNodes(browser, url);
   } finally {
     await browser.close();
   }

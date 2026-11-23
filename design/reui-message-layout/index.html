@@ -280,6 +280,7 @@
           </div>
           <h4>工作区</h4>
           <div class="preference-group">
+            <label class="settings-row"><span><strong>项目列表显示</strong><small>按所属节点分组，或平铺所有项目。只影响项目列表，不改变最近和置顶会话。</small></span><span class="select-control"><select id="project-grouping" aria-label="项目列表显示"><option value="node">按节点分组</option><option value="flat">平铺</option></select><i data-icon="chevron-down"></i></span></label>
             <label class="settings-row"><span><strong>底部面板</strong><small>在窗口标题栏中显示终端按钮。</small></span><input id="show-bottom-control" type="checkbox" role="switch" aria-label="底部面板"></label>
             <label class="settings-row"><span><strong>审查结果呈现方式</strong><small>在当前聊天中审查代码，或启动单独的审查聊天。</small></span><span class="select-control"><select id="general-review-delivery" aria-label="审查结果呈现方式"><option value="inline">当前聊天</option><option value="detached">独立聊天</option></select><i data-icon="chevron-down"></i></span></label>
           </div>
@@ -411,6 +412,7 @@
     <p id="project-dialog-description" class="project-dialog-description">将已有项目加入工作台，添加后即可开始对话。</p>
     <form id="project-form" class="dialog-form">
       <label for="project-name">名称</label><input id="project-name" required maxlength="50" placeholder="my-project" aria-describedby="project-error" autofocus>
+      <label for="project-node">所属节点</label><select id="project-node" required aria-describedby="project-path-help project-error"></select>
       <label for="project-path">项目路径</label><div class="project-path-row"><input id="project-path" required maxlength="300" placeholder="~/Projects/my-project" aria-describedby="project-path-help project-error"><button type="button" class="action-button" id="choose-project-folder"><i data-icon="folder"></i>选择文件夹</button></div>
       <input id="project-folder-picker" type="file" aria-label="导入项目目录" webkitdirectory multiple hidden>
       <p id="project-path-help" class="settings-note">可选择文件夹或手动填写路径。浏览器只记录目录名称，不提供绝对路径、不读取文件内容。</p>
