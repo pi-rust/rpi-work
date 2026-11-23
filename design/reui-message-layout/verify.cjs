@@ -260,7 +260,12 @@ async function checkWorkbenchFlows(browser) {
     await button('关闭设置').click();
     const projectEntry = page.locator('[data-action="add-project"]');
     const projectDialog = page.getByRole('dialog', { name: '添加项目', exact: true });
-    assert.equal(await projectEntry.innerText(), '添加项目');
+    assert.equal(await page.locator('.sidebar-actions > [data-action="add-project"]').count(), 1);
+    assert.equal(await page.locator('.project-scroll [data-action="add-project"]').count(), 0);
+    assert.equal(await projectEntry.getAttribute('aria-label'), '添加项目');
+    assert.equal(await projectEntry.getAttribute('title'), '添加项目');
+    assert.equal(await projectEntry.locator('svg').count(), 1);
+    assert.equal(await projectEntry.innerText(), '');
     await page.mouse.move(0, 0);
     assert.equal(await projectEntry.isVisible(), true);
     const projectCount = await page.locator('[data-project-group]').count();
@@ -300,7 +305,7 @@ async function checkWorkbenchFlows(browser) {
     await button('取消', projectDialog).click();
     await page.locator('#filter-chats').click();
     await page.locator('#chat-filter-mode').selectOption('running');
-    await page.locator('#filter-chats').click();
+    assert.equal(await page.locator('#chat-filter').isHidden(), true);
     const recentToggle = page.locator('[data-action="toggle-section"][aria-controls="projects"]');
     if (await recentToggle.getAttribute('aria-expanded') === 'true') await recentToggle.click();
     await projectEntry.click();
