@@ -202,10 +202,10 @@ kbd { margin-inline-start: auto; font-size: .6875rem; line-height: 1.3; font-fam
 .diff-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .diff-actions .icon-button { width: 23px; height: 23px; }
 .diff-actions .icon { width: 13px; height: 13px; }
-.diff-range { padding: 5px 7px; background: var(--subtle); color: var(--dim); font: .625rem/1.5 ui-monospace, monospace; border-top: 1px solid var(--line); }
+.diff-range { padding: 5px 7px; background: var(--subtle); color: var(--muted); font: .625rem/1.5 ui-monospace, monospace; border-top: 1px solid var(--line); }
 .diff-lines { overflow: auto; display: grid; grid-template-columns: minmax(max-content,1fr); container-type: inline-size; }
 .diff-line { --diff-row-bg: var(--canvas); display: grid; grid-template-columns: 23px 23px minmax(max-content,1fr) 22px; min-width: max-content; color: var(--muted); font: .6875rem/1.95 ui-monospace, monospace; }
-.diff-line > span { position: sticky; left: 0; z-index: 1; background: var(--diff-row-bg); color: var(--dim); text-align: right; padding-right: 5px; }
+.diff-line > span { position: sticky; left: 0; z-index: 1; background: var(--diff-row-bg); color: var(--muted); text-align: right; padding-right: 5px; }
 .diff-line > span:nth-child(2) { left: 23px; }
 .diff-line code { white-space: pre; padding-right: 7px; }
 .diff-line.add { --diff-row-bg: var(--add-bg); background: var(--diff-row-bg); color: var(--good); }
@@ -444,7 +444,7 @@ dialog::backdrop, .scrim { background: #0005; }
 }
 
 .message-code { margin: 17px 0 24px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--subtle); }
-.message-code-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; font-size: .6875rem; color: var(--dim); }
+.message-code-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; font-size: .6875rem; color: var(--muted); }
 .message-code-header button { border: 0; background: transparent; }
 .message-code pre { margin: 0; padding: 8px 16px 16px; overflow: auto; font-size: .8125rem; line-height: 1.8; }
 .message-code pre code { padding: 0; background: none; font-size: inherit; }
@@ -577,7 +577,7 @@ dialog::backdrop, .scrim { background: #0005; }
 .message-code-header { border-bottom: 1px solid var(--line); padding: 6px 10px; }
 .message-code pre { padding: 12px 0; counter-reset: line; }
 .message-code code .code-line { display: block; min-height: 1.8em; padding-inline: 15px; }
-:root[data-code-numbers="true"] .code-line::before { counter-increment: line; content: counter(line); display: inline-block; width: 23px; padding-right: 12px; color: var(--dim); user-select: none; }
+:root[data-code-numbers="true"] .code-line::before { counter-increment: line; content: counter(line); display: inline-block; width: 23px; padding-right: 12px; color: var(--muted); user-select: none; }
 .composer { border-radius: 17px; background: var(--surface); padding: 12px 11px 9px; box-shadow: 0 3px 12px #1b293707; }
 .composer textarea { min-height: 56px; resize: none; font-size: .9375rem; }
 .composer-selects { gap: 2px; }
