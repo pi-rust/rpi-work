@@ -13,6 +13,7 @@ const { checkClipboardFeedback } = require('./verify-clipboard.cjs');
 const { checkCodeFocus } = require('./verify-code-focus.cjs');
 const { checkSetup } = require('./verify-setup.cjs');
 const { checkProjectNodes } = require('./verify-project-nodes.cjs');
+const { checkCollaboration } = require('./verify-collaboration.cjs');
 const { withQuery } = require('./verify-url.cjs');
 const playwright = process.env.RPI_LAYOUT_PLAYWRIGHT ?? '../../tools/node_modules/playwright';
 const { chromium } = require(playwright);
@@ -257,9 +258,10 @@ async function checkWorkbenchFlows(browser) {
     await button('环境').click();
     await page.getByLabel('测试操作').fill('cargo test');
     await button('保存环境配置').click();
-    await button('连接').click();
-    await page.locator('.connection-row').filter({hasText:'开发主机'}).getByRole('button').click();
-    assert.match(await page.locator('.connection-row').filter({hasText:'开发主机'}).textContent(),/演示已连接/);
+    await button('工作协同').click();
+    await page.locator('#connection-list [data-collab-node="devbox"]').getByRole('button', { name: '模拟连接', exact: true }).click();
+    await page.clock.runFor(600);
+    assert.match(await page.locator('#connection-list [data-collab-node="devbox"]').textContent(),/演示已连接/);
     await shot('settings');
     await button('关闭设置').click();
     const projectEntry = page.locator('[data-action="add-project"]');
@@ -1175,6 +1177,7 @@ async function main() {
     await checkCodeFocus(browser, url);
     await checkSetup(browser, url);
     await checkProjectNodes(browser, url);
+    await checkCollaboration(browser, url);
   } finally {
     await browser.close();
   }

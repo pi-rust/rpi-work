@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="inspector.css">
   <link rel="stylesheet" href="history-preview.css">
   <link rel="stylesheet" href="runtime-setup.css">
+  <link rel="stylesheet" href="collaboration.css">
+  <script src="collaboration.js" defer></script>
   <script src="history-preview.js" defer></script>
   <script src="reading-state.js" defer></script>
   <script src="inspector.js" defer></script>
@@ -262,7 +264,7 @@
               <button type="button" data-settings-tab="skills"><i data-icon="list-checks"></i><span>技能</span></button>
             </div>
             <div class="preference-nav-group"><h3>编码</h3>
-              <button type="button" data-settings-tab="connections"><i data-icon="globe"></i><span>连接</span></button>
+              <button type="button" data-settings-tab="connections"><i data-icon="globe"></i><span>工作协同</span></button>
               <button type="button" data-settings-tab="review"><i data-icon="file-diff"></i><span>代码审查</span></button>
               <button type="button" data-settings-tab="environment"><i data-icon="folder"></i><span>环境</span></button>
             </div>
@@ -353,9 +355,34 @@
           <div class="preference-group" data-settings-resources="skills"></div>
         </section>
         <section data-settings-section="connections" hidden>
-          <h3>连接</h3>
-          <p class="settings-description">管理本地和 SSH 主机的演示连接。</p>
+          <div class="collab-title"><h3 tabindex="-1">工作协同</h3><span class="collab-badge">演示</span></div>
+          <p class="settings-description">确认当前节点，再分享、发现与连接其他设备。</p>
+          <div class="collab-current" role="region" aria-label="当前节点">
+            <div class="collab-current-heading"><span class="collab-node-mark" id="collab-current-icon"></span><div><small id="collab-current-kind"></small><strong id="collab-current-name"></strong></div><span class="collab-badge">演示已连接</span></div>
+            <code id="collab-current-address" class="collab-address"></code>
+            <p id="collab-current-meta" class="collab-note"></p>
+            <div class="collab-actions"><button class="action-button" data-collab-action="share">地址二维码</button><button class="action-button" data-collab-action="copy">复制地址</button><button class="action-button" id="collab-authorize" data-collab-action="authorize">一次性授权</button><button class="action-button" id="collab-disconnect" data-collab-action="disconnect-current">模拟断开</button></div>
+            <p class="collab-note">切换仅演示本设备的节点选择，不搬动当前对话、草稿或项目。</p>
+          </div>
+          <h4>已连接与可用节点</h4>
           <div id="connection-list" class="preference-group"></div>
+          <div id="collab-local-access">
+            <h4>允许访问这台电脑</h4>
+            <div class="preference-group">
+              <label class="settings-row"><span><strong>允许远程协作</strong><small id="collab-sharing-note">App 访问项目、会话与任务；开启后仍需鉴权。</small></span><input id="collab-sharing" type="checkbox" role="switch" aria-label="允许远程协作"></label>
+              <label class="settings-row"><span><strong>允许 Web 访问</strong><small id="collab-web-note">独立控制浏览器入口，不跟随远程协作开关。</small></span><input id="collab-web" type="checkbox" role="switch" aria-label="允许 Web 访问"></label>
+              <label class="settings-row"><span><strong>允许局域网发现</strong><small>只公开地址，不授予权限；刷新附近节点不会开启广播。</small></span><input id="collab-discoverable" type="checkbox" role="switch" aria-label="允许局域网发现"></label>
+            </div>
+          </div>
+          <p id="collab-remote-note" class="collab-notice" hidden>远程节点的访问权限在拥有它的电脑上管理；本设备不能代为开启共享。</p>
+          <h4>连接其他节点</h4>
+          <div class="collab-subheading"><span>附近节点 <small id="collab-discovery-status" role="status">尚未刷新</small></span><div class="collab-actions"><button class="action-button collab-scan" data-collab-action="scan">扫码连接</button><button class="action-button" data-collab-action="manual">输入地址</button><button class="action-button" id="collab-refresh" data-collab-action="refresh">刷新发现</button></div></div>
+          <div id="collab-discovered" class="preference-group"><p class="collab-empty">刷新查看附近节点，也可以直接输入地址。</p></div>
+          <h4>最近连接</h4><div id="collab-recent" class="preference-group"></div>
+          <div id="collab-visitors" class="collab-visitors"><h4>被访问的设备</h4><div id="collab-visitor-list" class="preference-group"></div></div>
+          <p class="collab-notice">发现不等于授权。远程协作、Web 访问与一次性授权各自独立；原型不监听端口、不扫描网络、不收集密码、不改真实权限。</p>
+          <details class="collab-demo"><summary>演示状态</summary><label for="collab-scenario">评审场景</label><select id="collab-scenario"><option value="success">正常流程</option><option value="connect-error">连接失败</option><option value="discovery-empty">未发现节点</option><option value="service-unavailable">入口未就绪</option><option value="visitors">已有访问记录</option></select><p class="collab-note">仅切换本页夹具；二维码为不可扫码的占位，不签发票据。</p></details>
+          <p id="collab-feedback" class="collab-note" role="status"></p>
         </section>
         <section data-settings-section="review" hidden>
           <h3>代码审查</h3>
@@ -448,6 +475,10 @@
       <p class="settings-note">计划保存在浏览器中。可手动运行演示，到时自动触发需要接入调度服务。</p>
       <button class="action-button primary" type="submit">保存任务</button>
     </form>
+  </dialog>
+  <dialog id="collab-dialog" aria-labelledby="collab-dialog-title">
+    <div class="dialog-heading"><h2 id="collab-dialog-title"></h2><form method="dialog"><button class="icon-button" aria-label="关闭协同弹窗"><i data-icon="x"></i></button></form></div>
+    <div id="collab-dialog-body"></div>
   </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 

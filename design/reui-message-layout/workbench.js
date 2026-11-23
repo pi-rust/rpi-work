@@ -11,7 +11,7 @@ const workbench = {
   projects: [], fontSize: '16', permissions: 'workspace', askCommands: false, reviewDelivery: 'inline',
   density: 'comfortable', messageLayout: 'reading', codeNumbers: true, notifyFinish: false, defaultModel: 'GPT-5.4', defaultEffort: '中',
   followUpMode: 'queue', showContext: true, showBottomControl: true, projectGrouping: 'node',
-  environments: {}, resources: {}, connections: {}, sourceDrafts: {}, automations: [],
+  environments: {}, resources: {}, connections: {}, sourceDrafts: {}, automations: [], collaboration: null,
 };
 try {
   const saved = JSON.parse(localStorage.getItem('rpi-workbench-v1'));
@@ -27,6 +27,7 @@ try {
     for (const key of ['environments', 'resources', 'connections', 'sourceDrafts']) {
       if (saved[key] && typeof saved[key] === 'object' && !Array.isArray(saved[key])) workbench[key] = saved[key];
     }
+    if (saved.collaboration && typeof saved.collaboration === 'object' && !Array.isArray(saved.collaboration)) workbench.collaboration = saved.collaboration;
     if (['16', '18'].includes(saved.fontSize)) workbench.fontSize = saved.fontSize;
     if (['workspace', 'readonly', 'full'].includes(saved.permissions)) workbench.permissions = saved.permissions;
     workbench.askCommands = Boolean(saved.askCommands);
@@ -470,18 +471,9 @@ function initializeWorkbench() {
     renderConnections();
   }
 
+  const collaboration = initializeCollaboration({ save: saveWorkbench, toast });
   function renderConnections() {
-    const rows = projectNodes.map(item => {
-      const row = element('div', 'connection-row');
-      const words = element('div');
-      words.append(element('strong', '', item.name), element('small', '', item.detail));
-      const connected = workbench.connections[item.id] ?? item.id === 'local';
-      const button = controls(connected ? '模拟断开' : '模拟连接', 'connection-toggle', item.id);
-      row.innerHTML = icon(item.icon);
-      row.append(words, element('span', 'connection-status', connected ? '演示已连接' : '未连接'), button);
-      return row;
-    });
-    $('#connection-list').replaceChildren(...rows);
+    collaboration.render();
   }
 
   function terminalState() {
@@ -1259,12 +1251,6 @@ function initializeWorkbench() {
         if (thread) showSession(thread);
         break;
       }
-      case 'connection-toggle':
-        workbench.connections[value] = !(workbench.connections[value] ?? value === 'local');
-        saveWorkbench();
-        renderConnections();
-        $('[data-action="connection-toggle"][data-value="' + value + '"]').focus();
-        break;
       case 'open-source':
         openSource(Number(value));
         $('.source-file-tab[aria-selected="true"]').focus();
