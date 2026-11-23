@@ -49,7 +49,7 @@
 #inspector .review-summary { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; border-bottom: 1px solid var(--line); padding: 10px 1px; margin-bottom: 12px; }
 #inspector .review-totals { gap: 9px; margin: 0; }
 #inspector .review-file code, #inspector .diff-caption > button { font-size: .75rem; }
-#inspector .diff-caption > button { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; font-family: ui-monospace,monospace; }
+#inspector .diff-caption > button { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-family: ui-monospace,monospace; }
 #inspector .diff-caption > button:hover { text-decoration: underline; }
 #inspector .diff { border-radius: 7px; }
 #inspector .review-files { margin-bottom: 15px; }
