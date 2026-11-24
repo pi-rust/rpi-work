@@ -37,7 +37,7 @@ npm run preview:fixture  # 必须访问 /?fixture=1 才启用样例
 ```bash
 npm run build
 npm run build:fixture
-npm run verify:all        # 自起独立fixture预览，按序跑13组，结束仅清自身进程
+npm run verify:all        # 自起独立fixture预览，按序跑15组，结束仅清自身进程
 npm run lint
 ```
 
@@ -46,7 +46,7 @@ npm run lint
 | `verify:entry` | 产品无样例、独立测试构建显式启用、认证失败/缺失观察、显示WASM迟到、ACK不清后来编辑及同地址重连，8项 |
 | `verify:session` | 精确会话权限、ACK/结算、重连终态、abort、真实选项、配置回读、并发观察、迟到diff，以及丢ACK的只读回执恢复/明确拒绝/无证据锁定/跨重连GET/queue HostResponse，23项 |
 | `verify:scopes` | 同地址重连后的迟到Provider目录/写回执/QR成功与错误，A→B→A后取消审阅，旧install finally不得干扰新请求，6项 |
-| `verify:reading` | 阅读/经典几何与偏好、明暗/紧凑/390px、草稿选区/工具/真实iframe保持；canonical结算折叠、手动展开、流式转历史身份、失败与历史工具恢复/内容过滤/未知权限只读降级，8项 |
+| `verify:reading` | 阅读/经典几何与偏好、明暗/紧凑/390px、草稿选区/工具/真实iframe保持；canonical结算折叠、手动展开、流式转历史身份、失败与历史工具恢复/内容过滤/未知权限只读降级；长段落锚点、等长更新提示、显式回底/底部跟随、双向会话恢复/390px重排、过程/工具展开及设置/资源页往返、同ID跨节点隔离，12项 |
 | `verify:a11y` | landmarks、图标名称、示例草稿不假发送、Tab、命令面板与Escape |
 | `verify:fixture` / `verify:theme` | Rust投影、工具展示、指标、主题/密度/代码配色（runner提供隔离预览） |
 | `verify:mobile` | 320/390视口与抽屉 |
@@ -77,8 +77,10 @@ hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副�
 - 会话（第五批已接通并本地验收）：Rust `SessionClient` 复用唯一canonical `SessionConnection`，共享 `SessionControls` 按精确会话能力、已报告字段、在线状态与canonical phase准入；TypeScript只绑定/展示。prompt/abort ACK不等于结算，dialog ACK不闭卡，配置必须取得精确权威回读；回读失败保持未知并锁定，不继续显示写入前模型为当前事实。SDK已观察到活动后恢复出的终态可结束本地受理窗口，旧终态或活动快照不能误解锁。节点/会话作用域与原生观察epoch拦截旧异步结果，项目/文件/review/install另有请求令牌。
 - 回执恢复：同一绑定内保存SDK实际返回的typed `OperationRef`，只经现有 `operation_status` GET核对，绝不重新reserve/execute。共享纯Rust规则保留原HostResponse，传输Succeeded不覆盖`success=false`；受理结果不当作执行结算，草稿不会自动再发送。配置另存真实setter ACK证据，再以新权威回读确认效果；没有ref且没有ACK证据的未知结果仍保持锁定，不按runtime/list猜成功。一次核对总预算15秒，迟到旧范围GET不能解锁新范围，核对后重新读取metadata，不覆盖SDK执行投影。
 - 消息阅读（第六批已接通并本地验收）：原型阅读/经典布局共用同一DOM及阅读列，16px正文、舒适/紧凑行距，偏好只影响展示。共享纯Rust `conversation::transcript_view` 从既有canonical历史、行顺序、投影和本地请求账本生成展示DTO；只将相邻工具/思考归为展示片段，不冒充运行归属。正文在过程容器之外；已知完成结算才默认折叠成功片段，失败/取消/未知工具不显示成功且保持提示。React仅记录用户展开偏好，已展开子工具不因结算收起；历史吸收流式正文保持身份，历史工具按真实结果恢复，私有/不透明内容不成为正文。未知能力的只读历史也走同一Rust展示函数，不编造phase或开放写入口。
-- 验证：产品/fixture双构建、15套回归、共享Rust151项、三crate WASM严格Clippy、fmt/diff及CI YAML语法通过；reading专项8项，新增Rust展示规则11项；lint70警告/0错误。既有工具输出断言保留，先展开新的完成过程再验原内容；只读降级接线回归有先失败后修复证据。节点及资源作用域另有6项独立HTTP gate时序证据。均为本地隔离协议fixture验收，不是实际Provider/安装器/模型/Native验收，未执行远程CI。
-- **整体仍未完成**：完整滚动/阅读位置状态、其他消息细节、居中设置、真实协同/本机桥接、Native/Android适配和正式发行仍待完成。Provider保存提示只表示节点管理回执，不代表当前Agent已加载。没有可关联的新结算不能借Ready/旧终态解锁，无ref且无原setter ACK证据的未知结果继续锁定。
+- 第六批验证：产品/fixture双构建、15套回归、共享Rust151项、三crate WASM严格Clippy、fmt/diff及CI YAML语法通过；reading专项8项，新增Rust展示规则11项；lint70警告/0错误。既有工具输出断言保留，先展开新的完成过程再验原内容；只读降级接线回归有先失败后修复证据。节点及资源作用域另有6项独立HTTP gate时序证据。均为本地隔离协议fixture验收，不是实际Provider/安装器/模型/Native验收，未执行远程CI。
+- 滚动状态（第七批已接通并本地验收）：`useConversationScroll` 只管理展示，以节点origin/项目ID/会话ID的无歧义元组隔离内存位置，沿用Rust canonical部分key和视口偏移。贴底才跟随；上翻保持锚点并可显式“回到底部”，有新内容（含等长更新）才提示未读。按钮在滚动内容外的稳定可视容器，跳转即时完成、无强制动画。空的过渡history不覆盖原锚点；MutationObserver动态观察实际内容，ResizeObserver观察内容与视口，程序补偿不重新采样用户锚点，旧scope回调不能改新scope。设置/资源页暂停聊天滚动采样，返回再恢复。滚动/展开/选区缓存最多128个scope，展开选择每scope最多512项；均不写入协议或执行投影。父过程与子工具展开意图在SPA内切换会话/页面后恢复，草稿选区按既有draft scope保存，恢复不抢焦点、不改发送/ACK账本。
+- 第七批验证：产品/fixture双构建及15套浏览器回归通过；reading由8项扩为12项，覆盖长段落中段上翻、真实text_delta→最终历史的DOM身份和锚点、显式回底/后续跟随、等长改写、两个会话双向恢复、390px及reading/classic重排、过程/工具展开、设置/资源页往返、同会话/消息ID跨两个独立节点隔离；真实HTTP iframe表单/加载次数、草稿和选区保持。空history归零、补偿后错误采样、跨scope假未读和页面卸载丢选区均有先失败后修复记录。本批没有Rust语义或协议改动；Rust151项、三crate WASM严格Clippy、fmt/diff及CI YAML复核通过；lint仍70警告/0错误。仅本地验收，不冒称远程CI或真实模型/Native验收。
+- **整体仍未完成**：本批位置/展开/选区仅SPA内存恢复，不包含刷新/重启持久化；历史锚点已不在当前canonical页时只按保存的像素位置有界回退，不发起新协议或猜造历史。真实模型长会话与各平台手动验收、其他消息细节、居中设置、真实协同/本机桥接、Native/Android适配和正式发行仍待完成。Provider保存提示只表示节点管理回执，不代表当前Agent已加载。没有可关联的新结算不能借Ready/旧终态解锁，无ref且无原setter ACK证据的未知结果继续锁定。
 
 组件仅使用免费MIT的ReUI/shadcn生态；许可证说明见 [NOTICE.md](NOTICE.md)，没有引入Pro资产或授权密钥。
 

@@ -63,9 +63,9 @@ function StatusIcon({ status }: { status: ToolBlock['status'] }) {
 }
 
 /** Tool card whose target, icon and read/shell kind all come from Rust. */
-export function ToolCard({ block, detail, onIntent }: { block: Omit<ToolBlock, 'kind'>; detail?: ToolDetail; onIntent?: (open: boolean) => void }) {
+export function ToolCard({ block, detail, onIntent, initialOpen }: { block: Omit<ToolBlock, 'kind'>; detail?: ToolDetail; onIntent?: (open: boolean) => void; initialOpen?: boolean }) {
   const meta = toolMeta(block.name, block.arguments)
-  const [open, setOpen] = useState(meta.isRead)
+  const [open, setOpen] = useState(initialOpen ?? meta.isRead)
 
   return (
     <Collapsible open={open} onOpenChange={(value) => { setOpen(value); onIntent?.(value) }}>

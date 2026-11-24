@@ -1,5 +1,10 @@
 /* Confirmed prototype: the same DOM and reading column in both layouts. */
 .wb-transcript { gap: 32px; }
+.wb-message-scroll { overflow-anchor: none; }
+.wb-latest-button { min-height: 36px; }
+@media (prefers-reduced-motion: reduce) {
+  .wb-message-scroll { scroll-behavior: auto; }
+}
 .wb-transcript .wb-user-label { display: none; }
 .wb-transcript .wb-prompt {
   max-width: min(90%, max(77%, 320px));

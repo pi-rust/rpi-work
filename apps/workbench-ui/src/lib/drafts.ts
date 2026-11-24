@@ -5,11 +5,13 @@
  * sessions or nodes never leaks text into another conversation.
  */
 import { useCallback, useRef, useState } from 'react'
+import { useScopedPresentation } from '@/lib/use-scoped-presentation'
 
 const KEY = 'rpi-work-reui-drafts-v1'
 const MAX_DRAFT = 32_000
 
 type Drafts = Record<string, string>
+export type DraftSelection = { text: string; start: number; end: number; direction: 'forward' | 'backward' | 'none' }
 
 function read(): Drafts {
   try {
@@ -43,6 +45,7 @@ export function useDraft(scope: string) {
     Object.fromEntries(Object.entries(read()).map(([key, text]) => [key, { text }])),
   )
   const current = useRef(drafts)
+  const selection = useScopedPresentation<DraftSelection>(scope, () => ({ text: '', start: 0, end: 0, direction: 'none' }))
 
   const update = useCallback(
     (value: string) => {
@@ -63,5 +66,5 @@ export function useDraft(scope: string) {
     if (current.current[scope] === entry) update('')
   }, [scope, entry, update])
 
-  return { draft: entry?.text ?? '', setDraft: update, clear }
+  return { draft: entry?.text ?? '', setDraft: update, clear, selection }
 }

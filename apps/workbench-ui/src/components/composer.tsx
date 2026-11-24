@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { ArrowUp, Paperclip, SlidersHorizontal, Square } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -8,9 +8,11 @@ import {
   AvatarFallback,
 } from '@/components/ui/avatar'
 import type { ContextView } from '@/lib/viewmodel'
+import type { DraftSelection } from '@/lib/drafts'
 
 type Props = {
   draft: string
+  selection?: DraftSelection
   onDraft: (value: string) => void
   context: ContextView
   onSend: () => void
@@ -35,6 +37,7 @@ type Props = {
 /** Codex-style composer: rounded card, model chip row, send button. */
 export function Composer({
   draft,
+  selection,
   onDraft,
   context,
   onSend,
@@ -57,12 +60,22 @@ export function Composer({
 }: Props) {
   // IME candidates must not submit: only a committed composition can send.
   const composing = useRef(false)
+  const textarea = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    if (selection?.text === draft && !composing.current) textarea.current?.setSelectionRange(selection.start, selection.end, selection.direction)
+  }, [draft, selection])
+  const rememberSelection = (node: HTMLTextAreaElement) => {
+    if (selection) Object.assign(selection, { text: node.value, start: node.selectionStart, end: node.selectionEnd, direction: node.selectionDirection })
+  }
   return (
     <div className="bg-background/80 sticky bottom-0 px-3 pt-2 pb-2 backdrop-blur md:px-6 md:pb-3">
       <div className="border-input bg-card focus-within:border-ring/60 mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border p-2.5 shadow-sm md:p-3">
         <Textarea
+          ref={textarea}
           value={draft}
-          onChange={(event) => onDraft(event.target.value)}
+          onSelect={(event) => rememberSelection(event.currentTarget)}
+          onBlur={(event) => rememberSelection(event.currentTarget)}
+          onChange={(event) => { rememberSelection(event.currentTarget); onDraft(event.target.value) }}
           onCompositionStart={() => {
             composing.current = true
           }}

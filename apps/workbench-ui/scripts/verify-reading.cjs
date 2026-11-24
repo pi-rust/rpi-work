@@ -26,7 +26,7 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
     assert(ready, 'owned product preview started')
     browser = await chromium.launch()
     const check = async (name, run) => {
-      const context = await browser.newContext({ viewport: { width: 1440, height: 940 }, deviceScaleFactor: 1 })
+      const context = await browser.newContext({ viewport: { width: 1440, height: 940 }, deviceScaleFactor: 1, reducedMotion: 'reduce' })
       const page = await context.newPage(), errors = []
       page.setDefaultTimeout(10000)
       page.on('pageerror', error => errors.push(error.message))
@@ -40,7 +40,7 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
         return { column: { x: column.x, width: column.width, right: column.right }, prompt: { x: p.x, width: p.width, right: p.right }, answer: { x: a.x, width: a.width }, background: style.backgroundColor, radius: style.borderRadius, font: answer.fontSize, lineHeight: answer.lineHeight, overflow: document.documentElement.scrollWidth - innerWidth }
       })
       try { await run({ context, page, open, choose, rendered, geometry }); assert.deepEqual(errors, []); console.log('PASS', name) }
-      catch (error) { failures.push(name); console.error('FAIL', name, error.message) }
+      catch (error) { failures.push(name); console.error('FAIL', name, error.stack) }
       finally { await context.close() }
     }
     await check('reading/classic geometry and persistence preserve message/tool/preview DOM and draft selection', async ({ page, open, choose, geometry }) => {
@@ -191,6 +191,199 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
       assert.equal(await tool.locator('.text-emerald-600').count(), 0)
       await tool.getByRole('button').click()
       await page.getByText('observed tool failure', { exact: true }).waitFor()
+    })
+    await check('reader position is anchored through streamed history and only explicit jump follows latest', async ({ page, open, rendered }) => {
+      fixture.emit({ type: 'message_end', message: { entryId: 'scroll-history-tool', role: 'assistant', content: [{ type: 'toolCall', id: 'layout-intent', name: 'bash', arguments: { command: 'pwd' } }] } })
+      fixture.emit({ type: 'message_end', message: { entryId: 'scroll-history-result', role: 'toolResult', toolCallId: 'layout-intent', isError: false, content: [{ type: 'text', text: 'keep explicit output open' }] } })
+      for (let index = 0; index < 32; index++) {
+        fixture.emit({ type: 'message_end', message: { entryId: `scroll-base-${index}`, role: 'assistant', content: `scroll-base-${index} ${'long canonical response content. '.repeat(24)}` } })
+      }
+      await open()
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await page.getByText('scroll-base-0', { exact: false }).first().waitFor()
+      const log = page.locator('.wb-message-scroll')
+      await log.evaluate(node => { node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.43); node.dispatchEvent(new Event('scroll')) })
+      const anchor = await page.evaluate(() => {
+        const log = document.querySelector('.wb-message-scroll'), logTop = log.getBoundingClientRect().top
+        const node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.getBoundingClientRect().bottom > logTop + 1)
+        return { key: node?.dataset.conversationAnchor, top: node?.getBoundingClientRect().top - logTop, scrollTop: log.scrollTop }
+      })
+      assert(anchor.key && anchor.top !== undefined)
+      fixture.emit({ type: 'message_update', message: { entryId: 'scroll-new-history' }, eventType: 'text_delta', delta: 'scroll-new-history streaming' })
+      await page.getByText('scroll-new-history streaming', { exact: true }).waitFor()
+      await page.getByText('scroll-new-history streaming', { exact: true }).evaluate(node => { window.scrollStream = node })
+      fixture.emit({ type: 'message_end', message: { entryId: 'scroll-new-history', role: 'assistant', content: `scroll-new-history ${'new message without stealing the reader. '.repeat(40)}` } })
+      await page.getByText('scroll-new-history', { exact: false }).waitFor()
+      assert.equal(await page.getByText('scroll-new-history', { exact: false }).evaluate(node => node === window.scrollStream), true)
+      await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).waitFor()
+      await rendered()
+      const after = await page.evaluate(key => {
+        const log = document.querySelector('.wb-message-scroll'), node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.dataset.conversationAnchor === key)
+        return { top: node.getBoundingClientRect().top - log.getBoundingClientRect().top, scrollTop: log.scrollTop, max: log.scrollHeight - log.clientHeight }
+      }, anchor.key)
+      assert(Math.abs(after.top - anchor.top) < 2, JSON.stringify({ anchor, after }))
+      assert(Math.abs(after.scrollTop - after.max) > 48)
+      const buttonBox = await page.locator('.wb-latest-button').boundingBox(), logBox = await log.boundingBox()
+      assert(buttonBox.y >= logBox.y && buttonBox.y + buttonBox.height <= logBox.y + logBox.height, JSON.stringify({ buttonBox, logBox }))
+      await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).click()
+      await page.waitForFunction(() => { const node = document.querySelector('.wb-message-scroll'); return node.scrollHeight - node.scrollTop - node.clientHeight <= 2 })
+      assert.equal(await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).count(), 0)
+      fixture.emit({ type: 'message_end', message: { entryId: 'scroll-bottom-follow', role: 'assistant', content: '底部跟随只在读者已经贴底时继续' } })
+      await page.getByText('底部跟随只在读者已经贴底时继续', { exact: true }).waitFor()
+      await page.waitForFunction(() => { const node = document.querySelector('.wb-message-scroll'); return node.scrollHeight - node.scrollTop - node.clientHeight <= 2 })
+      assert.equal(await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).count(), 0)
+      await log.evaluate(node => { node.scrollTop *= 0.5; node.dispatchEvent(new Event('scroll')) })
+      const rewritten = '等' + '底部跟随只在读者已经贴底时继续'.slice(1)
+      fixture.emit({ type: 'message_end', message: { entryId: 'scroll-bottom-follow', role: 'assistant', content: rewritten } })
+      await page.getByText(rewritten, { exact: true }).waitFor()
+      await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).waitFor()
+    })
+    await check('reading anchor and follow intent are isolated per real session when switching away and back', async ({ page, open, rendered }) => {
+      for (let index = 0; index < 32; index++) {
+        fixture.emit({ type: 'message_end', message: { entryId: `architecture-scroll-${index}`, role: 'assistant', content: `architecture-scroll-${index} independent session history` } }, 'architecture')
+      }
+      await open()
+      const log = page.locator('.wb-message-scroll')
+      await page.getByText('scroll-base-0', { exact: false }).first().waitFor()
+      await log.evaluate(node => { node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.31); node.dispatchEvent(new Event('scroll')) })
+      const darkAnchor = await page.evaluate(() => {
+        const log = document.querySelector('.wb-message-scroll'), top = log.getBoundingClientRect().top
+        const node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.getBoundingClientRect().bottom > top + 1)
+        return { key: node?.dataset.conversationAnchor, top: node?.getBoundingClientRect().top - top }
+      })
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await page.getByText('architecture-scroll-0', { exact: false }).first().waitFor()
+      await rendered()
+      await log.evaluate(node => { node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.62); node.dispatchEvent(new Event('scroll')) })
+      const architectureTop = await log.evaluate(node => node.scrollTop)
+      assert(architectureTop > 0)
+      const architectureAnchor = await log.evaluate(log => {
+        const top = log.getBoundingClientRect().top
+        const node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.getBoundingClientRect().bottom > top + 1)
+        return { key: node.dataset.conversationAnchor, top: node.getBoundingClientRect().top - top }
+      })
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      await page.getByText('scroll-new-history', { exact: false }).first().waitFor()
+      await rendered()
+      const restored = await page.evaluate(key => {
+        const log = document.querySelector('.wb-message-scroll'), top = log.getBoundingClientRect().top
+        const node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.dataset.conversationAnchor === key)
+        return { top: node?.getBoundingClientRect().top - top, scrollTop: log.scrollTop }
+      }, darkAnchor.key)
+      assert(Math.abs(restored.top - darkAnchor.top) < 2, JSON.stringify({ darkAnchor, restored }))
+      assert.equal(await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).count(), 0)
+      await page.getByRole('button', { name: '回到底部', exact: true }).waitFor()
+      await page.getByRole('button', { name: '打开显示选项', exact: true }).click()
+      await page.getByRole('combobox', { name: '消息布局', exact: true }).selectOption('classic')
+      await page.keyboard.press('Escape')
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.waitForFunction(({ key, expected }) => {
+        const log = document.querySelector('.wb-message-scroll'), top = log.getBoundingClientRect().top
+        const node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.dataset.conversationAnchor === key)
+        return node && Math.abs(node.getBoundingClientRect().top - top - expected) < 2
+      }, { key: darkAnchor.key, expected: darkAnchor.top }, { timeout: 5000 })
+      await rendered()
+      const reflowed = await page.evaluate(key => {
+        const log = document.querySelector('.wb-message-scroll'), top = log.getBoundingClientRect().top
+        const node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.dataset.conversationAnchor === key)
+        return node.getBoundingClientRect().top - top
+      }, darkAnchor.key)
+      assert(Math.abs(reflowed - darkAnchor.top) < 2, JSON.stringify({ darkAnchor, reflowed }))
+      assert.equal(await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).count(), 0)
+      await page.getByRole('button', { name: '回到底部', exact: true }).click()
+      await page.waitForFunction(() => { const node = document.querySelector('.wb-message-scroll'); return node.scrollHeight - node.scrollTop - node.clientHeight <= 2 })
+      await page.setViewportSize({ width: 1440, height: 940 })
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await page.getByText('architecture-scroll-0', { exact: false }).waitFor()
+      await page.waitForFunction(({ key, top }) => {
+        const log = document.querySelector('.wb-message-scroll')
+        const node = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.dataset.conversationAnchor === key)
+        return node && Math.abs(node.getBoundingClientRect().top - log.getBoundingClientRect().top - top) < 2
+      }, architectureAnchor)
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      await page.getByText('scroll-new-history', { exact: false }).waitFor()
+      await page.waitForFunction(() => { const node = document.querySelector('.wb-message-scroll'); return node.scrollHeight - node.scrollTop - node.clientHeight <= 2 })
+    })
+    await check('process expansion, page navigation and session restore preserve the reading anchor, draft and real iframe', async ({ page, open, rendered }) => {
+      await open()
+      const log = page.locator('.wb-message-scroll')
+      const group = page.locator('[data-activity-key="activity/tool/layout-intent"]')
+      const tool = page.locator('[data-tool-id="layout-intent"]')
+      await page.getByRole('textbox', { name: '预览地址', exact: true }).fill(siteUrl)
+      await page.getByRole('button', { name: '打开', exact: true }).click()
+      const previewDraft = page.frameLocator('.real-browser iframe').getByLabel('Preview draft')
+      await previewDraft.fill('scroll must not reload the page')
+      const loads = previewLoads
+      await page.locator('textarea').fill('滚动与页面切换保留草稿选区')
+      await page.locator('textarea').evaluate(node => node.setSelectionRange(2, 6))
+      await log.evaluate(node => { node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.5); node.dispatchEvent(new Event('scroll')) })
+      const anchor = await log.evaluate(node => {
+        const top = node.getBoundingClientRect().top
+        const item = [...node.querySelectorAll('[data-conversation-anchor]')].find(item => item.getBoundingClientRect().bottom > top + 1)
+        return { key: item.dataset.conversationAnchor, top: item.getBoundingClientRect().top - top }
+      })
+      // DOM activation avoids Playwright scrolling an offscreen summary into
+      // view; we are measuring the layout effect, not a second reader gesture.
+      await group.locator(':scope > summary').evaluate(node => { if (node.parentElement.open) node.click() })
+      await rendered()
+      await group.locator(':scope > summary').evaluate(node => node.click())
+      await tool.locator('[data-slot="collapsible-trigger"]').evaluate(node => node.click())
+      await rendered()
+      const assertAnchor = async () => {
+        await page.waitForFunction(({ key, top }) => {
+          const log = document.querySelector('.wb-message-scroll')
+          const item = [...log.querySelectorAll('[data-conversation-anchor]')].find(item => item.dataset.conversationAnchor === key)
+          return item && Math.abs(item.getBoundingClientRect().top - log.getBoundingClientRect().top - top) < 2
+        }, anchor)
+      }
+      await assertAnchor()
+      assert.equal(await tool.locator('[data-slot="collapsible-trigger"]').getAttribute('aria-expanded'), 'true')
+      await page.getByRole('button', { name: '工作台设置', exact: true }).click()
+      await log.evaluate(node => { node.scrollTop = 80; node.dispatchEvent(new Event('scroll')) })
+      await page.getByRole('button', { name: '会话', exact: true }).click()
+      await assertAnchor()
+      assert.equal(await tool.locator('[data-slot="collapsible-trigger"]').getAttribute('aria-expanded'), 'true')
+      await page.getByRole('button', { name: '技能与插件', exact: true }).click()
+      await page.getByRole('button', { name: '会话', exact: true }).click()
+      await assertAnchor()
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await page.getByText('architecture-scroll-0', { exact: false }).waitFor()
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      await assertAnchor()
+      assert.notEqual(await group.getAttribute('open'), null)
+      assert.equal(await tool.locator('[data-slot="collapsible-trigger"]').getAttribute('aria-expanded'), 'true')
+      assert.equal(await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).count(), 0)
+      assert.equal(await previewDraft.inputValue(), 'scroll must not reload the page')
+      assert.equal(previewLoads, loads)
+      assert.deepEqual(await page.locator('textarea').evaluate(node => [node.value, node.selectionStart, node.selectionEnd]), ['滚动与页面切换保留草稿选区', 2, 6])
+    })
+    await check('identical session and message IDs on different nodes cannot share reading position or follow intent', async ({ page, open, rendered }) => {
+      const other = await startFixture(0, { nativeQueries: true, includeHistoryAssistant: true })
+      try {
+        other.setMessages([
+          { entryId: 'user-dark', role: 'user', content: '另一个节点相同会话ID的独立正文' },
+          ...Array.from({ length: 40 }, (_, index) => ({ entryId: `scroll-base-${index}`, role: 'assistant', content: `other-node-${index} independent reading` })),
+        ])
+        await open()
+        const log = page.locator('.wb-message-scroll')
+        await log.evaluate(node => { node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.36); node.dispatchEvent(new Event('scroll')) })
+        const saved = await log.evaluate(node => node.scrollTop)
+        const connect = async target => {
+          await page.getByRole('button', { name: '断开节点', exact: true }).click()
+          await page.getByRole('textbox', { name: '节点地址', exact: true }).fill(target)
+          await page.getByRole('button', { name: '连接节点', exact: true }).click()
+          await page.getByText('在线', { exact: true }).waitFor()
+        }
+        await connect(other.url)
+        await page.getByText('other-node-39 independent reading', { exact: true }).waitFor()
+        await page.waitForFunction(() => { const log = document.querySelector('.wb-message-scroll'); return log.scrollHeight - log.scrollTop - log.clientHeight < 2 })
+        await log.evaluate(node => { node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.72); node.dispatchEvent(new Event('scroll')) })
+        await connect(origin)
+        await page.getByText('scroll-new-history', { exact: false }).waitFor()
+        await rendered()
+        await page.waitForFunction(top => Math.abs(document.querySelector('.wb-message-scroll').scrollTop - top) < 2, saved)
+        assert.equal(await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).count(), 0)
+      } finally { await other.close() }
     })
     await check('history-only tools recover real results once; redacted or opaque content never becomes an answer', async ({ page, open }) => {
       await open()

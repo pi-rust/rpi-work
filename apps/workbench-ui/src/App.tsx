@@ -23,6 +23,8 @@ import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
 import { useTheme } from '@/lib/theme'
 import { useMessageLayout } from '@/lib/message-layout'
+import { useConversationScroll } from '@/lib/use-conversation-scroll'
+import { useScopedPresentation } from '@/lib/use-scoped-presentation'
 import { contextFrom, formatTokens, metricsFrom } from '@/lib/viewmodel'
 import { useIsMobile, useMediaQuery } from '@/lib/viewport'
 
@@ -32,10 +34,13 @@ export default function App() {
   const live = workspace.source.kind === 'live'
   const sourceScope = workspace.source.kind === 'live' ? workspace.source.origin : workspace.source.kind
   const draftScope = `${sourceScope}/${workspace.selected.session || `project:${workspace.selected.project || 'none'}`}`
-  const { draft, setDraft, clear: clearDraft } = useDraft(draftScope)
+  const scrollScope = JSON.stringify([sourceScope, workspace.selected.project, workspace.selected.session])
+  const choices = useScopedPresentation(scrollScope, () => new Map<string, boolean>())
+  const { draft, setDraft, clear: clearDraft, selection } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
   const [page, setPage] = useState<'chat' | 'resources' | 'settings'>('chat')
+  const messageScroll = useConversationScroll(scrollScope, workspace.transcript?.parts, page === 'chat')
   const isMobile = useIsMobile()
   const isPanelOverlay = useMediaQuery('(max-width: 900px)')
   const [drawer, setDrawer] = useState(false)
@@ -315,8 +320,11 @@ export default function App() {
 
           <div className="wb-body">
             <div className="flex min-w-0 flex-1 flex-col">
+              <div className="relative flex min-h-0 flex-1 flex-col">
               <div
-                className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
+                ref={messageScroll.scrollRef}
+                onScroll={messageScroll.onScroll}
+                className="wb-message-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6"
                 role="log"
                 aria-live="polite"
                 aria-label="会话记录"
@@ -414,7 +422,7 @@ export default function App() {
                     </form>
                   ) : ready || workspace.status === 'disconnected' ? (
                     workspace.transcript && workspace.transcript.parts.length > 0 ? (
-                      <Conversation key={draftScope} view={workspace.transcript} details={fixture?.toolMeta} observed={live} />
+                      <Conversation key={scrollScope} view={workspace.transcript} choices={choices} details={fixture?.toolMeta} observed={live} />
                     ) : (
                       <EmptyState live={live} fixture={!!fixture} hasSession={!!workspace.selected.session} />
                     )
@@ -423,6 +431,12 @@ export default function App() {
                   )}
                 </div>
                 )}
+              </div>
+                {messageScroll.away && page === 'chat' ? (
+                  <Button className="wb-latest-button absolute bottom-3 left-1/2 z-20 -translate-x-1/2 shadow-md" size="sm" variant="secondary" onClick={messageScroll.jumpToLatest}>
+                    {messageScroll.unread ? '有新消息 · 回到底部' : '回到底部'}
+                  </Button>
+                ) : null}
               </div>
               {page === 'chat' ? (
               <>
@@ -438,6 +452,7 @@ export default function App() {
               ) : null}
               <Composer
                 draft={draft}
+                selection={selection}
                 onDraft={setDraft}
                 sendDisabledReason={!live ? fixture ? '示例模式不会发送消息' : '请先连接节点' : !ready ? '节点尚未就绪' : !workspace.selected.session ? '请先在侧栏创建真实会话；当前草稿会保留' : !workspace.controls?.send ? workspace.controls?.reason || '未取得当前会话可写观察' : undefined}
                 queueDisabledReason={!workspace.controls?.queue ? workspace.controls?.reason || '当前会话未声明入队能力' : undefined}
