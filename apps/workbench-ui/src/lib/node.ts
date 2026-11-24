@@ -5,7 +5,8 @@
  * this module only adapts promises to TypeScript types.
  */
 import clientWasmUrl from '../pkg/work_client_bg.wasm?url'
-import initClient, { NodeClient } from '../pkg/work_client.js'
+import initClient, { NodeClient, SessionClient } from '../pkg/work_client.js'
+import type { LiveView } from '@/lib/viewmodel'
 
 export type NodeProject = { id: string; name: string; path: string }
 export type CreationReply<T> =
@@ -84,6 +85,39 @@ export function initNodeClient(): Promise<void> {
 
 const parse = <T,>(value: string): T => JSON.parse(value) as T
 
+export type SessionControls = {
+  busy: boolean; online: boolean; send: boolean; queue: boolean; queueRead: boolean
+  cancelQueued: boolean; clearQueue: boolean; abort: boolean; reply: boolean
+  model: boolean; thinking: boolean; configurationLocked: boolean; reason: string
+}
+export type SessionDialog = {
+  requestId: string; purpose: string | null; question: string | null; replyEnabled: boolean
+  options: { label: string; value: string | null }[]
+}
+export type SessionRecovery = { canCheck: boolean; checking: boolean; count: number; unreceipted: boolean; message: string | null }
+export type SessionView = LiveView & {
+  recovery: SessionRecovery
+  scopeEpoch: number; messages: unknown[]; controls: SessionControls; dialogs: SessionDialog[]
+  runtime: NodeRuntime | null; models: NodeModel[]; thinkingLevels: string[]; error: string | null
+}
+
+/** Lifetime-only adapter: all admission and execution facts stay in Rust. */
+export class BoundSession {
+  private readonly client: SessionClient
+  constructor(client: SessionClient) { this.client = client }
+  close() { this.client.close(); this.client.free() }
+  async recheck(): Promise<SessionRecovery> { return parse(await this.client.recheck()) }
+  async prompt(text: string): Promise<{ accepted: boolean; error: string | null }> { return parse(await this.client.prompt(text)) }
+  async abort(): Promise<unknown> { return parse(await this.client.abort()) }
+  async queue(): Promise<NodeQueue> { return parse(await this.client.queue()) }
+  async queueMessage(text: string): Promise<{ accepted: boolean | null }> { return parse(await this.client.queue_message(text, 'followUp')) }
+  async cancelQueued(id: string): Promise<unknown> { return parse(await this.client.cancel_queued(id)) }
+  async clearQueue(): Promise<NodeQueue> { return parse(await this.client.clear_queue()) }
+  async setModel(id: string, provider: string): Promise<NodeRuntime> { return parse(await this.client.set_model(id, provider)) }
+  async setThinking(level: string): Promise<NodeRuntime> { return parse(await this.client.set_thinking(level)) }
+  async answer(id: string, values: string[]): Promise<unknown> { return parse(await this.client.dialog_response(id, JSON.stringify(values))) }
+}
+
 export class NodeConnection {
   private readonly client: NodeClient
   readonly origin: string
@@ -97,6 +131,10 @@ export class NodeConnection {
     await initNodeClient()
     const client = new NodeClient(origin)
     return new NodeConnection(client, client.origin)
+  }
+
+  async bindSession(id: string, update: (view: SessionView) => void): Promise<BoundSession> {
+    return new BoundSession(await this.client.bind_session(id, (text: string) => update(parse<SessionView>(text))))
   }
 
   async auth(): Promise<NodeAuth> {

@@ -17,6 +17,11 @@ type Props = {
   onAbort: () => void
   onQueue?: () => void
   sendDisabledReason?: string
+  queueDisabledReason?: string
+  abortDisabled?: boolean
+  modelDisabled?: boolean
+  thinkingDisabled?: boolean
+  selectedModel?: { id: string; provider: string }
   busy: boolean
   error: string | null
   modelLabel: string
@@ -36,6 +41,11 @@ export function Composer({
   onAbort,
   onQueue,
   sendDisabledReason,
+  queueDisabledReason,
+  abortDisabled = true,
+  modelDisabled = true,
+  thinkingDisabled = true,
+  selectedModel,
   busy,
   error,
   modelLabel,
@@ -81,15 +91,17 @@ export function Composer({
             {modelOptions && modelOptions.length > 0 && onModel ? (
               <select
                 aria-label="选择模型"
-                value={modelOptions.find((option) => option.label === modelLabel)?.id ?? modelOptions[0].id}
+                value={selectedModel ? JSON.stringify([selectedModel.provider, selectedModel.id]) : ''}
+                disabled={modelDisabled}
                 onChange={(event) => {
-                  const option = modelOptions.find((entry) => entry.id === event.target.value)
+                  const option = modelOptions.find((entry) => JSON.stringify([entry.provider, entry.id]) === event.target.value)
                   if (option) onModel(option.id, option.provider)
                 }}
                 className="bg-transparent outline-none"
               >
+                <option value="" disabled>{modelLabel}</option>
                 {modelOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
+                  <option key={JSON.stringify([option.provider, option.id])} value={JSON.stringify([option.provider, option.id])}>
                     {option.label}
                   </option>
                 ))}
@@ -104,6 +116,7 @@ export function Composer({
               <select
                 aria-label="选择思考等级"
                 value={thinking}
+                disabled={thinkingDisabled}
                 onChange={(event) => onThinking(event.target.value)}
                 className="bg-transparent outline-none"
               >
@@ -123,8 +136,8 @@ export function Composer({
               size="sm"
               className="h-7 px-2 text-[11px]"
               onClick={onQueue}
-              disabled={!!sendDisabledReason || draft.trim().length === 0}
-              title={sendDisabledReason}
+              disabled={!!queueDisabledReason || draft.trim().length === 0}
+              title={queueDisabledReason}
             >
               加入队列
             </Button>
@@ -133,7 +146,7 @@ export function Composer({
             上下文 {context.percentText}
           </span>
           {busy ? (
-            <Button size="icon" className="size-7 rounded-full" aria-label="中止" onClick={onAbort} variant="secondary">
+            <Button size="icon" className="size-7 rounded-full" aria-label="中止" disabled={abortDisabled} onClick={onAbort} variant="secondary">
               <Square className="size-3.5" />
             </Button>
           ) : (

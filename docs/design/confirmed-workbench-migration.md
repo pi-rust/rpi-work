@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | 窗口外壳、导航、项目/置顶/最近 | 第二批已迁移整窗外壳和独立列表；只展示当前节点入口身份，多节点聚合/平铺设置仍待接入 | 1440×940 DPR1 明暗同内容对照；无伪造节点/连接状态 |
 | 阅读列与消息层次 | 保留真实投影，迁入原型阅读/经典布局、完成折叠及工具交互 | 流式、失败、历史恢复、滚动锚点、草稿/选区保留 |
-| Composer、模型、思考、队列与审批 | 复用 typed 会话入口和权威回读；不得从 unknown 推断可写 | IME、accepted 未确认、迟到回调、能力变化、附件边界 |
+| Composer、模型、思考、队列与审批 | 第五批已接通并本地验收：canonical绑定、共享Rust准入、ACK/结算分离、真实选项单次回复及typed回执只读恢复；整体UI迁移仍未完成 | IME、accepted 未确认、迟到回调、能力变化、附件边界 |
 | 右侧浏览器 | 首批施工：真实 HTTP(S) 页面、多标签、地址与历史、刷新、视口 | 隔离的真实 HTTP 页面；拒绝危险协议/凭据；不传节点密钥；隐藏不重载 |
 | 源码、目录与 diff | 已有 NodeConnection 文件/Git 调用；布局与原型不同 | ticket/revision、长行固定控件、主题对比度、仅能力允许的写入 |
 | 居中设置与本地偏好 | 现有 SettingsPage 是旧视觉结构 | 搜索、焦点恢复、原型布局；本地偏好与执行配置分离 |
@@ -68,3 +68,13 @@
 - 新增 `verify:entry` 8项：产品默认与伪fixture参数不出样例、产品JS无样例载荷、测试构建需显式启用、认证失败无可写回退、节点模型已观察但指标/上下文缺失保持未知、显示WASM迟到仍呈现权威历史、迟到合成ACK保护后来编辑、同地址重连区分未连接与节点会话草稿。先跑旧逻辑实证默认入口失败，再修复；另以HEAD旧草稿hook复现发送A后编辑B再改回A，被迟到ACK清空，新hook以每次本地编辑对象作令牌，阻止此丢稿，不在TS新造执行状态机。延迟真实显示WASM也先复现历史不可见，再让现有loadSession等待显示初始化并把展示就绪加入行投影依赖，避免提前订阅丢事件。
 - `verify:all` 现在自起free-port测试预览，按序运行12组，记录并仅清理自己启动的进程组；自包含脚本直接启动Vite进程，避免只杀npm父进程。全部12组本地通过，产品/fixture的Rust WASM+TypeScript+Vite构建通过，lint71警告/0错误；hosted仍为隔离真实Rust owner + 无凭据合成RPC后端8项，entry的prompt ACK来自HTTP/WS协议fixture，不是模型或真实Agent执行证明。
 - CI改用 `workbench-ui.yml`，按新目录分别构建产品和fixture，新增入口隔离验收；未运行远程CI、未推送。确认原型、4193/4181与原有三张未跟踪截图保留。**仍待完成**：完整SessionAccess/权限/accepted与settlement链，阅读/经典消息及滚动、居中设置、真实协同、Native本机/Android桥接、依赖许可分发核对和最终完整UI验收。
+
+## 第五批：会话准入、结算窗口与异步作用域（已接通并本地验收）
+
+- `work-viewmodel::session_controls` 集中纯Rust准入；`work-client-wasm::SessionClient` 只保留请求账本及展示DTO，复用现有 `WorkspaceClient.connect_session_with_access` / `SessionConnection` 的snapshot、cursor、重连、消息身份、reconcile和RunProjection，不另建执行owner。精确access读取失败撤销旧写入口，不借global支持猜权限；可选configuration失败不抹掉此次真实读到的prompt能力。目录及运行字段未观察到时不允许配置。
+- prompt/abort受理不等于运行结算，权限回复ACK不关闭canonical卡片；只提交当前观测到的真实字符串选项，账本阻止闭卡前重复回答。模型以原始provider+id区分，模型/思考写后必须精确权威回读；已受理写入后的回读拒绝属于结果/效果未核实，保持锁定并撤销过时运行字段，不能当作写入被拒绝。已观察到活动后，SDK重连恢复的终态可结束已知本地窗口；Ready、未开始请求对应的旧终态、仍活动的快照不能误当本次结算。
+- 连接/会话ticket、binding身份及原生观察epoch保护异步结果；项目scope、review/file/listing请求票据与install对象令牌阻止A→B→A、取消后复活及旧finally解锁新操作。节点Provider/版本/二维码使用节点scope；管理回执只说明保存及节点是否要求重启，不声称当前Agent已加载。
+- typed只读恢复已接通：同一绑定的Rust请求账本只存SDK实际返回的OperationRef，调用现有 `operation_status` GET；不生成ref、不拿本地scopeEpoch当ownerEpoch、不reserve/execute重发。`work-viewmodel::session_receipts` 保留SDK KnownResult/Failed/OutcomeUnknown语义及原HostResponse，传输Succeeded内的success=false仍是拒绝。配置额外存实际setter返回Ok的ACK证据，只有这种已知ACK才允许仅用新权威回读核实效果；ACK前无ref的未知结果保持锁定。核对总预算15秒，迟到旧范围GET不消费新范围账本；核对结束重启metadata只读观察，防止旧观察因serial失效后永久缺权限。恢复受理不代表结算，不自动清理/发送草稿或乐观关闭dialog。
+- 当前本地产品/fixture双构建和14套回归通过；session专项23项，覆盖丢prompt/abort/模型/queue ACK、GET-only且reserve/execute次数不变、HostResponse拒绝、receipt仍未知不借runtime猜成功、无ref无ACK证据锁定、跨重连迟到GET和metadata恢复。最终复审按真实SDK形状补齐queue回执：解开原HostResponse并要求其data.accepted为真boolean，错误command不采纳。重连终态、回读拒绝误解锁、恢复核对打断metadata、queue回执封装均先实证失败再修复。共享Rust单测140项通过，三crate WASM严格Clippy、fmt/diff检查通过，lint仍71警告/0错误；未推送、未运行远程CI。协议fixture回执改为进程级store与唯一ID，HTTP只读状态形状沿用现有owner协议，不新增执行协议。
+- 新增scope专项6项，均以独立HTTP gate固定时序：同地址重连后旧Provider目录/写回执不得污染新目录、提示及未保存密钥；迟到QR成功/错误不替换新授权；会话A→B→A并取消新审阅后旧bundle不能复活；同项目不同会话的旧install finally不能清空新请求令牌或使其永久busy。每个gate有deadline及finally释放，使用真实SDK脱敏错误分类而非猜原始服务错误会透传。这些是隔离协议fixture证据，不代表真实Provider或安装器验收。
+- **不等于完整UI交付**：没有可关联的新结算不能借Ready或旧终态解锁；没有ref且没有原setter ACK证据不能按runtime/list推断自己的操作成功。阅读/经典、滚动、居中设置、协同、平台桥及正式发行仍属总目标剩余范围。

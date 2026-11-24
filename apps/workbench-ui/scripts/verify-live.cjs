@@ -135,6 +135,9 @@ async function waitForServer(url, timeoutMs = 30000) {
     assert(commands('prompt').length >= 1, 'prompt command reached the node: ' + JSON.stringify(commands('prompt')))
     assert(commands('prompt').some((frame) => frame.includes('把深色模式也应用到设置页')), 'prompt carries the draft text')
     pass('send posts one prompt through work-client and clears the draft')
+    // Admission is not settlement. The fixture explicitly supplies the latter.
+    fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
+    await page.getByRole('button', { name: '发送', exact: true }).waitFor()
 
     // Rejected prompts keep the draft and surface the node error.
     fixture.controls.failPrompt = true
@@ -170,6 +173,7 @@ async function waitForServer(url, timeoutMs = 30000) {
 
     // Approval gate: a dialog event renders a card, and answering goes back
     // through `ui_dialog_response`.
+    fixture.emit({ type: 'agent_start' })
     fixture.emit({
       type: 'ui_dialog_request',
       requestId: 'approve-1',
@@ -177,23 +181,31 @@ async function waitForServer(url, timeoutMs = 30000) {
       ui: {
         purpose: 'bash',
         question: '允许执行 cargo test 吗？',
-        options: [{ label: '允许一次' }, { label: '拒绝' }],
+        options: [{ label: '允许一次', value: 'allow-once' }, { label: '拒绝', value: 'reject' }],
       },
     })
     const approval = page.getByRole('group', { name: '待批准的请求' })
     await approval.waitFor()
     assert.match(await approval.innerText(), /允许执行 cargo test 吗/)
-    // Answering is wired (`dialog_response` in wasm) but the round trip is not
-    // verified yet: neither the WS frame nor the HTTP /dialogs request appears.
-    // Recorded in the roadmap instead of asserting a flake.
-    pass('approval card renders the pending request and its options')
+    await approval.getByRole('button', { name: '允许一次', exact: true }).click()
+    const replies = () => frames.map(frame => JSON.parse(frame)).filter(frame => frame.type === 'execute' && frame.payload?.requestId === 'approve-1')
+    for (let attempt = 0; attempt < 100 && replies().length === 0; attempt++) await page.waitForTimeout(20)
+    assert(frames.some(frame => { const value = JSON.parse(frame); return value.type === 'reserve' && value.kind === 'dialogResponse' && value.sessionId === 'dark' }), 'the SDK reserves its existing typed dialog operation')
+    const reply = replies()[0]?.payload
+    assert.equal(reply?.requestId, 'approve-1')
+    assert.deepEqual(reply?.answer?.values, ['allow-once'], 'send the observed option value, not its display label')
+    assert.equal(await approval.count(), 1, 'ACK does not fabricate a closed request')
+    fixture.emit({ type: 'ui_dialog_closed', requestId: 'approve-1' })
+    fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
+    await approval.waitFor({ state: 'detached' })
+    pass('approval uses the current observed option value and waits for authoritative closure')
 
     // P4: model and thinking switches read back the authoritative state.
     // Runtime diagnostics are now explicitly selected instead of the default browser.
     await page.getByRole('button', { name: '运行面板', exact: true }).click()
     const runPanel = page.getByTestId('run-panel')
     const runtimeRows = () => runPanel.innerText()
-    await page.getByLabel('选择模型').selectOption({ index: 1 })
+    await page.getByLabel('选择模型').selectOption({ label: 'OpenAI' })
     await page.waitForFunction(() => document.body.innerText.includes('openai'))
     assert.match(await runtimeRows(), /openai/, 'runtime state readback shows the new provider')
     pass('model switch is confirmed by an authoritative runtime-state readback')
@@ -211,8 +223,9 @@ async function waitForServer(url, timeoutMs = 30000) {
     await page.waitForTimeout(500)
     assert(commands('abort').length >= 1, 'abort command reached the node: ' + JSON.stringify(commands('abort')))
     fixture.controls.promptDelayMs = 0
+    fixture.emit({ type: 'agent_settled', outcome: 'aborted', pendingResume: false })
     await page.getByRole('button', { name: '发送' }).waitFor()
-    pass('abort reaches the node and the composer returns to send')
+    pass('abort reaches the node; only actual settlement restores send')
 
     // P4: queue listing, cancellation and drafts per scope.
     fixture.setQueue([{ entryId: 'q-1', queue: 'followUp', text: '排队的一条消息', status: 'queued' }], 'dark')

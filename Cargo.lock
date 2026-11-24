@@ -6979,6 +6979,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "work-client",
  "work-core",
+ "work-viewmodel",
 ]
 
 [[package]]

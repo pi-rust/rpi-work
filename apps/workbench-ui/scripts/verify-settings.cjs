@@ -166,6 +166,7 @@ const catalogue = {
 
     // Provider key write: CAS revision + fresh catalogue come back in one receipt.
     const writes = []
+    let requiresRestart = true
     await page.route(
       (url) => url.pathname === '/api/v1/providers' && url.search === '',
       async (route) => {
@@ -173,9 +174,9 @@ const catalogue = {
         writes.push(route.request().postDataJSON())
         await route.fulfill({
           json: {
-            requiresRestart: true,
+            requiresRestart,
             catalog: {
-              revision: 'rev-settings-0043',
+              revision: requiresRestart ? 'rev-settings-0043' : 'rev-settings-0044',
               providers: [
                 {
                   id: 'deepseek',
@@ -205,6 +206,17 @@ const catalogue = {
     assert.match(afterSave, /deepseek/, 'the written provider stays listed')
     assert.match(afterSave, /已保存/, 'the restart hint is shown')
     pass('provider key write uses the read revision and adopts the receipt catalogue')
+    assert.match(afterSave, /节点报告需要重启/)
+    assert.match(afterSave, /加载状态仍以会话观察为准/)
+    requiresRestart = false
+    await page.getByRole('button', { name: '设置 deepseek 的密钥' }).click()
+    await page.getByLabel('deepseek 的 API 密钥').fill('sk-fixture-replacement')
+    await page.getByRole('button', { name: '保存 deepseek 的密钥' }).click()
+    await page.getByText('已保存；节点未要求重启，不代表当前 Agent 已加载。', { exact: true }).waitFor()
+    assert.equal(writes.length, 2)
+    assert.equal(writes[1].expectedRevision, 'rev-settings-0043')
+    assert.doesNotMatch(await page.locator('main').innerText(), /已保存并生效/)
+    pass('neither restart nor no-restart management receipts claim the current Agent loaded credentials')
 
     // Update section is read-only by design: the Web entry cannot self-update.
     const updateSection = await page.locator('main').innerText()

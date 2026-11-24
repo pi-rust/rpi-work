@@ -9,6 +9,10 @@ const { startFixture } = require('../../../tests/fixtures/ui-fixture.cjs')
 const root = path.resolve(__dirname, '..')
 const freePort = () => new Promise(resolve => { const server = net.createServer(); server.listen(0, '127.0.0.1', () => { const port = server.address().port; server.close(() => resolve(port)) }) })
 const gate = () => { let release; const promise = new Promise(resolve => { release = resolve }); return { promise, release } }
+const within = (promise, label) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(Error(`Timed out waiting for ${label}`)), 15000)
+  promise.then(value => { clearTimeout(timer); resolve(value) }, error => { clearTimeout(timer); reject(error) })
+})
 ;(async () => {
   const fixture = await startFixture(0, { nativeQueries: true, includeHistoryAssistant: true })
   const port = await freePort()
@@ -216,14 +220,14 @@ const gate = () => { let release; const promise = new Promise(resolve => { relea
     const stale = await open()
     const historyReply = gate(), historyEntered = gate(), historyFinished = gate(); gates.push(historyReply)
     await stale.route('**/api/v1/sessions/architecture/**', async route => {
-      if (!/message-(summaries|window)/.test(route.request().url())) return route.continue()
+      if (!/\/snapshot(?:\?|$)/.test(route.request().url())) return route.continue()
       const response = await route.fetch(); historyEntered.release(); await historyReply.promise
       await route.fulfill({ response }); historyFinished.release()
     })
-    await button(stale, '梳理 Agent 架构').click(); await historyEntered.promise
+    await button(stale, '梳理 Agent 架构').click(); await within(historyEntered.promise, 'canonical snapshot request')
     await button(stale, '验证 RPC 事件协议').click(); await stale.getByText('在线', { exact: true }).waitFor()
     await stale.locator('textarea').fill('最新选中的会话草稿')
-    historyReply.release(); await historyFinished.promise
+    historyReply.release(); await within(historyFinished.promise, 'late canonical snapshot response')
     await stale.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     assert.equal(await stale.locator('.wb-thread[aria-current="true"]').innerText(), '验证 RPC 事件协议')
     assert.equal(await stale.locator('textarea').inputValue(), '最新选中的会话草稿')

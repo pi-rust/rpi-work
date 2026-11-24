@@ -30,5 +30,7 @@ pub mod conversation;
 pub mod observability;
 pub mod qr;
 pub mod resources;
+pub mod session_controls;
+pub mod session_receipts;
 pub mod theme;
 pub mod transcript;

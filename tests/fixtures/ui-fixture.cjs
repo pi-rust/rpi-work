@@ -53,7 +53,8 @@ function readWebSocketFrames(connection, chunk, onText) {
   }
 }
 async function startFixture(port=0,options={}){
-  const requests=[], sockets=new Set(), wsConnections=new Set();
+  const requests=[], sockets=new Set(), wsConnections=new Set(), operations=new Map();
+  let operationSerial=0, connectionSerial=0;
   const fixtureProjects=structuredClone(projects);
   const controls={failPrompt:false,failDialog:false,failQueue:false,uncertainQueue:false,queueDelayMs:0,cancelDelayMs:0,failCancel:false,cancelOutcome:null,failProject:false,projectDelayMs:0,failSession:false,sessionDelayMs:0,failRenameCount:0,failCompact:false,compactDelayMs:0};
   const defaultCommands=['prompt','abort','get_state',...(options.pagedHistory&&!options.noMessagePaging?['get_messages']:[]),...(options.nativeQueries?['get_message_summaries','get_message_window']:[]),'get_queue','queue_message','cancel_queued','clear_queue','ui_dialog_response','resume_pending','get_available_models','set_model','get_available_thinking_levels','set_thinking_level','get_available_tools','set_active_tools','get_session_branch','compact',...(options.setApiKeySupported?['set_api_key']:[]),...(options.authStatusSupported?['get_auth_status']:[])];
@@ -101,7 +102,7 @@ async function startFixture(port=0,options={}){
     return { messages, total: all.length, firstId: messages[0]?.entryId || null, lastId: messages.at(-1)?.entryId || null, hasMore: start > 0, truncated: start > 0, beforeId };
   }
   function wsSend(connection, frame) {
-    if (!connection.socket.destroyed) connection.socket.write(websocketFrame(JSON.stringify(frame)));
+    if (!connection.socket.destroyed && !connection.socket.writableEnded && connection.socket.writable) connection.socket.write(websocketFrame(JSON.stringify(frame)));
   }
   function wireEvent(entry) {
     return {id:String(entry.seq),seq:entry.seq,event_type:entry.event.type,data:structuredClone(entry.event)};
@@ -125,7 +126,7 @@ async function startFixture(port=0,options={}){
     }
     if(command==='prompt'&&controls.promptDelayMs) await new Promise(resolve=>setTimeout(resolve,controls.promptDelayMs));
     if(command==='prompt'&&controls.failPrompt) return hostResponse(command,null,false);
-    if(command==='get_state') return hostResponse(command,runtimeState(id));
+    if(command==='get_state') return controls.failState?hostResponse(command,null,false):hostResponse(command,runtimeState(id));
     if(command==='get_session_branch') {
       const entries=structuredClone(controls.branchEntries||[]), failure=controls.branchError||(controls.failBranch?'unknown command type: get_session_branch':null);
       if(controls.branchDelayMs) await new Promise(resolve=>setTimeout(resolve,controls.branchDelayMs));
@@ -172,23 +173,37 @@ async function startFixture(port=0,options={}){
     const key=req.headers['sec-websocket-key'];
     if(!key) { socket.destroy(); return; }
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Protocol: rpi-work.realtime.v1\r\nSec-WebSocket-Accept: ${websocketAccept(key)}\r\n\r\n`);
-    const connection={socket,buffer:Buffer.alloc(0),subscriptions:new Map(),operations:new Map()};
+    const connection={socket,buffer:Buffer.alloc(0),subscriptions:new Map()};
     wsConnections.add(connection); sockets.add(socket);
-    const connectionId=`fixture-connection-${wsConnections.size}`;
+    const connectionId=`fixture-connection-${++connectionSerial}`;
     wsSend(connection,{type:'hello',version:1,hello:{version:1,nodeId:'fixture-node',ownerEpoch:'fixture-owner',connectionId,capabilities:{jsonText:true,binary:false,commandQueries:true,maxMessageBytes:2097152,maxEventsPerFrame:256}}});
     socket.on('data',chunk=>readWebSocketFrames(connection,chunk,async text=>{
       let frame; try { frame=JSON.parse(text); } catch { return; }
       const type=frame.type, requestId=frame.requestId;
+      requests.push({method:'WS',path:'/api/v1/realtime',query:'',body:structuredClone(frame),authenticated:true});
       if(type==='ping') return wsSend(connection,{type:'pong',version:1,requestId});
       if(type==='reserve') {
-        const operation={ownerEpoch:'fixture-owner',operationId:`fixture-operation-${connection.operations.size+1}`};
-        connection.operations.set(operation.operationId,{session:frame.sessionId});
+        const operation={ownerEpoch:'fixture-owner',operationId:`fixture-operation-${++operationSerial}`};
+        operations.set(operation.operationId,{session:frame.sessionId,kind:frame.kind,status:{state:'reserved'}});
         return wsSend(connection,{type:'reserved',version:1,requestId,operation});
       }
       if(type==='execute') {
-        const operation=frame.operation, entry=connection.operations.get(operation?.operationId);
-        const value=await websocketCommand(entry?.session||'dark',frame.payload||{});
-        return wsSend(connection,{type:'status',version:1,requestId,operation,status:{state:'knownResult',outcome:{status:'succeeded',value}}});
+        const operation=frame.operation, entry=operation?.ownerEpoch==='fixture-owner'?operations.get(operation.operationId):null;
+        if(!entry)return wsSend(connection,{type:'status',version:1,requestId,operation,status:{state:'outcomeUnknown'}});
+        if(entry.status.state!=='reserved')return wsSend(connection,{type:'status',version:1,requestId,operation,status:entry.status});
+        entry.status={state:'dispatching'};
+        if(entry.kind==='dialogResponse') {
+          const error=replyDialog(entry.session,frame.payload||{});
+          const outcome=error?{status:'failed',error:{code:'conflict',message:error}}:{status:'succeeded',value:{accepted:true,requestId:frame.payload?.requestId}};
+          entry.status={state:'knownResult',outcome};
+        } else {
+          const value=await websocketCommand(entry.session,frame.payload||{});
+          entry.status={state:'knownResult',outcome:{status:'succeeded',value}};
+        }
+        const command=frame.payload?.type||entry.kind;
+        if(controls.malformedAckFor===command){delete controls.malformedAckFor;entry.status.outcome.value={invalidFixtureResponse:true};}
+        if(controls.dropAckFor===command){delete controls.dropAckFor;socket.destroy();return;}
+        return wsSend(connection,{type:'status',version:1,requestId,operation,status:entry.status});
       }
       if(type==='query') {
         const value=await websocketCommand(frame.sessionId,frame.payload||{});
@@ -234,6 +249,12 @@ async function startFixture(port=0,options={}){
       return json({required:Boolean(options.authRequired),authenticated:!options.authRequired||authenticated});
     }
     if(options.authRequired&&!authenticated)return json({error:'Fixture authentication required'},401);
+    const receipt=route.match(/^\/api\/v1\/realtime\/operations\/([^/]+)\/([^/]+)$/);
+    if(receipt){
+      if(req.method!=='GET')return json({error:'Read-only fixture receipt'},405);
+      const entry=decodeURIComponent(receipt[1])==='fixture-owner'?operations.get(decodeURIComponent(receipt[2])):null;
+      return json(controls.receiptUnknown?{state:'outcomeUnknown'}:entry?.status||{state:'outcomeUnknown'});
+    }
     if(route==='/api/v1/capabilities')return json({protocol:'rpi-web-v1',supportedCommands:defaultCommands,supportedActions:['projects','files','sessions','session_metadata','fork','clone'],parityComplete:false});
     if(route==='/api/v1/agent-backends')return json({backends:options.agentBackends||[{id:'rpi',name:'RPI fixture',available:true,reason:null}]});
     if(route==='/api/v1/projects'){

@@ -37,13 +37,15 @@ npm run preview:fixture  # 必须访问 /?fixture=1 才启用样例
 ```bash
 npm run build
 npm run build:fixture
-npm run verify:all        # 自起独立fixture预览，按序跑12组，结束仅清自身进程
+npm run verify:all        # 自起独立fixture预览，按序跑13组，结束仅清自身进程
 npm run lint
 ```
 
 | 脚本 | 覆盖 |
 | --- | --- |
 | `verify:entry` | 产品无样例、独立测试构建显式启用、认证失败/缺失观察、显示WASM迟到、ACK不清后来编辑及同地址重连，8项 |
+| `verify:session` | 精确会话权限、ACK/结算、重连终态、abort、真实选项、配置回读、并发观察、迟到diff，以及丢ACK的只读回执恢复/明确拒绝/无证据锁定/跨重连GET/queue HostResponse，23项 |
+| `verify:scopes` | 同地址重连后的迟到Provider目录/写回执/QR成功与错误，A→B→A后取消审阅，旧install finally不得干扰新请求，6项 |
 | `verify:a11y` | landmarks、图标名称、示例草稿不假发送、Tab、命令面板与Escape |
 | `verify:fixture` / `verify:theme` | Rust投影、工具展示、指标、主题/密度/代码配色（runner提供隔离预览） |
 | `verify:mobile` | 320/390视口与抽屉 |
@@ -71,7 +73,10 @@ hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副�
 - 创建：只登记目标节点的已有目录，`initGit=false`；按返回ID回读后切换。关闭/重连不表示取消；未知写入结果锁住，仅GET核对，不能按名称或差集猜成功。系统目录选择和目录创建禁用。
 - 草稿：按节点/会话或空项目隔离，同一render取正确scope；存储被拒仍保留内存草稿。创建/拒绝/切换不清掉旧草稿。
 - 浏览器：真实HTTP(S) iframe、沙箱/no-referrer，无节点凭据注入；主题/切栏/视口不重载。Web不能回读跨源页内导航或可靠判定CSP/X-Frame-Options失败，load不等于成功，保留新窗口恢复。不冒充原生完整浏览器。
-- 已有资源/Provider/源码接口继续保留，但视觉与每项能力/生命周期还需逐项验收。完整SessionAccess权限、accepted/settlement、消息阅读/经典与滚动状态、居中设置、真实协同/本机桥接及Native/Android适配均未完成。
+- 会话（第五批已接通并本地验收）：Rust `SessionClient` 复用唯一canonical `SessionConnection`，共享 `SessionControls` 按精确会话能力、已报告字段、在线状态与canonical phase准入；TypeScript只绑定/展示。prompt/abort ACK不等于结算，dialog ACK不闭卡，配置必须取得精确权威回读；回读失败保持未知并锁定，不继续显示写入前模型为当前事实。SDK已观察到活动后恢复出的终态可结束本地受理窗口，旧终态或活动快照不能误解锁。节点/会话作用域与原生观察epoch拦截旧异步结果，项目/文件/review/install另有请求令牌。
+- 回执恢复：同一绑定内保存SDK实际返回的typed `OperationRef`，只经现有 `operation_status` GET核对，绝不重新reserve/execute。共享纯Rust规则保留原HostResponse，传输Succeeded不覆盖`success=false`；受理结果不当作执行结算，草稿不会自动再发送。配置另存真实setter ACK证据，再以新权威回读确认效果；没有ref且没有ACK证据的未知结果仍保持锁定，不按runtime/list猜成功。一次核对总预算15秒，迟到旧范围GET不能解锁新范围，核对后重新读取metadata，不覆盖SDK执行投影。
+- 验证：产品/fixture双构建、14套回归、共享Rust单测140项、三crate WASM严格Clippy及fmt/diff通过；lint仍为71警告/0错误。节点及资源作用域另有6项独立HTTP gate时序证据；这些是隔离协议fixture验收，不是实际Provider/安装器/模型/Native验收。
+- **整体仍未完成**：消息阅读/经典与滚动状态、居中设置、真实协同/本机桥接、Native/Android适配和正式发行仍待完成。Provider保存提示只表示节点管理回执，不代表当前Agent已加载。没有可关联的新结算不能借Ready/旧终态解锁，无ref且无原setter ACK证据的未知结果继续锁定。
 
 组件仅使用免费MIT的ReUI/shadcn生态；许可证说明见 [NOTICE.md](NOTICE.md)，没有引入Pro资产或授权密钥。
 

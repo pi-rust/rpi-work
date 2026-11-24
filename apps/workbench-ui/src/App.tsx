@@ -365,17 +365,19 @@ export default function App() {
                           </Badge>
                         ) : null}
                       </div>
-                      <p className="text-[12px]">{dialog.question ?? '这个动作需要确认后才会执行。'}</p>
+                      <p className="text-[12px]">{dialog.question ?? '节点未提供问题文本。'}</p>
+                      {!dialog.options.some(option => option.value !== null) ? <p className="text-muted-foreground text-[11px]">暂不支持此请求的回复形式；不会自动授权。</p> : null}
                       <div className="flex flex-wrap gap-2">
                         {dialog.options.map((option) => (
                           <Button
-                            key={option}
+                            key={`${option.value}:${option.label}`}
                             size="sm"
-                            variant={option.includes('拒绝') ? 'outline' : 'default'}
+                            disabled={!dialog.replyEnabled || option.value === null}
+                            variant={option.label.includes('拒绝') ? 'outline' : 'default'}
                             className="h-6 px-2 text-[11px]"
-                            onClick={() => void workspace.answerDialog(dialog.requestId, [option])}
+                            onClick={() => { if (option.value !== null) void workspace.answerDialog(dialog.requestId, [option.value]) }}
                           >
-                            {option}
+                            {option.label}
                           </Button>
                         ))}
                       </div>
@@ -417,10 +419,26 @@ export default function App() {
                 )}
               </div>
               {page === 'chat' ? (
+              <>
+              {workspace.recovery && (workspace.recovery.count > 0 || workspace.recovery.unreceipted || workspace.recovery.message) ? (
+                <div className="mx-4 flex items-center gap-3 rounded-lg border px-3 py-2 text-xs" role="status">
+                  <p className="text-muted-foreground min-w-0 flex-1">
+                    {workspace.recovery.message || (workspace.recovery.unreceipted ? '部分请求未取得可核对回执，保持锁定；不会自动重发。' : '请求结果尚未核实；只读核对不会重新执行，也不会自动发送草稿。')}
+                  </p>
+                  <Button size="sm" variant="outline" disabled={!workspace.recovery.canCheck} onClick={() => void workspace.recheckSession()}>
+                    {workspace.recovery.checking ? '核对中…' : '只读核对'}
+                  </Button>
+                </div>
+              ) : null}
               <Composer
                 draft={draft}
                 onDraft={setDraft}
-                sendDisabledReason={!live ? fixture ? '示例模式不会发送消息' : '请先连接节点' : !ready ? '节点尚未就绪' : !workspace.selected.session ? '请先在侧栏创建真实会话；当前草稿会保留' : undefined}
+                sendDisabledReason={!live ? fixture ? '示例模式不会发送消息' : '请先连接节点' : !ready ? '节点尚未就绪' : !workspace.selected.session ? '请先在侧栏创建真实会话；当前草稿会保留' : !workspace.controls?.send ? workspace.controls?.reason || '未取得当前会话可写观察' : undefined}
+                queueDisabledReason={!workspace.controls?.queue ? workspace.controls?.reason || '当前会话未声明入队能力' : undefined}
+                abortDisabled={!workspace.controls?.abort}
+                modelDisabled={!workspace.controls?.model}
+                thinkingDisabled={!workspace.controls?.thinking}
+                selectedModel={workspace.runtime?.modelId && workspace.runtime.provider ? { id: workspace.runtime.modelId, provider: workspace.runtime.provider } : undefined}
                 context={context ?? { used: null, window: null, percent: null, threshold: null, percentText: '—' }}
                 onSend={() => {
                   void workspace.send(draft).then((ok) => {
@@ -444,11 +462,12 @@ export default function App() {
                 modelOptions={live ? modelOptions : undefined}
                 thinkingOptions={live ? workspace.thinkingLevels : undefined}
                 onModel={live ? (id, provider) => {
-                  const model = workspace.models.find((entry) => entry.id === id)
-                  if (model) void workspace.setModel({ ...model, provider })
+                  const model = workspace.models.find((entry) => entry.id === id && entry.provider === provider)
+                  if (model) void workspace.setModel(model)
                 } : undefined}
                 onThinking={live ? (level) => void workspace.setThinking(level) : undefined}
               />
+              </>
               ) : null}
             </div>
 
@@ -483,6 +502,7 @@ export default function App() {
                   </div>
                   {railTab === 'files' ? (
                     <FilePanel
+                      key={`${workspace.connectionId}:${workspace.selected.project}:${workspace.selected.session}`}
                       live={live}
                       changes={workspace.changes}
                       filePath={workspace.filePath}
@@ -512,6 +532,7 @@ export default function App() {
                         {workspace.queue.count > 0 ? (
                           <button
                             className="text-muted-foreground hover:text-foreground text-[11px]"
+                            disabled={!workspace.controls?.clearQueue}
                             onClick={() => void workspace.clearQueue()}
                           >
                             清空
@@ -524,6 +545,7 @@ export default function App() {
                           <button
                             aria-label={`取消排队 ${item.text}`}
                             className="text-muted-foreground hover:text-destructive ml-auto text-[11px]"
+                            disabled={!workspace.controls?.cancelQueued}
                             onClick={() => void workspace.cancelQueued(item.entryId)}
                           >
                             ×

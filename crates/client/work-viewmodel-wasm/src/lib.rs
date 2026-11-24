@@ -18,6 +18,7 @@ use work_core::api::events::WireEventProjection as _;
 use work_core::{MessageBlock, RunPhase, RunProjection, ToolStatus};
 use work_viewmodel::conversation::{code_tokens, tool_display};
 use work_viewmodel::observability::metrics::{Context, Metrics, percent, tokens};
+use work_viewmodel::session_controls::block_wire;
 use work_viewmodel::theme::theme_contract;
 use work_viewmodel::transcript::{RowSource, TranscriptOrder};
 
@@ -204,38 +205,6 @@ pub fn resource_rows(catalog_json: &str, project_id: &str) -> String {
         })
         .collect();
     json!({ "rows": rows, "counts": counts }).to_string()
-}
-
-/// Same wire shape the JS contract accepts as projection input.
-fn block_wire(block: &MessageBlock) -> Value {
-    match block {
-        MessageBlock::Text { id, text } => json!({ "kind": "text", "id": id, "text": text }),
-        MessageBlock::Thinking { id, text } => {
-            json!({ "kind": "thinking", "id": id, "text": text })
-        }
-        MessageBlock::PublicSummary { id, text } => {
-            json!({ "kind": "summary", "id": id, "text": text })
-        }
-        MessageBlock::ToolCall {
-            id,
-            name,
-            arguments,
-            output,
-            status,
-        } => json!({
-            "kind": "tool",
-            "id": id,
-            "name": name,
-            "arguments": arguments,
-            "output": output,
-            "status": match status {
-                ToolStatus::Running => "running",
-                ToolStatus::Failed => "failed",
-                ToolStatus::Cancelled => "cancelled",
-                ToolStatus::Completed => "completed",
-            },
-        }),
-    }
 }
 
 /// Short human label for a tool call, e.g. `src/theme.rs` or a shell command.

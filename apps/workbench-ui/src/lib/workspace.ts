@@ -7,6 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { sample } from '@/lib/initial-source'
 import {
   NodeConnection,
+  type BoundSession,
+  type SessionControls,
+  type SessionRecovery,
+  type SessionDialog,
   type NodeChangedFile,
   type NodeProvider,
   type NodeFileEntry,
@@ -26,12 +30,7 @@ import {
 } from '@/lib/viewmodel'
 import type { Block, HistoryMessage, Project, Session } from '@/lib/types'
 
-export type PendingDialog = {
-  requestId: string
-  purpose: string | null
-  question: string | null
-  options: string[]
-}
+export type PendingDialog = SessionDialog
 export type Source = { kind: 'disconnected' } | { kind: 'fixture' } | { kind: 'live'; origin: string }
 export type Status = 'boot' | 'disconnected' | 'fixture' | 'connecting' | 'auth-required' | 'ready' | 'error'
 
@@ -57,6 +56,9 @@ export type Workspace = {
   models: NodeModel[]
   thinkingLevels: string[]
   busy: boolean
+  controls: SessionControls | null
+  recovery: SessionRecovery | null
+  recheckSession: () => Promise<void>
   sendError: string | null
   queue: NodeQueue
   resources: ResourceView
@@ -150,6 +152,10 @@ export function useWorkspace(): Workspace {
   const connection = useRef<NodeConnection | null>(null)
   const epoch = useRef(0)
   const sessionTicket = useRef(0)
+  const reviewTicket = useRef(0)
+  const fileTicket = useRef(0)
+  const listingTicket = useRef(0)
+  const installRequest = useRef<object | null>(null)
   const [connectionId, setConnectionId] = useState(0)
   const [creation, setCreation] = useState<Workspace['creation']>({ busy: false, uncertain: false, message: null })
   type Creation = { conn: NodeConnection; epoch: number; ticket: number; kind: 'project' | 'session'; id?: string; reading?: boolean }
@@ -157,12 +163,14 @@ export function useWorkspace(): Workspace {
   const pendingOrigin = useRef<string>('')
   const presenter = useRef<TranscriptPresenter | null>(null)
   const historyRef = useRef<HistoryMessage[]>(sample?.history ?? [])
-  const subscription = useRef<number | null>(null)
+  const binding = useRef<BoundSession | null>(null)
+  const bindingEpoch = useRef(0)
+  const [controls, setControls] = useState<SessionControls | null>(null)
+  const [recovery, setRecovery] = useState<SessionRecovery | null>(null)
   const [liveView, setLiveView] = useState<LiveView | null>(null)
   const [runtime, setRuntime] = useState<NodeRuntime | null>(null)
   const [models, setModels] = useState<NodeModel[]>([])
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([])
-  const [busy, setBusy] = useState(false)
   const [queue, setQueue] = useState<NodeQueue>({ items: [], count: 0 })
   const [resources, setResources] = useState<ResourceView>({ rows: [], counts: [0, 0, 0] })
   const [providers, setProviders] = useState<NodeProvider[]>([])
@@ -202,15 +210,18 @@ export function useWorkspace(): Workspace {
   }, [])
 
   const stopLive = useCallback(() => {
-    if (subscription.current !== null && connection.current) {
-      connection.current.stop(subscription.current)
-    }
-    subscription.current = null
+    binding.current?.close()
+    binding.current = null
+    bindingEpoch.current = 0
   }, [])
 
   const clearSession = useCallback((project: string) => {
     stopLive()
     sessionTicket.current++
+    reviewTicket.current++
+    fileTicket.current++
+    listingTicket.current++
+    installRequest.current = null
     sessionIdRef.current = ''
     historyRef.current = []
     setSelected({ project, session: '' })
@@ -222,8 +233,14 @@ export function useWorkspace(): Workspace {
     setThinkingLevels([])
     setQueue({ items: [], count: 0 })
     setDialogs([])
-    setBusy(false)
+    setControls(null)
+    setRecovery(null)
     setSendError(null)
+    setOffers([])
+    setBundle(null)
+    setReviewedOffer(null)
+    setInstalling(false)
+    setInstallError(null)
     setChanges([])
     setFiles([])
     setFilePath(null)
@@ -240,75 +257,48 @@ export function useWorkspace(): Workspace {
     const current = () => connection.current === conn && epoch.current === generation && sessionTicket.current === ticket
     setSelected({ project: projectId, session: sessionId })
     setStatus('connecting')
+    setError(null)
     try {
       await initViewModel()
       if (!current()) return
-      const page = await conn.messages(sessionId)
-      if (!current()) return
-      const messages = asHistory(page.messages)
-      historyRef.current = messages
-      setHistory(messages)
-      setBlocks([])
-      setLiveView(null)
-      setSelected({ project: projectId, session: sessionId })
       sessionIdRef.current = sessionId
-      setStatus('ready')
-      void conn
-        .queue(sessionId)
-        .then(value => { if (current()) setQueue(value) })
-        .catch(() => { if (current()) setQueue({ items: [], count: 0 }) })
-      // Runtime state, model catalogue and thinking levels come from the node.
-      void Promise.all([conn.runtimeState(sessionId), conn.models(sessionId), conn.thinkingLevels(sessionId)])
-        .then(([state, catalogue, levels]) => {
-          if (!current()) return
-          setRuntime(state)
-          setModels(catalogue)
-          setThinkingLevels(levels)
-        })
-        .catch(() => {
-          // Unknown observations stay empty; never retain another session's catalogue.
-        })
-      // Live events replay through the Rust projection; the presenter dedupes
-      // reconnects, so subscribing from 0 is safe.
-      const scope = `${generation}:${conn.origin}/${projectId}/${sessionId}`
-      subscription.current = conn.subscribe(sessionId, 0, (event) => {
-        if (!current()) return
-        // Dialogs are data, not display rules: collect them as they arrive and
-        // drop them when the node says they closed.
-        const wire = event as { event_type?: string; data?: Record<string, unknown> }
-        const ui = (wire.data?.ui ?? wire.data) as
-          | { purpose?: string; question?: string; message?: string; options?: { label?: string; value?: string }[] }
-          | undefined
-        const requestId = (wire.data?.requestId ?? (wire.data as { id?: string })?.id) as string | undefined
-        if (wire.event_type === 'ui_dialog_request' && requestId) {
-          const options = (ui?.options ?? [])
-            .map((option) => option.label ?? option.value ?? '')
-            .filter((label) => label.length > 0)
-          setDialogs((current) =>
-            current.some((dialog) => dialog.requestId === requestId)
-              ? current
-              : [
-                  ...current,
-                  {
-                    requestId,
-                    purpose: ui?.purpose ?? null,
-                    question: ui?.question ?? ui?.message ?? null,
-                    options: options.length > 0 ? options : ['允许一次', '拒绝'],
-                  },
-                ],
-          )
-        } else if (wire.event_type === 'ui_dialog_closed' && requestId) {
-          setDialogs((current) => current.filter((dialog) => dialog.requestId !== requestId))
-        }
-        const view = presenter.current?.applyEvents(scope, historyRef.current, [event])
-        if (!view) return
+      const opened = await conn.bindSession(sessionId, view => {
+        if (!current() || view.scopeEpoch < bindingEpoch.current) return
+        bindingEpoch.current = view.scopeEpoch
+        const messages = asHistory(view.messages)
+        historyRef.current = messages
+        setHistory(messages)
         setLiveView(view)
         setBlocks(view.blocks as Block[])
+        setControls(view.controls)
+        setRecovery(view.recovery)
+        setRuntime(view.runtime)
+        setModels(view.models)
+        setThinkingLevels(view.thinkingLevels)
+        setDialogs(view.dialogs)
+        setSendError(view.error)
+        setStatus(view.controls.online ? 'ready' : 'connecting')
       })
+      if (!current()) { opened.close(); return }
+      binding.current = opened
+      void opened.queue().then(value => { if (current()) setQueue(value) }).catch(() => {})
     } catch (cause) {
       if (!current()) return
+      // Failed/unknown access is still readable, never writable or a fabricated
+      // run projection. No fallback session or sample metadata is substituted.
       setError(String(cause))
-      setStatus('error')
+      try {
+        const page = await conn.messages(sessionId)
+        if (!current()) return
+        const messages = asHistory(page.messages)
+        historyRef.current = messages
+        setHistory(messages)
+        setStatus('ready')
+      } catch (readError) {
+        if (!current()) return
+        setError(String(readError))
+        setStatus('error')
+      }
     }
   }, [clearSession])
 
@@ -334,6 +324,18 @@ export function useWorkspace(): Workspace {
       clearSession('')
       setProjects([])
       setSessions([])
+      setProviders([])
+      setProviderRevision(null)
+      setProviderNotice(null)
+      setProviderError(null)
+      setAuthorization(null)
+      setAuthorizationError(null)
+      setNodeInfo(null)
+      setOffers([])
+      setBundle(null)
+      setReviewedOffer(null)
+      setInstalling(false)
+      setInstallError(null)
       setSource({ kind: 'disconnected' })
       connection.current = null
       creationRequest.current = null
@@ -387,102 +389,121 @@ export function useWorkspace(): Workspace {
     [openNode],
   )
 
-  const send = useCallback(
-    async (text: string) => {
-      const conn = connection.current
-      const sessionId = sessionIdRef.current
-      if (!conn || !sessionId || text.trim().length === 0) return false
-      setBusy(true)
-      setSendError(null)
-      try {
-        const reply = await conn.prompt(sessionId, text)
-        if (!reply.accepted) {
-          setSendError(reply.error ?? '节点拒绝了这次发送')
-          return false
-        }
-        return true
-      } catch (cause) {
-        setSendError(String(cause))
-        return false
-      } finally {
-        setBusy(false)
-      }
-    },
-    [],
-  )
+  // Promise scope only: execution phases and action admission are Rust-owned.
+  const boundScope = useCallback(() => {
+    const session = binding.current
+    if (!session || epoch.current !== connectionId || sessionIdRef.current !== selected.session) return null
+    const conn = connection.current
+    const generation = connectionId
+    const ticket = sessionTicket.current
+    const observation = bindingEpoch.current
+    return { session, current: () => binding.current === session && bindingEpoch.current === observation && connection.current === conn && epoch.current === generation && sessionTicket.current === ticket }
+  }, [connectionId, selected.session])
+
+  const send = useCallback(async (text: string) => {
+    const scope = boundScope()
+    if (!scope || !text.trim()) return false
+    setSendError(null)
+    try {
+      const reply = await scope.session.prompt(text)
+      if (!scope.current()) return false
+      if (!reply.accepted) setSendError(reply.error ?? '发送未被确认，草稿保留')
+      return reply.accepted
+    } catch (cause) {
+      if (scope.current()) setSendError(String(cause))
+      return false
+    }
+  }, [boundScope])
 
   const refreshQueue = useCallback(async () => {
-    const conn = connection.current
-    const sessionId = sessionIdRef.current
-    if (!conn || !sessionId) return
+    const scope = boundScope()
+    if (!scope) return
     try {
-      setQueue(await conn.queue(sessionId))
+      const value = await scope.session.queue()
+      if (scope.current()) setQueue(value)
     } catch (cause) {
-      setSendError(String(cause))
+      if (scope.current()) setSendError(String(cause))
     }
-  }, [])
+  }, [boundScope])
 
-  const queueMessage = useCallback(
-    async (text: string) => {
-      const conn = connection.current
-      const sessionId = sessionIdRef.current
-      if (!conn || !sessionId || text.trim().length === 0) return false
-      try {
-        await conn.queueMessage(sessionId, text)
-        await refreshQueue()
-        return true
-      } catch (cause) {
-        setSendError(String(cause))
-        return false
-      }
-    },
-    [refreshQueue],
-  )
+  const recheckSession = useCallback(async () => {
+    const scope = boundScope()
+    if (!scope) return
+    try { await scope.session.recheck() }
+    catch (cause) { if (scope.current()) setSendError(String(cause)) }
+  }, [boundScope])
 
-  const cancelQueued = useCallback(
-    async (entryId: string) => {
-      const conn = connection.current
-      const sessionId = sessionIdRef.current
-      if (!conn || !sessionId) return
-      try {
-        await conn.cancelQueued(sessionId, entryId)
-        await refreshQueue()
-      } catch (cause) {
-        setSendError(String(cause))
-      }
-    },
-    [refreshQueue],
-  )
+  const queueMessage = useCallback(async (text: string) => {
+    const scope = boundScope()
+    if (!scope || !text.trim()) return false
+    try {
+      const reply = await scope.session.queueMessage(text)
+      if (!scope.current()) return false
+      if (reply.accepted !== true) { setSendError('入队未被确认，草稿保留'); return false }
+      await refreshQueue()
+      return scope.current()
+    } catch (cause) {
+      if (scope.current()) setSendError(String(cause))
+      return false
+    }
+  }, [boundScope, refreshQueue])
+
+  const cancelQueued = useCallback(async (entryId: string) => {
+    const scope = boundScope()
+    if (!scope) return
+    try {
+      await scope.session.cancelQueued(entryId)
+      if (scope.current()) await refreshQueue()
+    } catch (cause) {
+      if (scope.current()) setSendError(String(cause))
+    }
+  }, [boundScope, refreshQueue])
 
   const clearQueue = useCallback(async () => {
-    const conn = connection.current
-    const sessionId = sessionIdRef.current
-    if (!conn || !sessionId) return
+    const scope = boundScope()
+    if (!scope) return
     try {
-      setQueue(await conn.clearQueue(sessionId))
+      await scope.session.clearQueue()
+      if (scope.current()) await refreshQueue()
     } catch (cause) {
-      setSendError(String(cause))
+      if (scope.current()) setSendError(String(cause))
     }
-  }, [])
+  }, [boundScope, refreshQueue])
+
+  const nodeScope = useCallback(() => {
+    const conn = connection.current
+    const generation = connectionId
+    if (!conn || epoch.current !== generation) return null
+    return { conn, current: () => connection.current === conn && epoch.current === generation }
+  }, [connectionId])
+
+  const projectScope = useCallback((project: string, session: string) => {
+    const scope = nodeScope()
+    const ticket = sessionTicket.current
+    if (!scope || !project || sessionIdRef.current !== session) return null
+    return { conn: scope.conn, current: () => scope.current() && sessionTicket.current === ticket && sessionIdRef.current === session }
+  }, [nodeScope])
 
   const issueAuthorization = useCallback(async () => {
-    const conn = connection.current
-    if (!conn) return
+    const scope = nodeScope()
+    if (!scope) return
     setAuthorizationError(null)
     try {
-      const issued = await conn.issueQrAuthorization()
+      const issued = await scope.conn.issueQrAuthorization()
+      if (!scope.current()) return
       // The payload envelope is produced by the Rust codec, not by the UI.
       setAuthorization({ payload: sealTicket(issued.ticket), expiresAt: issued.expiresAt })
     } catch (cause) {
-      setAuthorizationError(String(cause))
+      if (scope.current()) setAuthorizationError(String(cause))
     }
-  }, [])
+  }, [nodeScope])
 
   const loadNodeInfo = useCallback(async () => {
-    const conn = connection.current
-    if (!conn) return
+    const scope = nodeScope()
+    if (!scope) return
     try {
-      const info = await conn.nodeInfo()
+      const info = await scope.conn.nodeInfo()
+      if (!scope.current()) return
       setNodeInfo({
         version: info.version,
         service: info.service,
@@ -492,216 +513,234 @@ export function useWorkspace(): Workspace {
     } catch {
       // Health is informational; a failure only hides the version row.
     }
-  }, [])
+  }, [nodeScope])
 
   const loadProviders = useCallback(async () => {
-    const conn = connection.current
-    if (!conn) return
+    const scope = nodeScope()
+    if (!scope) return
     setProviderError(null)
     try {
-      const catalog = await conn.providerCatalog()
+      const catalog = await scope.conn.providerCatalog()
+      if (!scope.current()) return
       setProviders(catalog.providers)
       setProviderRevision(catalog.revision)
     } catch (cause) {
-      setProviderError(String(cause))
+      if (scope.current()) setProviderError(String(cause))
     }
-  }, [])
+  }, [nodeScope])
 
   const answerDialog = useCallback(async (requestId: string, values: string[]) => {
-    const conn = connection.current
-    const sessionId = sessionIdRef.current
-    if (!conn || !sessionId) return
+    const scope = boundScope()
+    if (!scope) return
     try {
-      await conn.dialogResponse(sessionId, requestId, values)
-      setDialogs((current) => current.filter((dialog) => dialog.requestId !== requestId))
+      await scope.session.answer(requestId, values)
+      // An ACK does not close a dialog; wait for the canonical observation.
     } catch (cause) {
-      setSendError(String(cause))
+      if (scope.current()) setSendError(String(cause))
     }
-  }, [])
+  }, [boundScope])
 
   const saveProviderKey = useCallback(
     async (id: string, key: string) => {
-      const conn = connection.current
-      if (!conn || !providerRevision) {
+      const scope = nodeScope()
+      if (!scope || !providerRevision) {
         setProviderError('还没有读取到 provider 目录，无法安全写入')
         return false
       }
       setProviderError(null)
       setProviderNotice(null)
-    setNodeInfo(null)
-    setDialogs([])
       try {
-        const receipt = await conn.setProviderKey(id, key, providerRevision)
+        const receipt = await scope.conn.setProviderKey(id, key, providerRevision)
+        if (!scope.current()) return false
         // The receipt carries the authoritative catalogue; use it as the truth.
         setProviders(receipt.providers)
         setProviderRevision(receipt.revision)
         setProviderNotice(
-          receipt.requiresRestart ? '已保存，节点需要重启后生效' : '已保存并生效',
+          receipt.requiresRestart
+            ? '已保存；节点报告需要重启，当前 Agent 加载状态仍以会话观察为准。'
+            : '已保存；节点未要求重启，不代表当前 Agent 已加载。',
         )
         return true
       } catch (cause) {
-        setProviderError(String(cause))
+        if (scope.current()) setProviderError(String(cause))
         return false
       }
     },
-    [providerRevision],
+    [providerRevision, nodeScope],
   )
 
   const loadResources = useCallback(async () => {
-    const conn = connection.current
-    if (!conn || !selected.project) return
+    const scope = projectScope(selected.project, selected.session)
+    if (!scope) return
     try {
-      const catalog = await conn.nativeCatalog(selected.project)
+      const catalog = await scope.conn.nativeCatalog(selected.project)
+      if (!scope.current()) return
       setResources(resourceRows(catalog, selected.project))
-      const packages = await conn.packageCatalog(selected.project)
-      setOffers(packages.packages ?? [])
+      const packages = await scope.conn.packageCatalog(selected.project)
+      if (scope.current()) setOffers(packages.packages ?? [])
     } catch (cause) {
-      setSendError(String(cause))
+      if (scope.current()) setSendError(String(cause))
     }
-  }, [selected.project])
+  }, [selected.project, selected.session, projectScope])
 
   const reviewOffer = useCallback(
     async (offer: unknown) => {
-      const conn = connection.current
-      if (!conn || !selected.project) return
+      const scope = projectScope(selected.project, selected.session)
+      if (!scope) return
+      const ticket = ++reviewTicket.current
+      const current = () => scope.current() && reviewTicket.current === ticket
+      setBundle(null)
+      setReviewedOffer(null)
       setInstallError(null)
       try {
-        const review = await conn.packageBundle(selected.project, offer)
+        const review = await scope.conn.packageBundle(selected.project, offer)
+        if (!current()) return
         setBundle(review)
         setReviewedOffer(offer)
       } catch (cause) {
-        setInstallError(String(cause))
+        if (current()) setInstallError(String(cause))
       }
     },
-    [selected.project],
+    [selected.project, selected.session, projectScope],
   )
 
   const cancelReview = useCallback(() => {
+    reviewTicket.current++
     setBundle(null)
     setReviewedOffer(null)
     setInstallError(null)
   }, [])
 
   const confirmInstall = useCallback(
-    async (scope: 'global' | 'project') => {
-      const conn = connection.current
-      if (!conn || !selected.project || !reviewedOffer) return
+    async (target: 'global' | 'project') => {
+      const scope = projectScope(selected.project, selected.session)
+      if (!scope || !reviewedOffer || !bundle || installRequest.current) return
+      const request = {}
+      const review = reviewTicket.current
+      installRequest.current = request
       setInstalling(true)
       setInstallError(null)
       try {
-        await conn.installPackage(selected.project, reviewedOffer, scope)
-        setBundle(null)
-        setReviewedOffer(null)
+        await scope.conn.installPackage(selected.project, reviewedOffer, target)
+        if (!scope.current()) return
+        if (reviewTicket.current === review) {
+          setBundle(null)
+          setReviewedOffer(null)
+        }
         // Read the catalogue back: the receipt is not proof of installation.
         await loadResources()
       } catch (cause) {
-        setInstallError(String(cause))
+        if (scope.current() && reviewTicket.current === review) setInstallError(String(cause))
       } finally {
-        setInstalling(false)
+        if (installRequest.current === request) {
+          installRequest.current = null
+          if (scope.current()) setInstalling(false)
+        }
       }
     },
-    [selected.project, reviewedOffer, loadResources],
+    [selected.project, selected.session, reviewedOffer, bundle, loadResources, projectScope],
   )
 
   const loadChanges = useCallback(async () => {
-    const conn = connection.current
-    if (!conn || !selected.project) return
+    const scope = projectScope(selected.project, selected.session)
+    if (!scope) return
     try {
-      const status = await conn.gitStatus(selected.project)
-      setChanges(status.files.slice(0, 200))
+      const status = await scope.conn.gitStatus(selected.project)
+      if (scope.current()) setChanges(status.files.slice(0, 200))
     } catch (cause) {
-      setSendError(String(cause))
+      if (scope.current()) setSendError(String(cause))
     }
-  }, [selected.project])
+  }, [selected.project, selected.session, projectScope])
 
   const loadFiles = useCallback(
     async (path = '') => {
-      const conn = connection.current
-      if (!conn || !selected.project) return
+      const scope = projectScope(selected.project, selected.session)
+      if (!scope) return
+      const ticket = ++listingTicket.current
+      const current = () => scope.current() && listingTicket.current === ticket
       try {
-        const listing = await conn.files(selected.project, path)
-        setFiles(listing.entries)
+        const listing = await scope.conn.files(selected.project, path)
+        if (current()) setFiles(listing.entries)
       } catch (cause) {
-        setSendError(String(cause))
+        if (current()) setSendError(String(cause))
       }
     },
-    [selected.project],
+    [selected.project, selected.session, projectScope],
   )
 
   const openChange = useCallback(
     async (path: string, staged = false) => {
-      const conn = connection.current
-      if (!conn || !selected.project) return
+      const scope = projectScope(selected.project, selected.session)
+      if (!scope) return
+      const ticket = ++fileTicket.current
+      const current = () => scope.current() && fileTicket.current === ticket
       try {
-        const diff = await conn.gitDiff(selected.project, path, staged)
+        const diff = await scope.conn.gitDiff(selected.project, path, staged)
+        if (!current()) return
         setFilePath(path)
         setFileDiff(diff.patch)
         setFileBody(null)
       } catch (cause) {
-        setSendError(String(cause))
+        if (current()) setSendError(String(cause))
       }
     },
-    [selected.project],
+    [selected.project, selected.session, projectScope],
   )
 
   const openFile = useCallback(
     async (path: string) => {
-      const conn = connection.current
-      if (!conn || !selected.project) return
+      const scope = projectScope(selected.project, selected.session)
+      if (!scope) return
+      const ticket = ++fileTicket.current
+      const current = () => scope.current() && fileTicket.current === ticket
       try {
-        const file = await conn.file(selected.project, path)
+        const file = await scope.conn.file(selected.project, path)
+        if (!current()) return
         setFilePath(path)
         setFileBody(file.content)
         setFileDiff(null)
       } catch (cause) {
-        setSendError(String(cause))
+        if (current()) setSendError(String(cause))
       }
     },
-    [selected.project],
+    [selected.project, selected.session, projectScope],
   )
 
   const listDir = useCallback(
     async (path: string) => {
-      const conn = connection.current
-      if (!conn || !selected.project) return []
-      const listing = await conn.files(selected.project, path)
-      return listing.entries
+      const scope = projectScope(selected.project, selected.session)
+      if (!scope) return []
+      try {
+        const listing = await scope.conn.files(selected.project, path)
+        return scope.current() ? listing.entries : []
+      } catch (cause) {
+        if (!scope.current()) return []
+        throw cause
+      }
     },
-    [selected.project],
+    [selected.project, selected.session, projectScope],
   )
 
   const abort = useCallback(async () => {
-    const conn = connection.current
-    const sessionId = sessionIdRef.current
-    if (!conn || !sessionId) return
-    try {
-      await conn.abort(sessionId)
-    } catch (cause) {
-      setSendError(String(cause))
-    }
-  }, [])
+    const scope = boundScope()
+    if (!scope) return
+    try { await scope.session.abort() }
+    catch (cause) { if (scope.current()) setSendError(String(cause)) }
+  }, [boundScope])
 
   const setModel = useCallback(async (model: NodeModel) => {
-    const conn = connection.current
-    const sessionId = sessionIdRef.current
-    if (!conn || !sessionId) return
-    try {
-      setRuntime(await conn.setModel(sessionId, model.id, model.provider))
-    } catch (cause) {
-      setSendError(String(cause))
-    }
-  }, [])
+    const scope = boundScope()
+    if (!scope) return
+    try { await scope.session.setModel(model.id, model.provider) }
+    catch (cause) { if (scope.current()) setSendError(String(cause)) }
+  }, [boundScope])
 
   const setThinking = useCallback(async (level: string) => {
-    const conn = connection.current
-    const sessionId = sessionIdRef.current
-    if (!conn || !sessionId) return
-    try {
-      setRuntime(await conn.setThinking(sessionId, level))
-    } catch (cause) {
-      setSendError(String(cause))
-    }
-  }, [])
+    const scope = boundScope()
+    if (!scope) return
+    try { await scope.session.setThinking(level) }
+    catch (cause) { if (scope.current()) setSendError(String(cause)) }
+  }, [boundScope])
 
   const disconnect = useCallback(() => {
     stopLive()
@@ -742,7 +781,8 @@ export function useWorkspace(): Workspace {
     setHistory([])
     setBlocks([])
     setSelected({ project: '', session: '' })
-    setBusy(false)
+    setControls(null)
+    setRecovery(null)
     setError(null)
     setStatus('disconnected')
   }, [stopLive])
@@ -882,7 +922,10 @@ export function useWorkspace(): Workspace {
     runtime,
     models,
     thinkingLevels,
-    busy,
+    busy: controls?.busy ?? false,
+    controls,
+    recovery,
+    recheckSession,
     sendError,
     queue,
     resources,

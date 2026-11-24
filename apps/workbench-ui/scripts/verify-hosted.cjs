@@ -157,7 +157,7 @@ async function waitForServer(url, timeoutMs = 60000) {
     assert.equal(realSessions.length, sessionCount + 1)
     const createdSession = realSessions.find(item => item.projectId === created.id)
     assert(createdSession, 'Real node session has the returned project binding')
-    assert(requests.some(url => url.includes(`/sessions/${createdSession.sessionId}/message-summaries`)))
+    assert(requests.some(url => url.includes(`/sessions/${createdSession.sessionId}/snapshot`)), 'the canonical SDK opens the exact returned session snapshot')
     assert.equal(await page.locator('textarea').inputValue(), '')
     pass('browser creates and opens one real owner session without a prompt or model call')
     await page.locator('.wb-project').filter({ hasText: 'hosted-fixture' }).click()

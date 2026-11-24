@@ -113,6 +113,9 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
     await live.locator('textarea').fill('先改成别的草稿')
     await live.locator('textarea').fill(submitted)
     await live.evaluate(() => { window.entryReleasePrompt(); WebSocket.prototype.send = window.entryOriginalSend })
+    // A draft ACK is not idle; supply an observed terminal event, including the
+    // valid ordering in which settlement arrives before the delayed ACK.
+    protocolFixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
     await live.getByRole('button', { name: '发送', exact: true }).waitFor()
     assert.equal(await live.locator('textarea').inputValue(), submitted, 'A later edit remains a new draft even when its text equals the submitted text')
     console.log('PASS a delayed synthetic prompt ACK cannot clear a newer same-scope edit, including A→B→A')

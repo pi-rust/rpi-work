@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - 'apps/workbench-ui/**'
+      - 'tests/fixtures/ui-fixture.cjs'
       - 'crates/client/work-viewmodel/**'
       - 'crates/client/work-viewmodel-wasm/**'
       - 'crates/client/work-client/**'
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - 'apps/workbench-ui/**'
+      - 'tests/fixtures/ui-fixture.cjs'
       - 'crates/client/work-viewmodel/**'
       - 'crates/client/work-viewmodel-wasm/**'
       - 'crates/client/work-client/**'
@@ -47,6 +49,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -71,6 +74,12 @@ jobs:
           npx --prefix tools playwright install --with-deps chromium
           npm ci --prefix apps/workbench-ui
 
+      - name: Shared Rust admission and WASM binding checks
+        run: |
+          cargo test -p work-viewmodel --lib --locked
+          cargo clippy -p work-client-wasm -p work-viewmodel -p work-viewmodel-wasm --target wasm32-unknown-unknown --locked --no-deps -- -D warnings
+          cargo fmt --check -p work-client-wasm -p work-viewmodel -p work-viewmodel-wasm
+
       - name: Build separate product and fixture bundles
         working-directory: apps/workbench-ui
         run: |
@@ -84,6 +93,7 @@ jobs:
           node scripts/verify-entry.cjs
           node scripts/verify-a11y.cjs
           node scripts/verify-live.cjs
+          node scripts/verify-session.cjs
 
       - name: Fixture, theme and mobile acceptance
         working-directory: apps/workbench-ui
@@ -100,6 +110,7 @@ jobs:
         working-directory: apps/workbench-ui
         run: |
           node scripts/verify-settings.cjs
+          node scripts/verify-scopes.cjs
           node scripts/verify-tree.cjs
           node scripts/verify-browser.cjs
           node scripts/verify-shell.cjs

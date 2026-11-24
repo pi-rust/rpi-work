@@ -19,6 +19,9 @@ use wasm_bindgen_futures::{future_to_promise, spawn_local};
 use work_client::WorkspaceClient;
 use work_client::{MessageSummaryQuery, MessageWindowQuery};
 
+mod session;
+pub use session::SessionClient;
+
 fn json_string<T: serde::Serialize>(value: &T) -> Result<JsValue, JsValue> {
     serde_json::to_string(value)
         .map(|text| JsValue::from_str(&text))
