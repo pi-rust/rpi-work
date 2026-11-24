@@ -120,6 +120,30 @@ impl Presenter {
         serde_json::to_string(&payload).unwrap_or_else(|_| "[]".into())
     }
 
+    /// Read-only conversation layout for fixture/preview callers. Production
+    /// sessions receive this same DTO directly from the canonical SDK binding.
+    pub fn conversation(&mut self, scope: &str, history_json: &str, blocks_json: &str) -> String {
+        let history: Vec<Value> = serde_json::from_str(history_json).unwrap_or_default();
+        let inputs: Vec<BlockInput> = serde_json::from_str(blocks_json).unwrap_or_default();
+        let blocks: Vec<MessageBlock> = inputs.into_iter().map(BlockInput::into_block).collect();
+        let rows = self
+            .orders
+            .entry(scope.to_string())
+            .or_default()
+            .update(scope, &history, &blocks);
+        let projection = self.projections.get(scope);
+        let view = work_viewmodel::conversation::transcript_view::present(
+            &rows,
+            &history,
+            &blocks,
+            projection.map(|run| &run.phase),
+            projection.map(|run| &run.connection),
+            Default::default(),
+        );
+        serde_json::to_string(&view)
+            .unwrap_or_else(|_| "{\"observation\":\"\",\"parts\":[]}".into())
+    }
+
     /// Replay live wire events, then return `{rows, blocks, phase, settled}`.
     ///
     /// The projection owns deduplication, stale-sequence rejection and resync,

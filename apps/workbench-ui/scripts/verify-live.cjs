@@ -118,7 +118,10 @@ async function waitForServer(url, timeoutMs = 30000) {
     assert(parseFloat(geometry.gap) >= 24, 'turns are separated: ' + geometry.gap)
     pass('message area keeps a compact prompt chip, a bounded prose column and turn spacing')
 
-    // P3: live wire events replay through the Rust projection.
+    // P3: completed process defaults folded; expansion reveals the same live cards.
+    const completedProcess = page.locator('.wb-activity').first()
+    assert.equal(await completedProcess.getAttribute('open'), null)
+    await completedProcess.locator(':scope > summary').click()
     await page.getByText('src/theme.rs', { exact: true }).first().waitFor()
     await page.getByText('cargo test -p work-ui --lib', { exact: true }).first().waitFor()
     pass('live WS events produce the read/bash tool cards')

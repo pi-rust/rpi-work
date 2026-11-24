@@ -25,6 +25,7 @@ import {
   sealTicket,
   TranscriptPresenter,
   type LiveView,
+  type ConversationView,
   type ResourceView,
   type RowRef,
 } from '@/lib/viewmodel'
@@ -51,6 +52,7 @@ export type Workspace = {
   blocks: Block[]
   selected: { project: string; session: string }
   rows: RowRef[]
+  transcript: ConversationView | null
   messageCount: number
   runtime: NodeRuntime | null
   models: NodeModel[]
@@ -118,26 +120,8 @@ const asSession = (session: NodeSession): Session => ({
   archived: session.archived,
 })
 
-const asHistory = (messages: unknown[]): HistoryMessage[] =>
-  messages.flatMap((raw, index) => {
-    if (typeof raw !== 'object' || raw === null) return []
-    const message = raw as { id?: unknown; entryId?: unknown; role?: unknown; content?: unknown }
-    const id = typeof message.id === 'string' ? message.id : typeof message.entryId === 'string' ? message.entryId : `m-${index}`
-    const role = message.role === 'user' ? 'user' : 'assistant'
-    const content =
-      typeof message.content === 'string'
-        ? message.content
-        : Array.isArray(message.content)
-          ? message.content
-              .map((part) =>
-                typeof part === 'object' && part !== null && typeof (part as { text?: unknown }).text === 'string'
-                  ? (part as { text: string }).text
-                  : '',
-              )
-              .join('')
-          : ''
-    return content.trim().length > 0 ? [{ id, role: role as HistoryMessage['role'], content }] : []
-  })
+const historyFromView = (view?: ConversationView): HistoryMessage[] =>
+  view?.parts.flatMap(part => part.kind === 'message' ? [{ id: part.key, role: part.role, content: part.text }] : []) ?? []
 
 export function useWorkspace(): Workspace {
   const [status, setStatus] = useState<Status>('boot')
@@ -168,6 +152,7 @@ export function useWorkspace(): Workspace {
   const [controls, setControls] = useState<SessionControls | null>(null)
   const [recovery, setRecovery] = useState<SessionRecovery | null>(null)
   const [liveView, setLiveView] = useState<LiveView | null>(null)
+  const [readOnlyTranscript, setReadOnlyTranscript] = useState<ConversationView | null>(null)
   const [runtime, setRuntime] = useState<NodeRuntime | null>(null)
   const [models, setModels] = useState<NodeModel[]>([])
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([])
@@ -228,6 +213,7 @@ export function useWorkspace(): Workspace {
     setHistory([])
     setBlocks([])
     setLiveView(null)
+    setReadOnlyTranscript(null)
     setRuntime(null)
     setModels([])
     setThinkingLevels([])
@@ -265,7 +251,7 @@ export function useWorkspace(): Workspace {
       const opened = await conn.bindSession(sessionId, view => {
         if (!current() || view.scopeEpoch < bindingEpoch.current) return
         bindingEpoch.current = view.scopeEpoch
-        const messages = asHistory(view.messages)
+        const messages = historyFromView(view.transcript)
         historyRef.current = messages
         setHistory(messages)
         setLiveView(view)
@@ -290,7 +276,10 @@ export function useWorkspace(): Workspace {
       try {
         const page = await conn.messages(sessionId)
         if (!current()) return
-        const messages = asHistory(page.messages)
+        const readOnly = presenter.current?.conversation(`readonly/${conn.origin}/${sessionId}`, page.messages, [])
+        if (!readOnly) throw new Error('显示组件尚未就绪')
+        const messages = historyFromView(readOnly)
+        setReadOnlyTranscript(readOnly)
         historyRef.current = messages
         setHistory(messages)
         setStatus('ready')
@@ -902,8 +891,17 @@ export function useWorkspace(): Workspace {
     return instance.rows(`${nodeScope}/${selected.project}/${selected.session || 'none'}`, history, blocks)
   }, [presentationReady, liveView, source, connectionId, status, selected, history, blocks])
 
+  const transcript = useMemo<ConversationView | null>(() => {
+    if (!presentationReady) return null
+    if (source.kind === 'live') return liveView?.transcript ?? readOnlyTranscript
+    const instance = presenter.current
+    if (!instance || status !== 'fixture') return null
+    return instance.conversation(`fixture/${selected.project}/${selected.session || 'none'}`, history, blocks)
+  }, [presentationReady, source, liveView, readOnlyTranscript, status, selected, history, blocks])
+
   return {
     presentationReady,
+    transcript,
     status,
     connectionId,
     creation,

@@ -65,7 +65,14 @@ export function initViewModel(): Promise<void> {
   return ready
 }
 
-export type LiveView = { rows: RowRef[]; blocks: unknown[]; phase: string; settled: boolean }
+export type LiveView = { rows: RowRef[]; blocks: unknown[]; phase: string; settled: boolean; transcript?: ConversationView }
+export type ActivityItem =
+  | { kind: 'tool'; key: string; block: Omit<import('./types').ToolBlock, 'kind'> & { statusLabel: string } }
+  | { kind: 'note'; key: string; label: string; text: string }
+export type ConversationPart =
+  | { kind: 'message'; key: string; role: 'user' | 'assistant'; text: string }
+  | { kind: 'activity'; key: string; label: string; collapsed: boolean; attention: boolean; items: ActivityItem[] }
+export type ConversationView = { observation: string; observationTone: 'muted' | 'active' | 'success' | 'danger' | 'warning'; parts: ConversationPart[] }
 
 export class TranscriptPresenter {
   private presenter = new Presenter()
@@ -74,6 +81,10 @@ export class TranscriptPresenter {
     return JSON.parse(
       this.presenter.rows(scope, JSON.stringify(history), JSON.stringify(blocks)),
     ) as RowRef[]
+  }
+
+  conversation(scope: string, history: unknown[], blocks: unknown[]): ConversationView {
+    return JSON.parse(this.presenter.conversation(scope, JSON.stringify(history), JSON.stringify(blocks))) as ConversationView
   }
 
   /** Replay live wire events through the Rust projection, then order rows. */

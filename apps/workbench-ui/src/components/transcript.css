@@ -1,0 +1,29 @@
+/* Confirmed prototype: the same DOM and reading column in both layouts. */
+.wb-transcript { gap: 32px; }
+.wb-transcript .wb-user-label { display: none; }
+.wb-transcript .wb-prompt {
+  max-width: min(90%, max(77%, 320px));
+  padding: 10px 15px;
+  border-radius: 19px;
+  font-size: 16px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.wb-transcript .wb-prose {
+  width: 100%;
+  max-width: none;
+  font-size: 16px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+[data-density="compact"] .wb-transcript { gap: 24px; }
+[data-density="compact"] .wb-transcript .wb-prose { line-height: 1.55; }
+[data-message-layout="classic"] .wb-transcript .wb-user-row { align-items: stretch; }
+[data-message-layout="classic"] .wb-transcript .wb-user-label { display: block; }
+[data-message-layout="classic"] .wb-transcript .wb-prompt {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}

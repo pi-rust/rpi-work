@@ -27,7 +27,8 @@
     "verify:creation": "node scripts/verify-creation.cjs",
     "verify:entry": "node scripts/verify-entry.cjs",
     "verify:session": "node scripts/verify-session.cjs",
-    "verify:scopes": "node scripts/verify-scopes.cjs"
+    "verify:scopes": "node scripts/verify-scopes.cjs",
+    "verify:reading": "node scripts/verify-reading.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

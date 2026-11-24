@@ -23,33 +23,34 @@ import {
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { toolMeta } from '@/lib/viewmodel'
-import type { Block, HistoryMessage, RunStep, ToolBlock, ToolDetail } from '@/lib/types'
+import type { HistoryMessage, RunStep, ToolBlock, ToolDetail } from '@/lib/types'
+import './transcript.css'
 
 export function UserRow({ message }: { message: HistoryMessage }) {
   // Codex keeps the prompt visually distinct: a compact, right-aligned chip that
   // never spans the reading column.
   return (
-    <div className="flex flex-col items-end gap-1">
-      <span className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">你</span>
-      <p className="bg-muted/70 max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[15px] leading-7 whitespace-pre-wrap">
+    <div className="wb-user-row flex flex-col items-end gap-1">
+      <span className="wb-user-label text-muted-foreground text-[11px] font-medium tracking-wide uppercase">你</span>
+      <p className="wb-prompt bg-muted/70 max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[15px] leading-7 whitespace-pre-wrap">
         {message.content}
       </p>
     </div>
   )
 }
 
-export function AnswerRow({ text, model }: { text: string; model: string }) {
+export function AnswerRow({ text, model }: { text: string; model?: string }) {
   // Assistant prose owns the reading column; tool rows sit underneath at the same
   // left edge so a turn reads as one block.
   return (
     <div className="flex flex-col gap-2">
       <span className="text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase">
         rpi
-        <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal normal-case">
+        {model ? <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal normal-case">
           {model.split('/').at(-1)}
-        </Badge>
+        </Badge> : null}
       </span>
-      <p className="max-w-[46rem] text-[15px] leading-7 whitespace-pre-wrap">{text}</p>
+      <p className="wb-prose max-w-[46rem] text-[15px] leading-7 whitespace-pre-wrap">{text}</p>
     </div>
   )
 }
@@ -57,17 +58,18 @@ export function AnswerRow({ text, model }: { text: string; model: string }) {
 function StatusIcon({ status }: { status: ToolBlock['status'] }) {
   if (status === 'running') return <Loader2 className="size-3.5 animate-spin text-blue-500" />
   if (status === 'failed') return <X className="text-destructive size-3.5" />
-  return <Check className="size-3.5 text-emerald-600" />
+  if (status === 'completed') return <Check className="size-3.5 text-emerald-600" />
+  return <CircleDashed className="text-muted-foreground size-3.5" />
 }
 
 /** Tool card whose target, icon and read/shell kind all come from Rust. */
-export function ToolCard({ block, detail }: { block: ToolBlock; detail?: ToolDetail }) {
+export function ToolCard({ block, detail, onIntent }: { block: Omit<ToolBlock, 'kind'>; detail?: ToolDetail; onIntent?: (open: boolean) => void }) {
   const meta = toolMeta(block.name, block.arguments)
   const [open, setOpen] = useState(meta.isRead)
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="bg-card overflow-hidden rounded-lg border">
+    <Collapsible open={open} onOpenChange={(value) => { setOpen(value); onIntent?.(value) }}>
+      <div data-tool-id={block.id} className="wb-tool-card bg-card overflow-hidden rounded-lg border">
         <CollapsibleTrigger className="hover:bg-muted/60 flex w-full items-center gap-3 px-3 py-2.5 text-left">
           <ChevronRight
             className={cn('text-muted-foreground size-3.5 transition-transform', open && 'rotate-90')}
@@ -81,6 +83,7 @@ export function ToolCard({ block, detail }: { block: ToolBlock; detail?: ToolDet
                 ? `${(detail.durationMs / 1000).toFixed(1)}s`
                 : `${detail.durationMs}ms`
               : null}
+            <span className="sr-only">{block.statusLabel}</span>
             <StatusIcon status={block.status} />
           </span>
         </CollapsibleTrigger>
@@ -134,31 +137,5 @@ export function RunTimeline({ steps }: { steps: RunStep[] }) {
         </li>
       ))}
     </ol>
-  )
-}
-
-/** Resolve one wasm row reference back to its source data. */
-export function rowElement(
-  row: { source: 'history' | 'projection'; index: number },
-  history: HistoryMessage[],
-  blocks: Block[],
-  model: string,
-  details?: Record<string, ToolDetail>,
-) {
-  if (row.source === 'history') {
-    const message = history[row.index]
-    if (!message) return null
-    return message.role === 'user' ? (
-      <UserRow key={`h-${row.index}`} message={message} />
-    ) : (
-      <AnswerRow key={`h-${row.index}`} text={message.content} model={model} />
-    )
-  }
-  const block = blocks[row.index]
-  if (!block) return null
-  return block.kind === 'text' ? (
-    <AnswerRow key={`p-${row.index}`} text={block.text} model={model} />
-  ) : (
-    <ToolCard key={`p-${row.index}`} block={block} detail={details?.[block.id]} />
   )
 }

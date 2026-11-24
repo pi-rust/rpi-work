@@ -30,7 +30,10 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
     const waitCheck = () => page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '只读核对' && !button.disabled))
     const open = async () => {
       await page.goto(origin + '/?live=1')
-      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor()
+      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor().catch(async error => {
+        console.error('session open diagnostic:', await page.locator('main').innerText(), 'page errors:', errors)
+        throw error
+      })
       await page.locator('textarea').fill('权限与结算阶段必须保留的草稿')
     }
     await check('unknown session access never enables send or queue', async () => {
@@ -39,6 +42,8 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
       assert.equal(await page.getByRole('button', { name: '发送', exact: true }).isDisabled(), true)
       assert.equal(await page.getByRole('button', { name: '加入队列', exact: true }).isDisabled(), true)
       assert.equal(await page.locator('textarea').inputValue(), '权限与结算阶段必须保留的草稿')
+      assert.equal(await page.getByRole('status', { name: '会话运行观察' }).textContent(), '会话观察：尚无运行阶段观察')
+      assert.equal(mutationCount(), 0)
     })
     delete fixture.controls.accessStatus
     await check('exact session commands and configuration observations cannot borrow global support', async () => {

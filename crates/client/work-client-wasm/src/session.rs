@@ -67,9 +67,18 @@ impl State {
     }
 
     fn payload(&mut self) -> Value {
-        let rows: Vec<_> = self
+        let ordered = self
             .order
-            .update(&self.id, &self.messages, &self.projection.blocks)
+            .update(&self.id, &self.messages, &self.projection.blocks);
+        let transcript = work_viewmodel::conversation::transcript_view::present(
+            &ordered,
+            &self.messages,
+            &self.projection.blocks,
+            Some(&self.projection.phase),
+            Some(&self.projection.connection),
+            self.pending,
+        );
+        let rows: Vec<_> = ordered
             .into_iter()
             .map(|row| {
                 let (source, index) = match row.source {
@@ -85,6 +94,7 @@ impl State {
             "messages": self.messages,
             "blocks": self.projection.blocks.iter().map(block_wire).collect::<Vec<_>>(),
             "rows": rows,
+            "transcript": transcript,
             "phase": format!("{:?}", self.projection.phase),
             "settled": matches!(self.projection.phase, RunPhase::Settled(_)),
             "controls": self.controls(),

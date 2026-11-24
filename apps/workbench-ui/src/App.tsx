@@ -8,7 +8,8 @@ import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { sample } from '@/lib/initial-source'
 import { Composer } from '@/components/composer'
-import { RunTimeline, rowElement } from '@/components/transcript'
+import { RunTimeline } from '@/components/transcript'
+import { Conversation } from '@/components/conversation'
 import { FilePanel } from '@/components/file-panel'
 import { BrowserPanel } from '@/components/browser-panel'
 import { ResourcesPage } from '@/components/resource-view'
@@ -21,6 +22,7 @@ import './workbench-shell.css'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
 import { useTheme } from '@/lib/theme'
+import { useMessageLayout } from '@/lib/message-layout'
 import { contextFrom, formatTokens, metricsFrom } from '@/lib/viewmodel'
 import { useIsMobile, useMediaQuery } from '@/lib/viewport'
 
@@ -89,6 +91,7 @@ export default function App() {
 
   const ready = workspace.presentationReady && (workspace.status === 'fixture' || workspace.status === 'ready')
   const theme = useTheme(workspace.presentationReady)
+  const messageLayout = useMessageLayout()
   const dark = theme.choice.dark
   const liveMetrics = workspace.runtime?.stats ?? null
   const liveContext = workspace.runtime?.context ?? null
@@ -120,7 +123,7 @@ export default function App() {
 
   return (
     <div className={dark ? 'dark h-dvh' : 'h-dvh'} style={theme.style} data-palette={theme.choice.id} data-density={theme.choice.compact ? 'compact' : 'standard'}>
-      <div className="workbench-shell bg-background text-foreground" data-navigation={navigation ? 'open' : 'closed'}>
+      <div className="workbench-shell bg-background text-foreground" data-navigation={navigation ? 'open' : 'closed'} data-message-layout={messageLayout.layout}>
         {((!isMobile && navigation) || (isMobile && drawer)) && (
         <div className={isMobile ? 'fixed inset-0 z-40 flex' : 'contents'}>
           {isMobile ? (
@@ -242,7 +245,12 @@ export default function App() {
               </Button>
               <button type="button" className="wb-icon" aria-label="打开显示选项" title="显示选项" popoverTarget="wb-display-options"><Ellipsis aria-hidden="true" /></button>
               <div popover="auto" id="wb-display-options" className="wb-display-options" role="group" aria-label="工作台显示选项">
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
+              <label className="flex items-center gap-1 text-[11px]">消息布局
+                <select aria-label="消息布局" value={messageLayout.layout} onChange={event => messageLayout.setLayout(event.target.value === 'classic' ? 'classic' : 'reading')} className="border-input bg-background h-7 rounded-md border px-1.5 text-[11px]">
+                  <option value="reading">阅读</option><option value="classic">经典</option>
+                </select>
+              </label>
               <select
                 aria-label="选择主题"
                 value={theme.choice.id}
@@ -347,7 +355,7 @@ export default function App() {
                     }}
                   />
                 ) : (
-                <div className="mx-auto flex w-full max-w-[48rem] flex-col gap-8">
+                <div className="wb-transcript mx-auto flex w-full max-w-[48rem] flex-col gap-8">
                   {workspace.creation.message ? <div className="wb-creation-message" role={workspace.creation.busy ? 'status' : 'alert'}><p>{workspace.creation.message}</p>{workspace.creation.uncertain ? <button type="button" disabled={workspace.creation.busy} onClick={() => void workspace.recheckCreation()}>核对创建结果</button> : null}</div> : null}
                   {workspace.dialogs.map((dialog) => (
                     <div
@@ -405,10 +413,8 @@ export default function App() {
                       <Button type="submit">登录</Button>
                     </form>
                   ) : ready || workspace.status === 'disconnected' ? (
-                    workspace.rows.length > 0 ? (
-                      workspace.rows.map((row) =>
-                        rowElement(row, workspace.history as never, workspace.blocks as never, model, fixture?.toolMeta),
-                      )
+                    workspace.transcript && workspace.transcript.parts.length > 0 ? (
+                      <Conversation key={draftScope} view={workspace.transcript} details={fixture?.toolMeta} observed={live} />
                     ) : (
                       <EmptyState live={live} fixture={!!fixture} hasSession={!!workspace.selected.session} />
                     )
