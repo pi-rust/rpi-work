@@ -20,6 +20,7 @@ const MAP: Record<string, string> = {
   bg: '--background',
   text: '--foreground',
   card: '--card',
+  code: '--code-background',
   muted: '--muted-foreground',
   side: '--secondary',
   'accent-bg': '--accent',
@@ -85,13 +86,13 @@ export function themeStyle(tokens: Record<string, string>): CSSProperties {
   // emits `var(--code-token-*)`, so code follows the Rust palette too.
   const code: [string, string][] = [
     ['--code-foreground', 'body-text'],
-    ['--code-token-constant', 'info'],
-    ['--code-token-string', 'success'],
-    ['--code-token-comment', 'muted'],
-    ['--code-token-keyword', 'accent'],
+    ['--code-token-constant', 'code-constant'],
+    ['--code-token-string', 'code-string'],
+    ['--code-token-comment', 'code-comment'],
+    ['--code-token-keyword', 'code-keyword'],
     ['--code-token-parameter', 'text'],
     ['--code-token-function', 'text'],
-    ['--code-token-string-expression', 'success'],
+    ['--code-token-string-expression', 'code-string'],
     ['--code-token-punctuation', 'muted'],
     ['--code-token-link', 'accent'],
   ]

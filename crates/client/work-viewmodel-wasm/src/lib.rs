@@ -253,6 +253,13 @@ pub fn tool_is_shell(name: &str) -> bool {
     tool_display::is_shell(name)
 }
 
+/// Renderer-independent safe Markdown DTO; no HTML renderer or execution state.
+#[wasm_bindgen]
+pub fn markdown_view(source: &str) -> String {
+    serde_json::to_string(&work_viewmodel::conversation::markdown::present(source))
+        .unwrap_or_else(|_| "{\"nodes\":[],\"copyText\":\"\",\"plain\":true}".into())
+}
+
 /// Per-line tokens for the shared lexer: `[[{text, class}]]`.
 #[wasm_bindgen]
 pub fn tokenize_file(source: &str, path: &str) -> String {
@@ -396,6 +403,16 @@ mod tests {
                 .iter()
                 .any(|token| token["class"] == "code-token-keyword")
         );
+    }
+
+    #[test]
+    fn markdown_binding_preserves_the_shared_safe_dto_and_copy_payload() {
+        let source = "## Shared\n\n**body**\n\n```rust\nfn main() {}\n```";
+        let actual: Value = serde_json::from_str(&markdown_view(source)).unwrap();
+        let expected =
+            serde_json::to_value(work_viewmodel::conversation::markdown::present(source)).unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(actual["copyText"], "Shared\n\nbody\n\nfn main() {}");
     }
 
     #[test]

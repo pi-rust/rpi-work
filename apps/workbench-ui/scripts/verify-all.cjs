@@ -3,7 +3,7 @@ const { spawn } = require('node:child_process')
 const path = require('node:path')
 const net = require('node:net')
 const root = path.resolve(__dirname, '..')
-const scripts = ['a11y', 'fixture', 'theme', 'mobile', 'settings', 'tree', 'live', 'hosted', 'browser', 'shell', 'creation', 'entry', 'session', 'scopes', 'reading']
+const scripts = ['a11y', 'fixture', 'theme', 'mobile', 'settings', 'tree', 'live', 'hosted', 'browser', 'shell', 'creation', 'entry', 'session', 'scopes', 'reading', 'rich']
 ;(async () => {
   const port = await new Promise(resolve => { const server = net.createServer(); server.listen(0, '127.0.0.1', () => { const port = server.address().port; server.close(() => resolve(port)) }) })
   const url = `http://127.0.0.1:${port}/`

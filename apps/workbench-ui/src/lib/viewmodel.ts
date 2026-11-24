@@ -12,6 +12,7 @@ import init, { resource_rows, seal_ticket,
   format_percent,
   format_tokens,
   metrics_session,
+  markdown_view,
   normalize_address,
   theme_presets,
   theme_tokens,
@@ -24,6 +25,16 @@ import init, { resource_rows, seal_ticket,
 
 export type RowRef = { key: number; source: 'history' | 'projection'; index: number }
 export type Token = { text: string; class: string }
+export type MarkdownTag = 'div' | 'p' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'blockquote' | 'ul' | 'ol' | 'li' | 'em' | 'strong' | 'del' | 'code' | 'span' | 'br' | 'hr' | 'table' | 'thead' | 'tbody' | 'tr' | 'th' | 'td'
+export type MarkdownNode =
+  | { kind: 'text'; text: string }
+  | { kind: 'element'; tag: MarkdownTag; children: MarkdownNode[]; start?: number }
+  | { kind: 'link'; href: string | null; children: MarkdownNode[] }
+  | { kind: 'image'; alt: string }
+  | { kind: 'codeBlock'; code: string; language: string; tokens: Token[] }
+  | { kind: 'task'; checked: boolean }
+export type MarkdownView = { nodes: MarkdownNode[]; copyText: string; plain: boolean }
+export const markdownView = (source: string): MarkdownView => JSON.parse(markdown_view(source)) as MarkdownView
 export type ResourceRow = {
   reference: string
   name: string

@@ -95,6 +95,7 @@ jobs:
           node scripts/verify-live.cjs
           node scripts/verify-session.cjs
           node scripts/verify-reading.cjs
+          node scripts/verify-rich.cjs
 
       - name: Fixture, theme and mobile acceptance
         working-directory: apps/workbench-ui

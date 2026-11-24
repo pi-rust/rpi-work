@@ -22,6 +22,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import { RichAnswer } from '@/components/rich-answer'
 import { toolMeta } from '@/lib/viewmodel'
 import type { HistoryMessage, RunStep, ToolBlock, ToolDetail } from '@/lib/types'
 import './transcript.css'
@@ -43,14 +44,14 @@ export function AnswerRow({ text, model }: { text: string; model?: string }) {
   // Assistant prose owns the reading column; tool rows sit underneath at the same
   // left edge so a turn reads as one block.
   return (
-    <div className="flex flex-col gap-2">
+    <div className="wb-answer flex min-w-0 flex-col gap-2">
       <span className="text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase">
         rpi
         {model ? <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal normal-case">
           {model.split('/').at(-1)}
         </Badge> : null}
       </span>
-      <p className="wb-prose max-w-[46rem] text-[15px] leading-7 whitespace-pre-wrap">{text}</p>
+      <RichAnswer text={text} />
     </div>
   )
 }

@@ -523,6 +523,21 @@ pub fn build_tokens(theme: &Theme, dark: bool, compact: bool) -> BTreeMap<String
     ] {
         t.insert(key.into(), value.to_owned());
     }
+    // Syntax text is small. A valid global accent need not contrast with the
+    // code surface (e.g. Reddit light); fall back only this code role to text.
+    for (key, candidate) in [
+        ("code-keyword", p.accent.as_str()),
+        ("code-string", success),
+        ("code-comment", p.muted.as_str()),
+        ("code-constant", info),
+    ] {
+        let color = if contrast(candidate, &p.code) >= 4.5 {
+            candidate
+        } else {
+            &p.text
+        };
+        t.insert(key.into(), color.to_owned());
+    }
     insert_derived_colors(&mut t, p, dark);
     insert_layout_tokens(&mut t, theme, compact);
     t
@@ -744,6 +759,32 @@ mod tests {
             assert!(parse_theme(&theme_value(&theme)).is_ok());
         }
     }
+    #[test]
+    fn code_text_roles_contrast_with_code_surfaces_without_changing_the_palette() {
+        for theme in presets() {
+            for dark in [false, true] {
+                let tokens = build_tokens(&theme, dark, false);
+                for role in [
+                    "code-keyword",
+                    "code-string",
+                    "code-comment",
+                    "code-constant",
+                ] {
+                    assert!(
+                        contrast(&tokens[role], &tokens["code"]) >= 4.5,
+                        "{} {dark} {role}",
+                        theme.id
+                    );
+                }
+                let palette = if dark { &theme.dark } else { &theme.light };
+                assert_eq!(tokens["accent"], palette.accent);
+                if theme.id == "reddit" && !dark {
+                    assert_eq!(tokens["code-keyword"], palette.text);
+                }
+            }
+        }
+    }
+
     #[test]
     fn contrast_is_checked() {
         for mode in ["light", "dark"] {

@@ -1,0 +1,49 @@
+/* Confirmed prototype .reply/.message-code: tokens stay owned by Rust. */
+.wb-prose { min-width: 0; }
+.wb-prose[data-plain] { white-space: pre-wrap; }
+.wb-prose p { margin: 0; white-space: pre-wrap; }
+.wb-prose > :not(:first-child) { margin-top: 16px; }
+.wb-prose :is(h1,h2,h3,h4,h5,h6) { font-weight: 600; letter-spacing: -.02em; line-height: 1.45; }
+.wb-prose h1 { font-size: 20px; }
+.wb-prose h2 { font-size: 17px; }
+.wb-prose :is(h3,h4,h5,h6) { font-size: 16px; }
+.wb-prose :is(ul,ol) { padding-left: 21px; }
+.wb-prose ul { list-style: disc; }
+.wb-prose ol { list-style: decimal; }
+.wb-prose li + li { margin-top: 4px; }
+.wb-prose li > :is(ul,ol) { margin-top: 4px; }
+.wb-prose li > p + p { margin-top: 12px; }
+.wb-prose blockquote { border-left: 2px solid var(--border); padding-left: 14px; color: var(--muted-foreground); }
+.wb-prose blockquote > * + * { margin-top: 12px; }
+.wb-prose code { border-radius: 4px; padding: 1px 4px; background: var(--code-background); font-size: .85em; }
+.wb-prose a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.wb-prose .wb-inert-link { text-decoration: underline dotted; text-underline-offset: 3px; }
+.wb-prose hr { border-color: var(--border); }
+.wb-markdown-task { margin-right: 6px; accent-color: var(--primary); }
+.wb-image-placeholder { color: var(--muted-foreground); }
+.wb-message-code { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--code-background); }
+.wb-message-code-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px; min-height: 37px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; }
+.wb-message-code pre { margin: 0; padding: 12px 16px; overflow: auto; max-height: 560px; white-space: pre; overflow-wrap: normal; font-size: 13px; line-height: 1.8; color: var(--foreground); }
+.wb-prose .wb-message-code pre code { display: block; padding: 0; background: none; font-size: inherit; }
+.wb-message-code .code-token-keyword { color: var(--code-token-keyword); }
+.wb-message-code .code-token-string { color: var(--code-token-string); }
+.wb-message-code .code-token-comment { color: var(--code-token-comment); }
+.wb-message-code :is(.code-token-literal,.code-token-number) { color: var(--code-token-constant); }
+.wb-answer-table { min-width: 0; overflow: auto; max-height: 560px; border: 1px solid var(--border); border-radius: 9px; }
+.wb-answer-table table { border-collapse: collapse; min-width: 100%; }
+.wb-answer-table :is(th,td) { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.wb-answer-table th { background: var(--accent); font-weight: 600; }
+.wb-answer-table tr:last-child td { border-bottom: 0; }
+.wb-answer-actions { display: flex; align-items: center; min-height: 32px; }
+.wb-copy-control { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.wb-copy-control button { display: grid; place-content: center; width: 30px; height: 30px; flex: none; border-radius: 6px; cursor: pointer; color: var(--muted-foreground); }
+.wb-copy-control button:hover:not(:disabled) { background: var(--accent); color: var(--foreground); }
+.wb-copy-control button:disabled { cursor: default; }
+.wb-copy-control svg { width: 14px; height: 14px; }
+.wb-copy-control [role="status"] { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.wb-copy-control button:focus-visible, .wb-message-code pre:focus-visible, .wb-answer-table:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; }
+.wb-prose a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+@media (max-width: 700px) {
+  .wb-copy-control button { width: 44px; height: 44px; }
+  .wb-prose a { display: inline-block; padding-block: 8px; }
+}

@@ -9,6 +9,10 @@
 | [Base UI](https://base-ui.com)（`@base-ui/react`） | 1.x | MIT | `base-nova` 样式的交互原语 |
 | [shiki](https://shiki.style) | 4.x | MIT | `code-block` 的语法着色 |
 | [Geist Variable](https://vercel.com/font)（`@fontsource-variable/geist`） | 5.x | SIL Open Font License 1.1 | 界面字体 |
+| [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark) | 0.12.2（Cargo.lock） | MIT | Rust Markdown→只读展示DTO；关闭默认HTML renderer/CLI features |
+| [url](https://github.com/servo/rust-url) | 2.5.8（Cargo.lock） | MIT OR Apache-2.0 | 沿用Rust客户端已有版本，校验回答中的显式HTTP(S)链接 |
+
+Rust依赖通过WASM编译进入前端，未复制第三方解析器源码或引入额外JS Markdown实现。上表补充本批直接依赖，不是完整传递依赖的发行许可证清单；正式分发仍须汇总完整版权/许可文本。
 
 ## ReUI 的免费/付费边界
 

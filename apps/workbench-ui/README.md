@@ -37,7 +37,7 @@ npm run preview:fixture  # 必须访问 /?fixture=1 才启用样例
 ```bash
 npm run build
 npm run build:fixture
-npm run verify:all        # 自起独立fixture预览，按序跑15组，结束仅清自身进程
+npm run verify:all        # 自起独立fixture预览，按序跑16组，结束仅清自身进程
 npm run lint
 ```
 
@@ -47,6 +47,7 @@ npm run lint
 | `verify:session` | 精确会话权限、ACK/结算、重连终态、abort、真实选项、配置回读、并发观察、迟到diff，以及丢ACK的只读回执恢复/明确拒绝/无证据锁定/跨重连GET/queue HostResponse，23项 |
 | `verify:scopes` | 同地址重连后的迟到Provider目录/写回执/QR成功与错误，A→B→A后取消审阅，旧install finally不得干扰新请求，6项 |
 | `verify:reading` | 阅读/经典几何与偏好、明暗/紧凑/390px、草稿选区/工具/真实iframe保持；canonical结算折叠、手动展开、流式转历史身份、失败与历史工具恢复/内容过滤/未知权限只读降级；长段落锚点、等长更新提示、显式回底/底部跟随、双向会话恢复/390px重排、过程/工具展开及设置/资源页往返、同ID跨节点隔离，12项 |
+| `verify:rich` | 共享Rust Markdown/代码token、安全HTML/链接/惰性图片、精确复制及失败/迟到隔离、流式同DOM/锚点、明暗×双布局×四宽、全部主题代码文字4.5:1及完整原文回退，9项 |
 | `verify:a11y` | landmarks、图标名称、示例草稿不假发送、Tab、命令面板与Escape |
 | `verify:fixture` / `verify:theme` | Rust投影、工具展示、指标、主题/密度/代码配色（runner提供隔离预览） |
 | `verify:mobile` | 320/390视口与抽屉 |
@@ -67,7 +68,7 @@ cargo build -p work-node-service --bin work-server-rpc-fixture --locked
 
 hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副本名才能启用只读空资源目录profile，默认RPC-only fixture行为不变。不启动已安装rpi、不读真实凭据、不发prompt或调用模型。它是**真实Rust owner + 合成原生协议后端**，不是实际rpi、模型、资源安装或Native窗口验收。其余live命名的脚本是隔离HTTP/WS协议fixture，不可与真实模型验证混称。CI接线不等于远程CI已执行。
 
-截图生成到仓库忽略的 `artifacts/confirmed-workbench/`、`artifacts/reading/`、`artifacts/settings/`，不提交；日志/诊断留在 `/tmp` 或 `target/`。4193/4181及原型既有截图不由这些脚本清理。
+截图生成到仓库忽略的 `artifacts/confirmed-workbench/`、`artifacts/reading/`、`artifacts/settings/`、`artifacts/rich-answer/`，不提交；日志/诊断留在 `/tmp` 或 `target/`。4193/4181及原型既有截图不由这些脚本清理。
 
 ## 已接通与尚未完成
 
@@ -84,6 +85,11 @@ hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副�
 - 设置窗口（第八批已接通并本地验收）：按确认原型 `settings.css` 迁入居中原生dialog，桌面宽min(92vw,1200px)/高min(85dvh,784px)、分类栏与搜索，700px以下全屏并可折叠浏览分类。只列出现已接通的外观、提供商、工作协同和关于；不搬入演示通知/环境/发现/共享开关或安装器。外观共用现有Rust主题/密度及reading/classic偏好。原生模态使背景inert，补双向Tab边界；Escape/关闭后返回真实可见入口，popover入口隐藏时返回显示选项按钮。窗口打开不卸载聊天/composer/真实iframe，不改阅读锚点或草稿选区；移动分类收起后将焦点移到内容，避免焦点留在隐藏导航。
 - 节点设置仍走既有绑定与scope guards：Provider CAS revision与管理回执、Rust密封的一次性授权、节点版本均未换协议；未取得目录不冒充空目录，保存回执不声称当前Agent已加载。分类切换保留当前窗口的未提交密钥，但关闭或连接/会话作用域改变即卸载私密表单，不写本地存储；关闭不等于取消已提交写入，不会自动重发。移动端密钥表单换行且无横溢出。
 - 第八批验证：原settings专项7→14项，保留所有目录/写回执/授权断言，增加实际居中几何、初始焦点/双向Tab/背景快捷键与遮罩、分类搜索、真实iframe/聊天同DOM及草稿选区、偏好刷新、关闭清密钥、320/390px和未连接边界。目录刷新从sleep改为等待精确GET响应。原6项HTTP gate scope断言未放宽，仅按新模态交互先关闭/重连/再打开并选择对应分类；reading12项保留。双构建和15套完整回归、Rust151项、三crate WASM严格Clippy、fmt/diff及CI YAML复核通过，lint69警告/0错误。截图在忽略的artifacts/settings；没有远程CI或真实模型/平台验收声明。
+- 富内容与复制（第九批已接通并本地验收）：共享Rust `conversation::markdown` 用pulldown-cmark输出白名单树与可读复制载荷，WASM只序列化DTO；React不解析Markdown、不生成执行/消息身份。支持标题、段落、强调、列表/只读清单、引用、表格、围栏/缩进代码；代码使用既有Rust有界lexer，未知语言保留文本，未闭合围栏支持流式展示。Rust现有code背景token接入CSS；小字号代码色由共享Rust按4.5:1保留候选或仅该角色回退正文色，不改全局accent。Reddit浅色关键字4.476:1问题先由全主题浏览器审计复现，再修复。
+- 安全/边界：原始HTML只作转义文本，Markdown图片只显示说明、不请求src；仅显式HTTP(S)、无凭据/控制字符/反斜线的链接可由用户在新窗口打开（noopener/noreferrer/no-referrer）。相对/文件/应用scheme不映射成节点/平台操作；无数学/图表执行器、自动嵌入或远端资源加载。超过1MiB、32768解析事件或48层栈边界时显示完整原文并提示，不截断canonical内容。不是完整Markdown扩展或文件跳转实现。
+- 复制回答是Rust生成的可读纯文本，不是原始Markdown：段落空行、列表换行、表格制表符，不含作者/按钮/工具。代码复制是解析后的代码字符串（CommonMark会规范化换行）。只走显式手势Clipboard API，不走execCommand或改变草稿选区的后备路径；失败清成功标记并提示手选，pending禁重入，载荷变化/卸载使迟到反馈失效，A→B→A不复活旧成功。不能撤销已经发出的系统剪贴板写入；本批不替换工具/文件registry组件自身的复制实现。
+- 第九批验证：新增rich9项进入同一runner/CI，产品/fixture双构建和全部16套通过；Rust151→161（Markdown9项、代码色1项），WASM绑定6项，三crate WASM严格Clippy、fmt/diff和CI YAML通过，lint仍69警告/0错误。覆盖真实协议fixture历史与流式转历史、代码区/正文/anchor同DOM、上方富内容增高后<2px阅读锚点、草稿/选区及真实HTTP iframe保持；精确载荷和成功/拒绝/缺失/同步异常/迟到仅用隔离剪贴板桩，未写宿主剪贴板。原settings14/scopes6/reading12等断言均保留。截图实际复核也发现并修复段落margin被清零；截图仅忽略artifacts/rich-answer。
+- 键盘与平台证据：默认验收覆盖Tab进入、Tab离开/Shift-Tab返回、focus-visible内侧outline计算值和截图、局部scrollLeft及整体无横溢出；1440/1024/390/320×明暗×双布局和所有可选主题代码文字对比度通过。Chromium在连续窗口重排后原生ArrowRight横滚路由偶发不动作，和原型既有代码焦点脚本一样保留为 `RPI_WORKBENCH_NATIVE_SCROLL_PROBE=1` 的可选平台诊断，不当成默认稳定门槛、不以自造快捷键替代原生行为，也不宣称各平台键盘手验完成。
 - **整体仍未完成**：位置/展开/选区仅SPA内存恢复，不包含刷新/重启持久化；历史锚点已不在当前canonical页时只按保存的像素位置有界回退，不发起新协议或猜造历史。真实模型长会话与各平台手动验收、其他消息细节、未接通的设置能力、真实协同/本机桥接、Native/Android适配和正式发行仍待完成。Provider保存提示只表示节点管理回执，不代表当前Agent已加载。没有可关联的新结算不能借Ready/旧终态解锁，无ref且无原setter ACK证据的未知结果继续锁定。
 
 组件仅使用免费MIT的ReUI/shadcn生态；许可证说明见 [NOTICE.md](NOTICE.md)，没有引入Pro资产或授权密钥。
