@@ -15,6 +15,7 @@ import { BrowserPanel } from '@/components/browser-panel'
 import { ResourcesPage } from '@/components/resource-view'
 import { CommandPalette } from '@/components/command-palette'
 import { SettingsPage } from '@/components/settings-page'
+import { SettingsDialog } from '@/components/settings-dialog'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { ActivityRail } from '@/components/activity-rail'
 import { ProjectDialog } from '@/components/project-dialog'
@@ -39,7 +40,8 @@ export default function App() {
   const { draft, setDraft, clear: clearDraft, selection } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
-  const [page, setPage] = useState<'chat' | 'resources' | 'settings'>('chat')
+  const [page, setPage] = useState<'chat' | 'resources'>('chat')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const messageScroll = useConversationScroll(scrollScope, workspace.transcript?.parts, page === 'chat')
   const isMobile = useIsMobile()
   const isPanelOverlay = useMediaQuery('(max-width: 900px)')
@@ -87,6 +89,7 @@ export default function App() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         // Always open: a toggle can close a palette that focus already lost.
         event.preventDefault()
+        if (document.querySelector('dialog:modal')) return
         setPalette(true)
       }
     }
@@ -98,6 +101,11 @@ export default function App() {
   const theme = useTheme(workspace.presentationReady)
   const messageLayout = useMessageLayout()
   const dark = theme.choice.dark
+  const openSettings = () => {
+    setSettingsOpen(true)
+    setDrawer(false)
+    if (live) { void workspace.loadProviders(); void workspace.loadNodeInfo() }
+  }
   const liveMetrics = workspace.runtime?.stats ?? null
   const liveContext = workspace.runtime?.context ?? null
   const metrics = useMemo(
@@ -201,13 +209,13 @@ export default function App() {
         </div>
         )}
 
-        <ActivityRail page={page}
+        <ActivityRail page={settingsOpen ? 'settings' : page}
           onChat={() => setPage('chat')}
           onProjects={() => { if (isMobile) setDrawer(true); else setNavigation(true) }}
           onBrowser={() => { setRail(true); setRailTab('browser') }}
           onFiles={() => { setRail(true); setRailTab('files'); if (live) void workspace.loadChanges() }}
           onResources={() => { setPage('resources'); if (live) void workspace.loadResources() }}
-          onSettings={() => { setPage('settings'); if (live) { void workspace.loadProviders(); void workspace.loadNodeInfo() } }}
+          onSettings={openSettings}
         />
         <main className="wb-shell-main">
           <header className="wb-window-header">
@@ -279,7 +287,7 @@ export default function App() {
               </Button>
               </div>
               <Button type="button" variant="ghost" aria-label="资源中心" popoverTarget="wb-display-options" popoverTargetAction="hide" onClick={() => { setPage(page === 'resources' ? 'chat' : 'resources'); if (live) void workspace.loadResources() }}>技能与插件</Button>
-              <Button type="button" variant="ghost" aria-label="设置" popoverTarget="wb-display-options" popoverTargetAction="hide" onClick={() => { setPage(page === 'settings' ? 'chat' : 'settings'); if (live) { void workspace.loadProviders(); void workspace.loadNodeInfo() } }}>设置</Button>
+              <Button type="button" variant="ghost" aria-label="设置" popoverTarget="wb-display-options" popoverTargetAction="hide" onClick={openSettings}>设置</Button>
               </div>
               <Button
                 variant={rail && railTab === 'browser' ? 'secondary' : 'ghost'}
@@ -329,24 +337,7 @@ export default function App() {
                 aria-live="polite"
                 aria-label="会话记录"
               >
-                {page === 'settings' ? (
-                  <SettingsPage
-                    live={live}
-                    origin={workspace.source.kind === 'live' ? workspace.source.origin : null}
-                    project={workspace.selected.project}
-                    session={workspace.selected.session}
-                    providers={workspace.providers}
-                    revision={workspace.providerRevision}
-                    error={workspace.providerError}
-                    onRefresh={() => void workspace.loadProviders()}
-                    authorization={workspace.authorization}
-                    authorizationError={workspace.authorizationError}
-                    onIssueAuthorization={() => void workspace.issueAuthorization()}
-                    onSaveKey={workspace.saveProviderKey}
-                    notice={workspace.providerNotice}
-                    nodeInfo={workspace.nodeInfo}
-                  />
-                ) : page === 'resources' ? (
+                {page === 'resources' ? (
                   <ResourcesPage
                     live={live}
                     resources={workspace.resources}
@@ -593,6 +584,33 @@ export default function App() {
             </div>
           </div>
 
+          {settingsOpen ? <SettingsDialog onClose={() => setSettingsOpen(false)} appearance={
+            <section>
+              <h3>外观</h3>
+              <p className="text-muted-foreground mb-6 text-sm">仅影响本设备显示，不改变节点配置或运行中的任务。</p>
+              <label className="wb-settings-preference">颜色模式<select aria-label="颜色模式" value={dark ? 'dark' : 'light'} onChange={event => theme.setDark(event.target.value === 'dark')}><option value="light">浅色</option><option value="dark">深色</option></select></label>
+              <label className="wb-settings-preference">选择主题<select aria-label="选择主题" value={theme.choice.id} onChange={event => theme.setTheme(event.target.value)}>{(theme.presets.length ? theme.presets : [{ id: 'codex', name: 'Codex' }]).map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select></label>
+              <label className="wb-settings-preference">界面密度<select aria-label="界面密度" value={theme.choice.compact ? 'compact' : 'standard'} onChange={event => theme.setCompact(event.target.value === 'compact')}><option value="standard">标准</option><option value="compact">紧凑</option></select></label>
+              <label className="wb-settings-preference">消息布局<select aria-label="消息布局" value={messageLayout.layout} onChange={event => messageLayout.setLayout(event.target.value === 'classic' ? 'classic' : 'reading')}><option value="reading">阅读</option><option value="classic">经典</option></select></label>
+            </section>
+          }>{active => <SettingsPage
+            key={`${workspace.connectionId}:${scrollScope}`}
+            active={active}
+            live={live}
+            origin={workspace.source.kind === 'live' ? workspace.source.origin : null}
+            project={workspace.selected.project}
+            session={workspace.selected.session}
+            providers={workspace.providers}
+            revision={workspace.providerRevision}
+            error={workspace.providerError}
+            onRefresh={() => void workspace.loadProviders()}
+            authorization={workspace.authorization}
+            authorizationError={workspace.authorizationError}
+            onIssueAuthorization={() => void workspace.issueAuthorization()}
+            onSaveKey={workspace.saveProviderKey}
+            notice={workspace.providerNotice}
+            nodeInfo={workspace.nodeInfo}
+          />}</SettingsDialog> : null}
           <footer className="text-muted-foreground flex h-7 shrink-0 items-center gap-4 border-t px-4 text-[11px] tabular-nums">
             <span>↑ {metrics?.inputText ?? '—'}</span>
             <span>↓ {metrics?.outputText ?? '—'}</span>

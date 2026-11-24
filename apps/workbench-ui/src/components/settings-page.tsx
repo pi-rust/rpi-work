@@ -5,11 +5,12 @@ import { QrCode } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import type { SettingsCategory } from '@/components/settings-dialog'
 import type { NodeProvider } from '@/lib/node'
 
 type Props = {
+  active: SettingsCategory
   live: boolean
   origin: string | null
   project: string
@@ -26,8 +27,9 @@ type Props = {
   nodeInfo: { version: string | null; service: string | null; protocol: string | null; nodeId: string | null } | null
 }
 
-/** Settings: node/collaboration facts plus the provider catalogue (read-only). */
+/** Existing node management bindings, presented inside the settings dialog. */
 export function SettingsPage({
+  active,
   live,
   origin,
   project,
@@ -44,8 +46,8 @@ export function SettingsPage({
   nodeInfo,
 }: Props) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
-      <Section title="节点与协作" subtitle="同一台电脑的桌面窗口与浏览器共享这个节点。">
+    <div className="flex min-w-0 flex-col gap-6">
+      <Section hidden={active !== 'connections'} title="节点与协作" subtitle="同一台电脑的桌面窗口与浏览器共享这个节点。">
         {live ? (
           <div className="flex flex-col gap-2 text-[12px]">
             <Row label="节点地址" value={origin ?? '—'} mono />
@@ -72,11 +74,10 @@ export function SettingsPage({
         )}
       </Section>
 
-      <Separator />
-
       <Section
+        hidden={active !== 'providers'}
         title="提供商"
-        subtitle="只读展示节点的 provider 目录；写入密钥属于后续阶段。"
+        subtitle="读取当前节点目录；保存密钥返回管理回执，不代表当前 Agent 已加载。"
         action={
           <Button
             variant="outline"
@@ -95,10 +96,10 @@ export function SettingsPage({
         {!live ? (
           <p className="text-muted-foreground text-[12px]">连接节点后读取提供商目录。</p>
         ) : providers.length === 0 && !error ? (
-          <p className="text-muted-foreground text-[12px]">节点没有返回任何提供商。</p>
+          <p className="text-muted-foreground text-[12px]">{revision === null ? '尚未取得提供商目录。' : '节点没有返回任何提供商。'}</p>
         ) : (
           <div className="overflow-hidden rounded-lg border">
-            <div className="bg-muted/40 text-muted-foreground grid grid-cols-[1fr_90px_90px] gap-2 px-3 py-1.5 text-[11px]">
+            <div className="bg-muted/40 text-muted-foreground grid grid-cols-[minmax(0,1fr)_48px_60px] gap-2 px-3 py-1.5 text-[11px] md:grid-cols-[minmax(0,1fr)_90px_90px]">
               <span>提供商</span>
               <span>模型</span>
               <span>状态</span>
@@ -109,7 +110,7 @@ export function SettingsPage({
               return (
                 <div
                   key={provider.id}
-                  className="hover:bg-muted/30 grid grid-cols-[1fr_90px_90px] items-center gap-2 border-t px-3 py-2 text-[12px]"
+                  className="hover:bg-muted/30 grid grid-cols-[minmax(0,1fr)_48px_60px] items-center gap-2 border-t px-3 py-2 text-[12px] md:grid-cols-[minmax(0,1fr)_90px_90px]"
                   title={provider.diagnostic ?? provider.id}
                 >
                   <span className="flex min-w-0 items-center gap-2">
@@ -128,8 +129,8 @@ export function SettingsPage({
                     >
                       {ready ? '已配置' : '缺失'}
                     </Badge>
-                    <ProviderKeyForm id={provider.id} onSave={onSaveKey} />
                   </span>
+                  <div className="col-span-full"><ProviderKeyForm id={provider.id} onSave={onSaveKey} /></div>
                 </div>
               )
             })}
@@ -140,9 +141,7 @@ export function SettingsPage({
         ) : null}
       </Section>
 
-      <Separator />
-
-      <Section title="应用更新" subtitle="自动更新需要签名清单与平台安装器，属于桌面端能力。">
+      <Section hidden={active !== 'about'} title="应用更新" subtitle="自动更新需要签名清单与平台安装器，属于桌面端能力。">
         <ul className="text-muted-foreground flex flex-col gap-1 text-[12px]">
           <li>· Web 入口不支持自更新：请升级运行该节点的桌面端或 CLI。</li>
           <li>· 节点版本：{nodeInfo?.version ?? '—'}{nodeInfo?.service ? `（${nodeInfo.service}）` : ''}</li>
@@ -151,9 +150,7 @@ export function SettingsPage({
         </ul>
       </Section>
 
-      <Separator />
-
-      <Section title="关于" subtitle="ReUI + Codex 布局原型。">
+      <Section hidden={active !== 'about'} title="关于" subtitle="ReUI 工作台。">
         <ul className="text-muted-foreground flex flex-col gap-1 text-[12px]">
           <li>· 展示规则、协议与主题来自 Rust（`work-viewmodel` / `work-client` 的 wasm 绑定）</li>
           <li>· 组件来自 ReUI（MIT）与 shadcn/ui（MIT）</li>
@@ -214,14 +211,14 @@ function ProviderKeyForm({ id, onSave }: { id: string; onSave: (id: string, key:
     )
   }
   return (
-    <span className="flex items-center gap-1">
+    <span className="flex min-w-0 flex-wrap items-center gap-1">
       <Input
         type="password"
         autoComplete="off"
         value={value}
         onChange={(event) => setValue(event.target.value)}
         aria-label={`${id} 的 API 密钥`}
-        className="h-6 w-40 text-[11px]"
+        className="h-6 min-w-0 flex-1 text-[12px]"
       />
       <Button
         size="sm"
@@ -261,17 +258,19 @@ function Section({
   subtitle,
   action,
   children,
+  hidden = false,
 }: {
   title: string
   subtitle?: string
   action?: React.ReactNode
   children: React.ReactNode
+  hidden?: boolean
 }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section hidden={hidden} className={hidden ? 'hidden' : 'flex min-w-0 flex-col gap-3'}>
       <div className="flex items-start gap-3">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[14px] font-medium">{title}</span>
+          <h3>{title}</h3>
           {subtitle ? <span className="text-muted-foreground text-[11px]">{subtitle}</span> : null}
         </div>
         <div className="ml-auto">{action}</div>

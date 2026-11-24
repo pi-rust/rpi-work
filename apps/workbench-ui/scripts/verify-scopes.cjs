@@ -57,11 +57,14 @@ const offer = { manifest, sha256, fileCount: 1, sizeBytes: Buffer.byteLength(sou
       const open = async () => { await page.goto(origin + '/?live=1'); await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor() }
       const display = async name => { await page.getByRole('button', { name: '打开显示选项', exact: true }).click(); await page.locator('header').getByRole('button', { name, exact: true }).click() }
       const reconnect = async () => {
+        const wasSettings = await page.getByRole('dialog', { name: '设置', exact: true }).count() > 0
+        if (wasSettings) await page.getByRole('button', { name: '关闭设置', exact: true }).click()
         await page.getByRole('button', { name: '断开节点', exact: true }).click()
         await page.getByRole('textbox', { name: '节点地址', exact: true }).fill(origin)
         await page.getByRole('button', { name: '连接节点', exact: true }).click()
         await page.getByText('在线', { exact: true }).waitFor()
         await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).waitFor()
+        if (wasSettings) await display('设置')
       }
       const resources = async () => { await display('资源中心'); await page.getByRole('button', { name: '审阅 Scope fixture skill', exact: true }).waitFor() }
       const review = async () => { await page.getByRole('button', { name: '审阅 Scope fixture skill', exact: true }).click(); await page.getByRole('checkbox', { name: '我已审阅来源', exact: true }).waitFor() }
@@ -120,14 +123,16 @@ const offer = { manifest, sha256, fileCount: 1, sizeBytes: Buffer.byteLength(sou
         : route.fulfill({ json: { ticket: 'current-scope-ticket', expiresAt: Date.now() + 300000, nodeId: 'fixture' } }))
       await open()
       await display('设置')
+      await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: '工作协同', exact: true }).click()
       await page.getByRole('button', { name: '生成一次性授权码', exact: true }).click()
       await old.entered()
       await reconnect()
+      await page.getByRole('dialog', { name: '设置', exact: true }).getByRole('button', { name: '工作协同', exact: true }).click()
       await page.getByRole('button', { name: '生成一次性授权码', exact: true }).click()
       await page.getByAltText('一次性授权二维码').waitFor()
-      const payload = await page.locator('main code').first().innerText()
+      const payload = await page.locator('.wb-settings-dialog code:visible').first().innerText()
       await old.flush()
-      assert.equal(await page.locator('main code').first().innerText(), payload)
+      assert.equal(await page.locator('.wb-settings-dialog code:visible').first().innerText(), payload)
       assert.doesNotMatch(await page.locator('main').innerText(), /node access denied|old-scope-ticket/)
       assert.equal(calls, 2)
     })

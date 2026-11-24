@@ -1,0 +1,50 @@
+/* Dimensions and reading rhythm from the confirmed settings.css prototype. */
+.wb-settings-dialog {
+  inset: 0; margin: auto; padding: 0;
+  width: min(92vw, 1200px); height: min(85dvh, 784px);
+  max-width: none; max-height: none;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: var(--background); color: var(--foreground);
+  box-shadow: 0 18px 85px #0002; overflow: hidden;
+}
+.wb-settings-dialog::backdrop { background: rgb(0 0 0 / 18%); backdrop-filter: blur(3px); }
+.wb-settings-layout { display: grid; grid-template-columns: min(33.333%, 275px) minmax(0, 1fr); height: 100%; min-height: 0; }
+.wb-settings-nav { display: flex; flex-direction: column; min-height: 0; padding-top: 12px; background: var(--secondary); border-right: 1px solid var(--border); overflow: hidden; }
+.wb-settings-heading { display: flex; align-items: center; gap: 6px; padding: 1px 14px 9px; }
+.wb-settings-heading h2 { margin: 0; padding-left: 4px; font-size: 16px; font-weight: 600; }
+.wb-settings-close { display: grid; place-content: center; margin-left: auto; width: 32px; height: 32px; border-radius: 7px; }
+.wb-settings-dialog svg { width: 17px; height: 17px; flex-shrink: 0; }
+.wb-settings-dialog button:not(:disabled) { cursor: pointer; }
+.wb-settings-nav button:hover { background: var(--accent); }
+.wb-settings-dialog button:focus-visible, .wb-settings-dialog select:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.wb-settings-browse { display: none; }
+.wb-settings-destinations { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.wb-settings-search { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 0 10px; min-height: 32px; border: 1px solid var(--border); border-radius: 9px; background: var(--background); color: var(--muted-foreground); }
+.wb-settings-search:focus-within { outline: 2px solid var(--ring); outline-offset: 1px; }
+.wb-settings-search input { font: inherit; font-size: 13px; width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--foreground); }
+.wb-settings-nav-scroll { overflow: auto; min-height: 0; padding: 2px 10px 12px; }
+.wb-settings-nav-group + .wb-settings-nav-group { margin-top: 14px; }
+.wb-settings-nav-group h3 { margin: 2px 8px 5px; font-size: 12px; line-height: 18px; font-weight: 500; color: var(--muted-foreground); }
+.wb-settings-nav-group button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 5px 9px; text-align: left; font-size: 13px; border-radius: 8px; }
+.wb-settings-nav-group button[aria-current="page"] { background: var(--accent); }
+.wb-settings-empty { color: var(--muted-foreground); font-size: 13px; padding: 8px; }
+.wb-settings-content { padding: 40px 24px; min-height: 0; min-width: 0; overflow: auto; }
+.wb-settings-content h3 { margin: 0 0 12px; font-size: 28px; line-height: 1.25; font-weight: 400; letter-spacing: -.035em; }
+.wb-settings-content p { overflow-wrap: anywhere; }
+.wb-settings-preference { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 64px; border-top: 1px solid var(--border); font-size: 14px; }
+.wb-settings-preference select { max-width: 55%; min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; }
+@media (max-width: 700px) {
+  .wb-settings-dialog { width: 100vw; height: 100dvh; border-radius: 0; border: 0; }
+  .wb-settings-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .wb-settings-nav { padding: 0; border: 0; border-bottom: 1px solid var(--border); }
+  .wb-settings-heading { padding: 8px 12px; }
+  .wb-settings-browse { display: flex; align-items: center; gap: 3px; min-height: 44px; padding: 4px 8px; margin-left: auto; font-size: 13px; }
+  .wb-settings-close { margin-left: 0; width: 44px; height: 44px; }
+  .wb-settings-destinations { display: none; }
+  .wb-settings-destinations[data-browse="true"] { display: flex; max-height: min(50dvh, 400px); }
+  .wb-settings-dialog button, .wb-settings-dialog input { min-height: 44px; }
+  .wb-settings-search, .wb-settings-nav-group button { min-height: 44px; }
+  .wb-settings-content { padding: 24px 18px; }
+  .wb-settings-content h3 { font-size: 24px; }
+  .wb-settings-preference select { min-height: 44px; }
+}
