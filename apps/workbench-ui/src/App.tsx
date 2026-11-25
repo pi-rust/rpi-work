@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Menu, Moon, PanelRight, Sun, Wifi, WifiOff, X, Globe, ArrowLeft, ArrowRight, Ellipsis } from 'lucide-react'
+import { Moon, PanelLeft, PanelRight, Sun, Wifi, WifiOff, X, Globe, ArrowLeft, ArrowRight, CodeXml, Ellipsis } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { sample } from '@/lib/initial-source'
 import { Composer } from '@/components/composer'
 import { RunTimeline } from '@/components/transcript'
-import { Conversation } from '@/components/conversation'
+import { Conversation, ConversationObservation } from '@/components/conversation'
 import { FilePanel } from '@/components/file-panel'
 import { BrowserPanel } from '@/components/browser-panel'
 import { ResourcesPage } from '@/components/resource-view'
@@ -254,7 +254,7 @@ export default function App() {
                 aria-label={isMobile ? '打开侧栏' : '切换会话侧栏'}
                 onClick={() => isMobile ? setDrawer(true) : setNavigation(!navigation)}
               >
-                <Menu className="size-4" />
+                <PanelLeft className="size-4" />
               </Button>
             <div className="wb-window-title">
             <span className="sr-only">{workspace.selected.project}</span>
@@ -318,12 +318,12 @@ export default function App() {
               </div>
               <Button
                 variant={rail && railTab === 'browser' ? 'secondary' : 'ghost'}
-                size="icon"
-                className="size-7"
+                size="sm"
+                className="wb-header-panel"
                 aria-label="浏览器"
                 onClick={() => { setRail(true); setRailTab('browser') }}
               >
-                <Globe className="size-4" />
+                <Globe className="size-4" /><span>浏览器</span>
               </Button>
               <Button
                 variant={rail && railTab === 'run' ? 'secondary' : 'ghost'}
@@ -340,7 +340,7 @@ export default function App() {
               <Button
                 variant={rail && railTab === 'files' ? 'secondary' : 'ghost'}
                 size="sm"
-                className="h-7 px-2 text-[11px]"
+                className="wb-header-panel"
                 aria-label="文件面板"
                 onClick={() => {
                   setRail(true)
@@ -348,7 +348,7 @@ export default function App() {
                   if (live) void workspace.loadChanges()
                 }}
               >
-                文件
+                <CodeXml className="size-4" /><span>文件</span>
               </Button>
             </div>
           </header>
@@ -359,7 +359,7 @@ export default function App() {
               <div
                 ref={messageScroll.scrollRef}
                 onScroll={messageScroll.onScroll}
-                className="wb-message-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6"
+                className="wb-message-scroll min-h-0 flex-1 overflow-y-auto"
                 role="log"
                 aria-live="polite"
                 aria-label="会话记录"
@@ -381,7 +381,7 @@ export default function App() {
                     }}
                   />
                 ) : (
-                <div className="wb-transcript mx-auto flex w-full max-w-[48rem] flex-col gap-8">
+                <div className="wb-transcript mx-auto flex w-full max-w-[48rem] flex-col">
                   {workspace.forkFeedback && archiveDialog?.connectionId !== workspace.connectionId ? <p className="wb-creation-message" role={workspace.sessionManagement.busy ? 'status' : 'alert'}>{workspace.forkFeedback}</p> : null}
                   {workspace.creation.message ? <div className="wb-creation-message" role={workspace.creation.busy ? 'status' : 'alert'}><p>{workspace.creation.message}</p>{workspace.creation.uncertain ? <button type="button" disabled={workspace.creation.busy} onClick={() => void workspace.recheckCreation()}>核对创建结果</button> : null}</div> : null}
                   {workspace.dialogs.map((dialog) => (
@@ -441,7 +441,7 @@ export default function App() {
                     </form>
                   ) : ready || workspace.status === 'disconnected' ? (
                     workspace.transcript && workspace.transcript.parts.length > 0 ? (
-                      <Conversation key={scrollScope} view={workspace.transcript} choices={choices} details={fixture?.toolMeta} observed={live}
+                      <Conversation key={scrollScope} view={workspace.transcript} choices={choices} details={fixture?.toolMeta}
                         ratingScope={live && workspace.selected.session ? scrollScope : undefined}
                         forkDisabled={!workspace.forkAvailable}
                         onFork={currentSession && workspace.forkFromEntry ? entryId => void workspace.editSession(currentSession.id, { forkEntryId: entryId }) : undefined} />
@@ -485,6 +485,7 @@ export default function App() {
                 thinkingDisabled={!workspace.controls?.thinking}
                 selectedModel={workspace.runtime?.modelId && workspace.runtime.provider ? { id: workspace.runtime.modelId, provider: workspace.runtime.provider } : undefined}
                 context={context ?? { used: null, window: null, percent: null, threshold: null, percentText: '—' }}
+                observation={live && ready && workspace.transcript?.parts.length ? <ConversationObservation view={workspace.transcript} /> : undefined}
                 onSend={() => {
                   void workspace.send(sendText).then((ok) => {
                     if (ok) clearDraft()

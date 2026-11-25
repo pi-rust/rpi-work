@@ -86,7 +86,7 @@ async function waitForServer(url, timeoutMs = 30000) {
     pass('no icon-only button is missing an accessible name')
 
     // Keyboard: focus the composer, type, and send with the documented shortcut.
-    const composer = page.getByPlaceholder('给 rpi 发消息…（⌘↵ 发送）')
+    const composer = page.getByRole('textbox', { name: '消息', exact: true })
     await composer.click()
     await page.keyboard.type('键盘发送的消息')
     assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'TEXTAREA')

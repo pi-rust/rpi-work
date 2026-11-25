@@ -26,14 +26,14 @@ function ActivityBlock({ part, details, choices }: { part: Activity; details?: R
   const open = choice ?? (childOpened || part.attention || !folded)
 
   return (
-    <details className="wb-activity min-w-0 rounded-xl border" open={open} data-activity-key={part.key}>
-      <summary className="text-muted-foreground flex cursor-pointer items-center gap-2 px-3 py-2 text-[12px] focus-visible:outline-2 focus-visible:outline-ring"
+    <details className="wb-activity min-w-0" open={open} data-activity-key={part.key}>
+      <summary className="wb-activity-summary text-muted-foreground cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
         onClick={(event) => { event.preventDefault(); setChoice(!open); remember(choices, `${part.key}/choice`, !open) }}>
         <ChevronRight aria-hidden className={`size-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
         <span>{part.label}</span>
-        <span className="ml-auto tabular-nums">{part.items.length} 项</span>
+        <span className="tabular-nums">{part.items.length} 项</span>
       </summary>
-      <div className="wb-activity-body flex min-w-0 flex-col gap-3 border-t p-3">
+      <div className="wb-activity-body flex min-w-0 flex-col gap-2">
         {part.items.map((item) => item.kind === 'tool' ? (
           <ToolCard key={item.key} block={item.block} detail={details?.[item.block.id]} initialOpen={choices.get(item.key)}
             onIntent={(expanded) => {
@@ -57,14 +57,17 @@ const observationClasses = {
   warning: 'text-amber-700 dark:text-amber-400',
 }
 
+export function ConversationObservation({ view }: { view: ConversationView }) {
+  return <p className={`wb-observation ${observationClasses[view.observationTone]}`} data-tone={view.observationTone} role="status" aria-label="会话运行观察">会话观察：{view.observation}</p>
+}
+
 /** Parts already contain canonical identity, history/tool normalization and grouping. */
-export function Conversation({ view, details, observed = true, choices, onFork, forkDisabled, ratingScope }: {
-  view: ConversationView; details?: Record<string, ToolDetail>; observed?: boolean; choices: Choices
+export function Conversation({ view, details, choices, onFork, forkDisabled, ratingScope }: {
+  view: ConversationView; details?: Record<string, ToolDetail>; choices: Choices
   onFork?: (entryId: string) => void; forkDisabled?: boolean; ratingScope?: string
 }) {
   const { ratings, toggleRating } = useReplyRatings(ratingScope)
   return <>
-    {observed ? <p className={`wb-observation text-[12px] ${observationClasses[view.observationTone]}`} data-tone={view.observationTone} role="status" aria-label="会话运行观察">会话观察：{view.observation}</p> : null}
     {view.parts.map((part) => {
       if (part.kind === 'activity') return (
         <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key}>

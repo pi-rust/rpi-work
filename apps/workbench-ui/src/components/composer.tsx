@@ -1,14 +1,11 @@
-import { useLayoutEffect, useRef } from 'react'
-import { ArrowUp, Paperclip, SlidersHorizontal, Square, X } from 'lucide-react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { ArrowUp, Plus, Square, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Avatar,
-  AvatarFallback,
-} from '@/components/ui/avatar'
 import type { ContextView } from '@/lib/viewmodel'
 import type { DraftSelection, FeedbackItem } from '@/lib/drafts'
+import './composer.css'
 
 type Props = {
   draft: string
@@ -17,6 +14,7 @@ type Props = {
   onRemoveFeedback?: (id: string) => void
   onDraft: (value: string) => void
   context: ContextView
+  observation?: ReactNode
   onSend: () => void
   onAbort: () => void
   onQueue?: () => void
@@ -36,7 +34,6 @@ type Props = {
   onThinking?: (level: string) => void
 }
 
-/** Codex-style composer: rounded card, model chip row, send button. */
 export function Composer({
   draft,
   selection,
@@ -44,6 +41,7 @@ export function Composer({
   onRemoveFeedback,
   onDraft,
   context,
+  observation,
   onSend,
   onAbort,
   onQueue,
@@ -72,8 +70,8 @@ export function Composer({
     if (selection) Object.assign(selection, { text: node.value, start: node.selectionStart, end: node.selectionEnd, direction: node.selectionDirection })
   }
   return (
-    <div className="bg-background/80 sticky bottom-0 px-3 pt-2 pb-2 backdrop-blur md:px-6 md:pb-3">
-      <div className="border-input bg-card focus-within:border-ring/60 mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border p-2.5 shadow-sm md:p-3">
+    <div className="wb-compose-area">
+      <div className="wb-composer" role="group" aria-label="消息输入">
         {feedback?.length ? <ul aria-label="行内反馈草稿" className="flex max-h-24 min-w-0 flex-wrap gap-1.5 overflow-y-auto p-0.5">
           {feedback.map(item => <li key={item.id} className="bg-muted flex min-w-0 max-w-full items-center gap-1 rounded-md pl-2 text-xs">
             <span className="min-w-0 truncate" title={`${item.location}\n${item.comment}`}>{item.location}</span>
@@ -100,18 +98,16 @@ export function Composer({
               if (!sendDisabledReason && draft.trim()) onSend()
             }
           }}
-          placeholder="给 rpi 发消息…（⌘↵ 发送）"
-          className="max-h-40 min-h-[36px] resize-none border-0 bg-transparent p-0 text-[14px] shadow-none focus-visible:ring-0 md:min-h-[52px]"
+          aria-label="消息"
+          placeholder="给 rpi 发消息…"
+          className="wb-composer-input"
         />
-        {error ? <p className="text-destructive text-[11px]">{error}</p> : null}
-        <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
-          <Button variant="ghost" size="icon" className="size-7" aria-label="添加附件">
-            <Paperclip className="size-4" />
+        {error ? <p className="text-destructive px-1 py-1 text-[11px]">{error}</p> : null}
+        <div className="wb-composer-tools">
+          <Button variant="ghost" size="icon" className="wb-composer-add" aria-label="添加附件" disabled>
+            <Plus aria-hidden="true" />
           </Button>
-          <span className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px]">
-            <Avatar className="size-4">
-              <AvatarFallback className="text-[8px]">r</AvatarFallback>
-            </Avatar>
+          <span className="wb-composer-select">
             {modelOptions && modelOptions.length > 0 && onModel ? (
               <select
                 aria-label="选择模型"
@@ -121,7 +117,6 @@ export function Composer({
                   const option = modelOptions.find((entry) => JSON.stringify([entry.provider, entry.id]) === event.target.value)
                   if (option) onModel(option.id, option.provider)
                 }}
-                className="bg-transparent outline-none"
               >
                 <option value="" disabled>{modelLabel}</option>
                 {modelOptions.map((option) => (
@@ -131,18 +126,16 @@ export function Composer({
                 ))}
               </select>
             ) : (
-              modelLabel
+              <span title={modelLabel}>{modelLabel}</span>
             )}
           </span>
-          <span className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px]">
-            <SlidersHorizontal className="size-3.5" />
+          <span className="wb-composer-select">
             {thinkingOptions && thinkingOptions.length > 0 && onThinking ? (
               <select
                 aria-label="选择思考等级"
                 value={thinking}
                 disabled={thinkingDisabled}
                 onChange={(event) => onThinking(event.target.value)}
-                className="bg-transparent outline-none"
               >
                 {thinkingOptions.map((level) => (
                   <option key={level} value={level}>
@@ -151,14 +144,14 @@ export function Composer({
                 ))}
               </select>
             ) : (
-              `思考 ${thinking}`
+              <span>{`思考 ${thinking}`}</span>
             )}
           </span>
           {onQueue ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-[11px]"
+              className="wb-composer-queue"
               onClick={onQueue}
               disabled={!!queueDisabledReason || draft.trim().length === 0}
               title={queueDisabledReason}
@@ -166,31 +159,29 @@ export function Composer({
               加入队列
             </Button>
           ) : null}
-          <span className="text-muted-foreground ml-auto text-[11px] tabular-nums">
-            上下文 {context.percentText}
-          </span>
           {busy ? (
-            <Button size="icon" className="size-7 rounded-full" aria-label="中止" disabled={abortDisabled} onClick={onAbort} variant="secondary">
+            <Button size="icon" className="wb-composer-send" aria-label="中止" disabled={abortDisabled} onClick={onAbort} variant="secondary">
               <Square className="size-3.5" />
             </Button>
           ) : (
             <Button
               size="icon"
-              className="size-7 rounded-full"
+              className="wb-composer-send"
               aria-label="发送"
               disabled={!!sendDisabledReason || draft.trim().length === 0}
               title={sendDisabledReason}
               onClick={onSend}
-              aria-keyshortcuts="Meta+Enter"
+              aria-keyshortcuts="Meta+Enter Control+Enter"
             >
               <ArrowUp className="size-4" />
             </Button>
           )}
         </div>
       </div>
-      <p className="text-muted-foreground mt-1 text-center text-[10px] md:mt-2 md:text-[11px]">
-        原型：⌘↵ 发送 · 事件经 Rust 投影渲染
-      </p>
+      <div className="wb-composer-context">
+        {observation}
+        <span className="wb-composer-usage">上下文 {context.percentText}</span>
+      </div>
     </div>
   )
 }

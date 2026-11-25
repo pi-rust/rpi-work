@@ -33,7 +33,7 @@ export function UserRow({ message }: { message: HistoryMessage }) {
   return (
     <div className="wb-user-row flex flex-col items-end gap-1">
       <span className="wb-user-label text-muted-foreground text-[11px] font-medium tracking-wide uppercase">你</span>
-      <p className="wb-prompt bg-muted/70 max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[15px] leading-7 whitespace-pre-wrap">
+      <p className="wb-prompt whitespace-pre-wrap">
         {message.content}
       </p>
     </div>
@@ -45,7 +45,7 @@ export function AnswerRow({ text, model, action }: { text: string; model?: strin
   // left edge so a turn reads as one block.
   return (
     <div className="wb-answer flex min-w-0 flex-col gap-2">
-      <span className="text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase">
+      <span className="wb-answer-label text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase">
         rpi
         {model ? <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal normal-case">
           {model.split('/').at(-1)}

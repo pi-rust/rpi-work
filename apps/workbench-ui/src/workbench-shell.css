@@ -13,8 +13,9 @@
 .wb-window-marks span:nth-child(3) { background: #28c840; border-color: #1fb136; }
 .wb-history-controls, .wb-header-tools { display: flex; align-items: center; gap: 3px; }
 .wb-header-tools { margin-left: auto; }
+.wb-header-tools .wb-header-panel { height: 28px; gap: 4px; padding-inline: 7px; font-size: 12px; font-weight: 400; }
 .wb-display-options { position: fixed; inset: 48px 12px auto auto; margin: 0; padding: 10px; max-width: calc(100vw - 24px); border: 1px solid var(--border); border-radius: 10px; background: var(--background); color: var(--foreground); box-shadow: 0 5px 20px #0002; font-size: 12px; }
-.wb-body { grid-row: 2; grid-column: 3/-1; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+.wb-body { --wb-reading-inset: 24px; grid-row: 2; grid-column: 3/-1; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
 .workbench-shell .workbench-browser-inspector { width: clamp(360px,38vw,560px); width: round(nearest, clamp(360px,38vw,560px), 1px); }
 .wb-activity-rail { grid-row: 2; grid-column: 1; display: flex; flex-direction: column; align-items: center; padding: 8px 4px 11px; background: var(--shell-chrome); }
 .wb-activity-rail nav { display: grid; gap: 5px; }
@@ -73,11 +74,13 @@
 @media (max-width: 700px) {
   .workbench-shell { grid-template-columns: minmax(0,1fr); grid-template-rows: 44px minmax(0,1fr); }
   .wb-window-header { padding: 0 5px; gap: 1px; }
-  .wb-body { grid-column: 1; }
+  .wb-body { --wb-reading-inset: 14px; grid-column: 1; }
   .wb-activity-rail, .wb-history-controls, .wb-window-marks { display: none; }
   .wb-window-title { position: static; left: auto; transform: none; flex: 1; max-width: none; gap: 1px; }
   .wb-window-title > span:not(.sr-only) { font-size: 13px; }
   .wb-header-tools { gap: 1px; }
+  .wb-header-tools .wb-header-panel { padding-inline: 5px; }
+  .wb-header-panel[aria-label="文件面板"] > span { display: none; }
   .wb-sidebar { width: min(300px,90vw); }
   .wb-new-chat, .wb-thread, .wb-project { min-height: 40px; }
   .wb-project-pin { opacity: 1 !important; }

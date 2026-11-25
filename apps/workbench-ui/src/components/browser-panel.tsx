@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CircleHelp, ExternalLink, Globe, Plus, RotateCw, X } from 'lucide-react'
 
 import './browser-panel.css'
 
@@ -86,7 +86,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
           return (
             <div key={item.id} id={`preview-page-${item.id}`} role="tabpanel" aria-labelledby={`preview-tab-${item.id}`} hidden={item.id !== active} className="real-browser-page">
               {address ? <iframe key={`${item.id}:${item.revision}`} title={`页面预览 ${item.id}`} src={address} sandbox="allow-scripts" referrerPolicy="no-referrer" onLoad={() => update(item.id, value => value.revision === item.revision ? { ...value, loading: false } : value)} /> : (
-                <div className="real-browser-empty"><Globe aria-hidden="true" /><strong>预览项目页面</strong><p>输入实际页面地址，或启动项目开发服务器后打开其地址。</p><p>这里不会生成假的项目首页，也不会自动启动开发服务。</p></div>
+                <div className="real-browser-empty"><Globe aria-hidden="true" /><strong>预览项目页面</strong><p>在地址栏输入项目页面的 HTTP(S) 地址。</p></div>
               )}
             </div>
           )
@@ -96,8 +96,11 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
         <span role="status">{url ? tab.loading ? '正在请求页面…' : '真实页面预览' : '尚未打开页面'}</span>
         <label>页面<select aria-label="预览页面历史" disabled={!url} value={tab.index} onChange={event => move(Number(event.target.value))}>{tab.history.length ? tab.history.map((address, index) => <option value={index} key={index}>{new URL(address).pathname || '/'} · {index + 1}</option>) : <option value={-1}>未打开</option>}</select></label>
         <label>视口<select aria-label="预览视口" value={viewport} onChange={event => setViewport(event.target.value)}><option value="responsive">自适应</option><option value="mobile">移动设备</option></select></label>
+        <details className="real-browser-help">
+          <summary aria-label="预览说明" title="预览说明"><CircleHelp aria-hidden="true" /></summary>
+          <p>历史记录来自地址栏导航。若网站限制嵌入，请在新窗口打开。</p>
+        </details>
       </div>
-      <p className="real-browser-boundary">仅记录地址栏导航；页内跳转受隔离限制。页面禁止嵌入时请在新窗口打开；不传入节点凭据。</p>
     </section>
   )
 }

@@ -103,8 +103,8 @@ async function waitForServer(url, timeoutMs = 30000) {
     // Layout parity: the prompt is a compact chip, the answer owns the column.
     const geometry = await page.evaluate(() => {
       const log = document.querySelector('[role="log"]')
-      const prose = log?.querySelector('p.whitespace-pre-wrap')
-      const user = [...(log?.querySelectorAll('p') ?? [])].find((node) => node.className.includes('bg-muted'))
+      const prose = log?.querySelector('.wb-prose')
+      const user = log?.querySelector('.wb-prompt')
       const container = log?.firstElementChild
       return {
         proseWidth: prose ? Math.round(prose.getBoundingClientRect().width) : 0,
@@ -113,8 +113,8 @@ async function waitForServer(url, timeoutMs = 30000) {
         gap: container ? getComputedStyle(container).rowGap : '',
       }
     })
-    assert(geometry.proseWidth > 0 && geometry.proseWidth <= 740, 'prose column: ' + JSON.stringify(geometry))
-    assert(geometry.userWidth > 0 && geometry.userWidth < geometry.proseWidth + 80, 'user chip stays compact: ' + JSON.stringify(geometry))
+    assert(geometry.proseWidth > 0 && geometry.proseWidth === geometry.containerWidth, 'prose column: ' + JSON.stringify(geometry))
+    assert(geometry.userWidth > 0 && geometry.userWidth < geometry.proseWidth * .91, 'user chip stays compact: ' + JSON.stringify(geometry))
     assert(parseFloat(geometry.gap) >= 24, 'turns are separated: ' + geometry.gap)
     pass('message area keeps a compact prompt chip, a bounded prose column and turn spacing')
 
@@ -130,7 +130,7 @@ async function waitForServer(url, timeoutMs = 30000) {
     pass('expanding a live tool card shows the streamed result')
 
     // P4: send a prompt and clear the draft only after the node accepts it.
-    const composer = page.getByPlaceholder('给 rpi 发消息…（⌘↵ 发送）')
+    const composer = page.getByRole('textbox', { name: '消息', exact: true })
     await composer.fill('把深色模式也应用到设置页')
     await page.getByRole('button', { name: '发送' }).click()
     await page.waitForFunction(() => document.querySelector('textarea')?.value === '')

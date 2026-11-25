@@ -1,0 +1,93 @@
+.wb-compose-area {
+  flex: none;
+  padding: 4px var(--wb-reading-inset) 14px;
+  background: var(--background);
+}
+.wb-composer, .wb-composer-context {
+  max-width: 48rem;
+  margin-inline: auto;
+}
+.wb-composer {
+  padding: 12px 10px 9px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--background);
+  box-shadow: 0 2px 5px #00000007, 0 5px 20px #00000004;
+}
+.wb-composer:focus-within { border-color: var(--ring); }
+.wb-composer .wb-composer-input {
+  display: block;
+  min-height: 47px;
+  max-height: min(155px, 24dvh);
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.6;
+  resize: none;
+  box-shadow: none;
+}
+.wb-composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted-foreground);
+}
+.wb-composer-tools .wb-composer-add, .wb-composer-tools .wb-composer-send {
+  width: 28px;
+  height: 28px;
+}
+.wb-composer-tools .wb-composer-send {
+  margin-inline-start: auto;
+  border-radius: 50%;
+}
+.wb-composer-tools .wb-composer-send:disabled {
+  opacity: 1;
+  color: var(--muted-foreground);
+  background: var(--accent);
+}
+.wb-composer-select {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 160px;
+  font-size: 13px;
+}
+.wb-composer-select select, .wb-composer-select > span {
+  max-width: 100%;
+  min-width: 0;
+  padding-inline: 6px;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-composer-select select {
+  height: 28px;
+  background-color: var(--background);
+}
+.wb-composer-tools .wb-composer-queue {
+  height: 28px;
+  padding-inline: 5px;
+  font-size: 11px;
+}
+.wb-composer-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 32px;
+  padding-inline: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.wb-composer-usage { margin-inline-start: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  .wb-compose-area { padding-bottom: 3px; }
+}
+@media (pointer: coarse) {
+  .wb-composer-tools .wb-composer-add, .wb-composer-tools .wb-composer-send { width: 44px; height: 44px; }
+  .wb-composer-select select, .wb-composer-tools .wb-composer-queue { height: 44px; }
+  .wb-composer .wb-composer-input { font-size: 16px; }
+}

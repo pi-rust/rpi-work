@@ -107,6 +107,34 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
         }
       }
     })
+    await check('composer shares the prototype reading edge and keeps send or stop at the toolbar end', async ({ page, open, rendered }) => {
+      await open()
+      for (const width of [1440, 1024, 390, 320]) {
+        await page.setViewportSize({ width, height: 940 })
+        await rendered()
+        const box = selector => page.locator(selector).boundingBox()
+        const [column, composer, tools, send, input, status] = await Promise.all([
+          box('.wb-transcript'), box('.wb-composer'), box('.wb-composer-tools'), box('.wb-composer-send'),
+          box('.wb-composer-input'), box('.wb-observation'),
+        ])
+        assert.equal(composer.x, column.x)
+        assert.equal(composer.width, column.width)
+        assert.equal(input.height, 47)
+        assert.equal(tools.height, 28)
+        assert.equal(send.y, tools.y)
+        assert.equal(send.x + send.width, tools.x + tools.width)
+        assert(status.y >= composer.y + composer.height)
+        if (width <= 700) assert.equal(composer.x, 14)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width)
+      }
+      fixture.emit({ type: 'agent_start' })
+      await page.getByRole('button', { name: '中止', exact: true }).waitFor()
+      const toolbar = await page.locator('.wb-composer-tools').boundingBox()
+      const stop = await page.getByRole('button', { name: '中止', exact: true }).boundingBox()
+      assert.equal(stop.x + stop.width, toolbar.x + toolbar.width)
+      fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
+      await page.getByRole('button', { name: '发送', exact: true }).waitFor()
+    })
     await check('invalid preferences fall back to reading and rejected storage keeps the selected layout in memory', async ({ context, page, open, choose }) => {
       await context.addInitScript(key => {
         localStorage.setItem(key, 'unsupported-layout')
