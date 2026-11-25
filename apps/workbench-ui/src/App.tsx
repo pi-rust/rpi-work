@@ -25,6 +25,7 @@ import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
 import { useTheme } from '@/lib/theme'
 import { useMessageLayout } from '@/lib/message-layout'
+import { useProjectGrouping } from '@/lib/project-grouping'
 import { useConversationScroll } from '@/lib/use-conversation-scroll'
 import { useScopedPresentation } from '@/lib/use-scoped-presentation'
 import { readDirectoryExpansion, saveDirectoryExpansion } from '@/lib/directory-expansion'
@@ -108,6 +109,7 @@ export default function App() {
 
   const theme = useTheme(workspace.presentationReady)
   const messageLayout = useMessageLayout()
+  const projectGrouping = useProjectGrouping()
   const dark = theme.choice.dark
   const openSettings = () => {
     setSettingsOpen(true)
@@ -167,6 +169,7 @@ export default function App() {
           onClose={() => isMobile ? setDrawer(false) : setNavigation(false)}
           className={isMobile ? 'relative z-50 h-full shadow-xl' : undefined}
           projects={workspace.projects}
+          projectGrouping={projectGrouping.grouping}
           sessions={workspace.sessions}
           filter={workspace.sessionFilter}
           activityRead={workspace.sessionActivityRead}
@@ -611,7 +614,19 @@ export default function App() {
             </div>
           </div>
 
-          {settingsOpen ? <SettingsDialog onClose={() => setSettingsOpen(false)} appearance={
+          {settingsOpen ? <SettingsDialog onClose={() => setSettingsOpen(false)} general={
+            <section>
+              <h3>常规</h3>
+              <h4 className="mb-2 mt-5 text-sm font-medium">工作区</h4>
+              <label className="wb-settings-preference" htmlFor="wb-project-grouping">项目列表显示
+                <select id="wb-project-grouping" value={projectGrouping.grouping}
+                  onChange={event => projectGrouping.updateGrouping(event.target.value === 'flat' ? 'flat' : 'node')}>
+                  <option value="node">按节点分组</option>
+                  <option value="flat">平铺</option>
+                </select>
+              </label>
+            </section>
+          } appearance={
             <section>
               <h3>外观</h3>
               <p className="text-muted-foreground mb-6 text-sm">仅影响本设备显示，不改变节点配置或运行中的任务。</p>

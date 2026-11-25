@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, Globe, Info, KeyRound, Palette, Search, X } from 'lucide-react'
+import { ChevronDown, Globe, Info, KeyRound, Palette, Search, Settings2, X } from 'lucide-react'
 import './settings-dialog.css'
 
-export type SettingsCategory = 'providers' | 'connections' | 'appearance' | 'about'
+export type SettingsCategory = 'general' | 'providers' | 'connections' | 'appearance' | 'about'
 const destinations = [
+  { id: 'general', label: '常规', group: '应用', terms: '工作区 项目列表显示 按节点分组 平铺', icon: Settings2 },
   { id: 'appearance', label: '外观', group: '应用', terms: '主题 明暗 密度 阅读 经典 消息布局', icon: Palette },
   { id: 'providers', label: '提供商', group: '节点', terms: '配置 API 密钥 模型 provider revision', icon: KeyRound },
   { id: 'connections', label: '工作协同', group: '节点', terms: '节点 地址 项目 会话 手机 二维码 一次性授权', icon: Globe },
@@ -12,8 +13,9 @@ const destinations = [
 
 /** Native modality supplies the focus boundary and inert background. Only
  * existing device preferences and real node capabilities enter this shell. */
-export function SettingsDialog({ onClose, appearance, children }: {
+export function SettingsDialog({ onClose, general, appearance, children }: {
   onClose: () => void
+  general: ReactNode
   appearance: ReactNode
   children: (category: SettingsCategory) => ReactNode
 }) {
@@ -88,7 +90,8 @@ export function SettingsDialog({ onClose, appearance, children }: {
         </div>
       </nav>
       <div ref={content} tabIndex={-1} className="wb-settings-content">
-        <p id="wb-settings-description" className="sr-only">本设备外观偏好与当前节点的真实设置；尚未接通的演示能力不在此处提供。</p>
+        <p id="wb-settings-description" className="sr-only">本设备的显示偏好与当前节点的设置。</p>
+        {category === 'general' ? general : null}
         {category === 'appearance' ? appearance : null}
         {children(category)}
       </div>

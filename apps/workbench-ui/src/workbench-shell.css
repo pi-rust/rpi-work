@@ -52,11 +52,11 @@
 .wb-node-toggle > svg:first-child { width: 10px; height: 10px; }
 .wb-node-toggle > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-node-toggle small { font-size: 11px; }
-#wb-node { margin-left: 12px; }
+#wb-projects[data-layout="node"] > #wb-node { margin-left: 12px; }
 .wb-project-row { position: relative; }
 .wb-project { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 32px 0 10px; border-radius: 10px; text-align: left; font-size: 14px; }
-.wb-project > svg { width: 15px; height: 15px; }
-.wb-project > svg:last-child:not(:first-child) { width: 12px; height: 12px; color: var(--muted-foreground); }
+.wb-project > svg { flex: none; width: 15px; height: 15px; }
+.wb-project > .wb-project-pin-marker, .wb-project > .wb-project-node-icon { width: 12px; height: 12px; color: var(--muted-foreground); }
 .wb-project > span, .wb-thread > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-project > span { flex: 1; }
 .workbench-shell .wb-project-pin { position: absolute; top: 2px; right: 3px; opacity: 0; }

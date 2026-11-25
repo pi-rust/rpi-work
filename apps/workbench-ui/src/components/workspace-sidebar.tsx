@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Archive, ChevronDown, Folder, ListChecks, Network, PanelLeftClose, Pin, Plus, Search, SquarePen } from 'lucide-react'
 import type { Project, Session, SessionActivityRead, SessionFilter } from '@/lib/types'
+import type { ProjectGrouping } from '@/lib/project-grouping'
 import { cn } from '@/lib/utils'
 
 type Section = 'projects' | 'node' | 'pinned' | 'recent'
@@ -13,6 +14,7 @@ function readPreferences(scope: string): Preferences {
   } catch { return { folded: {}, projectPins: [] } }
 }
 type Props = {
+  projectGrouping: ProjectGrouping
   projects: Project[]; sessions: Session[]; project: string; session: string
   filter: SessionFilter; onFilter?: (mode: SessionFilter) => void; activityRead: SessionActivityRead
   onProject: (id: string) => void; onSession: (id: string) => void
@@ -22,7 +24,7 @@ type Props = {
 }
 
 /** Presentation-only preferences; session pin/archive facts remain node-owned. */
-export function Sidebar({ projects, sessions, project, session, filter, onFilter, activityRead, onProject, onSession, onNewChat, onAddProject, creationHint, onSearch, onArchives, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
+export function Sidebar({ projects, projectGrouping, sessions, project, session, filter, onFilter, activityRead, onProject, onSession, onNewChat, onAddProject, creationHint, onSearch, onArchives, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
   const [preferences, setPreferences] = useState(() => readPreferences(scope))
   const [filterOpen, setFilterOpen] = useState(false)
   const filterButton = useRef<HTMLButtonElement>(null)
@@ -37,6 +39,20 @@ export function Sidebar({ projects, sessions, project, session, filter, onFilter
   const toggle = (section: Section) => save({ ...preferences, folded: { ...preferences.folded, [section]: !preferences.folded[section] } })
   const pinnedProjects = new Set(preferences.projectPins)
   const orderedProjects = [...projects].sort((a, b) => Number(pinnedProjects.has(b.id)) - Number(pinnedProjects.has(a.id)))
+  const grouped = projectGrouping === 'node'
+  const nodeDescription = `所属节点：${nodeLabel}${nodeState === 'fixture' ? '（示例）' : ''}`
+  const projectRows = orderedProjects.map(item => (
+    <div className="wb-project-row" key={item.id}>
+      <button type="button" className="wb-project" onClick={() => onProject(item.id)} aria-current={project === item.id ? 'true' : undefined}
+        aria-description={nodeDescription} title={`${item.name} · ${nodeDescription}`}>
+        <Folder aria-hidden="true" /><span>{item.name}</span>
+        {pinnedProjects.has(item.id) ? <Pin aria-hidden="true" className="wb-project-pin-marker" /> : null}
+        {!grouped ? <Network aria-hidden="true" className="wb-project-node-icon" /> : null}
+      </button>
+      <button type="button" className="wb-icon wb-project-pin" aria-label={`置顶项目 ${item.name}`} aria-pressed={pinnedProjects.has(item.id)} title="仅调整本设备项目显示顺序，不改变会话"
+        onClick={() => save({ ...preferences, projectPins: pinnedProjects.has(item.id) ? preferences.projectPins.filter(id => id !== item.id) : [...preferences.projectPins, item.id] })}><Pin aria-hidden="true" /></button>
+    </div>
+  ))
   const availableSessions = sessions.filter(item => !item.archived)
   const visibleSessions = availableSessions.filter(item => filter === 'all' || (activityRead === 'ready' &&
     (item.activity === 'awaitingApproval' || (filter === 'running' && item.activity === 'running'))))
@@ -72,16 +88,10 @@ export function Sidebar({ projects, sessions, project, session, filter, onFilter
       <nav className="wb-project-scroll" aria-label="项目与会话">
         <section aria-label="项目" className="wb-sidebar-section">
           <div className="wb-project-heading">{heading('projects', '项目')}<button type="button" className="wb-icon" aria-label="添加项目" onClick={onAddProject} disabled={!onAddProject} title={!onAddProject ? creationHint ?? '请先连接真实节点' : '添加目标节点上的已有项目'}><Plus aria-hidden="true" /></button></div>
-          <div id="wb-projects" hidden={preferences.folded.projects}>
+          <div id="wb-projects" hidden={preferences.folded.projects} data-layout={projectGrouping}>
             {nodeState === 'disconnected' ? <p className="wb-empty">连接节点后显示项目</p> : <>
-            <button type="button" className="wb-node-toggle" aria-label={`节点项目 ${nodeLabel}`} aria-expanded={!preferences.folded.node} aria-controls="wb-node" onClick={() => toggle('node')}><ChevronDown aria-hidden="true" /><Network aria-hidden="true" /><span>{nodeLabel}</span>{nodeState === 'fixture' ? <small>示例</small> : null}<small>{projects.length}</small></button>
-            <div id="wb-node" hidden={preferences.folded.node}>
-              {orderedProjects.map(item => <div className="wb-project-row" key={item.id}>
-                <button type="button" className="wb-project" onClick={() => onProject(item.id)} aria-current={project === item.id ? 'true' : undefined} title={item.name}><Folder aria-hidden="true" /><span>{item.name}</span>{pinnedProjects.has(item.id) ? <Pin aria-hidden="true" /> : null}</button>
-                <button type="button" className="wb-icon wb-project-pin" aria-label={`置顶项目 ${item.name}`} aria-pressed={pinnedProjects.has(item.id)} title="仅调整本设备项目显示顺序，不改变会话" onClick={() => save({ ...preferences, projectPins: pinnedProjects.has(item.id) ? preferences.projectPins.filter(id => id !== item.id) : [...preferences.projectPins, item.id] })}><Pin aria-hidden="true" /></button>
-              </div>)}
-              {!projects.length ? <p className="wb-empty">当前节点没有项目</p> : null}
-            </div>
+              {grouped ? <button type="button" className="wb-node-toggle" aria-label={`节点项目 ${nodeLabel}`} aria-expanded={!preferences.folded.node} aria-controls="wb-node" onClick={() => toggle('node')}><ChevronDown aria-hidden="true" /><Network aria-hidden="true" /><span>{nodeLabel}</span>{nodeState === 'fixture' ? <small>示例</small> : null}<small>{projects.length}</small></button> : null}
+              <div id="wb-node" hidden={grouped && preferences.folded.node}>{projectRows}{!projects.length ? <p className="wb-empty">当前节点没有项目</p> : null}</div>
             </>}
           </div>
         </section>
