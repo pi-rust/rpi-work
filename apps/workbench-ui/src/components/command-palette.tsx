@@ -10,10 +10,10 @@ type Props = {
   projects: Project[]
   sessions: Session[]
   onClose: () => void
-  onSelect: (projectId: string, sessionId: string) => void
+  onSelect: (sessionId: string) => void
 }
 
-type Entry = { key: string; label: string; hint: string; projectId: string; sessionId: string }
+type Entry = { id: string; label: string; hint: string }
 
 /**
  * Command palette (⌘K): one keyboard path to any project or session.
@@ -31,11 +31,9 @@ export function CommandPalette({ open, projects, sessions, onClose, onSelect }: 
     const names = new Map(projects.map((project) => [project.id, project.name]))
     return sessions
       .map((session) => ({
-        key: session.id,
+        id: session.id,
         label: session.title,
         hint: names.get(session.projectId) ?? session.projectId,
-        projectId: session.projectId,
-        sessionId: session.id,
       }))
       .filter((entry) => {
         const needle = query.trim().toLowerCase()
@@ -61,7 +59,7 @@ export function CommandPalette({ open, projects, sessions, onClose, onSelect }: 
 
   const choose = (entry: Entry | undefined) => {
     if (!entry) return
-    onSelect(entry.projectId, entry.sessionId)
+    onSelect(entry.id)
     onClose()
   }
 
@@ -107,7 +105,7 @@ export function CommandPalette({ open, projects, sessions, onClose, onSelect }: 
           ) : (
             entries.map((entry, index) => (
               <li
-                key={entry.key}
+                key={entry.id}
                 role="option"
                 aria-selected={index === active}
                 onMouseEnter={() => setActive(index)}

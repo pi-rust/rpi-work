@@ -304,7 +304,7 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
       await page.getByText('scroll-new-history', { exact: false }).waitFor()
       await page.waitForFunction(() => { const node = document.querySelector('.wb-message-scroll'); return node.scrollHeight - node.scrollTop - node.clientHeight <= 2 })
     })
-    await check('process expansion, page navigation and session restore preserve the reading anchor, draft and real iframe', async ({ page, open, rendered }) => {
+    await check('process expansion, page navigation and conversation history preserve the reading anchor, draft and real iframe', async ({ page, open, rendered }) => {
       await open()
       const log = page.locator('.wb-message-scroll')
       const group = page.locator('[data-activity-key="activity/tool/layout-intent"]')
@@ -349,7 +349,10 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
       await assertAnchor()
       await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
       await page.getByText('architecture-scroll-0', { exact: false }).waitFor()
-      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      const back = page.getByRole('button', { name: '上一个会话', exact: true })
+      assert.equal(await back.isEnabled(), true, 'A visited conversation enables the title-bar back button')
+      await back.focus()
+      await page.keyboard.press('Enter')
       await assertAnchor()
       assert.notEqual(await group.getAttribute('open'), null)
       assert.equal(await tool.locator('[data-slot="collapsible-trigger"]').getAttribute('aria-expanded'), 'true')

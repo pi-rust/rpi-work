@@ -41,6 +41,8 @@ export type FileRead = { path: string; mode: 'source' | 'diff'; staged: boolean 
   | { status: 'error'; error: string }
 )
 
+type Selection = { project: string; session: string }
+
 export type Workspace = {
   presentationReady: boolean
   status: Status
@@ -56,7 +58,9 @@ export type Workspace = {
   /** Canonical messages for the selected session (fixture: also projected). */
   history: HistoryMessage[]
   blocks: Block[]
-  selected: { project: string; session: string }
+  selected: Selection
+  previousSelection: (() => void) | undefined
+  nextSelection: (() => void) | undefined
   rows: RowRef[]
   transcript: ConversationView | null
   messageCount: number
@@ -129,14 +133,19 @@ const historyFromView = (view?: ConversationView): HistoryMessage[] =>
 
 export function useWorkspace(): Workspace {
   const [status, setStatus] = useState<Status>('boot')
-  const [presentationReady, setPresentationReady] = useState(false)
+  const [presenter, setPresenter] = useState<TranscriptPresenter | null>(null)
+  const presentationReady = presenter !== null
   const [source, setSource] = useState<Source>({ kind: sample ? 'fixture' : 'disconnected' })
   const [error, setError] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>(sample?.projects ?? [])
   const [sessions, setSessions] = useState<Session[]>(sample?.sessions ?? [])
   const [history, setHistory] = useState<HistoryMessage[]>(sample?.history ?? [])
   const [blocks, setBlocks] = useState<Block[]>(sample?.blocks ?? [])
-  const [selected, setSelected] = useState({ project: sample?.sessions[0]?.projectId ?? '', session: sample?.sessions[0]?.id ?? '' })
+  const [trail, setTrail] = useState(() => ({
+    entries: [{ project: sample?.sessions[0]?.projectId ?? '', session: sample?.sessions[0]?.id ?? '' }],
+    position: 0,
+  }))
+  const selected = trail.entries[trail.position]
   const connection = useRef<NodeConnection | null>(null)
   const epoch = useRef(0)
   const sessionTicket = useRef(0)
@@ -149,7 +158,8 @@ export function useWorkspace(): Workspace {
   type Creation = { conn: NodeConnection; epoch: number; ticket: number; kind: 'project' | 'session'; id?: string; reading?: boolean }
   const creationRequest = useRef<Creation | null>(null)
   const pendingOrigin = useRef<string>('')
-  const presenter = useRef<TranscriptPresenter | null>(null)
+  // Read-only history may finish before the render that publishes the presenter.
+  const presenterRef = useRef<TranscriptPresenter | null>(null)
   const historyRef = useRef<HistoryMessage[]>(sample?.history ?? [])
   const binding = useRef<BoundSession | null>(null)
   const bindingEpoch = useRef(0)
@@ -185,8 +195,9 @@ export function useWorkspace(): Workspace {
     let active = true
     void initViewModel().then(() => {
       if (!active) return
-      presenter.current = new TranscriptPresenter()
-      setPresentationReady(true)
+      const instance = new TranscriptPresenter()
+      presenterRef.current = instance
+      setPresenter(instance)
       if (epoch.current === 0) setStatus(sample ? 'fixture' : 'disconnected')
     }).catch(cause => {
       if (!active) return
@@ -202,7 +213,23 @@ export function useWorkspace(): Workspace {
     bindingEpoch.current = 0
   }, [])
 
-  const clearSession = useCallback((project: string) => {
+  // The visit and selection change together, before the async session read starts.
+  const visit = useCallback((project: string, session = '', position?: number) => {
+    setTrail(current => {
+      if (!project && !session) return { entries: [{ project, session }], position: 0 }
+      // A concurrent creation may have replaced the forward branch since render.
+      const destination = position === undefined ? undefined : current.entries[position]
+      if (position !== undefined && destination?.project === project && destination.session === session) {
+        return { ...current, position }
+      }
+      const previous = current.entries[current.position]
+      if (previous.project === project && previous.session === session) return current
+      const entries = [...current.entries.slice(0, current.position + 1), { project, session }]
+      return { entries, position: entries.length - 1 }
+    })
+  }, [])
+
+  const clearSession = useCallback((project: string, session = '', position?: number) => {
     stopLive()
     sessionTicket.current++
     reviewTicket.current++
@@ -211,7 +238,7 @@ export function useWorkspace(): Workspace {
     installRequest.current = null
     sessionIdRef.current = ''
     historyRef.current = []
-    setSelected({ project, session: '' })
+    visit(project, session, position)
     setHistory([])
     setBlocks([])
     setLiveView(null)
@@ -233,15 +260,14 @@ export function useWorkspace(): Workspace {
     setFiles([])
     setFileRead(null)
     setResources({ rows: [], counts: [0, 0, 0] })
-  }, [stopLive])
+  }, [stopLive, visit])
 
-  const loadSession = useCallback(async (conn: NodeConnection, sessionId: string, projectId: string) => {
+  const loadSession = useCallback(async (conn: NodeConnection, sessionId: string, projectId: string, position?: number) => {
     if (conn !== connection.current) return
-    clearSession(projectId)
+    clearSession(projectId, sessionId, position)
     const generation = epoch.current
     const ticket = sessionTicket.current
     const current = () => connection.current === conn && epoch.current === generation && sessionTicket.current === ticket
-    setSelected({ project: projectId, session: sessionId })
     setStatus('connecting')
     setError(null)
     try {
@@ -276,7 +302,7 @@ export function useWorkspace(): Workspace {
       try {
         const page = await conn.messages(sessionId)
         if (!current()) return
-        const readOnly = presenter.current?.conversation(`readonly/${conn.origin}/${sessionId}`, page.messages, [])
+        const readOnly = presenterRef.current?.conversation(`readonly/${conn.origin}/${sessionId}`, page.messages, [])
         if (!readOnly) throw new Error('显示组件尚未就绪')
         const messages = historyFromView(readOnly)
         setReadOnlyTranscript(readOnly)
@@ -753,12 +779,12 @@ export function useWorkspace(): Workspace {
     setSessions([])
     setHistory([])
     setBlocks([])
-    setSelected({ project: '', session: '' })
+    visit('')
     setControls(null)
     setRecovery(null)
     setError(null)
     setStatus('disconnected')
-  }, [stopLive])
+  }, [stopLive, visit])
 
   // A committed create is not inserted optimistically. Reconcile by its exact
   // node-returned ID; an unknown outcome stays locked and is never re-posted.
@@ -839,49 +865,55 @@ export function useWorkspace(): Workspace {
     return readCreation(request)
   }, [creation.busy, readCreation])
 
-  const selectProject = useCallback(
-    (id: string) => {
-      const next = sessions.find((session) => session.projectId === id && !session.archived)
-      if (!next) {
-        clearSession(id)
-        if (source.kind === 'live') setStatus('ready')
-        return
+  const openSelection = (project: string, session = '', position?: number) => {
+    if (source.kind === 'live' && connection.current && epoch.current === connectionId) {
+      if (session) void loadSession(connection.current, session, project, position)
+      else {
+        clearSession(project, '', position)
+        setError(null)
+        setStatus('ready')
       }
-      void selectSession(next.id)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessions, source, clearSession],
-  )
+    } else if (source.kind === 'fixture') {
+      if (session) visit(project, session, position)
+      else clearSession(project, '', position)
+    }
+  }
 
-  const selectSession = useCallback(
-    async (id: string) => {
-      const session = sessions.find((entry) => entry.id === id)
-      if (!session) return
-      if (source.kind === 'live' && connection.current) {
-        await loadSession(connection.current, session.id, session.projectId)
-        return
-      }
-      setSelected({ project: session.projectId, session: session.id })
-    },
-    [sessions, source, loadSession],
-  )
+  const selectProject = (id: string) => {
+    const session = sessions.find(item => item.projectId === id && !item.archived)
+    openSelection(id, session?.id)
+  }
+
+  const selectSession = (id: string) => {
+    const session = sessions.find(item => item.id === id)
+    if (session) openSelection(session.projectId, session.id)
+  }
+
+  const stepSelection = (direction: -1 | 1) => {
+    for (let position = trail.position + direction; position >= 0 && position < trail.entries.length; position += direction) {
+      const { project, session } = trail.entries[position]
+      const available = session
+        ? sessions.some(item => item.id === session && item.projectId === project && !item.archived)
+        : projects.some(item => item.id === project)
+      if (available) return () => openSelection(project, session, position)
+    }
+    return undefined
+  }
 
   const rows = useMemo<RowRef[]>(() => {
-    if (!presentationReady) return []
+    if (!presenter) return []
     if (liveView && source.kind === 'live') return liveView.rows
-    const instance = presenter.current
-    if (!instance || (status !== 'fixture' && status !== 'ready')) return []
+    if (status !== 'fixture' && status !== 'ready') return []
     const nodeScope = source.kind === 'live' ? `${connectionId}:${source.origin}` : 'fixture'
-    return instance.rows(`${nodeScope}/${selected.project}/${selected.session || 'none'}`, history, blocks)
-  }, [presentationReady, liveView, source, connectionId, status, selected, history, blocks])
+    return presenter.rows(`${nodeScope}/${selected.project}/${selected.session || 'none'}`, history, blocks)
+  }, [presenter, liveView, source, connectionId, status, selected, history, blocks])
 
   const transcript = useMemo<ConversationView | null>(() => {
-    if (!presentationReady) return null
+    if (!presenter) return null
     if (source.kind === 'live') return liveView?.transcript ?? readOnlyTranscript
-    const instance = presenter.current
-    if (!instance || status !== 'fixture') return null
-    return instance.conversation(`fixture/${selected.project}/${selected.session || 'none'}`, history, blocks)
-  }, [presentationReady, source, liveView, readOnlyTranscript, status, selected, history, blocks])
+    if (status !== 'fixture') return null
+    return presenter.conversation(`fixture/${selected.project}/${selected.session || 'none'}`, history, blocks)
+  }, [presenter, source, liveView, readOnlyTranscript, status, selected, history, blocks])
 
   return {
     presentationReady,
@@ -899,6 +931,8 @@ export function useWorkspace(): Workspace {
     history,
     blocks,
     selected,
+    previousSelection: stepSelection(-1),
+    nextSelection: stepSelection(1),
     rows,
     messageCount: history.length,
     runtime,
@@ -952,6 +986,6 @@ export function useWorkspace(): Workspace {
     submitpassword,
     disconnect,
     selectProject,
-    selectSession: (id: string) => void selectSession(id),
+    selectSession,
   }
 }

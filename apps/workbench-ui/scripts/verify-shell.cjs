@@ -89,11 +89,100 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
           assert.ok(Math.abs(pane.width - Math.min(560, Math.max(360, width * .38))) < 1)
           assert.equal(pane.y, 46)
         } else assert.equal(await shot.getByTestId('run-panel').isVisible(), false)
-      } else assert.equal(await shot.getByTestId('sidebar-brand').count(), 0)
+      } else {
+        assert.equal(await shot.getByTestId('sidebar-brand').count(), 0)
+        assert.equal(await shot.locator('.wb-history-controls').isVisible(), false)
+      }
       assert.equal(await shot.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
       await shot.screenshot({ path: path.join(shots, `shell-${width}-${scheme}.png`), animations: 'disabled' })
       await shot.close()
     }
+    const setArchived = async (id, archived) => {
+      const response = await fetch(new URL(`/api/v1/sessions/${id}/metadata`, fixture.url), {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ archived }),
+      })
+      assert.equal(response.ok, true)
+    }
+    await setArchived('architecture', false)
+    const nav = await open()
+    const navButton = name => nav.getByRole('button', { name, exact: true })
+    const back = navButton('上一个会话')
+    const forward = navButton('下一个会话')
+    const current = name => nav.locator('.wb-window-title').getByText(name, { exact: true })
+    const online = () => nav.getByText('在线', { exact: true }).waitFor()
+    const dark = '为工作台添加深色模式'
+    const architecture = '梳理 Agent 架构'
+    const rpc = '验证 RPC 事件协议'
+    const mobile = '检查手机端布局'
+    await nav.goto(origin + '/?live=1'); await online(); await current(dark).waitFor()
+    assert.equal(await back.isDisabled(), true)
+    assert.equal(await forward.isDisabled(), true)
+    await navButton(architecture).click(); await online()
+    await back.click(); await online(); await current(dark).waitFor()
+    await navButton(dark).click(); await online()
+    assert.equal(await back.isDisabled(), true)
+    assert.equal(await forward.isEnabled(), true, 'Reselecting the current session preserves the forward branch')
+
+    // Hold the next session snapshot until the user has already gone back.
+    const snapshot = '**/api/v1/sessions/architecture/snapshot*'
+    let releaseSnapshot
+    const holdSnapshot = new Promise(resolve => { releaseSnapshot = resolve })
+    await nav.route(snapshot, async route => {
+      await holdSnapshot
+      await route.continue()
+    }, { times: 1 })
+    try {
+      const requested = nav.waitForRequest(snapshot)
+      await forward.click(); await requested; await current(architecture).waitFor()
+      await nav.getByText('连接中', { exact: true }).waitFor()
+      await back.click(); await online(); await current(dark).waitFor()
+      const delivered = nav.waitForResponse(snapshot)
+      releaseSnapshot(); await (await delivered).finished()
+      await current(dark).waitFor()
+      assert.equal(await back.isDisabled(), true)
+      assert.equal(await forward.isEnabled(), true)
+    } finally {
+      releaseSnapshot()
+    }
+    await navButton('pi-rust').click(); await online(); await current(rpc).waitFor()
+    assert.equal(await forward.isDisabled(), true, 'A different visit replaces the forward branch')
+    await navButton('技能与插件').click()
+    await navButton('搜索项目与会话').click()
+    const search = nav.getByRole('textbox', { name: '搜索项目与会话' })
+    await search.fill(mobile); await search.press('Enter')
+    await online(); await current(mobile).waitFor()
+    await nav.locator('.wb-message-scroll').waitFor()
+    await back.click(); await online(); await current(rpc).waitFor()
+    await forward.click(); await online(); await current(mobile).waitFor()
+    console.log('PASS title-bar history follows exact cross-project sidebar and search selections, branches and ignores late snapshots')
+
+    // The real create flow refreshes the node lists and selects the confirmed empty project.
+    await setArchived('rpc', true)
+    await nav.route('**/api/v1/sessions', async route => {
+      const response = await route.fetch()
+      const { sessions } = await response.json()
+      await route.fulfill({ response, json: { sessions: sessions.filter(session => session.sessionId !== 'mobile') } })
+    })
+    await navButton('添加项目').click()
+    const add = nav.getByRole('dialog', { name: '添加项目', exact: true })
+    await add.getByLabel('名称', { exact: true }).fill('历史中的空项目')
+    await add.getByLabel('项目路径', { exact: true }).fill('/fixture/history-empty')
+    await add.getByRole('button', { name: '添加项目', exact: true }).click()
+    await nav.getByText('尚未选择会话', { exact: true }).waitFor()
+    await nav.locator('textarea').fill('空项目草稿')
+    await back.click(); await online(); await current(dark).waitFor()
+    assert.equal(await back.isDisabled(), true)
+    await forward.click(); await nav.getByText('尚未选择会话', { exact: true }).waitFor()
+    assert.equal(await navButton('历史中的空项目').getAttribute('aria-current'), 'true')
+    assert.equal(await nav.locator('textarea').inputValue(), '空项目草稿')
+    await navButton('断开节点').click(); await nav.getByText('未连接节点', { exact: true }).waitFor()
+    assert.equal(await back.isDisabled(), true)
+    assert.equal(await forward.isDisabled(), true)
+    await navButton('连接节点').click(); await online(); await current(dark).waitFor()
+    assert.equal(await back.isDisabled(), true)
+    assert.equal(await forward.isDisabled(), true)
+    await nav.close()
+    console.log('PASS history skips archived and removed node sessions, restores empty projects and resets on reconnect')
     assert.deepEqual(errors, [])
     console.log('PASS shell geometry at 7 widths × 2 themes, flat lists, isolated preferences, node pin/archive facts, honest empty/unsupported states, draft retention')
   } finally {

@@ -138,6 +138,12 @@ export default function App() {
   }))
   const canCreate = live && ready && !workspace.creation.busy && !workspace.creation.uncertain
   const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
+  const showChat = (select: () => void) => {
+    select()
+    setPage('chat')
+    if (isMobile) setDrawer(false)
+  }
+  const selectSession = (id: string) => showChat(() => workspace.selectSession(id))
 
   return (
     <div className={dark ? 'dark h-dvh' : 'h-dvh'} style={theme.style} data-palette={theme.choice.id} data-density={theme.choice.compact ? 'compact' : 'standard'}>
@@ -160,12 +166,8 @@ export default function App() {
           sessions={workspace.sessions}
           project={workspace.selected.project}
           session={workspace.selected.session}
-          onProject={(id) => { workspace.selectProject(id); setPage('chat'); if (isMobile) setDrawer(false) }}
-          onSession={(id) => {
-            workspace.selectSession(id)
-            setPage('chat')
-            if (isMobile) setDrawer(false)
-          }}
+          onProject={id => showChat(() => workspace.selectProject(id))}
+          onSession={selectSession}
           onSearch={() => setPalette(true)}
           onNewChat={canCreate && workspace.selected.project ? () => { setPage('chat'); if (isMobile) setDrawer(false); void workspace.createSession() } : undefined}
           onAddProject={canCreate ? () => { setPage('chat'); setProjectDialogFor(workspace.connectionId) } : undefined}
@@ -225,7 +227,10 @@ export default function App() {
         <main className="wb-shell-main">
           <header className="wb-window-header">
             <div className="wb-window-marks" aria-hidden="true"><span /><span /><span /></div>
-            <div className="wb-history-controls"><button type="button" className="wb-icon" aria-label="上一个会话" disabled title="会话导航历史待接入"><ArrowLeft aria-hidden="true" /></button><button type="button" className="wb-icon" aria-label="下一个会话" disabled title="会话导航历史待接入"><ArrowRight aria-hidden="true" /></button></div>
+            <div className="wb-history-controls">
+              <button type="button" className="wb-icon" aria-label="上一个会话" title="上一个会话" disabled={!workspace.previousSelection} onClick={() => workspace.previousSelection && showChat(workspace.previousSelection)}><ArrowLeft aria-hidden="true" /></button>
+              <button type="button" className="wb-icon" aria-label="下一个会话" title="下一个会话" disabled={!workspace.nextSelection} onClick={() => workspace.nextSelection && showChat(workspace.nextSelection)}><ArrowRight aria-hidden="true" /></button>
+            </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -652,11 +657,7 @@ export default function App() {
         projects={workspace.projects}
         sessions={workspace.sessions}
         onClose={() => setPalette(false)}
-        onSelect={(projectId, sessionId) => {
-          workspace.selectProject(projectId)
-          workspace.selectSession(sessionId)
-          if (isMobile) setDrawer(false)
-        }}
+        onSelect={selectSession}
       />
     </div>
   )
