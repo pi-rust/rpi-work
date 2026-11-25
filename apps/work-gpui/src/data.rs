@@ -203,6 +203,16 @@ impl Node {
         (rx, task.abort_handle())
     }
 
+    pub fn read_project(
+        &self,
+        id: String,
+        route: crate::shell::project_files::Route,
+    ) -> JoinHandle<Result<crate::shell::project_files::Contents, ClientError>> {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { route.read(&client, &id).await })
+    }
+
     pub fn prompt(
         &self,
         id: String,

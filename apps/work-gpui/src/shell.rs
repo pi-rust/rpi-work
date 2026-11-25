@@ -3,6 +3,8 @@
 
 #[path = "composer.rs"]
 pub(crate) mod editor;
+#[path = "project_files.rs"]
+pub(crate) mod project_files;
 #[path = "rich_text.rs"]
 mod rich_text;
 #[path = "session_action.rs"]
@@ -57,6 +59,7 @@ pub struct Shell {
     dark: bool,
     navigation_open: bool,
     overview_open: bool,
+    files: project_files::Panel,
     rows: Vec<Row>,
     project: Option<usize>,
     session: Option<usize>,
@@ -123,6 +126,7 @@ impl Shell {
             dark: false,
             navigation_open: true,
             overview_open: true,
+            files: project_files::Panel::default(),
             rows,
             expanded: HashSet::new(),
             drafts: HashMap::new(),
@@ -143,7 +147,11 @@ impl Shell {
     }
 
     fn select_project(&mut self, index: usize, cx: &mut Context<Self>) {
+        let changed = self.project != Some(index);
         self.project = Some(index);
+        if changed {
+            self.reset_project_files(cx);
+        }
         let session = self
             .snapshot
             .sessions
@@ -683,7 +691,7 @@ impl Shell {
                     .px(px(15.0))
                     .border_b_1()
                     .border_color(palette.line)
-                    .child(self.text("项目概览", 13.0, palette.text))
+                    .child(self.project_tabs(cx))
                     .child(self.button("close-overview", "×").on_click(cx.listener(
                         |this, _, _, cx| {
                             this.overview_open = false;
@@ -691,7 +699,7 @@ impl Shell {
                         },
                     ))),
             )
-            .child(
+            .child(if self.files.is_overview() {
                 div()
                     .flex()
                     .flex_col()
@@ -721,8 +729,11 @@ impl Shell {
                                 self.text(self.title().to_owned(), 14.0, palette.text)
                                     .truncate(),
                             )
-                    }),
-            )
+                    })
+                    .into_any_element()
+            } else {
+                self.project_contents(cx)
+            })
     }
 
     fn transcript(&self, cx: &mut Context<Self>) -> impl IntoElement {
