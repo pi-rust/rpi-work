@@ -1,107 +1,53 @@
 # RPI Work
 
-> A personal, cross-platform Agent workbench built with Rust and Dioxus. Connect to a local or remote execution node from desktop, browser, or Android, and manage projects, sessions, tool runs, file previews, and code review in one workspace.
+> A native desktop Agent workbench built with Rust and GPUI. GPUI is the sole maintained UI entry point.
 
 [中文 README](README.md) · [Latest release](https://github.com/pi-rust/rpi-work/releases/latest) · [All releases](https://github.com/pi-rust/rpi-work/releases) · [CI](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [Documentation](#documentation)
 
-Current version: **RPI Work 0.1.22**. This is a personally maintained project under active development; some APIs and features may change.
+The latest historical release is **RPI Work 0.1.22**. Run the current GPUI workbench from source.
 
 > This project is released under the [MIT License](LICENSE). Commercial plans, official services, and paid support are still being planned; the MIT grant itself permits commercial use. See the [legal and commercial status](docs/legal/licensing.md) for details.
 
-## What it does
+## Launch GPUI
 
-- Use a local Work owner on desktop or connect to a remote node.
-- Share a node's projects, sessions, and runtime state through the browser Web entry.
-- Connect Android to a trusted computer node through a one-time authorization QR code.
-- Manage projects and sessions, stream conversations, run tools, queue work, stop runs, and recover after disconnects.
-- Browse files, preview content, inspect Git status, review diffs, search, and use mobile layouts.
-- Manage model providers, session configuration, packages, Skills, extensions, and runtime details.
-- When a node is unavailable, the UI shows an actionable recovery state instead of a blank workspace.
-- Desktop collaboration can discover LAN nodes and show their identity and health before connection confirmation.
-
-## Download and install
-
-Choose the package for your platform from the **Assets** section of [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest). Every package is accompanied by a `.sha256` checksum file.
-
-| Platform | Architecture | Notes |
-| --- | --- | --- |
-| Windows | x64 / ARM64 | Extract the ZIP and run `work-ui.exe`; WebView2 Runtime is required |
-| macOS | Intel / Apple Silicon | Open `RPI Work.app`; Apple signing and notarization are not configured |
-| Linux | x64 / ARM64 | Extract the tar.gz and run `work-ui`; GTK 3, WebKitGTK 4.1, and libxdo are required |
-| Android | ARM64 | Install the APK; the persistent signing key supports upgrades |
-| Web | WASM | Serve with a static server or compatible `rpi-web`; HTTP(S) is required |
-
-Desktop packages also include `work-cli`. Releases also contain `update.json` and `update.json.sig` for client-side update verification. See the [multi-platform build guide](docs/guides/ci-builds.md) for packaging details.
-
-## Quick start
-
-### Desktop
-
-1. Launch RPI Work; desktop defaults to the local workspace.
-2. Open or add a project, configure a model provider, and create a session.
-3. To use another computer, open **Settings → Collaboration**, enter its address, scan a code, or select a discovered LAN node. Explicit ports always win; a plain HTTP address is completed with the remote port configured under **Collaboration → Advanced settings**.
-4. If the node is unavailable, the home screen shows the reason and an **Open connection settings** action.
-
-Local Agent execution requires a compatible `rpi` executable. Desktop startup checks the local environment and provides detection, installation, or file-selection recovery when it is missing. Model credentials stay on the execution node and are not bundled with the application.
-
-### Web
-
-The Web entry requires either usable Web assets served by the node or a configured same-origin Web proxy. An API/collaboration port alone is not a Web UI entry; the browser needs the page, static assets, and `/api/v1/*` requests from the same origin.
-
-For development:
+From the repository root:
 
 ```bash
-task dev
+task desktop
 ```
 
-The default URL is usually `http://127.0.0.1:13031/`. For UI hot reload, use:
+`task`, `task dev`, and `task dev:desktop` open the same native window. You can also launch directly with Cargo:
 
 ```bash
-task dev:desktop
+cargo run --manifest-path apps/work-gpui/Cargo.toml
 ```
 
-The development path normally uses Web port `14180` and owner/API port `13031`. Do not start multiple owners against the same data directory.
-
-Common configuration:
-
-```dotenv
-RPI_WORK_HTTP_BIND=0.0.0.0
-RPI_WORK_HTTP_PORT=13031
-RPI_WORK_HTTP_PASSWORD=change-me
-RPI_WORK_HTTP_ASSETS=target/web-release/parity-web
-# RPI_WORK_HTTP_WEB_PORT=    # leave empty for direct same-origin assets
-```
-
-Never commit the password or place it in command-line arguments or public logs. For public deployment, use an HTTPS reverse proxy and keep Host, Origin, and authentication checks enabled.
-
-### Android
-
-The Android app connects through a one-time authorization QR code generated by the desktop or an authenticated Web entry. The code is short-lived, single-use, and does not contain a long-term password. If the first connection fails, use the connection screen to enter an address, scan again, or restore the previous connection. Once inside the workspace, an unavailable node can be repaired through **Collaboration** from the home screen.
-
-## Architecture and boundaries
-
-- `work-ui`: Dioxus desktop, Android, and Web clients.
-- `work-client`: local/remote `WorkspaceClient`, HTTP/WebSocket transport, snapshots, realtime streams, and recovery.
-- `work-node-runtime`: the actual workspace owner, RPC/ACP, sessions, projects, resources, and file services.
-- `work-node-service` and `work-node-host`: authenticated HTTP/WebSocket, Web assets, sharing, and one-time authorization on the same owner.
-- `work-cli`: CLI for connecting to an existing node or starting a headless owner.
-
-The client abstraction is shared across local and remote nodes, but data ownership remains node-scoped. Switching nodes does not mix projects, sessions, or credentials. Web/Android use authenticated HTTP and WebSocket paths; local Agent execution uses isolated stdio RPC/ACP paths.
-
-## Run from source
-
-You need stable Rust, Node.js for development/browser checks, and the desktop dependencies for your platform.
+The initial window contains a labeled, disconnected layout sample. To read projects, sessions, and messages from a running Work node:
 
 ```bash
-cargo run --locked -p work-ui
+task desktop -- --connect http://127.0.0.1:13031
 ```
+
+Set `RPI_WORK_PASSWORD` in the environment or `.env.local` when the node requires authentication. GPUI currently provides read-only node access and in-window drafts. Sending messages and GPUI installers are still being migrated. See the [GPUI build notes](apps/work-gpui/README.md).
+
+## Architecture
+
+- [`apps/work-gpui`](apps/work-gpui) is the native desktop UI in a standalone Rust workspace.
+- `work-client` and `work-viewmodel` provide the shared protocol client, session projection, transcript presentation, and theme tokens.
+- `work-node-runtime`, `work-node-service`, and `work-node-host` own data, Agent execution, and authenticated transport.
+- `work-cli` provides the CLI and the headless node entry point.
+- `design/reui-message-layout/` is the visual and interaction reference. See the [migration record](docs/design/confirmed-workbench-migration.md).
+
+`apps/work-ui` (Dioxus) and `apps/workbench-ui` (React/ReUI) are deprecated and kept for reference. Existing desktop, Web, and Android packages belong to the Dioxus release.
+
+## Development checks
 
 Recommended checks:
 
 ```bash
-cargo fmt --all -- --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt --manifest-path apps/work-gpui/Cargo.toml -- --check
+cargo test --manifest-path apps/work-gpui/Cargo.toml
+cargo clippy --manifest-path apps/work-gpui/Cargo.toml --all-targets -- -D warnings
 ```
 
 CLI examples:
@@ -140,8 +86,6 @@ Issues, documentation improvements, and pull requests are welcome. Before submit
 - **Resources and extensions**: [Extension architecture](docs/architecture/extensions.md) · [Native resource development](docs/guides/native-resource-authoring.md) · [Component composition](docs/architecture/component-composition.md)
 - **Development and validation**: [Multi-platform builds](docs/guides/ci-builds.md) · [Automatic updates](docs/guides/automatic-updates.md) · [Testing and artifacts](docs/guides/testing-artifacts.md) · [Archive](docs/archive/README.md)
 
-## Releases
+## Historical release
 
-Stable releases are triggered by `v*` tags. GitHub Actions builds the platform packages, generates SHA-256 checksums, and creates a signed update manifest. The current release is [`v0.1.22`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.22).
-
-For a new release, update `apps/work-ui/Cargo.toml`, `docs/release-notes.md`, and the current-version reference in both README files, then create a tag matching the UI package version.
+[Version v0.1.22](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.22) uses Dioxus. GPUI packaging and updates are pending.

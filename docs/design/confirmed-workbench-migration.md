@@ -1,12 +1,10 @@
 # 已确认原型 → 真实 UI 迁移
 
-## 基准与边界
+## 当前基准与入口
 
-用户已确认 `design/reui-message-layout/` 当前完整工作台原型（含右侧浏览器、节点项目列表和工作协同），要求 1:1 实现真实 UI。该确认取代先前“等待设计评审”的阶段状态，不代表演示状态机成为生产协议。
+`design/reui-message-layout/` 是已确认的视觉与交互基准。`apps/work-gpui/` 是当前唯一维护的 UI。`task desktop` 启动原生 GPUI 窗口，`--connect` 使用共享 Rust 客户端读取真实节点。当前已接入整窗外壳、项目和会话列表、只读会话转写、可展开工具、主题切换、窗口内草稿和原生项目概览。发送、实时订阅、右侧浏览器、文件审阅、节点协同及正式打包仍需在 GPUI 接入。
 
-当前唯一实现/构建入口是已接入 Rust WASM 的 React/ReUI 前端 `apps/workbench-ui/`，`design/reui-codex/` 只保留迁移说明。保留旧 `apps/work-ui`、主 checkout、4193/4181 服务及既有未跟踪截图；仅在 `feat/next-iteration` 本地提交，不推送。整套真实 UI 尚未完成，不能以局部功能或 fixture 截图宣称交付。
-
-新 UI 源码和产品构建已移出 `design/`，产品模块图不导入测试样例；正式打包/发行仍未完成。Desktop/Web/Android 应使用同一 presentation，差异限于平台能力适配。当前 React 工程的 Web 运行不等于桌面本机桥接和 Android 已完成，不能让桌面本机经回环 HTTP 绕过既有 owner 门面。
+`apps/work-ui` 和 `apps/workbench-ui` 已废弃。下面是 React 迁移阶段的历史记录，可用于核对共享 Rust 契约和验收用例。表中的完成状态指当时的 React 实现。
 
 ## 已有真实链路
 

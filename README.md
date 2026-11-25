@@ -1,139 +1,53 @@
 # RPI Work
 
-> 个人维护的跨平台 Agent 工作台：用 Rust + Dioxus 连接本机或远程执行节点，在桌面、浏览器和 Android 上管理项目、会话、工具运行、文件预览与代码审阅。
+> 以 Rust 和 GPUI 构建的原生桌面 Agent 工作台。GPUI 是当前唯一维护的 UI 入口。
 
 [English README](README.en.md) · [下载最新版](https://github.com/pi-rust/rpi-work/releases/latest) · [全部版本](https://github.com/pi-rust/rpi-work/releases) · [构建状态](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [文档](#文档)
 
-当前版本：**RPI Work 0.1.22**。项目由个人维护，持续开发中；部分 API 和功能仍可能变化。
+最近发布的历史版本为 **RPI Work 0.1.22**。当前 GPUI 工作台从源码启动。
 
 > 本项目采用 [MIT License](LICENSE)。个人商业计划、官方服务和商业支持方案仍在规划中；MIT 授权本身允许商业使用，完整说明见[法律与商业状态](docs/legal/licensing.md)。
 
-## 功能概览
+## 启动 GPUI
 
-- 桌面端使用本机 Work owner，也可以连接远程节点。
-- 浏览器 Web 入口与节点共享项目、会话和运行状态。
-- Android 通过一次性授权二维码连接可信电脑节点。
-- 支持项目与会话管理、流式对话、工具调用、队列、停止和断线恢复。
-- 支持文件树、文件预览、Git 状态、Diff、搜索和移动端布局。
-- 支持模型供应商、会话配置、资源包、Skills、扩展和运行时信息管理。
-- 节点无法连接时显示可操作的恢复提示，而不是空白工作区。
-- 桌面工作协同页面可以发现局域网节点，并在确认连接前展示节点身份和健康状态。
-
-## 下载与安装
-
-从 [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest) 的 **Assets** 中选择对应平台的文件。每个安装包都有 `.sha256` 校验文件。
-
-| 平台 | 架构 | 说明 |
-| --- | --- | --- |
-| Windows | x64 / ARM64 | 解压 ZIP，运行 `work-ui.exe`；需要 WebView2 Runtime |
-| macOS | Intel / Apple Silicon | 解压后打开 `RPI Work.app`；当前未配置 Apple 签名与公证 |
-| Linux | x64 / ARM64 | 解压 tar.gz，运行 `work-ui`；需要 GTK 3、WebKitGTK 4.1 和 libxdo |
-| Android | ARM64 | 安装 APK；使用固定签名支持后续覆盖升级 |
-| Web | WASM | 由静态服务器或兼容的 `rpi-web` 托管，必须使用 HTTP(S) |
-
-桌面包同时包含 `work-cli`。Release 还提供 `update.json` 和 `update.json.sig`，供客户端验证更新包。详细依赖与打包规则见[多平台编译说明](docs/guides/ci-builds.md)。
-
-## 快速开始
-
-### 桌面端
-
-1. 启动 RPI Work，桌面端默认使用本机工作空间。
-2. 打开或添加项目，配置模型供应商，然后创建会话。
-3. 需要使用其他电脑时，进入 **设置 → 工作协同**，输入地址、扫码或选择发现到的局域网节点。地址可显式写端口；未写端口的 HTTP 地址按 **工作协同 → 高级设置** 的远程连接默认端口补全。
-4. 节点离线时，首页会显示错误原因和 **打开连接设置** 操作。
-
-本机 Agent 执行需要兼容的 `rpi` 可执行文件。桌面启动时会检查本机环境；如果缺少运行时，应用会提供检测、安装或选择已有程序的入口。模型凭据保存在执行节点，不写入安装包。
-
-### Web 端
-
-Web 入口必须由节点提供可用的 Web assets，或者配置同源 Web proxy。普通 API/协作端口不等于 Web UI 入口；浏览器需要从同源获取页面、静态资源和 `/api/v1/*` 请求。
-
-开发环境：
+在仓库根目录运行：
 
 ```bash
-task dev
+task desktop
 ```
 
-默认地址通常为 `http://127.0.0.1:13031/`。修改 UI 并需要热刷新时使用：
+`task`、`task dev` 和 `task dev:desktop` 都指向同一原生窗口。未安装 Task 时可直接运行：
 
 ```bash
-task dev:desktop
+cargo run --manifest-path apps/work-gpui/Cargo.toml
 ```
 
-开发路径通常使用 `14180` Web 入口和 `13031` owner/API 端口。不要在同一个数据目录下同时启动多个 owner。
-
-常用配置：
-
-```dotenv
-RPI_WORK_HTTP_BIND=0.0.0.0
-RPI_WORK_HTTP_PORT=13031
-RPI_WORK_HTTP_PASSWORD=change-me
-RPI_WORK_HTTP_ASSETS=target/web-release/parity-web
-# RPI_WORK_HTTP_WEB_PORT=    # 使用同源静态 assets 时留空
-```
-
-不要把密码提交到仓库、命令行参数或公开日志中。公网部署应使用 HTTPS 反向代理，并保留 Host、Origin 和认证校验。
-
-### Android
-
-Android 原生 App 通过桌面或已登录 Web 入口生成的一次性授权二维码连接节点。授权码短期有效、只能兑换一次，不包含长期密码。首次连接失败时，可在连接页面手动输入地址、扫码或恢复上次连接；进入工作区后节点离线会从首页进入 **工作协同** 重新连接。
-
-## 已确认的新工作台（迁移中）
-
-[`apps/workbench-ui`](apps/workbench-ui) 是确认原型 `design/reui-message-layout/` 的唯一 React/ReUI 实现入口，复用 Rust `work-client-wasm` / `work-viewmodel-wasm`。源码和产品构建已迁出 `design/`；这不表示整套视觉、权限/结算、原生桥接或 Android 已完成，也尚未替换旧 `task dev` / `task desktop` 的 Dioxus 发布路径。
+默认打开标注「示例 · 未连接」的布局样例。连接已启动的 Work 节点以读取真实项目、会话和消息：
 
 ```bash
-cd apps/workbench-ui
-npm ci
-npm run build             # 产品 dist/；不含测试样例，不默认代理本机节点
-npm run build:fixture     # 独立 dist-fixture/；还需 ?fixture=1 才显示样例
-npm run verify:all        # 自起隔离预览；hosted需先构建仓库的CLI和RPC fixture
+task desktop -- --connect http://127.0.0.1:13031
 ```
 
-产品产物可由既有无头 owner 同源托管（在仓库根目录执行，需已通过环境配置非空 `RPI_WORK_HTTP_PASSWORD`）：
+需要认证时，在环境或 `.env.local` 中设置 `RPI_WORK_PASSWORD`。当前 GPUI 支持只读节点会话和窗口内草稿，发送和正式安装包仍在迁移。参见 [GPUI 构建说明](apps/work-gpui/README.md)。
 
-```bash
-RPI_WORK_HTTP_BIND=127.0.0.1 RPI_WORK_HTTP_PORT=13031 RPI_WORK_WEB_LISTEN_PORT=13032 \
-RPI_WORK_HTTP_ASSETS="$PWD/apps/workbench-ui/dist" \
-  cargo run -p work-cli --locked -- serve
-```
+## 架构
 
-不要与另一个 `task dev` / `task desktop` 共用数据目录同时启动 owner。托管页面通过公开入口元数据连接同源 typed API；普通静态托管保持未连接，不静默展示样例。开发代理必须显式配置 `RPI_NODE_URL`。范围及未完成项见[迁移清单](docs/design/confirmed-workbench-migration.md)。
+- [`apps/work-gpui`](apps/work-gpui)：原生桌面工作台，使用独立 Rust workspace。
+- `work-client` 与 `work-viewmodel`：共享客户端、会话投影、转写和主题契约。
+- `work-node-runtime`、`work-node-service` 与 `work-node-host`：节点数据所有权、Agent 执行和认证传输。
+- `work-cli`：独立 CLI 和无头节点入口。
+- `design/reui-message-layout/`：已确认的视觉和交互参考，详见[迁移记录](docs/design/confirmed-workbench-migration.md)。
 
-## 原型（不进入安装包）
+`apps/work-ui`（Dioxus）和 `apps/workbench-ui`（React/ReUI）已废弃，源码作为历史参考。已有桌面、Web 和 Android 安装包属于 Dioxus 版本。
 
-| 目录 | 说明 | 运行 |
-| --- | --- | --- |
-| [`apps/work-gpui`](apps/work-gpui) | GPUI 桌面原型（独立 workspace，不进入 `cargo test --workspace`） | `cargo run --manifest-path apps/work-gpui/Cargo.toml` |
-
-历史设计与验收细节：[ReUI 原型](docs/design/reui-codex-prototype.md) ·
-[GPUI 原型](docs/design/gpui-desktop-prototype.md)。GPUI 只能做桌面（无移动端后端），
-移动端仍由 Dioxus/Web 承接。
-
-## 架构与连接边界
-
-- `work-ui`：Dioxus 桌面、Android 和 Web 客户端。
-- `work-client`：本机/远程 `WorkspaceClient`、HTTP/WebSocket、快照、实时流和恢复逻辑。
-- `work-node-runtime`：实际的 workspace owner、RPC/ACP、会话、项目、资源和文件服务。
-- `work-node-service` 与 `work-node-host`：同一个 owner 上的认证 HTTP/WebSocket、Web assets、共享和一次性授权。
-- `work-cli`：连接已运行节点或启动无头 owner 的 CLI。
-
-桌面本机和远程节点使用统一的客户端抽象，但数据所有权仍归节点。切换节点不会把一个节点的项目、会话或凭据混到另一个节点。Web/Android 使用认证 HTTP 接口和 WebSocket；本机 Agent 使用隔离的 stdio RPC/ACP 路径。
-
-## 从源码运行
-
-需要 stable Rust、Node.js（开发和浏览器验证）以及对应平台的桌面依赖。
-
-```bash
-cargo run --locked -p work-ui
-```
+## 开发检查
 
 推荐检查命令：
 
 ```bash
-cargo fmt --all -- --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt --manifest-path apps/work-gpui/Cargo.toml -- --check
+cargo test --manifest-path apps/work-gpui/Cargo.toml
+cargo clippy --manifest-path apps/work-gpui/Cargo.toml --all-targets -- -D warnings
 ```
 
 CLI 示例：
@@ -172,8 +86,6 @@ cargo run --locked -p work-cli -- watch SESSION_ID
 - **资源与扩展**：[扩展架构](docs/architecture/extensions.md) · [原生资源开发](docs/guides/native-resource-authoring.md) · [组件组合](docs/architecture/component-composition.md)
 - **开发与验证**：[多平台编译](docs/guides/ci-builds.md) · [自动更新](docs/guides/automatic-updates.md) · [测试与产物](docs/guides/testing-artifacts.md) · [历史记录](docs/archive/README.md)
 
-## 发布
+## 历史发布
 
-稳定版本通过 `v*` 标签触发 GitHub Actions，构建多平台安装包，生成 SHA-256 校验文件，并创建签名更新清单。当前发布版本为 [`v0.1.22`](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.22)。
-
-发布新版本时同步更新 `apps/work-ui/Cargo.toml`、`docs/release-notes.md` 和本 README 中的当前版本，再创建与 UI 包版本一致的标签。
+[历史版本 v0.1.22](https://github.com/pi-rust/rpi-work/releases/tag/v0.1.22) 使用 Dioxus。GPUI 安装包与更新链路待迁移。

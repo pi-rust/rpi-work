@@ -1,4 +1,6 @@
-# RPI Work · 已确认工作台实现（整体迁移未完成）
+# RPI Work · 已废弃的 React/ReUI 工作台
+
+> 本目录作为历史参考。当前唯一 UI 入口为 [GPUI 工作台](../work-gpui/README.md)，以下是旧实现的存档说明。
 
 正式源码与Web构建入口在本目录，不依赖 `design/`；视觉/交互基准仍是已确认的 `design/reui-message-layout/`。前端复用 `work-client-wasm` → `WorkspaceClient` / typed NodeApi，以及 `work-viewmodel-wasm` / RunProjection；不在TypeScript写HTTP endpoint、认证协议、执行状态机或第二个owner。
 

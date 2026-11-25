@@ -51,6 +51,8 @@ flowchart TB
 
 ## 启动与生命周期
 
+以下 Dioxus、Web 和 Android 入口为历史记录。当前唯一 UI 的启动方式见 [GPUI 工作台](../../apps/work-gpui/README.md)。
+
 | 入口 | 行为 |
 | --- | --- |
 | 默认 `work-ui` / `task desktop` | 创建本机 owner，桌面直接访问；尝试附加共享网络入口 |

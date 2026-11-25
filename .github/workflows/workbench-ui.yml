@@ -1,29 +1,6 @@
-name: Workbench UI
+name: Archived React workbench checks
 
 on:
-  push:
-    branches: [main, master]
-    paths:
-      - 'apps/workbench-ui/**'
-      - 'tests/fixtures/ui-fixture.cjs'
-      - 'crates/client/work-viewmodel/**'
-      - 'crates/client/work-viewmodel-wasm/**'
-      - 'crates/client/work-client/**'
-      - 'crates/client/work-client-wasm/**'
-      - 'crates/foundation/work-core/**'
-      - 'crates/foundation/work-node-api/**'
-      - '.github/workflows/workbench-ui.yml'
-  pull_request:
-    paths:
-      - 'apps/workbench-ui/**'
-      - 'tests/fixtures/ui-fixture.cjs'
-      - 'crates/client/work-viewmodel/**'
-      - 'crates/client/work-viewmodel-wasm/**'
-      - 'crates/client/work-client/**'
-      - 'crates/client/work-client-wasm/**'
-      - 'crates/foundation/work-core/**'
-      - 'crates/foundation/work-node-api/**'
-      - '.github/workflows/workbench-ui.yml'
   workflow_dispatch:
 
 permissions:

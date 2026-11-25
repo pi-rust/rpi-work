@@ -1,11 +1,15 @@
-name: Build all platforms
+name: Workbench and Rust checks
 
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      legacy_ui:
+        description: Build archived Dioxus packages for reference
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,6 +26,24 @@ env:
   CARGO_BUILD_JOBS: '2'
 
 jobs:
+  gpui:
+    name: GPUI / macOS
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/work-gpui
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt -- --check
+      - run: cargo test
+      - run: cargo clippy --all-targets -- -D warnings
+
   checks:
     name: Rust checks
     runs-on: ubuntu-24.04
@@ -61,6 +83,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   desktop:
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui
     name: Desktop / ${{ matrix.target }}
     needs: [checks, web]
     runs-on: ${{ matrix.os }}
@@ -127,6 +150,7 @@ jobs:
           compression-level: 0
 
   android:
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui
     name: Android / ARM64 APK
     needs: checks
     runs-on: ubuntu-24.04
@@ -193,7 +217,7 @@ jobs:
 
   release:
     name: Publish signed update release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui && startsWith(github.ref, 'refs/tags/v')
     needs: [checks, desktop, android, web]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -221,6 +245,7 @@ jobs:
         run: python3 scripts/ci/publish-release.py
 
   web:
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui
     name: Web / wasm32
     needs: checks
     runs-on: ubuntu-24.04

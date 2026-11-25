@@ -70,6 +70,8 @@ target/                  忽略的编译、下载、日志与临时验证数据
 
 ## 常用命令
 
+当前 UI 使用 `task desktop` 启动 [GPUI 工作台](../../apps/work-gpui/README.md)。下文的 Web 构建与热刷新是历史流程。
+
 在仓库根目录运行：
 
 ```powershell

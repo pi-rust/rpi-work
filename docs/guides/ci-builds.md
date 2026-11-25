@@ -1,5 +1,7 @@
 # GitHub 多平台编译
 
+> 当前 GPUI 入口见 [GPUI 工作台](../../apps/work-gpui/README.md)。下文的 Dioxus 安装包构建属于历史工作流，可手动触发。
+
 工作流：`.github/workflows/build.yml`，名称 **Build all platforms**。
 
 - 推送到 `main` / `master`、推送 `v*` 标签、PR，以及 Actions 的 **Run workflow** 都会触发。

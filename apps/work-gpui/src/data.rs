@@ -1,20 +1,15 @@
-//! Data sources for the prototype.
-//!
-//! `fixture()` mirrors `tests/fixtures/ui-fixture.cjs` so the GPUI window and
-//! the Dioxus Web client can be compared against the same content. `connect()`
-//! is the read-only slice of `work-client` reuse (v1 of the prototype plan).
+//! Workbench data from an authenticated Work node or the layout sample.
 
 use serde_json::{Value, json};
+use work_client::WorkspaceClient;
 use work_core::{MessageBlock, ToolStatus};
 use work_viewmodel::observability::metrics::{Context, Metrics};
 
-#[derive(Clone)]
 pub struct ProjectItem {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Clone)]
 pub struct SessionItem {
     pub id: String,
     pub project_id: String,
@@ -22,8 +17,7 @@ pub struct SessionItem {
     pub updated_at: u64,
 }
 
-/// One immutable workspace snapshot; the prototype never mutates the node.
-#[derive(Clone)]
+/// Initial project and session list. Sample conversations are supplied only in sample mode.
 pub struct Snapshot {
     pub node: String,
     pub mode: String,
@@ -35,8 +29,6 @@ pub struct Snapshot {
     pub blocks: Vec<MessageBlock>,
     pub metrics: Metrics,
     pub context: Context,
-    pub tools_loaded: usize,
-    pub tools_failed: usize,
 }
 
 impl Snapshot {
@@ -46,7 +38,7 @@ impl Snapshot {
         let read_output = "pub fn theme() { /* test fixture */ }";
         Self {
             node: "fixture-node".into(),
-            mode: "本地节点 · fixture".into(),
+            mode: "示例 · 未连接".into(),
             projects: vec![
                 ProjectItem {
                     id: "rpi-work".into(),
@@ -103,7 +95,9 @@ impl Snapshot {
                 MessageBlock::ToolCall {
                     id: "shell-1".into(),
                     name: "bash".into(),
-                    arguments: json!({ "command": "cargo test -p work-ui --lib" }).to_string(),
+                    arguments:
+                        json!({ "command": "cargo test --manifest-path apps/work-gpui/Cargo.toml" })
+                            .to_string(),
                     output: "12 passed; 0 failed (test fixture)".into(),
                     status: ToolStatus::Completed,
                 },
@@ -122,33 +116,33 @@ impl Snapshot {
                 "percent": 38,
                 "threshold": 84000,
             }))),
-            tools_loaded: 2,
-            tools_failed: 0,
         }
     }
+}
 
-    /// Read-only snapshot from a running node through `work-client`.
-    pub fn connect(origin: &str, password: Option<&str>) -> Result<Self, String> {
-        use work_client::WorkspaceClient;
+pub struct Node {
+    client: WorkspaceClient,
+    runtime: tokio::runtime::Runtime,
+}
 
-        let runtime = tokio::runtime::Builder::new_current_thread()
+impl Node {
+    pub fn connect(origin: &str, password: Option<&str>) -> Result<(Snapshot, Self), String> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
             .enable_all()
             .build()
             .map_err(|error| format!("无法创建运行时：{error}"))?;
         let client =
             WorkspaceClient::new(origin).map_err(|error| format!("节点地址无效：{error}"))?;
-        let password_owned = password.map(str::to_owned);
-        runtime.block_on(async move {
+        let snapshot = runtime.block_on(async {
             let auth = client
                 .auth()
                 .await
                 .map_err(|error| format!("读取认证状态失败：{error}"))?;
             if auth.required && !auth.authenticated {
-                let Some(password) = password_owned else {
-                    return Err("节点需要密码：设置 RPI_WORK_PASSWORD 后重试".into());
-                };
+                let password = password.ok_or("节点需要密码：设置 RPI_WORK_PASSWORD 后重试")?;
                 client
-                    .login(&password)
+                    .login(password)
                     .await
                     .map_err(|error| format!("登录失败：{error}"))?;
             }
@@ -160,10 +154,9 @@ impl Snapshot {
                 .sessions()
                 .await
                 .map_err(|error| format!("会话读取失败：{error}"))?;
-            let metrics = Metrics::session(None);
-            Ok(Self {
-                node: origin.to_string(),
-                mode: format!("远程节点 · {origin}"),
+            Ok::<_, String>(Snapshot {
+                node: origin.to_owned(),
+                mode: "已连接节点 · 只读".into(),
                 projects: projects
                     .into_iter()
                     .map(|project| ProjectItem {
@@ -182,11 +175,20 @@ impl Snapshot {
                     .collect(),
                 history: Vec::new(),
                 blocks: Vec::new(),
-                metrics,
+                metrics: Metrics::default(),
                 context: Context::default(),
-                tools_loaded: 0,
-                tools_failed: 0,
             })
-        })
+        })?;
+        Ok((snapshot, Self { client, runtime }))
+    }
+
+    pub fn open(
+        &self,
+        session_id: String,
+    ) -> tokio::task::JoinHandle<Result<work_client::SessionConnection, work_client::ClientError>>
+    {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { client.connect_session(session_id).await })
     }
 }

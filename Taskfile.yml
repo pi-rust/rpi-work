@@ -1,66 +1,27 @@
 version: '3'
 
 tasks:
-  # Optimized Web/headless workflow. It builds the release WASM bundle, prepares
-  # hashed immutable assets, then starts the same owner used by desktop/CLI.
-  dev:
-    desc: 一键启动优化版无头 Web（release WASM、压缩、缓存、Web 13032）
-    dir: '{{.TASKFILE_DIR}}'
-    dotenv: ['{{.TASKFILE_DIR}}/.env.local']
-    deps:
-      - dev:build
-    env:
-      RPI_WORK_HTTP_BIND: '{{.RPI_WORK_HTTP_BIND | default "0.0.0.0"}}'
-      RPI_WORK_HTTP_PORT: '{{.RPI_WORK_HTTP_PORT | default "13031"}}'
-      RPI_WORK_WEB_LISTEN_PORT: '{{.RPI_WORK_WEB_LISTEN_PORT | default "13032"}}'
-      # Keep the release bundle separate from debug/hot-reload output and any
-      # currently served legacy directory.
-      RPI_WORK_HTTP_ASSETS: '{{.RPI_WORK_HTTP_ASSETS | default "target/web-release/parity-web"}}'
-      # Direct asset hosting is the optimized path; do not advertise a proxy.
-      RPI_WORK_HTTP_WEB_PORT: ''
+  default:
+    silent: true
     cmds:
-      - cargo run --release --locked -p work-cli -- serve
+      - task: desktop
 
-  dev:build:
-    desc: 构建 release Web WASM 与无头宿主
-    internal: true
-    dir: '{{.TASKFILE_DIR}}'
+  dev:
+    desc: 启动 GPUI 工作台
     cmds:
-      - powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/dev/build-ui-web.ps1 -OutputRoot target/web-release
-      - cargo build --release --locked -p work-cli
+      - task: desktop
+
+  dev:desktop:
+    desc: 启动 GPUI 工作台
+    cmds:
+      - task: desktop
 
   desktop:
-    desc: 启动桌面客户端（本机工作空间）
+    desc: 启动 GPUI 工作台（可选 -- --connect HTTP(S)_ORIGIN）
     dir: '{{.TASKFILE_DIR}}'
     dotenv: ['{{.TASKFILE_DIR}}/.env.local']
-    env:
-      RPI_WORK_NODE_URL: '{{.RPI_WORK_NODE_URL | default "rpi-work://local"}}'
-      RPI_WORK_HTTP_WEB_PORT: '{{.RPI_WORK_HTTP_WEB_PORT | default ""}}'
     cmds:
-      - cargo run -p work-ui --locked
-
-  # Legacy desktop + hot-reload preview. Use task dev for the optimized
-  # release/headless path; use this task when editing UI with a desktop window.
-  dev:desktop:
-    desc: 启动桌面节点及 Web 热刷新（调试开发路径）
-    deps:
-      - task: desktop
-        vars:
-          RPI_WORK_HTTP_WEB_PORT: '{{.PORT | default "14180"}}'
-      - 'dev:web'
-
-  dev:web:
-    internal: true
-    dir: '{{.TASKFILE_DIR}}'
-    dotenv: ['{{.TASKFILE_DIR}}/.env.local']
-    env:
-      PORT: '{{.PORT | default "14180"}}'
-      RPI_API_PORT: '{{.RPI_WORK_WEB_LISTEN_PORT | default "13032"}}'
-      RPI_UI_ENTRY_MODE: hosted
-      # Keep debug hot-reload output away from the release bundle used by task dev.
-      RPI_UI_BUILD_OUTPUT_ROOT: '{{.RPI_UI_BUILD_OUTPUT_ROOT | default "target/parity-web-debug"}}'
-    cmds:
-      - node tools/dev/dev-web.mjs --watch-build --debug-build
+      - cargo run --manifest-path apps/work-gpui/Cargo.toml -- {{.CLI_ARGS}}
 
   node:
     desc: 启动独立 HTTP 节点（13030；不是桌面工作空间）
