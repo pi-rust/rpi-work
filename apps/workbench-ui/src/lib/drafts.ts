@@ -59,6 +59,15 @@ export function useDraft(scope: string) {
     [scope],
   )
 
+  const append = useCallback((text: string) => {
+    const previous = current.current[scope]?.text ?? ''
+    const next = previous ? `${previous}\n\n${text}` : text
+    if (next.length > MAX_DRAFT) return false
+    if (selection.text === previous) Object.assign(selection, { text: next })
+    update(next)
+    return true
+  }, [scope, selection, update])
+
   const entry = drafts[scope]
   const clear = useCallback(() => {
     // Clear only the exact edit that was submitted. A later edit gets a new
@@ -66,5 +75,5 @@ export function useDraft(scope: string) {
     if (current.current[scope] === entry) update('')
   }, [scope, entry, update])
 
-  return { draft: entry?.text ?? '', setDraft: update, clear, selection }
+  return { draft: entry?.text ?? '', setDraft: update, append, clear, selection }
 }

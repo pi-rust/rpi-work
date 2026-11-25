@@ -562,8 +562,10 @@ async fn perform(
     let mut response = Json(value).into_response();
     if matches!(
         (method.as_str(), parts.as_slice()),
-        ("GET", ["sessions"] | ["projects", _, "files"])
-            | (_, ["sessions", _, "configuration" | "access" | "dialogs"])
+        (
+            "GET",
+            ["sessions"] | ["projects", _, "files"] | ["projects", _, "git", "diff"]
+        ) | (_, ["sessions", _, "configuration" | "access" | "dialogs"])
     ) {
         response
             .headers_mut()

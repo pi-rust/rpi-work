@@ -44,3 +44,15 @@
   .wb-file-panel button, .wb-file-panel [role="treeitem"], .wb-file-panel [data-slot="tree-item-label"] { min-height: 44px; }
   .wb-file-view .wb-copy-control button, .wb-file-panel .wb-file-refresh { min-width: 44px; }
 }
+.wb-diff-row:has(.wb-feedback-line) { grid-template-columns: var(--wb-diff-gutter) var(--wb-diff-gutter) minmax(max-content,1fr) auto; }
+.wb-feedback-line { position: sticky; right: 0; z-index: 1; align-self: start; display: grid; place-items: center; width: 30px; min-height: 28px; background: var(--code-background); color: var(--foreground); }
+.wb-feedback-line svg { width: 14px; height: 14px; }
+.wb-feedback-dialog { position: fixed; inset: 0; margin: auto; width: min(420px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); color: var(--foreground); }
+.wb-feedback-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.wb-feedback-dialog h3 { font-size: 16px; font-weight: 600; }
+.wb-feedback-dialog p { margin: 6px 0 12px; overflow-wrap: anywhere; font-size: 12px; }
+.wb-feedback-dialog label { font-size: 13px; }
+.wb-feedback-dialog textarea { display: block; margin-top: 4px; padding: 8px; width: 100%; min-height: 96px; resize: vertical; border: 1px solid var(--border); border-radius: 6px; }
+.wb-feedback-confirmed { padding: 4px 10px; color: var(--muted-foreground); font-size: 11px; }
+.wb-feedback-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+@media (max-width: 700px) { .wb-feedback-line { width: 40px; min-height: 36px; } }

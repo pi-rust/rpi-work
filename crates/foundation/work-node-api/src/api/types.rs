@@ -144,6 +144,8 @@ pub struct GitStatus {
 pub struct Diff {
     pub path: String,
     pub patch: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub staged: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]

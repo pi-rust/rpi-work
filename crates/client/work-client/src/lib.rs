@@ -670,7 +670,13 @@ impl WorkClient {
         url.query_pairs_mut()
             .append_pair("path", path)
             .append_pair("staged", &staged.to_string());
-        self.get_url(url).await
+        let diff: Diff = self.get_url(url).await?;
+        if diff.path != path || diff.staged.is_some_and(|scope| scope != staged) {
+            return Err(ClientError::Protocol(
+                "Git scope or file path differs from the requested Diff".into(),
+            ));
+        }
+        Ok(diff)
     }
     pub async fn sessions(&self) -> Result<Vec<SessionSummary>, ClientError> {
         #[derive(Deserialize)]

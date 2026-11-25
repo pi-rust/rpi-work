@@ -267,11 +267,23 @@ pub fn file_view(source: &str, path: &str, diff: bool) -> String {
         .unwrap_or_else(|_| "[]".into())
 }
 
-/// Read-only validated unified-diff rows. No review or write identities.
+/// Validated unified-diff rows and eligibility for draft feedback.
 #[wasm_bindgen]
 pub fn diff_view(source: &str, path: &str) -> String {
     serde_json::to_string(&work_viewmodel::diff_view::present(source, path))
         .expect("diff presentation contains only serializable JSON values")
+}
+
+#[wasm_bindgen]
+pub fn diff_feedback_draft(
+    expected: &str,
+    fresh: &str,
+    path: &str,
+    staged: bool,
+    index: usize,
+    text: &str,
+) -> Option<String> {
+    work_viewmodel::diff_view::feedback_draft(expected, fresh, path, staged, index, text)
 }
 
 /// Per-line tokens for the shared lexer: `[[{text, class}]]`.

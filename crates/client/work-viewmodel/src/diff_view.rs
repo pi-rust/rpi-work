@@ -1,5 +1,4 @@
-//! Validated, read-only unified-diff presentation. Numbers are display data,
-//! never review identities, revisions, permissions or executable git actions.
+//! Validated unified-diff presentation and draft feedback from an observed patch.
 use crate::file_view::{self, FileLine};
 use serde::Serialize;
 
@@ -17,6 +16,7 @@ pub struct DiffView<'a> {
     pub structured: bool,
     pub fallback_reason: Option<&'static str>,
     pub gutter_digits: usize,
+    pub feedback_eligible: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -210,6 +210,7 @@ pub fn present<'a>(source: &'a str, path: &str) -> DiffView<'a> {
         structured: false,
         fallback_reason: None,
         gutter_digits: 1,
+        feedback_eligible: false,
     };
     if view.rows.is_empty() {
         return view;
@@ -229,15 +230,124 @@ pub fn present<'a>(source: &'a str, path: &str) -> DiffView<'a> {
                 }
             }
             view.structured = true;
+            view.feedback_eligible = feedback_lines(&view, path);
         }
         Err(reason) => view.fallback_reason = Some(reason),
     }
     view
 }
 
+/// Only a single ordinary patch whose file markers agree with the requested
+/// project-relative path can supply a feedback location. Other patches can
+/// still use the read-only projection above.
+#[must_use]
+fn feedback_lines(view: &DiffView<'_>, path: &str) -> bool {
+    if !view.structured || path.is_empty() || path.chars().any(char::is_control) {
+        return false;
+    }
+    let mut markers = view.rows.iter().filter_map(|row| {
+        (row.line.kind == "meta")
+            .then(|| row.line.tokens.first().map(|token| token.text))
+            .flatten()
+    });
+    let mut files = 0;
+    let mut old = None;
+    let mut new = None;
+    for line in &mut markers {
+        if line.starts_with("diff --git ") {
+            files += 1;
+            if files > 1 {
+                return false;
+            }
+        } else if let Some(value) = line.strip_prefix("--- ") {
+            if old.replace(value).is_some() {
+                return false;
+            }
+        } else if let Some(value) = line.strip_prefix("+++ ") {
+            if new.replace(value).is_some() {
+                return false;
+            }
+        } else if ["rename ", "copy "]
+            .iter()
+            .any(|prefix| line.starts_with(prefix))
+        {
+            return false;
+        }
+    }
+    let old_matches = old.is_some_and(|value| value.strip_prefix("a/") == Some(path));
+    let new_matches = new.is_some_and(|value| value.strip_prefix("b/") == Some(path));
+    (old_matches && (new_matches || new == Some("/dev/null")))
+        || (old == Some("/dev/null") && new_matches)
+}
+
+/// A text draft quotes the exact observed row and names its original diff
+/// scope. The caller must first re-read the same file and scope.
+#[must_use]
+pub fn feedback_draft(
+    expected: &str,
+    fresh: &str,
+    path: &str,
+    staged: bool,
+    index: usize,
+    text: &str,
+) -> Option<String> {
+    let text = text.trim();
+    if expected != fresh || text.is_empty() || text.chars().count() > 2000 {
+        return None;
+    }
+    let view = present(fresh, path);
+    if !view.feedback_eligible {
+        return None;
+    }
+    let row = view.rows.get(index)?;
+    let (side, line) = row
+        .new_number
+        .map(|line| ("新", line))
+        .or_else(|| row.old_number.map(|line| ("旧", line)))?;
+    let line_text: String = row.line.tokens.iter().map(|token| token.text).collect();
+    let excerpt: String = line_text.chars().take(240).collect();
+    let suffix = if excerpt.len() < line_text.len() {
+        "…"
+    } else {
+        ""
+    };
+    let scope = if staged { "已暂存" } else { "工作区" };
+    Some(format!(
+        "行内反馈 · {path} · {scope} Diff · {side}行 {line}\n  {excerpt}{suffix}\n{text}"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn feedback_only_quotes_the_exact_single_file_patch_and_line_side() {
+        let patch = "--- a/file.rs\r\n+++ b/file.rs\r\n@@ -2 +3 @@\r\n-before\r\n+after\r\n";
+        assert!(present(patch, "file.rs").feedback_eligible);
+        assert_eq!(
+            feedback_draft(patch, patch, "file.rs", true, 3, " check ").as_deref(),
+            Some("行内反馈 · file.rs · 已暂存 Diff · 旧行 2\n  -before\ncheck")
+        );
+        assert_eq!(
+            feedback_draft(patch, patch, "file.rs", false, 4, "check").as_deref(),
+            Some("行内反馈 · file.rs · 工作区 Diff · 新行 3\n  +after\ncheck")
+        );
+        assert!(feedback_draft(patch, patch, "file.rs", true, 2, "check").is_none());
+        assert!(feedback_draft(patch, patch, "other.rs", true, 4, "check").is_none());
+        assert!(
+            feedback_draft(
+                patch,
+                &patch.replace("+after", "+changed"),
+                "file.rs",
+                true,
+                4,
+                "check"
+            )
+            .is_none()
+        );
+        assert!(!present(&format!("{patch}{patch}"), "file.rs").feedback_eligible);
+    }
+
     fn numbers(view: &DiffView<'_>) -> Vec<(Option<u32>, Option<u32>)> {
         view.rows
             .iter()

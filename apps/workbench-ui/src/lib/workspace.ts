@@ -116,6 +116,7 @@ export type Workspace = {
   openChange: (path: string, staged?: boolean) => Promise<void>
   openFile: (path: string) => Promise<void>
   /** Read one directory; null means there is no longer a current scope. */
+  verifyDiff: (path: string, staged: boolean) => Promise<string | null>
   listDir: (path: string, cursor?: string) => Promise<DirectoryPage | null>
   refreshQueue: () => Promise<void>
   queueMessage: (text: string) => Promise<boolean>
@@ -765,6 +766,15 @@ export function useWorkspace(): Workspace {
   const openChange = useCallback((path: string, staged = false) => readFile(path, 'diff', staged), [readFile])
   const openFile = useCallback((path: string) => readFile(path, 'source'), [readFile])
 
+  const verifyDiff = useCallback(async (path: string, staged: boolean) => {
+    const scope = projectScope(selected.project, selected.session)
+    if (!scope || !selected.session) return null
+    const ticket = fileTicket.current
+    const reply = await scope.conn.gitDiff(selected.project, path, staged)
+    if (!scope.current() || fileTicket.current !== ticket) return null
+    return reply.patch
+  }, [selected.project, selected.session, projectScope])
+
   const listDir = useCallback(
     async (path: string, cursor?: string) => {
       const scope = projectScope(selected.project, selected.session)
@@ -1120,6 +1130,7 @@ export function useWorkspace(): Workspace {
     openChange,
     openFile,
     listDir,
+    verifyDiff,
     refreshQueue,
     queueMessage,
     cancelQueued,

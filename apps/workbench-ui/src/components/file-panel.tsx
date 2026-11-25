@@ -34,6 +34,7 @@ type Props = {
   onRefresh: () => void
   onOpen: (path: string, staged?: boolean) => void
   onOpenSource: (path: string) => void
+  feedback?: React.ComponentProps<typeof FileViewer>['feedback']
   expandedDirectories: string[]
   onExpandedDirectoriesChange: (paths: string[]) => void
   listDir: (path: string, cursor?: string) => Promise<DirectoryPage | null>
@@ -54,6 +55,7 @@ function ReadyFilePanel({
   onRefresh,
   onOpen,
   onOpenSource,
+  feedback,
   expandedDirectories,
   onExpandedDirectoriesChange,
   listDir,
@@ -322,7 +324,7 @@ function ReadyFilePanel({
         )}
       </div>
       {fileRead === null ? <p className="text-muted-foreground border-t p-3 text-[12px]">选择一个文件查看源码或原始 Diff。</p> : (
-        <FileViewer key={JSON.stringify([fileRead.path, fileRead.mode, fileRead.staged])} file={fileRead}
+        <FileViewer key={JSON.stringify([fileRead.path, fileRead.mode, fileRead.staged])} file={fileRead} feedback={feedback}
           retry={() => fileRead.mode === 'diff' ? onOpen(fileRead.path, fileRead.staged) : onOpenSource(fileRead.path)} />
       )}
     </div>

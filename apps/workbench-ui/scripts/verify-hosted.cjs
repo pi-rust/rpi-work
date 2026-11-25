@@ -284,6 +284,32 @@ async function waitForServer(url, timeoutMs = 60000) {
     await filter('all')
     await branch.first().waitFor()
     pass('browser filters an unselected owner session with pending approval and removes it after settlement')
+    // Make one isolated Git diff and re-read it from the real owner before
+    // attaching feedback to the existing session draft.
+    const runGit = args => execFileSync('git', ['-C', projectPath, ...args], { stdio: 'pipe' })
+    runGit(['init', '--quiet', '--template='])
+    const reviewPath = 'review-draft.txt'
+    fs.writeFileSync(path.join(projectPath, reviewPath), 'line for review\n')
+    await page.locator('textarea').fill('真实会话草稿')
+    await buttons('文件面板').click()
+    const filePanel = page.getByTestId('run-panel')
+    await filePanel.getByRole('button', { name: `查看 ${reviewPath} 的 Diff`, exact: true }).click()
+    await filePanel.getByRole('button', { name: `在 ${reviewPath} · 新行 1 添加反馈`, exact: true }).click()
+    const feedback = page.getByRole('dialog', { name: '行内反馈', exact: true })
+    await feedback.getByLabel('反馈内容').fill('复核新增内容')
+    const checkedDiff = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname.endsWith('/git/diff') && url.searchParams.get('path') === reviewPath
+    })
+    await feedback.getByRole('button', { name: '添加到草稿', exact: true }).click()
+    const diffReceipt = await checkedDiff
+    assert.equal(diffReceipt.headers()['cache-control'], 'no-store')
+    assert.equal((await diffReceipt.json()).staged, false)
+    await filePanel.getByRole('status').filter({ hasText: '已添加到当前会话草稿' }).waitFor()
+    assert.equal(await page.locator('main textarea').first().inputValue(), '真实会话草稿\n\n行内反馈 · review-draft.txt · 工作区 Diff · 新行 1\n  +line for review\n复核新增内容')
+    fs.unlinkSync(path.join(projectPath, reviewPath))
+    pass('a real worktree diff is verified through the owner and attached to the existing draft')
+
     // Build a directory beyond extcore's whole-list limit only after the
     // session workflows, so Git/status checks elsewhere stay small.
     const expectedFiles = Array.from({ length: 2005 }, (_, index) => `file-${String(index).padStart(4, '0')}.txt`)
@@ -300,7 +326,6 @@ async function waitForServer(url, timeoutMs = 60000) {
       const url = new URL(response.url())
       return url.pathname === listingPath && url.searchParams.get('page') === '1' && url.searchParams.get('cursor') === cursor
     })
-    await buttons('文件面板').click()
     const firstPage = nextPage(null)
     await tree.getByTestId('tab-tree').click()
     const firstListing = await firstPage

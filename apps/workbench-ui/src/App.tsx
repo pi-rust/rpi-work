@@ -43,7 +43,7 @@ export default function App() {
   const directoryExpansion = useScopedPresentation(scrollScope, () => ({
     paths: live && workspace.selected.project ? readDirectoryExpansion(scrollScope) : [],
   }))
-  const { draft, setDraft, clear: clearDraft, selection } = useDraft(draftScope)
+  const { draft, setDraft, append: appendDraft, clear: clearDraft, selection } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
   const [page, setPage] = useState<'chat' | 'resources'>('chat')
@@ -554,6 +554,7 @@ export default function App() {
                       onOpen={(path, staged) => void workspace.openChange(path, staged)}
                       onOpenSource={(path) => void workspace.openFile(path)}
                       listDir={workspace.listDir}
+                      feedback={workspace.selected.session ? { verify: workspace.verifyDiff, append: appendDraft } : undefined}
                     />
                   ) : railTab === 'run' ? (
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
