@@ -77,6 +77,10 @@ export function themeStyle(tokens: Record<string, string>): CSSProperties {
     ['--sidebar-accent-foreground', 'text'],
     ['--sidebar-border', 'line'],
     ['--sidebar-ring', 'accent'],
+    ['--diff-add', 'diff-add'],
+    ['--diff-add-bg', 'diff-add-bg'],
+    ['--diff-del', 'diff-del'],
+    ['--diff-del-bg', 'diff-del-bg'],
   ]
   for (const [variable, token] of alias) {
     const value = tokens[token]

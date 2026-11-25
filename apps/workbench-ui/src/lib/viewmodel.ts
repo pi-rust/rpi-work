@@ -11,6 +11,7 @@ import init, { resource_rows, seal_ticket,
   context_reported,
   format_percent,
   format_tokens,
+  file_view,
   metrics_session,
   markdown_view,
   normalize_address,
@@ -25,6 +26,8 @@ import init, { resource_rows, seal_ticket,
 
 export type RowRef = { key: number; source: 'history' | 'projection'; index: number }
 export type Token = { text: string; class: string }
+export type FileLine = { number: number | null; kind: 'source' | 'meta' | 'add' | 'remove' | 'context' | 'plain'; tokens: Token[] }
+export const fileView = (source: string, path: string, diff: boolean): FileLine[] => JSON.parse(file_view(source, path, diff)) as FileLine[]
 export type MarkdownTag = 'div' | 'p' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'blockquote' | 'ul' | 'ol' | 'li' | 'em' | 'strong' | 'del' | 'code' | 'span' | 'br' | 'hr' | 'table' | 'thead' | 'tbody' | 'tr' | 'th' | 'td'
 export type MarkdownNode =
   | { kind: 'text'; text: string }

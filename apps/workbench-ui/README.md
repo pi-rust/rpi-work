@@ -37,7 +37,7 @@ npm run preview:fixture  # 必须访问 /?fixture=1 才启用样例
 ```bash
 npm run build
 npm run build:fixture
-npm run verify:all        # 自起独立fixture预览，按序跑16组，结束仅清自身进程
+npm run verify:all        # 自起独立fixture预览，按序跑17组，结束仅清自身进程
 npm run lint
 ```
 
@@ -53,6 +53,7 @@ npm run lint
 | `verify:mobile` | 320/390视口与抽屉 |
 | `verify:settings` | Provider目录/CAS写回执/一次性授权、居中原生设置窗口、分类搜索/双向Tab/焦点归还、聊天/真实iframe保持、偏好刷新、关闭清除私密输入、320/390px及断连边界，14项 |
 | `verify:tree` | 隔离协议fixture的源码目录 |
+| `verify:files` | Rust源码行号/token与原始Diff、精确CRLF复制、加载/失败/空态/迟到隔离、只读重试/暂存查询范围、手机局部滚动及固定行号、全主题4.5:1、完整原文降级与迟到WASM，11项 |
 | `verify:live` | typed读取、真实命令路径、IME、中止、队列、草稿、配置与断开不回样例 |
 | `verify:hosted` | 真实隔离Rust owner同源托管、认证、项目/会话创建及草稿，8项 |
 | `verify:browser` | 隔离真实HTTP页面、沙箱、标签/地址栏历史/刷新、表单/选区/草稿保留 |
@@ -68,7 +69,7 @@ cargo build -p work-node-service --bin work-server-rpc-fixture --locked
 
 hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副本名才能启用只读空资源目录profile，默认RPC-only fixture行为不变。不启动已安装rpi、不读真实凭据、不发prompt或调用模型。它是**真实Rust owner + 合成原生协议后端**，不是实际rpi、模型、资源安装或Native窗口验收。其余live命名的脚本是隔离HTTP/WS协议fixture，不可与真实模型验证混称。CI接线不等于远程CI已执行。
 
-截图生成到仓库忽略的 `artifacts/confirmed-workbench/`、`artifacts/reading/`、`artifacts/settings/`、`artifacts/rich-answer/`，不提交；日志/诊断留在 `/tmp` 或 `target/`。4193/4181及原型既有截图不由这些脚本清理。
+截图生成到仓库忽略的 `artifacts/confirmed-workbench/`、`artifacts/reading/`、`artifacts/settings/`、`artifacts/rich-answer/`、`artifacts/files/`，不提交；日志/诊断留在 `/tmp` 或 `target/`。4193/4181及原型既有截图不由这些脚本清理。
 
 ## 已接通与尚未完成
 
@@ -90,6 +91,10 @@ hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副�
 - 复制回答是Rust生成的可读纯文本，不是原始Markdown：段落空行、列表换行、表格制表符，不含作者/按钮/工具。代码复制是解析后的代码字符串（CommonMark会规范化换行）。只走显式手势Clipboard API，不走execCommand或改变草稿选区的后备路径；失败清成功标记并提示手选，pending禁重入，载荷变化/卸载使迟到反馈失效，A→B→A不复活旧成功。不能撤销已经发出的系统剪贴板写入；本批不替换工具/文件registry组件自身的复制实现。
 - 第九批验证：新增rich9项进入同一runner/CI，产品/fixture双构建和全部16套通过；Rust151→161（Markdown9项、代码色1项），WASM绑定6项，三crate WASM严格Clippy、fmt/diff和CI YAML通过，lint仍69警告/0错误。覆盖真实协议fixture历史与流式转历史、代码区/正文/anchor同DOM、上方富内容增高后<2px阅读锚点、草稿/选区及真实HTTP iframe保持；精确载荷和成功/拒绝/缺失/同步异常/迟到仅用隔离剪贴板桩，未写宿主剪贴板。原settings14/scopes6/reading12等断言均保留。截图实际复核也发现并修复段落margin被清零；截图仅忽略artifacts/rich-answer。
 - 键盘与平台证据：默认验收覆盖Tab进入、Tab离开/Shift-Tab返回、focus-visible内侧outline计算值和截图、局部scrollLeft及整体无横溢出；1440/1024/390/320×明暗×双布局和所有可选主题代码文字对比度通过。Chromium在连续窗口重排后原生ArrowRight横滚路由偶发不动作，和原型既有代码焦点脚本一样保留为 `RPI_WORKBENCH_NATIVE_SCROLL_PROBE=1` 的可选平台诊断，不当成默认稳定门槛、不以自造快捷键替代原生行为，也不宣称各平台键盘手验完成。
+- 只读文件工作面（第十批已接通并本地验收）：源码与原始Diff不再经过registry的TS高亮器；新增共享Rust `file_view`复用既有有界 `code_tokens::tokenize_file`。源码真实分行/行号，Diff只按原始前缀着色、不生成hunk旧/新行号或反馈目标；无HTML执行、编辑保存、行反馈和暂存写操作。触及1万换行或超过1MiB时退为单个完整原文节点，停用行号/高亮并提示，不截断正文或误报为1行。源码CRLF显示分行规范化，复制仍是节点返回的原字符串；Diff也复制完整原始patch，不带行号/按钮。
+- 文件请求继续由既有NodeConnection读取与fileTicket/projectScope保护，TypeScript只保存判别联合的本地读取展示状态。开始新请求立即显示准确路径/模式/范围和加载态，清除旧内容；失败在面板内提示，可明确重试同一GET，不发写请求、不自动重试。空文件不冒充加载，空Diff不误判成源码；暂存勾选只是查询范围，源码时不触发Diff，改动行/树项都会携带真实筛选，文件面板重挂从当前Diff恢复筛选不自动再读。仅显示引擎就绪才挂载目录树/文件视图，迟到WASM不调用未初始化导出或缓存空目录。
+- 文件布局沿原型的标题/只读状态栏、独立内容滚动、行号列和内侧焦点；短行与长行共用宽度轨道，使横滚超过一屏后所有行号仍在视口内。改动文件入口是可键盘激活的按钮，手机44px触控，HTML源码只显示文本。复制复用第九批的错误/迟到安全控件并独立其CSS，不改变聊天/草稿/选区或真实iframe；全部5主题明暗源码token/行号及Diff前缀/标题对比度>=4.5。原生方向键平台限制仍沿用上条边界，不声明全面平台键盘验收。
+- 第十批验证：新增files11项进入runner/CI，产品+fixture双构建与17套完整回归通过；共享Rust165项（新增文件展示4项）、WASM绑定7项、严格三crate WASM Clippy、fmt/diff/YAML通过，lint67警告/0错误（移除旧面板死代码减少2项，未压制规则）。旧产品缺文件阅读区、长横滚短行行号消失、迟到WASM无加载保护均有先失败后修复证据。完整回归另复现hosted原断言抢在SDK请求前检查侧栏选择，保留精确ID断言并增强为等待该ID的成功snapshot响应完成，不改owner或加sleep。截图实际复核，仅忽略artifacts/files；没有远程CI、真实模型或Native验收声明。
 - **整体仍未完成**：位置/展开/选区仅SPA内存恢复，不包含刷新/重启持久化；历史锚点已不在当前canonical页时只按保存的像素位置有界回退，不发起新协议或猜造历史。真实模型长会话与各平台手动验收、其他消息细节、未接通的设置能力、真实协同/本机桥接、Native/Android适配和正式发行仍待完成。Provider保存提示只表示节点管理回执，不代表当前Agent已加载。没有可关联的新结算不能借Ready/旧终态解锁，无ref且无原setter ACK证据的未知结果继续锁定。
 
 组件仅使用免费MIT的ReUI/shadcn生态；许可证说明见 [NOTICE.md](NOTICE.md)，没有引入Pro资产或授权密钥。

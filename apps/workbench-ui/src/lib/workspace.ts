@@ -35,6 +35,12 @@ export type PendingDialog = SessionDialog
 export type Source = { kind: 'disconnected' } | { kind: 'fixture' } | { kind: 'live'; origin: string }
 export type Status = 'boot' | 'disconnected' | 'fixture' | 'connecting' | 'auth-required' | 'ready' | 'error'
 
+export type FileRead = { path: string; mode: 'source' | 'diff'; staged: boolean } & (
+  | { status: 'loading' }
+  | { status: 'ready'; content: string }
+  | { status: 'error'; error: string }
+)
+
 export type Workspace = {
   presentationReady: boolean
   status: Status
@@ -87,9 +93,7 @@ export type Workspace = {
   confirmInstall: (scope: 'global' | 'project') => Promise<void>
   changes: NodeChangedFile[]
   files: NodeFileEntry[]
-  filePath: string | null
-  fileBody: string | null
-  fileDiff: string | null
+  fileRead: FileRead | null
   loadChanges: () => Promise<void>
   loadFiles: (path?: string) => Promise<void>
   openChange: (path: string, staged?: boolean) => Promise<void>
@@ -173,9 +177,7 @@ export function useWorkspace(): Workspace {
   const [installError, setInstallError] = useState<string | null>(null)
   const [changes, setChanges] = useState<NodeChangedFile[]>([])
   const [files, setFiles] = useState<NodeFileEntry[]>([])
-  const [filePath, setFilePath] = useState<string | null>(null)
-  const [fileBody, setFileBody] = useState<string | null>(null)
-  const [fileDiff, setFileDiff] = useState<string | null>(null)
+  const [fileRead, setFileRead] = useState<FileRead | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const sessionIdRef = useRef<string>('')
 
@@ -229,9 +231,7 @@ export function useWorkspace(): Workspace {
     setInstallError(null)
     setChanges([])
     setFiles([])
-    setFilePath(null)
-    setFileBody(null)
-    setFileDiff(null)
+    setFileRead(null)
     setResources({ rows: [], counts: [0, 0, 0] })
   }, [stopLive])
 
@@ -657,43 +657,29 @@ export function useWorkspace(): Workspace {
     [selected.project, selected.session, projectScope],
   )
 
-  const openChange = useCallback(
-    async (path: string, staged = false) => {
+  // Local read presentation only: the existing NodeConnection still owns every
+  // request, and fileTicket + projectScope reject stale results across scopes.
+  const readFile = useCallback(
+    async (path: string, mode: 'source' | 'diff', staged = false) => {
       const scope = projectScope(selected.project, selected.session)
       if (!scope) return
       const ticket = ++fileTicket.current
       const current = () => scope.current() && fileTicket.current === ticket
+      const target = { path, mode, staged }
+      setFileRead({ ...target, status: 'loading' })
       try {
-        const diff = await scope.conn.gitDiff(selected.project, path, staged)
-        if (!current()) return
-        setFilePath(path)
-        setFileDiff(diff.patch)
-        setFileBody(null)
+        const content = mode === 'diff'
+          ? (await scope.conn.gitDiff(selected.project, path, staged)).patch
+          : (await scope.conn.file(selected.project, path)).content
+        if (current()) setFileRead({ ...target, status: 'ready', content })
       } catch (cause) {
-        if (current()) setSendError(String(cause))
+        if (current()) setFileRead({ ...target, status: 'error', error: String(cause) })
       }
     },
     [selected.project, selected.session, projectScope],
   )
-
-  const openFile = useCallback(
-    async (path: string) => {
-      const scope = projectScope(selected.project, selected.session)
-      if (!scope) return
-      const ticket = ++fileTicket.current
-      const current = () => scope.current() && fileTicket.current === ticket
-      try {
-        const file = await scope.conn.file(selected.project, path)
-        if (!current()) return
-        setFilePath(path)
-        setFileBody(file.content)
-        setFileDiff(null)
-      } catch (cause) {
-        if (current()) setSendError(String(cause))
-      }
-    },
-    [selected.project, selected.session, projectScope],
-  )
+  const openChange = useCallback((path: string, staged = false) => readFile(path, 'diff', staged), [readFile])
+  const openFile = useCallback((path: string) => readFile(path, 'source'), [readFile])
 
   const listDir = useCallback(
     async (path: string) => {
@@ -756,9 +742,7 @@ export function useWorkspace(): Workspace {
     setInstallError(null)
     setChanges([])
     setFiles([])
-    setFilePath(null)
-    setFileBody(null)
-    setFileDiff(null)
+    setFileRead(null)
     setModels([])
     setThinkingLevels([])
     setSendError(null)
@@ -950,9 +934,7 @@ export function useWorkspace(): Workspace {
     confirmInstall,
     changes,
     files,
-    filePath,
-    fileBody,
-    fileDiff,
+    fileRead,
     loadChanges,
     loadFiles,
     openChange,

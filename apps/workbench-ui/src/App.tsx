@@ -516,10 +516,9 @@ export default function App() {
                     <FilePanel
                       key={`${workspace.connectionId}:${workspace.selected.project}:${workspace.selected.session}`}
                       live={live}
+                      presentationReady={workspace.presentationReady}
                       changes={workspace.changes}
-                      filePath={workspace.filePath}
-                      fileDiff={workspace.fileDiff}
-                      fileBody={workspace.fileBody}
+                      fileRead={workspace.fileRead}
                       onRefresh={() => void workspace.loadChanges()}
                       onOpen={(path, staged) => void workspace.openChange(path, staged)}
                       onOpenSource={(path) => void workspace.openFile(path)}

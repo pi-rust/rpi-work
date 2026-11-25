@@ -9,79 +9,50 @@ import {
 
 import { Tree, TreeItem, TreeItemLabel } from '@/components/reui/tree'
 import { ChangesGrid } from '@/components/changes-grid'
+import { FileViewer } from '@/components/file-viewer'
+import type { FileRead } from '@/lib/workspace'
 
-import {
-  CodeBlock,
-  CodeBlockCopyButton,
-  CodeBlockHeader,
-  CodeBlockTitle,
-} from '@/components/reui/code-block/code-block'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { NodeChangedFile, NodeFileEntry } from '@/lib/node'
 
 type Props = {
   live: boolean
+  presentationReady: boolean
   changes: NodeChangedFile[]
-  filePath: string | null
-  fileDiff: string | null
-  fileBody: string | null
+  fileRead: FileRead | null
   onRefresh: () => void
   onOpen: (path: string, staged?: boolean) => void
   onOpenSource: (path: string) => void
   listDir: (path: string) => Promise<NodeFileEntry[]>
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  M: '改',
-  A: '新',
-  D: '删',
-  R: '移',
-  '?': '未跟踪',
-}
-
-function languageFor(path: string): string {
-  const extension = path.split('.').pop()?.toLowerCase() ?? ''
-  return (
-    {
-      rs: 'rust',
-      ts: 'typescript',
-      tsx: 'tsx',
-      js: 'javascript',
-      json: 'json',
-      py: 'python',
-      sh: 'shell',
-      css: 'css',
-      html: 'html',
-      md: 'markdown',
-      toml: 'toml',
-      yaml: 'yaml',
-      yml: 'yaml',
-    }[extension] ?? 'text'
-  )
+/** Mount the tree/viewer only after its shared display engine is initialized. */
+export function FilePanel(props: Props) {
+  if (!props.live) return <p className="text-muted-foreground p-3 text-[12px]">文件与 Diff 需要连接真实节点；当前没有工作区。</p>
+  if (!props.presentationReady) return <p role="status" className="text-muted-foreground p-3 text-[12px]">正在加载文件展示…</p>
+  return <ReadyFilePanel {...props} />
 }
 
 /** Right-rail file panel: changed files from git, plus the selected diff or source. */
-export function FilePanel({
-  live,
+function ReadyFilePanel({
   changes,
-  filePath,
-  fileDiff,
-  fileBody,
+  fileRead,
   onRefresh,
   onOpen,
   onOpenSource,
   listDir,
 }: Props) {
-  const [staged, setStaged] = useState(false)
+  const [staged, setStaged] = useState(() => fileRead?.mode === 'diff' && fileRead.staged)
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
   // Node directory entries are cached by path; headless-tree asks lazily.
   const entries = useRef(new Map<string, NodeFileEntry>())
   // A file that is also changed should open its diff, not its saved source.
   const changed = new Set(changes.map((change) => change.path))
+  const openPath = (path: string) => changed.has(path) ? onOpen(path, staged) : onOpenSource(path)
   const tree = useTree<NodeFileEntry>({
     rootItemId: '',
+    onPrimaryAction: item => { if (!item.isFolder()) openPath(item.getId()) },
     getItemName: (item) => item.getItemData()?.name ?? '',
     isItemFolder: (item) => item.getItemData()?.kind === 'directory',
     dataLoader: {
@@ -101,15 +72,8 @@ export function FilePanel({
     features: [asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
   })
 
-  if (!live) {
-    return (
-      <p className="text-muted-foreground p-3 text-[12px]">
-        文件与 Diff 需要连接真实节点；当前没有工作区。
-      </p>
-    )
-  }
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="wb-file-panel flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between px-3 pt-2 text-[11px]">
         <div className="flex items-center gap-1">
           <button
@@ -137,7 +101,7 @@ export function FilePanel({
               checked={staged}
               onChange={(event) => {
                 setStaged(event.target.checked)
-                if (filePath) onOpen(filePath, event.target.checked)
+                if (fileRead?.mode === 'diff') onOpen(fileRead.path, event.target.checked)
               }}
               aria-label="仅看已暂存"
               data-testid="staged-toggle"
@@ -156,7 +120,7 @@ export function FilePanel({
               <TreeItem
                 key={item.getId()}
                 item={item}
-                className={cn(filePath === item.getId() && 'bg-muted/70')}
+                className={cn(fileRead?.path === item.getId() && 'bg-muted/70')}
               >
                 <TreeItemLabel
                   className="w-full font-mono"
@@ -165,10 +129,8 @@ export function FilePanel({
                     if (item.isFolder()) {
                       if (item.isExpanded()) item.collapse()
                       else item.expand()
-                    } else if (changed.has(item.getId())) {
-                      onOpen(item.getId())
                     } else {
-                      onOpenSource(item.getId())
+                      openPath(item.getId())
                     }
                   }}
                 >
@@ -180,28 +142,13 @@ export function FilePanel({
         ) : changes.length === 0 ? (
           <p className="text-muted-foreground px-1 py-2 text-[11px]">没有未提交的改动。</p>
         ) : (
-          <ChangesGrid changes={changes} onOpen={(path) => onOpen(path)} />
+          <ChangesGrid changes={changes} onOpen={(path) => onOpen(path, staged)} />
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto border-t p-2">
-        {filePath === null ? (
-          <p className="text-muted-foreground text-[11px]">选择一个改动查看 Diff。</p>
-        ) : (
-          <CodeBlock
-            code={fileDiff ?? fileBody ?? ''}
-            language={fileDiff ? 'diff' : languageFor(filePath)}
-            showLineNumbers={!fileDiff}
-            wrap={Boolean(fileDiff)}
-            themes={{ light: 'css-variables', dark: 'css-variables' }}
-          >
-            <CodeBlockHeader>
-              <CodeBlockTitle>{filePath}</CodeBlockTitle>
-              <span className="ml-auto" />
-              <CodeBlockCopyButton />
-            </CodeBlockHeader>
-          </CodeBlock>
-        )}
-      </div>
+      {fileRead === null ? <p className="text-muted-foreground border-t p-3 text-[12px]">选择一个文件查看源码或原始 Diff。</p> : (
+        <FileViewer key={JSON.stringify([fileRead.path, fileRead.mode, fileRead.staged])} file={fileRead}
+          retry={() => fileRead.mode === 'diff' ? onOpen(fileRead.path, fileRead.staged) : onOpenSource(fileRead.path)} />
+      )}
     </div>
   )
 }

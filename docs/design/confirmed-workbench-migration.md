@@ -23,7 +23,7 @@
 | 阅读列与消息层次 | 第六/七/九批已迁入阅读/经典、完成折叠、阅读锚点及共享Rust富内容/复制；扩展消息细节仍待核对 | 流式、失败、历史恢复、滚动锚点、草稿/选区保留 |
 | Composer、模型、思考、队列与审批 | 第五批已接通并本地验收：canonical绑定、共享Rust准入、ACK/结算分离、真实选项单次回复及typed回执只读恢复；整体UI迁移仍未完成 | IME、accepted 未确认、迟到回调、能力变化、附件边界 |
 | 右侧浏览器 | 首批施工：真实 HTTP(S) 页面、多标签、地址与历史、刷新、视口 | 隔离的真实 HTTP 页面；拒绝危险协议/凭据；不传节点密钥；隐藏不重载 |
-| 源码、目录与 diff | 已有 NodeConnection 文件/Git 调用；布局与原型不同 | ticket/revision、长行固定控件、主题对比度、仅能力允许的写入 |
+| 源码、目录与 diff | 第十批已迁入只读源码/原始Diff与明确读取状态；复用NodeConnection和共享Rust行展示；结构化hunk/反馈、能力允许的写入仍待核对 | ticket/revision、固定行号/局部横滚、主题对比度、不得将原型写入演示冒充真实能力 |
 | 居中设置与本地偏好 | 第八批已接通真实居中设置窗口及既有外观偏好；未支持能力不搬演示状态 | 搜索、焦点恢复、原型布局；本地偏好与执行配置分离 |
 | 工作协同与多节点 | 原型里的发现/开关/授权为 fixture，不得照搬为真实成功 | 真实节点授权、独立入口、过期/撤销与权限隔离；不支持时明确禁用 |
 | 项目添加与本机 rpi 设置 | typed 项目登记/会话创建已接通；目录/程序选择、安装仍需平台桥，原型下载是假流程 | 能力明确、真实校验；浏览器不能假装发现绝对路径或执行安装 |
@@ -116,3 +116,14 @@
 - 键盘默认门槛是Tab进入与双向离开/返回、focus-visible内侧outline计算值/截图、局部横滚范围及整窗无横溢出。原生ArrowRight在Chromium连续重排后偶发无动作，已留/tmp诊断；确认原型的 `verify-code-focus.cjs` 原本也只把它作为可选平台探针，本批沿用 `RPI_WORKBENCH_NATIVE_SCROLL_PROBE=1`，没有新增模拟快捷键或声称原生跨平台手验通过。不是四边PNG像素定量审计或所有平台键盘验收的替代。
 - 最终双构建和16套浏览器全绿，共享Rust151→161（Markdown9+代码色1），WASM binding6项，三crate WASM严格Clippy、fmt/diff及CI YAML通过；lint69警告/0错误，无压制。Cargo.lock只新增解析库与直接依赖，不夹带离线resolver的无关Windows版本变化；NOTICE补直接依赖说明，完整传递依赖许可分发仍是发行边界。截图实际复核后仅留忽略artifacts/rich-answer，日志/tmp；保护服务/三张PNG不变，仅本地提交不推送，未运行远程CI或实际模型/Native验收。
 - **整体目标仍active**：源码/diff与其他消息细节、未接通设置/真实协同、本机桥及Native/Android、刷新阅读持久化、真实模型长会话/各平台手动复验和正式发行仍未完成；本批富内容不等于完整UI交付。
+
+## 第十批：只读源码／原始 Diff 工作面（已接通并本地验收）
+
+- 按确认原型的source-header/source-code/source-status阅读结构迁入真实面板，保留真实改动表和ReUI目录树；不搬入演示文件tab、编辑保存、行反馈或Git写入。移除面板自己的TS语言映射及registry高亮器使用，新增共享Rust `file_view` DTO，直接复用现有有界全文件lexer/CRLF分行；React仅渲染行/token/行号。Diff保留节点返回的完整原始patch，前缀只用于原始行着色，不解析hunk、不伪造旧/新行号、变更统计或反馈目标，不能据此宣称完整结构化Diff/审阅已交付。
+- 有界的是词法及DOM工作量，不是正文长度：超过1MiB或触及1万换行时，Rust输出单个完整原文节点，停止分行/高亮并明确提示；不截断文本，不把降级结果冒称只有1个源码行。未知语言也保留文本。源码/原始patch的复制载荷是NodeConnection返回的原字符串（包含CRLF/末尾换行），与显示行拆分分离，不包含行号/控件；复用第九批Clipboard API状态隔离控件并独立复制CSS供两处使用，没有宿主剪贴板写入测试或legacy fallback。
+- 既有fileTicket+projectScope/connection epoch保护不变，TS将三个松散nullable字段收拢为读取展示联合：准确目标path/mode/staged与loading/ready/error。新选择立即清除旧正文并显示加载，失败保留目标只在面板提示，重试同一GET；没有自动重试或写动作。空文件、空Diff和加载各有明确状态；源码时切暂存筛选不偷偷请求Diff，改动表和树路由都传正确staged；重挂从当前Diff恢复实际筛选，不发新读取。目录/视图仅在展示WASM就绪后挂载，避免调用未初始化导出，以及提前建立树实例缓存空目录。
+- 源码行号sticky、真实内容局部滚动、只读状态栏；小屏复制/文件入口44px，代码区Tab进出和返回、内侧2px/-3px outline，不强造方向键。长横滚先实证短行行号被自身短行宽度夹出视口，再让所有行共用minmax(max-content,1fr)轨道；保留所有行号在视口内的几何断言。源码与Diff复用现有Rust code与diff-add/del token，5主题×明暗所有实际token/行号/原始Diff标题及增删文字>=4.5，不另定调色盘。真实HTML文件只作为代码文本，不生成script/img/iframe元素或外部请求。
+- 新增files专项11项接package/runner/CI（本地完整runner16→17套）：共享Rust源码/token与精确CRLF复制；原始Diff头/符号/无伪行号；A/B HTTP gate迟到不盖新loading或结果；空文件/空暂存Diff及筛选重挂；局部失败和准确GET重试/HTML不执行；复制失败清旧成功及切文件迟到；切会话同路径旧响应隔离；明暗×1440/1024/390/320的局部横滚、每条sticky行号和内侧焦点、44px/草稿选区/真实HTTP iframe同DOM及表单/加载次数；全主题文字对比；1万行完整原文降级及copy；迟到真实WASM加载/释放后的目录及源码恢复。以已有900px覆盖层的真实收起信号同步后显式打开，不用sleep或force-click绕过遮挡；保留原方向键平台诊断边界，不宣称四边PNG定量或跨平台键盘手验。
+- 验收中hosted旧测试曾在侧栏选中后立即检查snapshot请求，尚未发出时误失败。原精确会话ID断言保留，新增同ID成功snapshot响应完成的确定性等待（兼容已收到响应），既不放宽ID也不改SDK/owner或增加sleep。此修复不是“侧栏选中/ACK即canonical载入”的产品假设。
+- 最终产品/fixture双构建、17套完整浏览器全绿（files11、rich9、reading12、settings14、scopes6等保留），共享Rust161→165（文件展示4项）及WASM绑定7项通过，三crate WASM严格Clippy、fmt/diff/CI YAML通过；lint67警告/0错误，比原69少2项源于移除旧面板死代码，无压制。没有新增依赖或Cargo.lock改动；只本地提交、不推送，截图实际查看并仅存忽略artifacts/files（source/diff×light/dark×1440/320），日志/tmp；两个保护服务与三张原PNG不动。
+- **总目标仍active**：本批是源码／原始Diff只读体验，不是完整结构化Diff、编辑/反馈或Git工作流。其他消息细节、未接通设置/协同、本机桥与Native/Android、刷新阅读持久化、真实模型长会话/各平台手验和正式发行仍待实施；没有远程CI或真实模型/平台验收声明。

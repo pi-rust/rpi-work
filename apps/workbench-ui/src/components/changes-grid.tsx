@@ -20,7 +20,7 @@ export function ChangesGrid({ changes, onOpen }: Props) {
         id: 'path',
         accessorKey: 'path',
         header: '文件',
-        cell: ({ row }) => <span className="font-mono text-[11px]">{row.original.path}</span>,
+        cell: ({ row }) => <button type="button" className="cursor-pointer text-left font-mono text-[11px] [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-offset-[-2px]" aria-label={`查看 ${row.original.path} 的 Diff`} onClick={event => { event.stopPropagation(); onOpen(row.original.path) }}>{row.original.path}</button>,
       },
       {
         id: 'status',
@@ -46,7 +46,7 @@ export function ChangesGrid({ changes, onOpen }: Props) {
           ),
       },
     ],
-    [],
+    [onOpen],
   )
 
   const table = useTable({ features: dataGridFeatures, columns, data: changes })

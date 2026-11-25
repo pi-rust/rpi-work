@@ -260,6 +260,13 @@ pub fn markdown_view(source: &str) -> String {
         .unwrap_or_else(|_| "{\"nodes\":[],\"copyText\":\"\",\"plain\":true}".into())
 }
 
+/// Read-only raw file rows; the original source remains the copy payload.
+#[wasm_bindgen]
+pub fn file_view(source: &str, path: &str, diff: bool) -> String {
+    serde_json::to_string(&work_viewmodel::file_view::present(source, path, diff))
+        .unwrap_or_else(|_| "[]".into())
+}
+
 /// Per-line tokens for the shared lexer: `[[{text, class}]]`.
 #[wasm_bindgen]
 pub fn tokenize_file(source: &str, path: &str) -> String {
@@ -403,6 +410,18 @@ mod tests {
                 .iter()
                 .any(|token| token["class"] == "code-token-keyword")
         );
+    }
+
+    #[test]
+    fn file_binding_preserves_shared_rows_without_inventing_diff_line_numbers() {
+        for diff in [false, true] {
+            let text = "pub fn main() {}\r\n+literal\r\n";
+            let actual: Value = serde_json::from_str(&file_view(text, "main.rs", diff)).unwrap();
+            let expected =
+                serde_json::to_value(work_viewmodel::file_view::present(text, "main.rs", diff))
+                    .unwrap();
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]

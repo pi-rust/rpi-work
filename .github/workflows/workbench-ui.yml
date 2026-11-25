@@ -114,6 +114,7 @@ jobs:
           node scripts/verify-settings.cjs
           node scripts/verify-scopes.cjs
           node scripts/verify-tree.cjs
+          node scripts/verify-files.cjs
           node scripts/verify-browser.cjs
           node scripts/verify-shell.cjs
           node scripts/verify-creation.cjs

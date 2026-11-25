@@ -16,7 +16,7 @@ const COMMENT: &str = "code-token-comment";
 const NUMBER: &str = "code-token-number";
 const LITERAL: &str = "code-token-literal";
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Token<'a> {
     pub class: &'static str,
     pub text: &'a str,

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Check, Copy, Loader2 } from 'lucide-react'
+import './copy-text-button.css'
 
 type State = 'pending' | 'success' | 'error'
 

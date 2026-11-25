@@ -136,8 +136,9 @@ async function waitForServer(url, timeoutMs = 60000) {
     await page.locator('textarea').fill('real owner: preserve the seeded draft')
     const browserProjectPath = path.join(data, 'browser-project')
     fs.mkdirSync(browserProjectPath)
-    const requests = []
+    const requests = [], snapshots = []
     page.on('request', request => requests.push(request.url()))
+    page.on('response', response => { if (new URL(response.url()).pathname.endsWith('/snapshot')) snapshots.push(response) })
     await page.getByRole('button', { name: '添加项目', exact: true }).click()
     const modal = page.getByRole('dialog', { name: '添加项目', exact: true })
     await modal.getByLabel('名称', { exact: true }).fill('browser-created')
@@ -157,6 +158,13 @@ async function waitForServer(url, timeoutMs = 60000) {
     assert.equal(realSessions.length, sessionCount + 1)
     const createdSession = realSessions.find(item => item.projectId === created.id)
     assert(createdSession, 'Real node session has the returned project binding')
+    // Sidebar selection precedes the SDK read. Observe the exact successful
+    // snapshot response (including one already received), not scheduler timing.
+    const targetSnapshot = `/sessions/${createdSession.sessionId}/snapshot`
+    const snapshot = snapshots.find(response => new URL(response.url()).pathname.endsWith(targetSnapshot))
+      ?? await page.waitForResponse(response => new URL(response.url()).pathname.endsWith(targetSnapshot))
+    await snapshot.finished()
+    assert(snapshot.ok(), 'the exact returned session snapshot succeeds')
     assert(requests.some(url => url.includes(`/sessions/${createdSession.sessionId}/snapshot`)), 'the canonical SDK opens the exact returned session snapshot')
     assert.equal(await page.locator('textarea').inputValue(), '')
     pass('browser creates and opens one real owner session without a prompt or model call')

@@ -35,15 +35,8 @@
 .wb-answer-table th { background: var(--accent); font-weight: 600; }
 .wb-answer-table tr:last-child td { border-bottom: 0; }
 .wb-answer-actions { display: flex; align-items: center; min-height: 32px; }
-.wb-copy-control { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.wb-copy-control button { display: grid; place-content: center; width: 30px; height: 30px; flex: none; border-radius: 6px; cursor: pointer; color: var(--muted-foreground); }
-.wb-copy-control button:hover:not(:disabled) { background: var(--accent); color: var(--foreground); }
-.wb-copy-control button:disabled { cursor: default; }
-.wb-copy-control svg { width: 14px; height: 14px; }
-.wb-copy-control [role="status"] { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
-.wb-copy-control button:focus-visible, .wb-message-code pre:focus-visible, .wb-answer-table:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; }
+.wb-message-code pre:focus-visible, .wb-answer-table:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; }
 .wb-prose a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 @media (max-width: 700px) {
-  .wb-copy-control button { width: 44px; height: 44px; }
   .wb-prose a { display: inline-block; padding-block: 8px; }
 }
