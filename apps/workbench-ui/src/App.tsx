@@ -26,6 +26,7 @@ import { useTheme } from '@/lib/theme'
 import { useMessageLayout } from '@/lib/message-layout'
 import { useConversationScroll } from '@/lib/use-conversation-scroll'
 import { useScopedPresentation } from '@/lib/use-scoped-presentation'
+import { readDirectoryExpansion, saveDirectoryExpansion } from '@/lib/directory-expansion'
 import { contextFrom, formatTokens, metricsFrom } from '@/lib/viewmodel'
 import { useIsMobile, useMediaQuery } from '@/lib/viewport'
 
@@ -37,6 +38,9 @@ export default function App() {
   const draftScope = `${sourceScope}/${workspace.selected.session || `project:${workspace.selected.project || 'none'}`}`
   const scrollScope = JSON.stringify([sourceScope, workspace.selected.project, workspace.selected.session])
   const choices = useScopedPresentation(scrollScope, () => new Map<string, boolean>())
+  const directoryExpansion = useScopedPresentation(scrollScope, () => ({
+    paths: live && workspace.selected.project ? readDirectoryExpansion(scrollScope) : [],
+  }))
   const { draft, setDraft, clear: clearDraft, selection } = useDraft(draftScope)
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
@@ -515,8 +519,14 @@ export default function App() {
                   </div>
                   {railTab === 'files' ? (
                     <FilePanel
-                      key={`${workspace.connectionId}:${workspace.selected.project}:${workspace.selected.session}`}
+                      key={`${workspace.connectionId}:${scrollScope}`}
                       live={live && Boolean(workspace.selected.project)}
+                      visible={rail}
+                      expandedDirectories={directoryExpansion.paths}
+                      onExpandedDirectoriesChange={paths => {
+                        directoryExpansion.paths = paths
+                        saveDirectoryExpansion(scrollScope, paths)
+                      }}
                       presentationReady={workspace.presentationReady}
                       changes={workspace.changes}
                       fileRead={workspace.fileRead}

@@ -267,7 +267,11 @@ const roots = [entry('src'), entry('empty'), entry('README.md', 'file')]
           await page.setViewportSize({ width, height: 940 }); if (width <= 900 && !wasOverlay) await panel.waitFor({ state: 'hidden' })
           if (await panel.isVisible() && width <= 900) await panel.getByRole('button', { name: '关闭浏览器面板', exact: true }).click()
           await page.getByRole('button', { name: '文件面板', exact: true }).click()
-          await panel.getByTestId('tab-tree').click(); await expand('src')
+          await panel.getByTestId('tab-tree').click()
+          const src = panel.getByRole('treeitem', { name: 'src', exact: true }); await src.waitFor()
+          const firstVisit = !dark && width === 1440
+          assert.equal(await src.getAttribute('aria-expanded'), firstVisit ? 'false' : 'true')
+          if (firstVisit) await expand('src')
           await group('src').getByRole('alert').waitFor()
           const button = group('src').getByRole('button', { name: '重试读取目录 src', exact: true })
           await button.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab'); await rendered()
@@ -313,6 +317,154 @@ const roots = [entry('src'), entry('empty'), entry('README.md', 'file')]
       assert.equal(await page.evaluate(() => treeFrame === document.querySelector('.real-browser iframe')), true); assert.equal(await input.inputValue(), 'keep directory preview'); assert.equal(loads, initialLoads)
       assert(requests.some(request => request.path === 'src'))
     }, async ({ page }) => { await page.route(url => url.pathname.endsWith('/files') && url.searchParams.get('path') === 'src', route => route.fulfill({ status: 503, json: { error: 'child unavailable' } })) })
+    await check('reload restores only visible expanded branches after their parent listings arrive', async ({ page, panel, group, expand, requests, gate, rendered }) => {
+      const nested = entry('nested', 'directory', 'src/'), leaf = entry('leaf.txt', 'file', 'src/nested/')
+      const root = gate(), child = gate(), grandchild = gate()
+      let restoring = false
+      const listing = url => url.pathname.endsWith('/files')
+      await page.route(listing, route => {
+        const dir = new URL(route.request().url()).searchParams.get('path') || ''
+        if (dir === '' && restoring) return root.hold(route, { json: { path: '', entries: roots } })
+        if (dir === 'src') return restoring ? child.hold(route, { json: { path: dir, entries: [nested] } }) : route.fulfill({ json: { path: dir, entries: [nested] } })
+        if (dir === 'src/nested') return restoring ? grandchild.hold(route, { json: { path: dir, entries: [leaf] } }) : route.fulfill({ json: { path: dir, entries: [leaf] } })
+        return route.continue()
+      })
+      await expand('src'); await expand('nested')
+      await panel.getByRole('treeitem', { name: 'leaf.txt', exact: true }).waitFor()
+      await expand('empty'); await group('empty').getByRole('status').waitFor(); await expand('empty')
+      assert.deepEqual(requests.map(request => request.path), ['', 'src', 'src/nested', 'empty'])
+      restoring = true
+      const before = requests.length
+      await page.reload()
+      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor()
+      await page.getByRole('button', { name: '文件面板', exact: true }).click(); await rendered()
+      assert.equal(requests.length, before)
+      await panel.getByTestId('tab-tree').click(); await root.entered()
+      await group('').getByRole('status').waitFor()
+      await panel.getByTestId('tab-changes').click(); await root.flush()
+      assert.deepEqual(requests.slice(before).map(request => request.path), [''])
+      await panel.getByTestId('tab-tree').click()
+      const src = panel.getByRole('treeitem', { name: 'src', exact: true }); await src.waitFor()
+      assert.equal(await src.getAttribute('aria-expanded'), 'true', 'directory expansion survives a browser reload')
+      await child.entered(); await group('src').getByRole('status').waitFor()
+      await page.setViewportSize({ width: 320, height: 940 }); await panel.waitFor({ state: 'hidden' })
+      await child.flush()
+      assert.deepEqual(requests.slice(before).map(request => request.path), ['', 'src'])
+      await page.getByRole('button', { name: '文件面板', exact: true }).click(); await grandchild.entered()
+      await group('src/nested').getByRole('status').waitFor(); await grandchild.flush()
+      await panel.getByRole('treeitem', { name: 'leaf.txt', exact: true }).waitFor()
+      assert.equal(await panel.getByRole('treeitem', { name: 'empty', exact: true }).getAttribute('aria-expanded'), 'false')
+      assert.deepEqual(requests.slice(before).map(request => request.url), requests.slice(0, 3).map(request => request.url))
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320)
+      await page.screenshot({ path: path.join(artifacts, 'restored-light-320.png') })
+    })
+    await check('collapsed ancestors defer descendant reads and a failed parent keeps the saved expansion for explicit retry', async ({ page, panel, group, expand, requests, rendered }) => {
+      const nested = entry('nested', 'directory', 'src/'), leaf = entry('leaf.txt', 'file', 'src/nested/')
+      let failParent = false
+      await page.route(url => url.pathname.endsWith('/files') && Boolean(url.searchParams.get('path')), route => {
+        const dir = new URL(route.request().url()).searchParams.get('path')
+        if (dir === 'src' && failParent) return route.fulfill({ status: 503, json: { error: 'saved parent unavailable' } })
+        return route.fulfill({ json: { path: dir, entries: dir === 'src' ? [nested] : [leaf] } })
+      })
+      await expand('src'); await expand('nested')
+      await panel.getByRole('treeitem', { name: 'leaf.txt', exact: true }).waitFor()
+      await expand('src'); await panel.getByRole('treeitem', { name: 'nested', exact: true }).waitFor({ state: 'detached' })
+      const before = requests.length
+      await page.reload()
+      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor()
+      await page.getByRole('button', { name: '文件面板', exact: true }).click()
+      await panel.getByTestId('tab-tree').click()
+      const src = panel.getByRole('treeitem', { name: 'src', exact: true }); await src.waitFor(); await rendered()
+      assert.equal(await src.getAttribute('aria-expanded'), 'false')
+      assert.deepEqual(requests.slice(before).map(request => request.path), [''])
+      failParent = true
+      await src.press('ArrowRight'); await group('src').getByRole('alert').filter({ hasText: 'saved parent unavailable' }).waitFor()
+      await expand('src'); await expand('src'); await group('src').getByRole('alert').waitFor(); await rendered()
+      assert.deepEqual(requests.slice(before).map(request => request.path), ['', 'src'])
+      failParent = false
+      await group('src').getByRole('button', { name: '重试读取目录 src', exact: true }).press('Enter')
+      await panel.getByRole('treeitem', { name: 'leaf.txt', exact: true }).waitFor()
+      assert.deepEqual(requests.slice(before).map(request => request.path), ['', 'src', 'src', 'src/nested'])
+      assert.equal(requests[before + 1].url, requests[before + 2].url)
+    })
+    await check('a directory retyped during reload drops its saved descendants before the path returns', async ({ page, panel, expand, requests, rendered }) => {
+      const nested = entry('nested', 'directory', 'src/')
+      let retyped = false
+      await page.route(url => url.pathname.endsWith('/files'), route => {
+        const dir = new URL(route.request().url()).searchParams.get('path') || ''
+        const entries = dir === '' ? (retyped ? [entry('src', 'file'), entry('README.md', 'file')] : roots)
+          : dir === 'src' ? [nested] : [entry('leaf.txt', 'file', 'src/nested/')]
+        return route.fulfill({ json: { path: dir, entries } })
+      })
+      await expand('src'); await expand('nested')
+      await panel.getByRole('treeitem', { name: 'leaf.txt', exact: true }).waitFor()
+      await expand('src')
+      retyped = true
+      const before = requests.length
+      await page.reload()
+      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor()
+      await page.getByRole('button', { name: '文件面板', exact: true }).click(); await panel.getByTestId('tab-tree').click()
+      const src = panel.getByRole('treeitem', { name: 'src', exact: true }); await src.waitFor()
+      assert.equal(await src.getAttribute('aria-expanded'), null)
+      assert.deepEqual(requests.slice(before).map(request => request.path), [''])
+      retyped = false
+      await page.reload()
+      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor()
+      await page.getByRole('button', { name: '文件面板', exact: true }).click(); await panel.getByTestId('tab-tree').click()
+      await src.waitFor()
+      assert.equal(await src.getAttribute('aria-expanded'), 'false')
+      await expand('src')
+      const nestedRow = panel.getByRole('treeitem', { name: 'nested', exact: true }); await nestedRow.waitFor(); await rendered()
+      assert.equal(await nestedRow.getAttribute('aria-expanded'), 'false')
+      assert.deepEqual(requests.slice(before).map(request => request.path), ['', '', 'src'])
+    })
+    await check('identical directory paths across sessions restore their own expansion when storage is unavailable', async ({ page, panel, group, expand, requests }) => {
+      await expand('src'); await panel.getByRole('treeitem', { name: 'theme.rs', exact: true }).waitFor()
+      const architecture = page.getByRole('button', { name: '梳理 Agent 架构', exact: true })
+      const dark = page.getByRole('button', { name: '为工作台添加深色模式', exact: true })
+      const treeTab = panel.getByTestId('tab-tree')
+      const src = panel.getByRole('treeitem', { name: 'src', exact: true })
+      await architecture.click(); await treeTab.click(); await src.waitFor()
+      assert.equal(await src.getAttribute('aria-expanded'), 'false')
+      await expand('empty'); await group('empty').getByRole('status').waitFor()
+      await dark.click(); await treeTab.click(); await panel.getByRole('treeitem', { name: 'theme.rs', exact: true }).waitFor()
+      const empty = panel.getByRole('treeitem', { name: 'empty', exact: true })
+      assert.equal(await empty.getAttribute('aria-expanded'), 'false')
+      await architecture.click(); await treeTab.click(); await group('empty').getByRole('status').waitFor()
+      assert.equal(await src.getAttribute('aria-expanded'), 'false')
+      assert.deepEqual(requests.map(request => request.path), ['', 'src', '', 'empty', '', 'src', '', 'empty'])
+      assert.equal(await page.evaluate(() => localStorage.length), 0)
+    }, async ({ page }) => { await page.addInitScript(() => { Storage.prototype.setItem = () => { throw Error('storage unavailable') } }) })
+    await check('different nodes with the same project, session and paths restore separate expansions after reload', async ({ page, panel, group, expand, requests }) => {
+      const other = await startFixture(0, { nativeQueries: true, includeHistoryAssistant: true })
+      other.controls.fileEntriesByPath = { '': roots, src: [entry('other.rs', 'file', 'src/')], empty: [] }
+      const darkPrompt = page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true })
+      const openTree = async () => {
+        await page.getByRole('button', { name: '文件面板', exact: true }).click()
+        await panel.getByTestId('tab-tree').click()
+      }
+      const connectOther = async () => {
+        await page.getByRole('button', { name: '断开节点', exact: true }).click()
+        await page.getByRole('textbox', { name: '节点地址', exact: true }).fill(other.url)
+        await page.getByRole('button', { name: '连接节点', exact: true }).click()
+        await darkPrompt.waitFor()
+        await openTree()
+      }
+      const src = panel.getByRole('treeitem', { name: 'src', exact: true })
+      const empty = panel.getByRole('treeitem', { name: 'empty', exact: true })
+      try {
+        await expand('src'); await panel.getByRole('treeitem', { name: 'theme.rs', exact: true }).waitFor()
+        await connectOther(); await src.waitFor()
+        assert.equal(await src.getAttribute('aria-expanded'), 'false')
+        await expand('empty'); await group('empty').getByRole('status').waitFor()
+        await page.reload(); await darkPrompt.waitFor(); await openTree()
+        await panel.getByRole('treeitem', { name: 'theme.rs', exact: true }).waitFor()
+        assert.equal(await empty.getAttribute('aria-expanded'), 'false')
+        await connectOther(); await group('empty').getByRole('status').waitFor()
+        assert.equal(await src.getAttribute('aria-expanded'), 'false')
+        assert.deepEqual(requests.map(request => request.path), ['', 'src', '', 'empty', '', 'src', '', 'empty'])
+      } finally { await other.close() }
+    })
     console.log(`RESULT ${passed.length} checks passed${failures.length ? `, ${failures.length} failed` : ''}`)
     if (failures.length) process.exitCode = 1
   } finally { if (browser) await browser.close(); preview.kill(); await fixture.close(); await new Promise(resolve => site.close(resolve)) }

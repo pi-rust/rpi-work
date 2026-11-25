@@ -98,8 +98,8 @@ export type Workspace = {
   loadFiles: (path?: string) => Promise<void>
   openChange: (path: string, staged?: boolean) => Promise<void>
   openFile: (path: string) => Promise<void>
-  /** Read one directory without touching the panel's own listing. */
-  listDir: (path: string) => Promise<NodeFileEntry[]>
+  /** Read one directory; null means there is no longer a current scope. */
+  listDir: (path: string) => Promise<NodeFileEntry[] | null>
   refreshQueue: () => Promise<void>
   queueMessage: (text: string) => Promise<boolean>
   cancelQueued: (entryId: string) => Promise<void>
@@ -684,12 +684,12 @@ export function useWorkspace(): Workspace {
   const listDir = useCallback(
     async (path: string) => {
       const scope = projectScope(selected.project, selected.session)
-      if (!scope) return []
+      if (!scope) return null
       try {
         const listing = await scope.conn.files(selected.project, path)
-        return scope.current() ? listing.entries : []
+        return scope.current() ? listing.entries : null
       } catch (cause) {
-        if (!scope.current()) return []
+        if (!scope.current()) return null
         throw cause
       }
     },

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useTree } from '@headless-tree/react'
 import {
@@ -23,13 +23,16 @@ type DirectoryRead =
 
 type Props = {
   live: boolean
+  visible: boolean
   presentationReady: boolean
   changes: NodeChangedFile[]
   fileRead: FileRead | null
   onRefresh: () => void
   onOpen: (path: string, staged?: boolean) => void
   onOpenSource: (path: string) => void
-  listDir: (path: string) => Promise<NodeFileEntry[]>
+  expandedDirectories: string[]
+  onExpandedDirectoriesChange: (paths: string[]) => void
+  listDir: (path: string) => Promise<NodeFileEntry[] | null>
 }
 
 /** Mount the tree/viewer only after its shared display engine is initialized. */
@@ -41,15 +44,19 @@ export function FilePanel(props: Props) {
 
 /** Right-rail file panel: changed files from git, plus the selected diff or source. */
 function ReadyFilePanel({
+  visible,
   changes,
   fileRead,
   onRefresh,
   onOpen,
   onOpenSource,
+  expandedDirectories,
+  onExpandedDirectoriesChange,
   listDir,
 }: Props) {
   const [staged, setStaged] = useState(() => fileRead?.mode === 'diff' && fileRead.staged)
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
+  const treeActive = useRef(false)
   // One listing cache for both the lazy tree and explicit GETs. The sync loader
   // reads it without scheduling network requests when the tree is rebuilt.
   const entries = useRef(new Map<string, NodeFileEntry>())
@@ -73,12 +80,19 @@ function ReadyFilePanel({
     const request = Symbol(path)
     requests.current.set(path, request)
     const current = () => mounted.current && requests.current.get(path) === request
-    const previous = reads.current.get(path)?.entries
+    const previousRead = reads.current.get(path)
+    const previous = previousRead?.entries
     reads.current.set(path, { status: 'loading', entries: previous })
     publishReads()
     try {
       const children = await listDir(path)
       if (!current()) return false
+      if (children === null) {
+        if (previousRead) reads.current.set(path, previousRead)
+        else reads.current.delete(path)
+        publishReads()
+        return false
+      }
       const next = new Map(children.map(entry => [entry.path, entry]))
       const detached = new Set<string>()
       const forget = (id: string) => {
@@ -95,13 +109,24 @@ function ReadyFilePanel({
       }
       for (const entry of children) entries.current.set(entry.path, entry)
       reads.current.set(path, { status: 'ready', entries: children })
+      // This listing can disprove saved branches that have no cached entries
+      // yet, including descendants hidden behind a collapsed directory.
+      const prefix = path ? `${path}/` : ''
+      const expanded = tree.getState().expandedItems
+      const surviving = expanded.filter(id => {
+        if (detached.has(id)) return false
+        const child = id.startsWith(prefix) ? id.slice(prefix.length).split('/', 1)[0] : ''
+        return !child || next.get(prefix + child)?.kind === 'directory'
+      })
+      if (expanded.length !== surviving.length) tree.applySubStateUpdate('expandedItems', surviving)
       if (detached.size) {
-        tree.applySubStateUpdate('expandedItems', ids => ids.filter(id => !detached.has(id)))
         tree.applySubStateUpdate('selectedItems', ids => ids.filter(id => !detached.has(id)))
         if (detached.has(tree.getState().focusedItem ?? '')) tree.applySubStateUpdate('focusedItem', null)
       }
       tree.rebuildTree()
       publishReads()
+      const parentVisible = path === '' || (tree.getItemInstance(path).getItemMeta().index >= 0 && surviving.includes(path))
+      if (treeActive.current && parentVisible) loadExpanded(children.map(entry => entry.path))
       return true
     } catch (cause) {
       if (current()) {
@@ -114,17 +139,25 @@ function ReadyFilePanel({
     }
   }
 
+  const loadExpanded = (visibleIds: string[]) => {
+    if (!treeActive.current) return
+    const expanded = new Set(tree.getState().expandedItems)
+    for (const id of visibleIds) {
+      if (expanded.has(id) && entries.current.get(id)?.kind === 'directory' && !reads.current.has(id)) void readDirectory(id)
+    }
+  }
+
   const tree = useTree<NodeFileEntry>({
     rootItemId: '',
+    initialState: { expandedItems: expandedDirectories },
     onPrimaryAction: item => { if (!item.isFolder()) openPath(item.getId()) },
     getItemName: (item) => item.getItemData()?.name ?? '',
     isItemFolder: (item) => item.getItemData()?.kind === 'directory',
     setExpandedItems: () => {
-      // Mouse and keyboard expansion share this hook. A cached failure is
-      // deliberately not an invitation to retry on reopening the folder.
-      for (const id of tree.getState().expandedItems) {
-        if (entries.current.get(id)?.kind === 'directory' && !reads.current.has(id)) void readDirectory(id)
-      }
+      if (!mounted.current) return
+      onExpandedDirectoriesChange(tree.getState().expandedItems)
+      // The state has changed, but the cached item metadata has not been rebuilt yet.
+      loadExpanded(tree.getItemsMeta().map(item => item.itemId))
     },
     dataLoader: {
       getItem: id => entries.current.get(id) ?? { name: id, path: id, kind: id === '' ? 'directory' : 'file', size: 0 },
@@ -133,10 +166,20 @@ function ReadyFilePanel({
     features: [syncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
   })
   const items = tree.getItems()
-  const visible = new Set(items.map(item => item.getId()))
+  const visibleIds = new Set(items.map(item => item.getId()))
   const notices = [...directoryReads].filter(([path, read]) =>
-    (path === '' || (visible.has(path) && tree.getItemInstance(path).isExpanded())) &&
+    (path === '' || (visibleIds.has(path) && tree.getItemInstance(path).isExpanded())) &&
     (read.status !== 'ready' || read.entries?.length === 0))
+
+  const loadVisibleTree = useEffectEvent(() => {
+    if (!reads.current.has('')) void readDirectory('')
+    else loadExpanded(tree.getItems().map(item => item.getId()))
+  })
+  useLayoutEffect(() => {
+    treeActive.current = visible && tab === 'tree'
+    if (treeActive.current) loadVisibleTree()
+    return () => { treeActive.current = false }
+  }, [visible, tab])
 
   const refreshDirectory = async () => {
     if (!mounted.current || refreshInProgress.current || requests.current.has('')) return
@@ -174,10 +217,7 @@ function ReadyFilePanel({
           </button>
           <button
             data-testid="tab-tree"
-            onClick={() => {
-              setTab('tree')
-              if (!reads.current.has('')) void readDirectory('')
-            }}
+            onClick={() => setTab('tree')}
             className={cn('rounded px-1.5 py-0.5', tab === 'tree' ? 'bg-muted text-foreground' : 'text-muted-foreground')}
           >
             目录
