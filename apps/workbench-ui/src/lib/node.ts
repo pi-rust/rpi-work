@@ -100,7 +100,7 @@ const parse = <T,>(value: string): T => JSON.parse(value) as T
 
 export type SessionControls = {
   busy: boolean; online: boolean; send: boolean; queue: boolean; queueRead: boolean
-  cancelQueued: boolean; clearQueue: boolean; abort: boolean; reply: boolean
+  cancelQueued: boolean; clearQueue: boolean; resumePending: boolean | null; abort: boolean; reply: boolean
   model: boolean; thinking: boolean; configurationLocked: boolean; reason: string
 }
 export type SessionDialog = {
@@ -111,7 +111,7 @@ export type SessionRecovery = { canCheck: boolean; checking: boolean; count: num
 export type SessionView = LiveView & {
   recovery: SessionRecovery
   forkAvailable: boolean; forkFromEntry: boolean
-  scopeEpoch: number; messages: unknown[]; controls: SessionControls; dialogs: SessionDialog[]
+  scopeEpoch: number; queueRevision: number; messages: unknown[]; controls: SessionControls; dialogs: SessionDialog[]
   runtime: NodeRuntime | null; models: NodeModel[]; thinkingLevels: string[]; error: string | null
 }
 
@@ -124,6 +124,7 @@ export class BoundSession {
   async prompt(text: string): Promise<{ accepted: boolean; error: string | null }> { return parse(await this.client.prompt(text)) }
   async fork(entryId: string | null, title: string): Promise<SessionManagementReply<{ sessionId: string }>> { return parse(await this.client.fork(entryId ?? undefined, title)) }
   async abort(): Promise<unknown> { return parse(await this.client.abort()) }
+  async resumePending(): Promise<void> { await this.client.resume_pending() }
   async queue(): Promise<NodeQueue> { return parse(await this.client.queue()) }
   async queueMessage(text: string): Promise<{ accepted: boolean | null }> { return parse(await this.client.queue_message(text, 'followUp')) }
   async cancelQueued(id: string): Promise<unknown> { return parse(await this.client.cancel_queued(id)) }

@@ -14,14 +14,9 @@ pub fn interpret_receipt(
     expected_command: Option<&str>,
     requires_acceptance: bool,
 ) -> Option<Result<(), String>> {
-    let value = match status {
-        OperationStatus::KnownResult {
-            outcome: OperationOutcome::Succeeded { value },
-        } => value,
-        OperationStatus::KnownResult {
-            outcome: OperationOutcome::Failed { error },
-        } if error.code != RealtimeErrorCode::OutcomeUnknown => return Some(Err(error.message)),
-        _ => return None,
+    let value = match operation_result(status)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
     };
     if expected_command.is_some() || value.get("type").and_then(Value::as_str) == Some("response") {
         let reply: HostResponse<Value> = serde_json::from_value(value).ok()?;
@@ -62,6 +57,57 @@ pub fn interpret_receipt(
     Some(Ok(()))
 }
 
+fn operation_result(status: OperationStatus) -> Option<Result<Value, String>> {
+    match status {
+        OperationStatus::KnownResult {
+            outcome: OperationOutcome::Succeeded { value },
+        } => Some(Ok(value)),
+        OperationStatus::KnownResult {
+            outcome: OperationOutcome::Failed { error },
+        } if error.code != RealtimeErrorCode::OutcomeUnknown => Some(Err(error.message)),
+        _ => None,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ResumeAdmission {
+    Accepted,
+    Skipped,
+}
+
+/// A known response can admit the run, report that there is nothing to resume,
+/// or refuse the command. An incomplete or contradictory response stays unknown.
+#[must_use]
+pub fn resume_admission(reply: HostResponse<Value>) -> Option<Result<ResumeAdmission, String>> {
+    if reply.response_type != "response" || reply.command != "resume_pending" {
+        return None;
+    }
+    if !reply.success {
+        return Some(Err(reply
+            .error
+            .unwrap_or_else(|| "节点拒绝继续队列".into())));
+    }
+    let data = reply.data?;
+    match (data.get("accepted"), data.get("resumed")) {
+        (Some(Value::Bool(true)), None) => Some(Ok(ResumeAdmission::Accepted)),
+        (None | Some(Value::Bool(false)), Some(Value::Bool(false))) => {
+            Some(Ok(ResumeAdmission::Skipped))
+        }
+        (Some(Value::Bool(false)), None) => Some(Err("节点拒绝继续队列".into())),
+        _ => None,
+    }
+}
+
+#[must_use]
+pub fn interpret_resume_receipt(
+    status: OperationStatus,
+) -> Option<Result<ResumeAdmission, String>> {
+    match operation_result(status)? {
+        Ok(value) => resume_admission(serde_json::from_value(value).ok()?),
+        Err(error) => Some(Err(error)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,6 +121,32 @@ mod tests {
     fn host(success: bool, data: Value) -> Value {
         json!({"type":"response","id":null,"command":"prompt","success":success,"data":data,"error":if success { Value::Null } else { json!("refused") }})
     }
+    #[test]
+    fn resume_receipt_keeps_accepted_skipped_rejected_and_unknown_distinct() {
+        for (data, expected) in [
+            (
+                json!({"accepted":true}),
+                Some(Ok(ResumeAdmission::Accepted)),
+            ),
+            (json!({"resumed":false}), Some(Ok(ResumeAdmission::Skipped))),
+            (
+                json!({"accepted":false}),
+                Some(Err("节点拒绝继续队列".into())),
+            ),
+            (json!({"accepted":true,"resumed":false}), None),
+            (json!({"accepted":"true"}), None),
+            (json!({}), None),
+        ] {
+            let mut reply = host(true, data);
+            reply["command"] = json!("resume_pending");
+            assert_eq!(interpret_resume_receipt(succeeded(reply)), expected);
+        }
+        assert_eq!(
+            interpret_resume_receipt(succeeded(host(true, json!({"accepted":true})))),
+            None
+        );
+    }
+
     #[test]
     fn pending_and_outcome_unknown_are_not_failures_or_successes() {
         for status in [

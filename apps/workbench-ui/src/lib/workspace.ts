@@ -126,6 +126,7 @@ export type Workspace = {
   queueMessage: (text: string) => Promise<boolean>
   cancelQueued: (entryId: string) => Promise<void>
   clearQueue: () => Promise<void>
+  resumePending: () => Promise<void>
   send: (text: string) => Promise<boolean>
   abort: () => Promise<void>
   setModel: (model: NodeModel) => Promise<void>
@@ -194,6 +195,7 @@ export function useWorkspace(): Workspace {
   const historyRef = useRef<HistoryMessage[]>(sample?.history ?? [])
   const binding = useRef<BoundSession | null>(null)
   const bindingEpoch = useRef(0)
+  const queueTicket = useRef(0)
   const observedControls = useRef<SessionControls | null>(null)
   const reviewRequest = useRef<object | null>(null)
   const [reviewPending, setReviewPending] = useState(false)
@@ -299,6 +301,12 @@ export function useWorkspace(): Workspace {
     setResources({ rows: [], counts: [0, 0, 0] })
   }, [stopLive, visit])
 
+  const readQueue = useCallback(async (session: BoundSession, current: () => boolean) => {
+    const ticket = ++queueTicket.current
+    const value = await session.queue()
+    if (current() && ticket === queueTicket.current) setQueue(value)
+  }, [])
+
   const loadSession = useCallback(async (conn: NodeConnection, sessionId: string, projectId: string, position?: number) => {
     if (conn !== connection.current) return
     clearSession(projectId, sessionId, position)
@@ -311,9 +319,22 @@ export function useWorkspace(): Workspace {
       await initViewModel()
       if (!current()) return
       sessionIdRef.current = sessionId
+      let queueObservation: Pick<SessionView, 'scopeEpoch' | 'queueRevision'> | null = null
+      let lastQueueRead = ''
+      const refreshObservedQueue = () => {
+        const session = binding.current
+        if (!session || !queueObservation) return
+        const { scopeEpoch, queueRevision } = queueObservation
+        const key = `${scopeEpoch}:${queueRevision}`
+        if (key === lastQueueRead) return
+        lastQueueRead = key
+        void readQueue(session, () => current() && bindingEpoch.current === scopeEpoch).catch(() => {})
+      }
       const opened = await conn.bindSession(sessionId, view => {
         if (!current() || view.scopeEpoch < bindingEpoch.current) return
         bindingEpoch.current = view.scopeEpoch
+        queueObservation = view.controls.queueRead ? view : null
+        refreshObservedQueue()
         const messages = historyFromView(view.transcript)
         historyRef.current = messages
         setHistory(messages)
@@ -331,7 +352,7 @@ export function useWorkspace(): Workspace {
       })
       if (!current()) { opened.close(); return }
       binding.current = opened
-      void opened.queue().then(value => { if (current()) setQueue(value) }).catch(() => {})
+      refreshObservedQueue()
     } catch (cause) {
       if (!current()) return
       // Failed/unknown access is still readable, never writable or a fabricated
@@ -353,7 +374,7 @@ export function useWorkspace(): Workspace {
         setStatus('error')
       }
     }
-  }, [clearSession])
+  }, [clearSession, readQueue])
 
   const finishConnect = useCallback(async (conn: NodeConnection, generation: number) => {
     const [nodeProjects, nodeSessions] = await Promise.all([conn.projects(), conn.sessions()])
@@ -510,11 +531,17 @@ export function useWorkspace(): Workspace {
     const scope = boundScope()
     if (!scope) return
     try {
-      const value = await scope.session.queue()
-      if (scope.current()) setQueue(value)
+      await readQueue(scope.session, scope.current)
     } catch (cause) {
       if (scope.current()) setSendError(String(cause))
     }
+  }, [boundScope, readQueue])
+
+  const resumePending = useCallback(async () => {
+    const scope = boundScope()
+    if (!scope) return
+    try { await scope.session.resumePending() }
+    catch (cause) { if (scope.current()) setSendError(String(cause)) }
   }, [boundScope])
 
   const recheckSession = useCallback(async () => {
@@ -1208,6 +1235,7 @@ export function useWorkspace(): Workspace {
     queueMessage,
     cancelQueued,
     clearQueue,
+    resumePending,
     send,
     abort,
     setModel,

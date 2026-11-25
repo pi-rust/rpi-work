@@ -616,6 +616,7 @@ impl LocalWorkspace {
                 project_id.into(),
                 service::FileQuery {
                     path: path.into(),
+                    root: String::new(),
                     staged: false,
                 },
             )
@@ -630,6 +631,7 @@ impl LocalWorkspace {
                 project_id.into(),
                 service::FileQuery {
                     path: path.into(),
+                    root: String::new(),
                     staged: false,
                 },
             )
@@ -647,6 +649,7 @@ impl LocalWorkspace {
             project_id.into(),
             service::FileQuery {
                 path: path.into(),
+                root: String::new(),
                 staged: false,
             },
         )
@@ -683,6 +686,7 @@ impl LocalWorkspace {
                 project_id.into(),
                 service::FileQuery {
                     path: path.into(),
+                    root: String::new(),
                     staged,
                 },
             )

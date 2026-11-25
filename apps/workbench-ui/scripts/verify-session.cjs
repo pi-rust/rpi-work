@@ -3,13 +3,14 @@
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const net = require('node:net')
+const fs = require('node:fs/promises')
 const { spawn } = require('node:child_process')
 const { chromium } = require(require.resolve('playwright', { paths: [path.resolve(__dirname, '../../../tools')] }))
 const { startFixture } = require('../../../tests/fixtures/ui-fixture.cjs')
 const root = path.resolve(__dirname, '..')
 const freePort = () => new Promise(resolve => { const server = net.createServer(); server.listen(0, '127.0.0.1', () => { const port = server.address().port; server.close(() => resolve(port)) }) })
 ;(async () => {
-  const fixture = await startFixture(0, { nativeQueries: true, includeHistoryAssistant: true })
+  const fixture = await startFixture(0, { nativeQueries: true, includeHistoryAssistant: true, resumePreview: true })
   const port = await freePort(), origin = `http://127.0.0.1:${port}`
   const preview = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: root, env: { ...process.env, RPI_NODE_URL: fixture.url }, stdio: 'ignore' })
   let browser
@@ -434,6 +435,196 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
         assert.equal(await page.locator('textarea').inputValue(), '权限与结算阶段必须保留的草稿')
         assert.equal(mutationCount(), writes)
       } finally { delete fixture.controls.dropAckFor }
+    })
+    const button = name => page.getByRole('button', { name, exact: true })
+    const resume = button('继续队列')
+    const resumeWrites = () => fixture.requests.filter(request => request.method === 'WS' && request.body.type === 'execute' && request.body.payload.type === 'resume_pending')
+    const resumeSettlement = (pendingResume, requestId = 'fixture-resume-request') =>
+      fixture.emit({ type: 'agent_settled', outcome: pendingResume ? 'interrupted' : 'completed', pendingResume, requestId })
+    const openQueue = async () => {
+      await open()
+      await button('运行面板').click()
+      await page.getByTestId('run-panel').getByText(/^队列 \d+$/).waitFor()
+    }
+    const enabled = locator => locator.evaluate(button => !button.disabled)
+    const waitEnabled = name => page.waitForFunction(label => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === label && !button.disabled), name)
+    await check('queued rows and failed settlements need an explicit resume marker and exact session capability', async () => {
+      fixture.setQueue([{ entryId: 'q-resume', queue: 'followUp', text: '等待恢复的后续消息', status: 'queued' }])
+      fixture.emit({ type: 'agent_settled', outcome: 'failed', pendingResume: false })
+      await openQueue()
+      await page.getByText('等待恢复的后续消息', { exact: true }).waitFor()
+      assert.equal(await resume.count(), 0)
+      assert.equal(await button('重试').count(), 0)
+      fixture.controls.sessionAccess = { supportedCommands: ['get_state', 'get_queue', 'prompt'] }
+      try {
+        resumeSettlement(true, 'interrupted-before-resume')
+        await openQueue()
+        await page.getByText('等待恢复的后续消息', { exact: true }).waitFor()
+        assert.equal(await resume.count(), 0)
+        assert.equal(resumeWrites().length, 0)
+        fixture.controls.sessionAccess = { capabilities: { history: false } }
+        await openQueue()
+        await page.getByText('等待恢复的后续消息', { exact: true }).waitFor()
+        assert.equal(await resume.count(), 0)
+      } finally { delete fixture.controls.sessionAccess }
+    })
+    await check('one execution across repeated input, ACK held through exact settlement, draft and queue preserved until readback', async () => {
+      await open()
+      await button('浏览器').click()
+      await page.getByRole('textbox', { name: '预览地址', exact: true }).fill(new URL('resume-preview', fixture.url).href)
+      await button('打开').click()
+      const previewInput = page.frameLocator('.real-browser iframe').getByLabel('继续队列预览')
+      await previewInput.fill('继续队列后保留网页输入')
+      await page.evaluate(() => { window.resumeFrame = document.querySelector('.real-browser iframe') })
+      const previewLoads = () => fixture.requests.filter(request => request.path === '/resume-preview').length
+      const loads = previewLoads()
+      await button('运行面板').click()
+      await waitEnabled('继续队列')
+      const draft = page.locator('textarea')
+      await draft.evaluate(input => input.setSelectionRange(2, 7))
+      let release, enter, timer
+      const gate = new Promise(resolve => { release = resolve })
+      const entered = new Promise(resolve => { enter = resolve })
+      fixture.controls.resumeGate = async () => { enter(); await gate }
+      const writes = resumeWrites().length
+      try {
+        const accepted = ack('resume_pending')
+        await resume.press('Enter')
+        await Promise.race([entered, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('resume did not reach the owner')), 10000) })])
+        await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '继续队列' && button.disabled))
+        await resume.evaluate(button => button.click())
+        assert.equal(resumeWrites().length, writes + 1)
+        assert.deepEqual(resumeWrites().at(-1).body.payload, { type: 'resume_pending' })
+        release(); await accepted; await rendered()
+        assert.equal(await enabled(resume), false)
+        assert.equal(await button('发送').count(), 0)
+        await page.getByText('等待恢复的后续消息', { exact: true }).waitFor()
+        const shots = path.resolve(root, '../../artifacts/queue-resume')
+        await fs.mkdir(shots, { recursive: true })
+        await page.screenshot({ path: path.join(shots, 'awaiting-settlement-1440.png'), animations: 'disabled' })
+        fixture.setQueue([])
+        resumeSettlement(false)
+        await resume.waitFor({ state: 'hidden' })
+        await page.getByTestId('run-panel').getByText('队列 0', { exact: true }).waitFor()
+        assert.equal(await draft.inputValue(), '权限与结算阶段必须保留的草稿')
+        assert.deepEqual(await draft.evaluate(input => [input.selectionStart, input.selectionEnd]), [2, 7])
+        await button('浏览器').click()
+        assert.equal(await page.evaluate(() => window.resumeFrame === document.querySelector('.real-browser iframe')), true)
+        assert.equal(await previewInput.inputValue(), '继续队列后保留网页输入')
+        assert.equal(previewLoads(), loads)
+      } finally { clearTimeout(timer); release(); delete fixture.controls.resumeGate }
+    })
+    await check('definite refusal permits a fresh attempt, and a skipped resume releases immediately at 320px', async () => {
+      await page.setViewportSize({ width: 320, height: 940 })
+      resumeSettlement(true, 'interrupted-before-refusal')
+      try {
+        await openQueue()
+        await waitEnabled('继续队列')
+        assert((await resume.boundingBox()).height >= 44)
+        fixture.controls.failResume = true
+        const denied = ack('resume_pending')
+        await resume.click()
+        assert.equal(JSON.parse((await denied).payload).status.outcome.value.success, false)
+        await page.getByText('Test fixture: command rejected', { exact: true }).waitFor({ state: 'attached' })
+        await waitEnabled('继续队列')
+        delete fixture.controls.failResume
+        fixture.controls.resumeReply = { resumed: false }
+        await resume.click()
+        await resume.waitFor({ state: 'hidden' })
+        await button('关闭面板').click()
+        await page.getByText('节点确认没有待恢复的运行', { exact: true }).waitFor()
+        await page.waitForFunction(() => document.querySelector('button[aria-label="发送"]')?.disabled === false)
+        assert.equal(await page.locator('textarea').inputValue(), '权限与结算阶段必须保留的草稿')
+      } finally {
+        delete fixture.controls.resumeReply
+        delete fixture.controls.failResume
+        await page.setViewportSize({ width: 1440, height: 940 })
+      }
+    })
+    await check('lost ACK is checked with one GET after a previously active run restores its settlement', async () => {
+      resumeSettlement(true, 'interrupted-before-lost-receipt')
+      await openQueue()
+      await waitEnabled('继续队列')
+      const route = /\/sessions\/dark\/snapshot(?:\?|$)/
+      let release, releaseAck, enter, timer
+      const gate = new Promise(resolve => { release = resolve })
+      const heldAck = new Promise(resolve => { releaseAck = resolve })
+      const entered = new Promise(resolve => { enter = resolve })
+      fixture.controls.resumeGate = async () => { enter(); await heldAck }
+      const handler = async request => { await gate; await request.continue() }
+      try {
+        const writes = mutationCount()
+        fixture.controls.dropAckFor = 'resume_pending'
+        await resume.click()
+        await Promise.race([entered, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('resume did not reach the owner')), 10000) })])
+        // The SDK must first observe a run consequence while the ACK is held.
+        fixture.emit({ type: 'agent_start' })
+        fixture.emit({ type: 'message_end', message: { entryId: 'resume-active-answer', role: 'assistant', content: '已经观察到恢复运行的输出' } })
+        await page.getByText('已经观察到恢复运行的输出', { exact: true }).waitFor()
+        await page.route(route, handler)
+        const snapshot = page.waitForRequest(request => route.test(request.url()))
+        releaseAck()
+        await snapshot
+        resumeSettlement(false)
+        release()
+        await waitCheck()
+        const receipt = page.waitForResponse(response => response.url().includes('/realtime/operations/') && response.request().method() === 'GET')
+        await button('只读核对').click()
+        assert((await receipt).ok())
+        await page.getByText('只读核对完成；受理不等于运行结算，保留的草稿未自动发送。', { exact: true }).waitFor()
+        await page.waitForFunction(() => document.querySelector('button[aria-label="发送"]')?.disabled === false)
+        assert.equal(mutationCount(), writes + 2)
+        assert.equal(await resume.count(), 0)
+      } finally { clearTimeout(timer); release(); releaseAck(); await page.unroute(route, handler); delete fixture.controls.dropAckFor; delete fixture.controls.resumeGate }
+    })
+    await check('a late no-op ACK from another selection cannot change the current draft or controls', async () => {
+      resumeSettlement(true, 'interrupted-before-selection')
+      await openQueue()
+      await waitEnabled('继续队列')
+      let release, enter, timer
+      const gate = new Promise(resolve => { release = resolve })
+      const entered = new Promise(resolve => { enter = resolve })
+      fixture.controls.resumeGate = async () => { enter(); await gate }
+      fixture.controls.resumeReply = { resumed: false }
+      try {
+        await resume.click()
+        await Promise.race([entered, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('resume did not reach the owner')), 10000) })])
+        await button('验证 RPC 事件协议').click()
+        await page.getByText('在线', { exact: true }).waitFor()
+        await page.locator('textarea').fill('当前会话单独保存的草稿')
+        const delivered = ack('resume_pending')
+        release(); await delivered; await rendered()
+        assert.equal(await page.locator('textarea').inputValue(), '当前会话单独保存的草稿')
+        assert.equal(await page.getByText('节点确认没有待恢复的运行', { exact: true }).count(), 0)
+        assert.equal(await resume.count(), 0)
+      } finally { clearTimeout(timer); release(); delete fixture.controls.resumeGate; delete fixture.controls.resumeReply }
+    })
+    await check('a recovery ACK cannot supply a run lifecycle missed during disconnect', async () => {
+      resumeSettlement(true, 'interrupted-before-gap')
+      await openQueue()
+      await waitEnabled('继续队列')
+      const route = /\/sessions\/dark\/snapshot(?:\?|$)/
+      let release
+      const gate = new Promise(resolve => { release = resolve })
+      const handler = async request => { await gate; await request.continue() }
+      await page.route(route, handler)
+      try {
+        const snapshot = page.waitForRequest(request => route.test(request.url()))
+        const writes = resumeWrites().length
+        fixture.controls.dropAckFor = 'resume_pending'
+        await resume.click()
+        await snapshot
+        resumeSettlement(false)
+        release()
+        await waitCheck()
+        await button('只读核对').click()
+        await page.getByText('只读核对完成；受理不等于运行结算，保留的草稿未自动发送。', { exact: true }).waitFor()
+        await page.getByText('会话观察：请求尚待运行结算观察', { exact: true }).waitFor()
+        assert.equal(await resume.count(), 0)
+        assert.equal(await button('发送').count(), 0)
+        assert.equal(resumeWrites().length, writes + 1)
+        assert.equal(await page.locator('textarea').inputValue(), '权限与结算阶段必须保留的草稿')
+      } finally { release(); await page.unroute(route, handler); delete fixture.controls.dropAckFor }
     })
     assert.deepEqual(errors, [])
     assert.deepEqual(failures, [], 'Session capability/lifecycle regressions remain')

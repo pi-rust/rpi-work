@@ -132,6 +132,11 @@ async function startFixture(port=0,options={}){
       if(controls.branchDelayMs) await new Promise(resolve=>setTimeout(resolve,controls.branchDelayMs));
       return failure?hostResponse(command,null,false):hostResponse(command,{entries,count:entries.length});
     }
+    if(command==='resume_pending') {
+      const reply=hostResponse(command,controls.resumeReply??{accepted:true},!controls.failResume);
+      if(controls.resumeGate) await controls.resumeGate();
+      return reply;
+    }
     if(command==='compact') {
       if(controls.compactDelayMs) await new Promise(resolve=>setTimeout(resolve,controls.compactDelayMs));
       return controls.failCompact?hostResponse(command,null,false):hostResponse(command,controls.compactResult||{accepted:true});
@@ -235,6 +240,11 @@ async function startFixture(port=0,options={}){
     const authenticated=Boolean(req.headers.cookie?.includes('rpi_web_session=fixture-session-only'));
     requests.push({method:req.method,path:route,query:u.search,body:data,authenticated});
     const json=(value,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
+    if(options.resumePreview&&route==='/resume-preview') {
+      res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
+      res.end('<!doctype html><label>继续队列预览<input></label>');
+      return;
+    }
     if(route==='/api/v1/health')return json({ok:true,service:'rpi-work-test-fixture',protocol:'rpi-web-v1',nodeId:'fixture-node'});
     if(route==='/api/v1/transports')return json({version:1,nodeId:'fixture-node',ownerEpoch:'fixture-owner',path:'/api/v1/realtime',subprotocol:'rpi-work.realtime.v1',capabilities:{jsonText:true,binary:false,commandQueries:true,maxMessageBytes:2097152,maxEventsPerFrame:256}});
     if(route==='/api/v1/auth'){
@@ -305,7 +315,7 @@ async function startFixture(port=0,options={}){
       if(action==='snapshot'){
         const history=sessionEvents.get(id)||[];
         const page = options.pagedHistory || options.nativeQueries ? messagePage(id, u.searchParams.get('limit')) : { messages:sessionMessages.get(id)||[] };
-        return json({sessionId:id,...page,...(options.nativeQueries?{leafId:selectedLeaf(id)}:{}),lastSeq:history.at(-1)?.seq||0,events:history,pendingDialogs:pendingDialogs.get(id)||[],latestSettlement:history.findLast(e=>e.event.type==='agent_settled')?.event});
+        return json({sessionId:id,pendingResume:s.pendingResume??false,...page,...(options.nativeQueries?{leafId:selectedLeaf(id)}:{}),lastSeq:history.at(-1)?.seq||0,events:history,pendingDialogs:pendingDialogs.get(id)||[],latestSettlement:history.findLast(e=>e.event.type==='agent_settled')?.event});
       }
       if(options.nativeQueries&&(action==='message-summaries'||action==='message-window')){
         if(req.method!=='GET')return json({error:'Unsupported fixture method'},405);

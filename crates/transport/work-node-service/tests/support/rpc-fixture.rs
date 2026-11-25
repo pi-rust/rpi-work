@@ -52,6 +52,7 @@ fn main() {
     let mut stdout = io::BufWriter::new(io::stdout());
     let mut hanging = false;
     let mut held_run = false;
+    let mut resume_fixture = None;
     let hosted_creation = std::env::args()
         .next()
         .is_some_and(|name| name.contains("creation-native-queries-fixture"));
@@ -78,7 +79,7 @@ fn main() {
         ready["supportedCommands"]
             .as_array_mut()
             .unwrap()
-            .push(json!("navigate"));
+            .extend([json!("navigate"), json!("resume_pending")]);
     }
     emit(&mut stdout, ready);
     for line in stdin.lock().lines().map_while(Result::ok) {
@@ -171,6 +172,38 @@ fn main() {
                     &mut stdout,
                     json!({"type":"ui_dialog_request","requestId":"hosted-filter-approval","ui":{"purpose":"permission","question":"托管筛选待审批"}}),
                 );
+            }
+            "prompt"
+                if hosted_creation
+                    && matches!(
+                        request["message"].as_str(),
+                        Some("hosted-resume-ready" | "hosted-resume-skipped")
+                    ) =>
+            {
+                resume_fixture = Some(request["message"] == "hosted-resume-ready");
+                for event in [
+                    json!({"type":"response","id":id,"command":"prompt","success":true,"data":{"accepted":true}}),
+                    json!({"type":"agent_start","requestId":id}),
+                    json!({"type":"agent_settled","requestId":id,"outcome":"aborted","pendingResume":true}),
+                ] {
+                    emit(&mut stdout, event);
+                }
+            }
+            "resume_pending" if hosted_creation => {
+                if resume_fixture.take() == Some(true) {
+                    for event in [
+                        json!({"type":"response","id":id,"command":kind,"success":true,"data":{"accepted":true}}),
+                        json!({"type":"agent_start","requestId":id}),
+                        json!({"type":"agent_settled","requestId":id,"outcome":"completed","pendingResume":false}),
+                    ] {
+                        emit(&mut stdout, event);
+                    }
+                } else {
+                    emit(
+                        &mut stdout,
+                        json!({"type":"response","id":id,"command":kind,"success":true,"data":{"resumed":false}}),
+                    );
+                }
             }
             "abort" if held_run => {
                 held_run = false;
@@ -274,7 +307,7 @@ fn main() {
                 }
                 emit(
                     &mut stdout,
-                    json!({"type":"response","id":id,"command":kind,"success":true,"data":{"total":messages.len(),"messages":messages,"truncated":false,"pendingResume":false,"hasMore":false}}),
+                    json!({"type":"response","id":id,"command":kind,"success":true,"data":{"total":messages.len(),"messages":messages,"truncated":false,"pendingResume":resume_fixture.is_some(),"hasMore":false}}),
                 );
             }
             "get_history" => {
@@ -292,10 +325,19 @@ fn main() {
                 );
             }
             "get_session_branch" => emit_branch(&mut stdout, &request),
-            "get_queue" => emit(
-                &mut stdout,
-                json!({"type":"response","id":id,"command":"get_queue","success":true,"data":{"items":[],"count":0,"includeCompleted":false}}),
-            ),
+            "get_queue" => {
+                let items = if resume_fixture.is_some() {
+                    vec![
+                        json!({"entryId":"fixture-queued","queue":"followUp","text":"托管待恢复队列项","status":"queued"}),
+                    ]
+                } else {
+                    vec![]
+                };
+                emit(
+                    &mut stdout,
+                    json!({"type":"response","id":id,"command":"get_queue","success":true,"data":{"items":items,"count":items.len(),"includeCompleted":false}}),
+                );
+            }
             "get_available_models" => emit(
                 &mut stdout,
                 json!({"type":"response","id":id,"command":"get_available_models","success":true,"data":{"models":[]}}),

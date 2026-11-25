@@ -1215,6 +1215,7 @@ pub struct SessionConnection {
     history_len: usize,
     messages: Vec<Value>,
     pending_dialogs: Vec<PendingDialog>,
+    pending_resume: bool,
     reconnect_attempt: u32,
     reconnecting: bool,
     connection_epoch: u64,
@@ -1402,6 +1403,12 @@ impl SessionConnection {
         &self.pending_dialogs
     }
 
+    /// Recovery advertised by the node for this synchronized session.
+    #[must_use]
+    pub fn pending_resume(&self) -> bool {
+        self.pending_resume
+    }
+
     pub async fn next(&mut self) -> Result<Option<SessionEvent>, ClientError> {
         if self.reconnecting {
             let delay = Duration::from_millis(250 * (1u64 << self.reconnect_attempt.min(4)));
@@ -1451,6 +1458,9 @@ impl SessionConnection {
             apply_live_message_event(&mut self.messages, &mut self.projection, normalized)?;
         if matches!(applied, ApplyResult::RebuiltForResync) {
             self.reconnecting = true;
+        }
+        if applied == ApplyResult::Applied && wire.event_type == "agent_settled" {
+            self.pending_resume = wire.data["pendingResume"].as_bool() == Some(true);
         }
         if self.snapshot_limit
             && matches!(wire.event_type.as_str(), "agent_start" | "agent_settled")
@@ -1520,6 +1530,7 @@ impl SessionConnection {
         self.message_page_info = MessagePageInfo::from_snapshot(&snapshot);
         self.messages = messages;
         self.pending_dialogs = pending_dialogs;
+        self.pending_resume = snapshot_pending_resume(&snapshot);
         self.stream = stream;
         self.snapshot_limit = snapshot_limit;
         Ok(())
@@ -2087,6 +2098,22 @@ fn merge_live_message(
         owner: Some(owner),
         previous_ids,
     }
+}
+
+fn snapshot_pending_resume(snapshot: &Snapshot) -> bool {
+    let latest = snapshot.latest_settlement.as_ref();
+    let replayed = snapshot
+        .events
+        .iter()
+        .rev()
+        .find(|entry| entry.event["type"] == "agent_settled")
+        .map(|entry| &entry.event);
+    // Snapshot replay can include a settlement that landed during the read.
+    // An already covered settlement cannot replace the get_messages fact.
+    replayed
+        .filter(|event| Some(*event) != latest)
+        .and_then(|event| event["pendingResume"].as_bool())
+        .unwrap_or(snapshot.pending_resume)
 }
 
 fn snapshot_dialogs(snapshot: &Snapshot) -> Vec<PendingDialog> {
@@ -3442,6 +3469,20 @@ mod tests {
         .into_core_event()
         .unwrap();
         assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn snapshot_resume_observation_folds_only_newer_settlement_evidence() {
+        let covered = json!({"type":"agent_settled","requestId":"earlier","pendingResume":true});
+        let mut snapshot: Snapshot = serde_json::from_value(json!({
+            "sessionId":"s", "pendingResume":false, "latestSettlement":covered,
+            "events":[{"seq":20,"event":covered}]
+        }))
+        .unwrap();
+        assert!(!snapshot_pending_resume(&snapshot));
+        snapshot.events.last_mut().unwrap().event =
+            json!({"type":"agent_settled","requestId":"newer","pendingResume":true});
+        assert!(snapshot_pending_resume(&snapshot));
     }
 
     #[test]

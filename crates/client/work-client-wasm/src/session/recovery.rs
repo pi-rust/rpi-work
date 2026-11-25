@@ -5,13 +5,17 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 use work_client::{ClientError, RuntimeState};
 use work_core::api::realtime::OperationRef;
-use work_viewmodel::{config_requests::bounded, session_receipts::interpret_receipt};
+use work_viewmodel::{
+    config_requests::bounded,
+    session_receipts::{interpret_receipt, interpret_resume_receipt},
+};
 
 use super::{SessionClient, State, json_string};
 
 #[derive(Clone)]
 pub(super) enum Intent {
     Prompt,
+    Resume { epoch: u64 },
     Abort,
     Model { id: String, provider: String },
     Thinking(String),
@@ -71,6 +75,12 @@ impl Recovery {
         json!({"canCheck": online && !self.checking && !self.entries.is_empty(), "checking": self.checking,
             "count": self.entries.len(), "unreceipted": self.unreceipted, "message": self.message})
     }
+    pub(super) fn has_pending_resume(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| matches!(entry.intent, Intent::Resume { .. }))
+    }
+
     pub(super) fn clear_message(&mut self) {
         self.message = None;
     }
@@ -162,18 +172,21 @@ impl SessionClient {
                             match bounded("只读核对操作回执", client.operation_status(operation))
                                 .await
                             {
+                                Ok(status) if matches!(entry.intent, Intent::Resume { .. }) => {
+                                    interpret_resume_receipt(status).map(|result| result.map(Some))
+                                }
                                 Ok(status) => interpret_receipt(
                                     status,
                                     entry.intent.command(),
                                     matches!(entry.intent, Intent::Queue | Intent::Reply(_)),
-                                ),
+                                )
+                                .map(|result| result.map(|()| None)),
                                 Err(_) => None,
                             }
                         }
-                        Evidence::ConfigurationAck => Some(Ok(())),
+                        Evidence::ConfigurationAck => Some(Ok(None)),
                     };
-                    let runtime = if matches!(result, Some(Ok(()))) && entry.intent.configuration()
-                    {
+                    let runtime = if matches!(result, Some(Ok(_))) && entry.intent.configuration() {
                         bounded("只读核对配置效果", client.runtime_state(&id))
                             .await
                             .ok()
@@ -199,7 +212,12 @@ impl SessionClient {
                         .entries
                         .retain(|pending| pending.id != entry.id);
                     match result {
-                        Ok(()) => match &entry.intent {
+                        Ok(Some(admission)) => {
+                            if let Intent::Resume { epoch } = entry.intent {
+                                state.observe_resume_ack(admission, epoch, entry.settlements);
+                            }
+                        }
+                        Ok(None) => match &entry.intent {
                             Intent::Prompt => {
                                 state.pending.awaiting_reply =
                                     state.settlements == entry.settlements
@@ -243,6 +261,7 @@ impl SessionClient {
                     .into(),
                 );
                 if !state.pending.uncertain
+                    && !state.resume_was_skipped()
                     && !state
                         .error
                         .as_deref()

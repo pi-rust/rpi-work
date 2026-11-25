@@ -4715,32 +4715,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rpi-durable-core"
-version = "0.2.0"
-source = "git+https://github.com/pi-rust/rpi-package?rev=1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd#1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "rpi-extcore"
-version = "0.2.11"
-source = "git+https://github.com/pi-rust/rpi-package?rev=1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd#1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd"
-dependencies = [
- "base64 0.22.1",
- "fs2",
- "futures-util",
- "rpi-durable-core",
- "rpi-mcp-core 0.1.1 (git+https://github.com/pi-rust/rpi-package?rev=1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd)",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "rpi-extcore"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4750,6 +4724,22 @@ dependencies = [
  "fs2",
  "futures-util",
  "rpi-mcp-core 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "rpi-extcore"
+version = "0.2.16"
+source = "git+https://github.com/pi-rust/rpi-extension?rev=b26b7d2ac216fece915229d19145ac7ef8675426#b26b7d2ac216fece915229d19145ac7ef8675426"
+dependencies = [
+ "base64 0.22.1",
+ "fs2",
+ "futures-util",
+ "rpi-mcp-core 0.1.1 (git+https://github.com/pi-rust/rpi-extension?rev=b26b7d2ac216fece915229d19145ac7ef8675426)",
  "serde",
  "serde_json",
  "sha2",
@@ -4793,7 +4783,7 @@ dependencies = [
 [[package]]
 name = "rpi-mcp-core"
 version = "0.1.1"
-source = "git+https://github.com/pi-rust/rpi-package?rev=1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd#1e3c9551a054fe3bb6f2ef905429268bc4a7e5bd"
+source = "git+https://github.com/pi-rust/rpi-extension?rev=b26b7d2ac216fece915229d19145ac7ef8675426#b26b7d2ac216fece915229d19145ac7ef8675426"
 dependencies = [
  "libc",
  "reqwest",
@@ -7092,7 +7082,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "getrandom 0.3.4",
- "rpi-extcore 0.2.11",
+ "rpi-extcore 0.2.16",
  "serde",
  "serde_json",
  "sha2",

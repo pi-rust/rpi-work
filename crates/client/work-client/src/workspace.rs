@@ -1069,6 +1069,7 @@ impl WorkspaceClient {
             history_len: messages.len(),
             messages,
             pending_dialogs,
+            pending_resume: super::snapshot_pending_resume(&snapshot),
             reconnect_attempt: 0,
             reconnecting: false,
             connection_epoch: 0,

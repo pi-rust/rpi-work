@@ -28,6 +28,7 @@ use super::{NodeClient, failure, json_string, session_management_reply};
 
 mod actions;
 mod recovery;
+mod resume;
 use recovery::{Intent, Recovery};
 
 struct State {
@@ -46,6 +47,9 @@ struct State {
     pending: PendingRequests,
     aborting: bool,
     settlements: u64,
+    queue_revision: u64,
+    pending_resume: bool,
+    resume_skipped_at: Option<(u64, u64)>,
     epoch: u64,
     observation_serial: u64,
     closed: Rc<Cell<bool>>,
@@ -62,6 +66,7 @@ impl State {
             configuration: self.configuration.as_ref(),
             runtime: self.runtime.as_ref(),
             has_dialogs: !self.dialogs.is_empty(),
+            pending_resume: self.pending_resume && !self.resume_was_skipped(),
             pending: self.pending,
         })
     }
@@ -103,6 +108,7 @@ impl State {
             .collect();
         json!({
             "scopeEpoch": self.epoch,
+            "queueRevision": self.queue_revision,
             "recovery": self.recovery.view(self.controls().online),
             "messages": self.messages,
             "blocks": self.projection.blocks.iter().map(block_wire).collect::<Vec<_>>(),
@@ -149,16 +155,19 @@ impl State {
     fn sync(&mut self, connection: &SessionConnection, kind: &str, restore_active: &mut bool) {
         let restoring = matches!(kind, "connection_reconnecting" | "resync_required");
         if restoring {
-            *restore_active |=
-                (self.pending.submitting || self.pending.awaiting_reply || self.pending.cancelling)
-                    && !matches!(
-                        self.projection.phase,
-                        RunPhase::Ready | RunPhase::Settled(_)
-                    );
+            *restore_active |= (self.pending.submitting
+                || self.pending.awaiting_reply
+                || self.pending.cancelling
+                || self.recovery.has_pending_resume())
+                && !matches!(
+                    self.projection.phase,
+                    RunPhase::Ready | RunPhase::Settled(_)
+                );
         }
         self.projection = connection.projection().clone();
         self.messages = connection.messages().to_vec();
         self.dialogs = connection.pending_dialogs().to_vec();
+        self.pending_resume = connection.pending_resume();
         self.replying
             .retain(|id| self.dialogs.iter().any(|dialog| &dialog.request_id == id));
         if restoring {
@@ -177,6 +186,7 @@ impl State {
             && matches!(self.projection.phase, RunPhase::Settled(_));
         if kind == "agent_settled" || restored_terminal {
             self.settlements = self.settlements.wrapping_add(1);
+            self.queue_revision = self.queue_revision.wrapping_add(1);
             if !self.pending.submitting {
                 self.pending.awaiting_reply = false;
             }
@@ -230,6 +240,9 @@ impl NodeClient {
                 pending: PendingRequests::default(),
                 aborting: false,
                 settlements: 0,
+                queue_revision: 0,
+                pending_resume: connection.pending_resume(),
+                resume_skipped_at: None,
                 epoch: 0,
                 observation_serial: 0,
                 closed: Rc::new(Cell::new(false)),

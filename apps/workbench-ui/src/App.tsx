@@ -596,6 +596,17 @@ export default function App() {
                           </button>
                         ) : null}
                       </div>
+                      {workspace.controls?.resumePending != null ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="min-h-11 self-start min-[901px]:min-h-8"
+                          disabled={!workspace.controls.resumePending}
+                          onClick={() => void workspace.resumePending()}
+                        >
+                          继续队列
+                        </Button>
+                      ) : null}
                       {workspace.queue.items.map((item) => (
                         <div key={item.entryId} className="bg-muted/40 flex items-center gap-2 rounded-md px-2 py-1">
                           <span className="truncate">{item.text}</span>

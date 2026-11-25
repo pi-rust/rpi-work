@@ -26,6 +26,7 @@ pub struct SessionObservation<'a> {
     pub configuration: Option<&'a SessionConfiguration>,
     pub runtime: Option<&'a RuntimeState>,
     pub has_dialogs: bool,
+    pub pending_resume: bool,
     pub pending: PendingRequests,
 }
 
@@ -36,6 +37,7 @@ pub struct SessionControls {
     pub busy: bool,
     pub online: bool,
     pub send: bool,
+    pub resume_pending: Option<bool>,
     pub queue: bool,
     pub queue_read: bool,
     pub cancel_queued: bool,
@@ -56,6 +58,7 @@ impl Default for SessionControls {
             configuration: None,
             runtime: None,
             has_dialogs: false,
+            pending_resume: false,
             pending: PendingRequests::default(),
         })
     }
@@ -126,6 +129,10 @@ pub fn controls(observed: &SessionObservation<'_>) -> SessionControls {
         busy,
         online,
         send: idle && capability("prompt") && command("prompt"),
+        resume_pending: (observed.pending_resume
+            && capability("history")
+            && command("resume_pending"))
+        .then_some(idle),
         queue: queue && command("queue_message"),
         queue_read: online && capability("queue") && command("get_queue"),
         cancel_queued: queue && command("cancel_queued"),
@@ -279,6 +286,7 @@ mod tests {
             configuration: Some(&config),
             runtime: Some(&runtime),
             has_dialogs: false,
+            pending_resume: false,
             pending: PendingRequests::default(),
         };
         let allowed = controls(&observed);
@@ -314,6 +322,7 @@ mod tests {
                 configuration: Some(&config),
                 runtime: Some(&runtime),
                 has_dialogs: false,
+                pending_resume: false,
                 pending: PendingRequests::default(),
             };
             let view = controls(&observed);
@@ -327,6 +336,7 @@ mod tests {
             configuration: Some(&config),
             runtime: Some(&runtime),
             has_dialogs: false,
+            pending_resume: false,
             pending: PendingRequests {
                 awaiting_reply: true,
                 ..PendingRequests::default()
@@ -361,6 +371,7 @@ mod tests {
                     configuration: Some(config),
                     runtime: Some(runtime),
                     has_dialogs: false,
+                    pending_resume: false,
                     pending: PendingRequests::default(),
                 })
             };
@@ -390,6 +401,7 @@ mod tests {
                 configuration: None,
                 runtime: None,
                 has_dialogs: true,
+                pending_resume: false,
                 pending: PendingRequests::default(),
             });
             assert!(!view.send && !view.abort && !view.reply && !view.queue);
@@ -402,6 +414,7 @@ mod tests {
             configuration: None,
             runtime: None,
             has_dialogs: true,
+            pending_resume: false,
             pending: PendingRequests {
                 uncertain: true,
                 ..PendingRequests::default()
