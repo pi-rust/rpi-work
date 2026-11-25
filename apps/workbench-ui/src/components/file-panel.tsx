@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useTree } from '@headless-tree/react'
 import {
-  asyncDataLoaderFeature,
   hotkeysCoreFeature,
   selectionFeature,
+  syncDataLoaderFeature,
 } from '@headless-tree/core'
 
 import { Tree, TreeItem, TreeItemLabel } from '@/components/reui/tree'
@@ -16,7 +16,10 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { NodeChangedFile, NodeFileEntry } from '@/lib/node'
 
-type DirectoryRead = { status: 'loading' } | { status: 'ready'; empty: boolean } | { status: 'error'; error: string }
+type DirectoryRead =
+  | { status: 'loading'; entries?: NodeFileEntry[] }
+  | { status: 'ready'; entries: NodeFileEntry[] }
+  | { status: 'error'; entries?: NodeFileEntry[]; error: string }
 
 type Props = {
   live: boolean
@@ -47,57 +50,116 @@ function ReadyFilePanel({
 }: Props) {
   const [staged, setStaged] = useState(() => fileRead?.mode === 'diff' && fileRead.staged)
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
-  // Node directory entries are cached by path; headless-tree asks lazily.
+  // One listing cache for both the lazy tree and explicit GETs. The sync loader
+  // reads it without scheduling network requests when the tree is rebuilt.
   const entries = useRef(new Map<string, NodeFileEntry>())
-  const [directoryReads, setDirectoryReads] = useState<Record<string, DirectoryRead>>({})
+  const reads = useRef(new Map<string, DirectoryRead>())
+  const [directoryReads, setDirectoryReads] = useState(() => new Map<string, DirectoryRead>())
   const requests = useRef(new Map<string, symbol>())
-  const mounted = useRef(true)
-  useEffect(() => {
+  const refreshInProgress = useRef(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const mounted = useRef(false)
+  useLayoutEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
   // A file that is also changed should open its diff, not its saved source.
   const changed = new Set(changes.map((change) => change.path))
   const openPath = (path: string) => changed.has(path) ? onOpen(path, staged) : onOpenSource(path)
+
+  const publishReads = () => setDirectoryReads(new Map(reads.current))
+  const readDirectory = async (path: string): Promise<boolean> => {
+    if (!mounted.current || requests.current.has(path)) return false
+    const request = Symbol(path)
+    requests.current.set(path, request)
+    const current = () => mounted.current && requests.current.get(path) === request
+    const previous = reads.current.get(path)?.entries
+    reads.current.set(path, { status: 'loading', entries: previous })
+    publishReads()
+    try {
+      const children = await listDir(path)
+      if (!current()) return false
+      const next = new Map(children.map(entry => [entry.path, entry]))
+      const detached = new Set<string>()
+      const forget = (id: string) => {
+        if (detached.has(id)) return
+        detached.add(id)
+        const cached = reads.current.get(id)?.entries
+        entries.current.delete(id)
+        reads.current.delete(id)
+        requests.current.delete(id)
+        cached?.forEach(entry => forget(entry.path))
+      }
+      for (const entry of previous ?? []) {
+        if (next.get(entry.path)?.kind !== entry.kind) forget(entry.path)
+      }
+      for (const entry of children) entries.current.set(entry.path, entry)
+      reads.current.set(path, { status: 'ready', entries: children })
+      if (detached.size) {
+        tree.applySubStateUpdate('expandedItems', ids => ids.filter(id => !detached.has(id)))
+        tree.applySubStateUpdate('selectedItems', ids => ids.filter(id => !detached.has(id)))
+        if (detached.has(tree.getState().focusedItem ?? '')) tree.applySubStateUpdate('focusedItem', null)
+      }
+      tree.rebuildTree()
+      publishReads()
+      return true
+    } catch (cause) {
+      if (current()) {
+        reads.current.set(path, { status: 'error', entries: previous, error: String(cause) })
+        publishReads()
+      }
+      return false
+    } finally {
+      if (current()) requests.current.delete(path)
+    }
+  }
+
   const tree = useTree<NodeFileEntry>({
     rootItemId: '',
     onPrimaryAction: item => { if (!item.isFolder()) openPath(item.getId()) },
     getItemName: (item) => item.getItemData()?.name ?? '',
     isItemFolder: (item) => item.getItemData()?.kind === 'directory',
-    dataLoader: {
-      getItem: (itemId) =>
-        entries.current.get(itemId) ?? {
-          name: itemId === '' ? '' : itemId,
-          path: itemId,
-          kind: itemId === '' ? 'directory' : 'file',
-          size: 0,
-        },
-      getChildren: async (itemId) => {
-        const request = Symbol(itemId)
-        requests.current.set(itemId, request)
-        const current = () => mounted.current && requests.current.get(itemId) === request
-        setDirectoryReads(reads => ({ ...reads, [itemId]: { status: 'loading' } }))
-        try {
-          const children = await listDir(itemId)
-          if (!current()) return []
-          for (const entry of children) entries.current.set(entry.path, entry)
-          setDirectoryReads(reads => ({ ...reads, [itemId]: { status: 'ready', empty: children.length === 0 } }))
-          return children.map((entry) => entry.path)
-        } catch (cause) {
-          if (current()) setDirectoryReads(reads => ({ ...reads, [itemId]: { status: 'error', error: String(cause) } }))
-          // Headless-tree caches this result; the explicit error remains distinct
-          // from a successful empty listing. Only an explicit retry invalidates it.
-          return []
-        }
-      },
+    setExpandedItems: () => {
+      // Mouse and keyboard expansion share this hook. A cached failure is
+      // deliberately not an invitation to retry on reopening the folder.
+      for (const id of tree.getState().expandedItems) {
+        if (entries.current.get(id)?.kind === 'directory' && !reads.current.has(id)) void readDirectory(id)
+      }
     },
-    features: [asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
+    dataLoader: {
+      getItem: id => entries.current.get(id) ?? { name: id, path: id, kind: id === '' ? 'directory' : 'file', size: 0 },
+      getChildren: id => reads.current.get(id)?.entries?.map(entry => entry.path) ?? [],
+    },
+    features: [syncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
   })
   const items = tree.getItems()
   const visible = new Set(items.map(item => item.getId()))
-  const notices = Object.entries(directoryReads).filter(([path, read]) =>
+  const notices = [...directoryReads].filter(([path, read]) =>
     (path === '' || (visible.has(path) && tree.getItemInstance(path).isExpanded())) &&
-    (read.status !== 'ready' || read.empty))
+    (read.status !== 'ready' || read.entries?.length === 0))
+
+  const refreshDirectory = async () => {
+    if (!mounted.current || refreshInProgress.current || requests.current.has('')) return
+    refreshInProgress.current = true
+    setRefreshing(true)
+    // Snapshot only the visible, expanded folders. Walk parent-first so a
+    // deleted, retyped or failed branch never triggers descendant GETs.
+    const open = tree.getItems().filter(item => item.isFolder() && item.isExpanded())
+      .map(item => ({ path: item.getId(), parent: item.getItemMeta().parentId }))
+    const refreshed = new Set<string>()
+    try {
+      if (await readDirectory('')) refreshed.add('')
+      for (const { path, parent } of open) {
+        if (!mounted.current) break
+        const item = tree.getItemInstance(path)
+        if (refreshed.has(parent) && item.getItemMeta().index >= 0 && item.isFolder() &&
+            item.isExpanded() && await readDirectory(path)) refreshed.add(path)
+      }
+    } finally {
+      refreshInProgress.current = false
+      if (mounted.current) setRefreshing(false)
+    }
+  }
 
   return (
     <div className="wb-file-panel flex min-h-0 flex-1 flex-col">
@@ -114,7 +176,7 @@ function ReadyFilePanel({
             data-testid="tab-tree"
             onClick={() => {
               setTab('tree')
-              tree.getItemInstance?.('')?.expand()
+              if (!reads.current.has('')) void readDirectory('')
             }}
             className={cn('rounded px-1.5 py-0.5', tab === 'tree' ? 'bg-muted text-foreground' : 'text-muted-foreground')}
           >
@@ -135,8 +197,12 @@ function ReadyFilePanel({
             />
             暂存
           </label>
-          <Button variant="ghost" size="icon" className="size-6" aria-label="刷新改动" onClick={onRefresh}>
-            <RefreshCw className="size-3.5" />
+          <Button variant="ghost" size="icon" className="wb-file-refresh size-6"
+            aria-label={tab === 'tree' ? '刷新目录' : '刷新改动'}
+            title={tab === 'tree' ? '刷新根目录和已展开的目录' : '刷新改动'}
+            aria-disabled={tab === 'tree' && (refreshing || directoryReads.get('')?.status === 'loading') ? true : undefined}
+            onClick={tab === 'tree' ? () => void refreshDirectory() : onRefresh}>
+            <RefreshCw className="size-3.5" aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -147,9 +213,9 @@ function ReadyFilePanel({
             const label = path ? `目录 ${path}` : '项目根目录'
             return <div key={path} role="group" aria-label={label} className="wb-directory-notice">
               {read.status === 'error' ? <>
-                <p role="alert">{label}读取失败：{read.error}</p>
-                <Button variant="outline" size="sm" onClick={() => void tree.getItemInstance(path).invalidateChildrenIds()}>重试读取{label}</Button>
-              </> : <p role="status">{read.status === 'loading' ? `正在读取${label}…` : `${label}${path ? ' ' : ''}为空。`}</p>}
+                <p role="alert">{label}{read.entries ? '刷新失败' : '读取失败'}：{read.error}{read.entries ? '（保留上次读取结果）' : ''}</p>
+                <Button variant="outline" size="sm" onClick={() => void readDirectory(path)}>重试读取{label}</Button>
+              </> : <p role="status">{read.status === 'loading' ? (read.entries ? `正在刷新${label}…（保留上次读取结果）` : `正在读取${label}…`) : `${label}${path ? ' ' : ''}为空。`}</p>}
             </div>
           })}
           <Tree tree={tree} className="py-1 text-[11px]">

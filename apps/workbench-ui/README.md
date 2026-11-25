@@ -52,7 +52,7 @@ npm run lint
 | `verify:fixture` / `verify:theme` | Rust投影、工具展示、指标、主题/密度/代码配色（runner提供隔离预览） |
 | `verify:mobile` | 320/390视口与抽屉 |
 | `verify:settings` | Provider目录/CAS写回执/一次性授权、居中原生设置窗口、分类搜索/双向Tab/焦点归还、聊天/真实iframe保持、偏好刷新、关闭清除私密输入、320/390px及断连边界，14项 |
-| `verify:tree` | 根/子目录懒加载与键盘、无工作区/成功空态/局部失败/同GET重试、跨会话迟到成功与失败、明暗桌面/320px焦点及草稿/真实iframe保持，10项 |
+| `verify:tree` | 目录懒加载、空态、局部失败与重试、根目录和展开分支刷新、移除后同路径迟到、跨会话隔离、明暗桌面/320px 焦点和触控及草稿/真实 iframe 保留，14 项 |
 | `verify:files` | Rust源码与已校验unified Diff双行号、原始patch安全回退/精确复制、零范围/多文件/极值行号、加载/失败/迟到隔离、只读GET/暂存查询、手机固定双列与局部滚动、全主题4.5:1、完整原文降级与迟到WASM，14项 |
 | `verify:live` | typed读取、真实命令路径、IME、中止、队列、草稿、配置与断开不回样例 |
 | `verify:hosted` | 真实隔离Rust owner同源托管、认证、项目/会话创建及草稿，8项 |
@@ -99,6 +99,7 @@ hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副�
 - 第十一批验证：原tree专项移除固定sleep并扩为10项，已连接但未选项目时不挂树、不请求文件、不冒充空根；根目录HTTP gate、局部503/精确GET重试、空根/空子目录、独立子目录反馈/既有源码DOM、折叠缓存、跨会话旧成功/旧失败对新loading的隔离、原生ArrowRight/Enter/Space、实际Tab往返及内侧焦点、44px、明暗1440/320、草稿选区和真实HTTP iframe同DOM/表单/加载次数均通过。产品/fixture双构建、17套完整回归、共享Rust165/WASM绑定7、三crate WASM严格Clippy和格式/结构检查通过，lint仍67警告/0错误，未压规则。截图仅忽略artifacts/tree，日志/tmp；本批不声明通用目录刷新、分页/虚拟化、刷新后树状态持久化、远程CI或平台/真实模型验收。
 - 结构化Diff（第十二批已接通并本地验收）：新增共享Rust `diff_view`，复用有界原始行展示，先完整检查hunk语法、计数、顺序及checked行号，再一次性发布旧/新行号。支持省略count、零范围、多hunk/文件、CRLF、Unicode和no-newline；hunk中的`---`/`+++`是正文，不冒充文件头。保留全部metadata/原始符号，源码与Diff复制仍是完整节点原字符串。范围损坏/截断/溢出、未知行及binary/combined等不支持格式，整份回退原始Diff并说明，不保留局部推算数字；超大输入沿既有完整原文降级。此检查只用于展示，不验证路径、真实仓库版本或patch可应用性，不生成review身份/权限，也没有行反馈、编辑或Git写入。
 - 双列沿确认原型sticky，Rust提供所需数字位数、CSS统一列宽（至少40px，u32极值不裁字），长横滚后两列均固定；hunk/note只读标记，屏幕阅读器可读旧/新行标签，内侧焦点和手机44px不变，复用全部现有主题token。扩files11→14项（runner仍17套）：先在旧build复现hunk正文误判；保留raw回退的无行号/精确copy断言，加真实双行号/CRLF/HTML inert、零范围与跨文件重置、损坏/combined/binary/metadata回退、极值列宽，并把明暗四宽横滚及全5主题审计扩至两列/hunk/note；草稿/真实iframe与scope断言不放宽。产品/fixture双构建、17套回归、Rust172/WASM8、三crate WASM严格Clippy/fmt/diff/YAML通过，lint67警告/0错误。无新依赖、协议或旧UI修改；截图实际看并仅忽略artifacts/files，日志/tmp/rpi-diff-*，不声明远程CI/真实模型或平台验收。
+- 目录刷新（第十三批）：目录页的刷新先读取项目根目录，再按父目录优先的顺序读取点击时已展开且仍可见的分支。每个目录使用既有只读 GET。等待或失败时保留上一次成功列表，局部重试只读对应路径。成功响应更新目录项，保留仍存在的目录的展开状态，清理已移除或变更类型条目的缓存与树状态。跨会话或已移除目录的迟到响应不进入当前列表。
 - **整体仍未完成**：位置/展开/选区仅SPA内存恢复，不包含刷新/重启持久化；历史锚点已不在当前canonical页时只按保存的像素位置有界回退，不发起新协议或猜造历史。真实模型长会话与各平台手动验收、其他消息细节、未接通的设置能力、真实协同/本机桥接、Native/Android适配和正式发行仍待完成。Provider保存提示只表示节点管理回执，不代表当前Agent已加载。没有可关联的新结算不能借Ready/旧终态解锁，无ref且无原setter ACK证据的未知结果继续锁定。
 
 组件仅使用免费MIT的ReUI/shadcn生态；许可证说明见 [NOTICE.md](NOTICE.md)，没有引入Pro资产或授权密钥。
