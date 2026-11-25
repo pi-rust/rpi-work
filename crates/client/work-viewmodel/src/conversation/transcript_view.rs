@@ -25,6 +25,8 @@ pub enum Part {
         reading_key: Option<String>,
         #[serde(rename = "forkEntryId", skip_serializing_if = "Option::is_none")]
         fork_entry_id: Option<String>,
+        #[serde(rename = "ratingEntryId", skip_serializing_if = "Option::is_none")]
+        rating_entry_id: Option<String>,
         role: &'static str,
         text: String,
     },
@@ -193,6 +195,7 @@ impl Builder {
                 key,
                 reading_key,
                 fork_entry_id: fork_entry_id.map(str::to_owned),
+                rating_entry_id: None,
                 role,
                 text,
             });
@@ -225,6 +228,7 @@ impl Builder {
         let fork_entry = (role == "assistant")
             .then(|| work_client::canonical_entry_id(message))
             .flatten();
+        let first_part = self.parts.len();
         if role == "user" || !content.is_array() {
             let (identity, reading_key) = if role == "user" {
                 (format!("row/{key}"), durable.then(|| format!("user/{id}")))
@@ -240,6 +244,7 @@ impl Builder {
                 role,
                 content_text(content),
             );
+            self.mark_rating(first_part, fork_entry);
             return;
         }
         for (part, value) in content.as_array().into_iter().flatten().enumerate() {
@@ -302,6 +307,18 @@ impl Builder {
                     self.text(identity, reading_key, fork_entry, role, content_text(value));
                 }
             }
+        }
+        self.mark_rating(first_part, fork_entry);
+    }
+    // A canonical entry may yield several prose parts around tool calls. Give
+    // the complete reply one rating target, at its last visible prose part.
+    fn mark_rating(&mut self, first_part: usize, entry_id: Option<&str>) {
+        if let Some(id) = entry_id
+            && let Some(Part::Message {
+                rating_entry_id, ..
+            }) = self.parts[first_part..].last_mut()
+        {
+            *rating_entry_id = Some(id.to_owned());
         }
     }
     fn block(&mut self, block: &MessageBlock, _key: u64) {

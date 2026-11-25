@@ -96,7 +96,7 @@ export type ActivityItem =
   | { kind: 'tool'; key: string; block: Omit<import('./types').ToolBlock, 'kind'> & { statusLabel: string } }
   | { kind: 'note'; key: string; label: string; text: string }
 export type ConversationPart =
-  | { kind: 'message'; key: string; readingKey?: string; forkEntryId?: string; role: 'user' | 'assistant'; text: string }
+  | { kind: 'message'; key: string; readingKey?: string; forkEntryId?: string; ratingEntryId?: string; role: 'user' | 'assistant'; text: string }
   | { kind: 'activity'; key: string; label: string; collapsed: boolean; attention: boolean; items: ActivityItem[] }
 export type ConversationView = { observation: string; observationTone: 'muted' | 'active' | 'success' | 'danger' | 'warning'; parts: ConversationPart[] }
 

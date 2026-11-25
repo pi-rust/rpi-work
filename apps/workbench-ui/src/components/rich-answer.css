@@ -40,3 +40,6 @@
 @media (max-width: 700px) {
   .wb-prose a { display: inline-block; padding-block: 8px; }
 }
+
+.wb-answer-actions .wb-copy-control button[aria-pressed="true"] { background: var(--accent); color: var(--foreground); }
+.wb-answer-actions .wb-copy-control button[aria-pressed="true"] svg { fill: currentColor; }

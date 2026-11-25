@@ -442,6 +442,7 @@ export default function App() {
                   ) : ready || workspace.status === 'disconnected' ? (
                     workspace.transcript && workspace.transcript.parts.length > 0 ? (
                       <Conversation key={scrollScope} view={workspace.transcript} choices={choices} details={fixture?.toolMeta} observed={live}
+                        ratingScope={live && workspace.selected.session ? scrollScope : undefined}
                         forkDisabled={!workspace.forkAvailable}
                         onFork={currentSession && workspace.forkFromEntry ? entryId => void workspace.editSession(currentSession.id, { forkEntryId: entryId }) : undefined} />
                     ) : (

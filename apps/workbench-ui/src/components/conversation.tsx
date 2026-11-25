@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { ChevronRight, GitFork } from 'lucide-react'
+import { ChevronRight, GitFork, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { AnswerRow, ToolCard, UserRow } from '@/components/transcript'
 import type { ConversationPart, ConversationView } from '@/lib/viewmodel'
 import type { ToolDetail } from '@/lib/types'
+import { useReplyRatings } from '@/lib/reply-ratings'
 
 type Activity = Extract<ConversationPart, { kind: 'activity' }>
 type Choices = Map<string, boolean>
@@ -57,22 +58,33 @@ const observationClasses = {
 }
 
 /** Parts already contain canonical identity, history/tool normalization and grouping. */
-export function Conversation({ view, details, observed = true, choices, onFork, forkDisabled }: {
+export function Conversation({ view, details, observed = true, choices, onFork, forkDisabled, ratingScope }: {
   view: ConversationView; details?: Record<string, ToolDetail>; observed?: boolean; choices: Choices
-  onFork?: (entryId: string) => void; forkDisabled?: boolean
+  onFork?: (entryId: string) => void; forkDisabled?: boolean; ratingScope?: string
 }) {
+  const { ratings, toggleRating } = useReplyRatings(ratingScope)
   return <>
     {observed ? <p className={`wb-observation text-[12px] ${observationClasses[view.observationTone]}`} data-tone={view.observationTone} role="status" aria-label="会话运行观察">会话观察：{view.observation}</p> : null}
-    {view.parts.map((part) => part.kind === 'activity' ? (
-      <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key}>
-        <ActivityBlock part={part} details={details} choices={choices} />
-      </div>
-    ) : (
-      <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key} data-reading-anchor={part.readingKey}>
-        {part.role === 'user' ? <UserRow message={{ id: part.key, role: part.role, content: part.text }} /> : <AnswerRow text={part.text} action={onFork && part.forkEntryId ? <span className="wb-copy-control">
-          <button type="button" aria-label="从此处开始新对话" title="从此处开始新对话" disabled={forkDisabled} onClick={() => onFork(part.forkEntryId!)}><GitFork aria-hidden="true" /></button>
-        </span> : undefined} />}
-      </div>
-    ))}
+    {view.parts.map((part) => {
+      if (part.kind === 'activity') return (
+        <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key}>
+          <ActivityBlock part={part} details={details} choices={choices} />
+        </div>
+      )
+      const ratingId = ratingScope ? part.ratingEntryId : undefined
+      const rating = ratingId ? ratings.get(ratingId) : undefined
+      const forkId = part.forkEntryId
+      return (
+        <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key} data-reading-anchor={part.readingKey}>
+          {part.role === 'user' ? <UserRow message={{ id: part.key, role: part.role, content: part.text }} /> : <AnswerRow text={part.text} action={ratingId || (onFork && forkId) ? <span className="wb-copy-control">
+            {ratingId ? <>
+              <button type="button" aria-label="有帮助" title="有帮助（仅本设备）" aria-pressed={rating === 'helpful'} onClick={() => toggleRating(ratingId, 'helpful')}><ThumbsUp aria-hidden="true" /></button>
+              <button type="button" aria-label="没有帮助" title="没有帮助（仅本设备）" aria-pressed={rating === 'unhelpful'} onClick={() => toggleRating(ratingId, 'unhelpful')}><ThumbsDown aria-hidden="true" /></button>
+            </> : null}
+            {onFork && forkId ? <button type="button" aria-label="从此处开始新对话" title="从此处开始新对话" disabled={forkDisabled} onClick={() => onFork(forkId)}><GitFork aria-hidden="true" /></button> : null}
+          </span> : undefined} />}
+        </div>
+      )
+    })}
   </>
 }

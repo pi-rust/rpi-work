@@ -282,9 +282,31 @@ fn fork_anchors_require_canonical_assistant_history() {
     let parts = result["parts"].as_array().unwrap();
     assert_eq!(parts.len(), 4);
     assert_eq!(parts[2]["forkEntryId"], "committed");
+    assert_eq!(parts[2]["ratingEntryId"], "committed");
     for index in [0, 1, 3] {
         assert!(parts[index].get("forkEntryId").is_none());
+        assert!(parts[index].get("ratingEntryId").is_none());
     }
+}
+
+#[test]
+fn a_reply_with_several_text_parts_has_one_rating_target() {
+    let history = [json!({"entryId":"reply","role":"assistant","content":[
+        {"type":"text","text":"first"},
+        {"type":"thinking","thinking":"working"},
+        {"type":"text","text":"last"},
+        {"type":"text","text":" "}
+    ]})];
+    let result = view(&history, &[], RunPhase::Ready, PendingRequests::default());
+    let rated_parts: Vec<_> = result["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|part| part.get("ratingEntryId").is_some())
+        .collect();
+    assert_eq!(rated_parts.len(), 1);
+    assert_eq!(rated_parts[0]["text"], "last");
+    assert_eq!(rated_parts[0]["ratingEntryId"], "reply");
 }
 
 #[test]

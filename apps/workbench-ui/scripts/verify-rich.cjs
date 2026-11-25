@@ -219,6 +219,54 @@ function codeContrasts(section) {
       await state(button, 'idle')
       assert.equal(await page.evaluate(() => clipboardProbe.calls.length), calls, 'never automatically repeat clipboard writes')
     })
+    await check('reply ratings are exclusive and durable for the canonical reply in its session', async ({ page, answer, choose, siteUrl, rendered }) => {
+      const helpful = answer.getByRole('button', { name: '有帮助', exact: true })
+      const unhelpful = answer.getByRole('button', { name: '没有帮助', exact: true })
+      const draft = page.locator('textarea')
+      const states = async () => [await helpful.getAttribute('aria-pressed'), await unhelpful.getAttribute('aria-pressed')]
+      await page.getByRole('textbox', { name: '预览地址', exact: true }).fill(siteUrl)
+      await page.getByRole('button', { name: '打开', exact: true }).click()
+      const previewDraft = page.frameLocator('.real-browser iframe').getByLabel('Rich preview')
+      await previewDraft.fill('评分后保留预览输入')
+      const loads = previewLoads
+      await draft.fill('评分后保留草稿和选区')
+      await draft.evaluate(node => node.setSelectionRange(2, 6))
+      const prior = fixture.requests.length
+      assert.deepEqual(await states(), ['false', 'false'])
+      await helpful.press('Enter')
+      assert.deepEqual(await states(), ['true', 'false'])
+      await unhelpful.press('Space')
+      assert.deepEqual(await states(), ['false', 'true'])
+      assert.equal(await unhelpful.evaluate(node => node === document.activeElement), true)
+      await answer.evaluate(node => { window.ratingNodes = { prose: node.querySelector('.wb-prose'), frame: document.querySelector('.real-browser iframe') } })
+      await choose('classic')
+      await page.getByRole('button', { name: '切换主题', exact: true }).click()
+      await rendered()
+      assert.deepEqual(await states(), ['false', 'true'])
+      assert.equal(await answer.evaluate(node => ratingNodes.prose === node.querySelector('.wb-prose') && ratingNodes.frame === document.querySelector('.real-browser iframe')), true)
+      assert.deepEqual(await draft.evaluate(node => [node.value, node.selectionStart, node.selectionEnd]), ['评分后保留草稿和选区', 2, 6])
+      assert.equal(await previewDraft.inputValue(), '评分后保留预览输入')
+      assert.equal(previewLoads, loads)
+      await page.screenshot({ path: path.join(artifacts, 'reply-rating-dark-1440.png') })
+      assert.deepEqual(fixture.requests.slice(prior).filter(({ method, body }) => method === 'POST' || method === 'PATCH' || method === 'DELETE' || ['reserve', 'execute'].includes(body.type)), [])
+
+      fixture.emit({ type: 'message_end', message: { entryId: 'rich-history', role: 'assistant', content: source } }, 'architecture')
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await helpful.waitFor()
+      assert.deepEqual(await states(), ['false', 'false'], 'same entry ID belongs to a different session')
+      await helpful.click()
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      await unhelpful.waitFor()
+      assert.deepEqual(await states(), ['false', 'true'])
+      await page.reload()
+      await unhelpful.waitFor()
+      assert.deepEqual(await states(), ['false', 'true'])
+      await unhelpful.click()
+      assert.deepEqual(await states(), ['false', 'false'])
+      await page.reload()
+      await unhelpful.waitFor()
+      assert.deepEqual(await states(), ['false', 'false'])
+    })
     await check('unclosed streamed fences keep canonical DOM and local scrolling; reflow does not steal the reader', async ({ page, rendered }) => {
       const initial = '## 流式富内容\n\n```rust\n// ' + 'stream-code-'.repeat(110) + '\nfn main() {'
       fixture.emit({ type: 'agent_start' })
@@ -226,6 +274,8 @@ function codeContrasts(section) {
       const target = page.locator('.wb-answer').filter({ has: page.getByRole('heading', { name: '流式富内容', exact: true }) })
       const pre = target.locator('pre')
       await pre.waitFor()
+      const rate = target.getByRole('button', { name: '有帮助', exact: true })
+      assert.equal(await rate.count(), 0)
       await pre.evaluate(node => { node.scrollLeft = 120; window.streamNodes = { pre: node, prose: node.closest('.wb-prose'), anchor: node.closest('[data-conversation-anchor]') } })
       const tail = '\n    println!("ok");\n}\n```\n\n流式结尾'
       fixture.emit({ type: 'message_update', message: { entryId: 'rich-live' }, eventType: 'text_delta', delta: tail })
@@ -233,6 +283,7 @@ function codeContrasts(section) {
       emit('rich-live', initial + tail + '\n\n最终历史')
       fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
       await target.getByText('最终历史', { exact: true }).waitFor()
+      await rate.waitFor()
       assert.equal(await pre.evaluate(node => node === streamNodes.pre && node.closest('.wb-prose') === streamNodes.prose && node.closest('[data-conversation-anchor]') === streamNodes.anchor), true)
       assert((await pre.evaluate(node => node.scrollLeft)) >= 119)
       for (let index = 0; index < 24; index++) emit(`rich-scroll-${index}`, `## 阅读段 ${index}\n\n${'canonical paragraph '.repeat(25)}`)
@@ -288,7 +339,12 @@ function codeContrasts(section) {
           assert.equal(await pre.evaluate(node => getComputedStyle(node).outlineOffset), '-3px')
           assert.equal(await pre.evaluate(node => getComputedStyle(node).outlineStyle), 'solid')
           if ([1440, 320].includes(width)) await page.screenshot({ path: path.join(artifacts, `${dark ? 'dark' : 'light'}-${width}.png`) })
-          if (width <= 390) assert((await answer.getByRole('button', { name: '复制代码', exact: true }).boundingBox()).height >= 44)
+          if (width <= 390) {
+            for (const name of ['复制代码', '有帮助', '没有帮助']) {
+              const box = await answer.getByRole('button', { name, exact: true }).boundingBox()
+              assert(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width, JSON.stringify({ name, width, box }))
+            }
+          }
         }
         const contrasts = await answer.locator('.wb-message-code').evaluate(codeContrasts)
         for (const contrast of contrasts) assert(contrast.ratio >= 4.5, JSON.stringify({ dark, contrast }))
