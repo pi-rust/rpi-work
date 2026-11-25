@@ -341,6 +341,19 @@ impl WorkspaceClient {
         }
     }
 
+    pub async fn files_page(
+        &self,
+        project_id: &str,
+        path: &str,
+        cursor: Option<&str>,
+    ) -> Result<FileListing, ClientError> {
+        match self {
+            Self::Remote(client) => client.files_page(project_id, path, cursor).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client.files_page(project_id, path, cursor).await,
+        }
+    }
+
     pub async fn file(&self, project_id: &str, path: &str) -> Result<FileContent, ClientError> {
         match self {
             Self::Remote(client) => client.file(project_id, path).await,

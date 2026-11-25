@@ -567,6 +567,30 @@ impl NodeClient {
         })
     }
 
+    pub fn files_page(&self, project_id: String, path: String, cursor: Option<String>) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            #[derive(serde::Serialize)]
+            #[serde(tag = "status", rename_all = "camelCase")]
+            enum Read {
+                Ready { listing: work_client::FileListing },
+                Changed,
+            }
+            match client
+                .files_page(&project_id, &path, cursor.as_deref())
+                .await
+            {
+                Ok(listing) => json_string(&Read::Ready { listing }),
+                Err(work_client::ClientError::Api { status, .. })
+                    if cursor.is_some() && status.as_u16() == 409 =>
+                {
+                    json_string(&Read::Changed)
+                }
+                Err(error) => Err(failure("目录读取失败", error)),
+            }
+        })
+    }
+
     /// One file's content, bounded by the node.
     pub fn file(&self, project_id: String, path: String) -> Promise {
         let client = self.client.clone();

@@ -14,12 +14,16 @@ import type { FileRead } from '@/lib/workspace'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { NodeChangedFile, NodeFileEntry } from '@/lib/node'
+import type { NodeChangedFile, NodeFileEntry, DirectoryPage } from '@/lib/node'
 
-type DirectoryRead =
-  | { status: 'loading'; entries?: NodeFileEntry[] }
-  | { status: 'ready'; entries: NodeFileEntry[] }
-  | { status: 'error'; entries?: NodeFileEntry[]; error: string }
+type DirectoryRead = {
+  entries?: NodeFileEntry[]
+  cursor?: string
+} & (
+  | { status: 'ready' | 'changed' }
+  | { status: 'loading'; more: boolean }
+  | { status: 'error'; more: boolean; error: string }
+)
 
 type Props = {
   live: boolean
@@ -32,7 +36,7 @@ type Props = {
   onOpenSource: (path: string) => void
   expandedDirectories: string[]
   onExpandedDirectoriesChange: (paths: string[]) => void
-  listDir: (path: string) => Promise<NodeFileEntry[] | null>
+  listDir: (path: string, cursor?: string) => Promise<DirectoryPage | null>
 }
 
 /** Mount the tree/viewer only after its shared display engine is initialized. */
@@ -58,6 +62,7 @@ function ReadyFilePanel({
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
   const treeActive = useRef(false)
   const viewport = useRef<HTMLDivElement>(null)
+  const refreshButton = useRef<HTMLButtonElement>(null)
   const noticeContainer = useRef<HTMLDivElement>(null)
   // One listing cache for both the lazy tree and explicit GETs. The sync loader
   // reads it without scheduling network requests when the tree is rebuilt.
@@ -77,25 +82,53 @@ function ReadyFilePanel({
   const openPath = (path: string) => changed.has(path) ? onOpen(path, staged) : onOpenSource(path)
 
   const publishReads = () => setDirectoryReads(new Map(reads.current))
-  const readDirectory = async (path: string): Promise<boolean> => {
+  const readDirectory = async (path: string, more = false, trigger?: HTMLButtonElement): Promise<boolean> => {
     if (!mounted.current || requests.current.has(path)) return false
+    const previousRead = reads.current.get(path)
+    const previous = previousRead?.entries
+    const previousCursor = previousRead?.cursor
+    if (more && !previousCursor) return false
     const request = Symbol(path)
     requests.current.set(path, request)
     const current = () => mounted.current && requests.current.get(path) === request
-    const previousRead = reads.current.get(path)
-    const previous = previousRead?.entries
-    reads.current.set(path, { status: 'loading', entries: previous })
+    reads.current.set(path, { status: 'loading', entries: previous, cursor: previousCursor, more })
     publishReads()
     try {
-      const children = await listDir(path)
-      if (!current()) return false
-      if (children === null) {
-        if (previousRead) reads.current.set(path, previousRead)
-        else reads.current.delete(path)
-        publishReads()
-        return false
-      }
+      const children = more ? [...(previous ?? [])] : []
       const next = new Map(children.map(entry => [entry.path, entry]))
+      const prefix = path ? `${path}/` : ''
+      const directChild = (id: string) => id.startsWith(prefix) ? id.slice(prefix.length).split('/', 1)[0] : ''
+      const expandedChildren = new Set(tree.getState().expandedItems.map(directChild).filter(Boolean))
+      const seenCursors = new Set<string>()
+      let cursor = more ? previousCursor : undefined
+      do {
+        if (cursor) {
+          if (seenCursors.has(cursor)) throw new Error('目录分页返回了重复的游标')
+          seenCursors.add(cursor)
+        }
+        const page = await listDir(path, cursor)
+        if (!current()) return false
+        if (!page) {
+          if (previousRead) reads.current.set(path, previousRead)
+          else reads.current.delete(path)
+          publishReads()
+          return false
+        }
+        if (page.status === 'changed') {
+          reads.current.set(path, { status: 'changed', entries: previous })
+          if (trigger && document.activeElement === trigger) refreshButton.current?.focus()
+          publishReads()
+          return false
+        }
+        for (const entry of page.listing.entries) {
+          if (next.has(entry.path)) throw new Error('目录分页返回了重复的路径')
+          next.set(entry.path, entry)
+          children.push(entry)
+          expandedChildren.delete(entry.name)
+        }
+        cursor = page.listing.pagination?.nextCursor
+        // A refresh reloads the visible range. A saved expansion may need later pages.
+      } while (cursor && !more && (children.length < (previous?.length ?? 0) || expandedChildren.size > 0))
       const detached = new Set<string>()
       const forget = (id: string) => {
         if (detached.has(id)) return
@@ -110,15 +143,14 @@ function ReadyFilePanel({
         if (next.get(entry.path)?.kind !== entry.kind) forget(entry.path)
       }
       for (const entry of children) entries.current.set(entry.path, entry)
-      reads.current.set(path, { status: 'ready', entries: children })
-      // This listing can disprove saved branches that have no cached entries
-      // yet, including descendants hidden behind a collapsed directory.
-      const prefix = path ? `${path}/` : ''
+      reads.current.set(path, { status: 'ready', entries: children, cursor })
+      // Only completion disproves a saved branch whose first component is absent.
       const expanded = tree.getState().expandedItems
       const surviving = expanded.filter(id => {
-        if (detached.has(id)) return false
-        const child = id.startsWith(prefix) ? id.slice(prefix.length).split('/', 1)[0] : ''
-        return !child || next.get(prefix + child)?.kind === 'directory'
+        const child = directChild(id)
+        if (!child) return true
+        const entry = next.get(prefix + child)
+        return entry ? entry.kind === 'directory' : cursor !== undefined
       })
       if (expanded.length !== surviving.length) tree.applySubStateUpdate('expandedItems', surviving)
       if (detached.size) {
@@ -126,13 +158,14 @@ function ReadyFilePanel({
         if (detached.has(tree.getState().focusedItem ?? '')) tree.applySubStateUpdate('focusedItem', null)
       }
       tree.rebuildTree()
+      if (trigger && document.activeElement === trigger && (!cursor || !more)) refreshButton.current?.focus()
       publishReads()
       const parentVisible = path === '' || (tree.getItemInstance(path).getItemMeta().index >= 0 && surviving.includes(path))
       if (treeActive.current && parentVisible) loadExpanded(children.map(entry => entry.path))
       return true
     } catch (cause) {
       if (current()) {
-        reads.current.set(path, { status: 'error', entries: previous, error: String(cause) })
+        reads.current.set(path, { status: 'error', entries: previous, cursor: previousCursor, more, error: String(cause) })
         publishReads()
       }
       return false
@@ -173,7 +206,7 @@ function ReadyFilePanel({
   const visibleIds = new Set(items.map(item => item.getId()))
   const notices = [...directoryReads].filter(([path, read]) =>
     (path === '' || (visibleIds.has(path) && tree.getItemInstance(path).isExpanded())) &&
-    (read.status !== 'ready' || read.entries?.length === 0))
+    (read.status !== 'ready' || read.cursor || read.entries?.length === 0))
 
   const loadVisibleTree = useEffectEvent(() => {
     if (!reads.current.has('')) void readDirectory('')
@@ -199,8 +232,10 @@ function ReadyFilePanel({
       for (const { path, parent } of open) {
         if (!mounted.current) break
         const item = tree.getItemInstance(path)
-        if (refreshed.has(parent) && item.getItemMeta().index >= 0 && item.isFolder() &&
-            item.isExpanded() && await readDirectory(path)) refreshed.add(path)
+        if (!refreshed.has(parent) || item.getItemMeta().index < 0 || !item.isFolder() || !item.isExpanded()) continue
+        // Refresh supersedes any earlier read for this surviving directory.
+        requests.current.delete(path)
+        if (await readDirectory(path)) refreshed.add(path)
       }
     } finally {
       refreshInProgress.current = false
@@ -241,7 +276,7 @@ function ReadyFilePanel({
             />
             暂存
           </label>
-          <Button variant="ghost" size="icon" className="wb-file-refresh size-6"
+          <Button ref={refreshButton} variant="ghost" size="icon" className="wb-file-refresh size-6"
             aria-label={tab === 'tree' ? '刷新目录' : '刷新改动'}
             title={tab === 'tree' ? '刷新根目录和已展开的目录' : '刷新改动'}
             aria-disabled={tab === 'tree' && (refreshing || directoryReads.get('')?.status === 'loading') ? true : undefined}
@@ -257,10 +292,24 @@ function ReadyFilePanel({
           {notices.map(([path, read]) => {
             const label = path ? `目录 ${path}` : '项目根目录'
             return <div key={path} role="group" aria-label={label} className="wb-directory-notice">
-              {read.status === 'error' ? <>
-                <p role="alert">{label}{read.entries ? '刷新失败' : '读取失败'}：{read.error}{read.entries ? '（保留上次读取结果）' : ''}</p>
+              {read.status === 'changed' ? (
+                <p role="alert">{label}内容已变化，请刷新目录。</p>
+              ) : read.status === 'error' ? (
+                <p role="alert">{label}{read.more ? '后续页读取失败' : read.entries ? '刷新失败' : '读取失败'}：{read.error}{read.entries ? '（保留上次读取结果）' : ''}</p>
+              ) : read.status === 'loading' ? (
+                <p role="status">{read.more ? `正在加载${label}的后续文件…` : read.entries ? `正在刷新${label}…（保留上次读取结果）` : `正在读取${label}…`}</p>
+              ) : read.entries?.length === 0 ? <p role="status">{label}{path ? ' ' : ''}为空。</p> : null}
+              {read.cursor && (read.status === 'ready' || ('more' in read && read.more)) ? (
+                <Button variant="outline" size="sm" aria-disabled={read.status === 'loading' || refreshing}
+                  aria-label={`${read.status === 'error' ? '重试加载' : '加载更多'}${label}文件`}
+                  onClick={event => { if (!refreshInProgress.current) void readDirectory(path, true, event.currentTarget) }}>
+                  {read.status === 'error' ? '重试加载' : '加载更多'}{label}文件
+                </Button>
+              ) : read.status === 'changed' ? (
+                <Button variant="outline" size="sm" onClick={() => void refreshDirectory()}>刷新{label}</Button>
+              ) : read.status === 'error' ? (
                 <Button variant="outline" size="sm" onClick={() => void readDirectory(path)}>重试读取{label}</Button>
-              </> : <p role="status">{read.status === 'loading' ? (read.entries ? `正在刷新${label}…（保留上次读取结果）` : `正在读取${label}…`) : `${label}${path ? ' ' : ''}为空。`}</p>}
+              ) : null}
             </div>
           })}
           </div>

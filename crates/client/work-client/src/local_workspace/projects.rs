@@ -44,6 +44,18 @@ impl LocalWorkspace {
     pub async fn files(&self, project_id: &str, path: &str) -> Result<FileListing, ClientError> {
         self.owner.files(project_id, path).await.map_err(Into::into)
     }
+    pub async fn files_page(
+        &self,
+        project_id: &str,
+        path: &str,
+        cursor: Option<&str>,
+    ) -> Result<FileListing, ClientError> {
+        self.owner
+            .files_page(project_id, path, cursor)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn file(&self, project_id: &str, path: &str) -> Result<FileContent, ClientError> {
         self.owner.file(project_id, path).await.map_err(Into::into)
     }

@@ -54,7 +54,13 @@ export type NodeQueueItem = {
   status: string | null
 }
 export type NodeQueue = { items: NodeQueueItem[]; count: number }
+export type DirectoryPage = { status: 'ready'; listing: NodeFileListing } | { status: 'changed' }
 export type NodeFileEntry = { name: string; path: string; kind: string; size: number }
+type NodeFileListing = {
+  path: string
+  entries: NodeFileEntry[]
+  pagination?: { complete: boolean; nextCursor?: string }
+}
 export type NodeProvider = {
   id: string
   definition: { name?: string; models?: { id: string; name?: string }[] } | null
@@ -274,6 +280,10 @@ export class NodeConnection {
 
   async files(projectId: string, path = ''): Promise<{ path: string; entries: NodeFileEntry[] }> {
     return parse(await this.client.files(projectId, path))
+  }
+
+  async filesPage(projectId: string, path: string, cursor?: string): Promise<DirectoryPage> {
+    return parse(await this.client.files_page(projectId, path, cursor))
   }
 
   async file(projectId: string, path: string): Promise<{ path: string; content: string }> {

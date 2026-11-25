@@ -89,6 +89,17 @@ pub struct FileEntry {
 pub struct FileListing {
     pub path: String,
     pub entries: Vec<FileEntry>,
+    /// Omitted by legacy full-directory reads and older nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pagination: Option<FilePagination>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePagination {
+    pub complete: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]

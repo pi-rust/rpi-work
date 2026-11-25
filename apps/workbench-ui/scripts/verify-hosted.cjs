@@ -284,6 +284,71 @@ async function waitForServer(url, timeoutMs = 60000) {
     await filter('all')
     await branch.first().waitFor()
     pass('browser filters an unselected owner session with pending approval and removes it after settlement')
+    // Build a directory beyond extcore's whole-list limit only after the
+    // session workflows, so Git/status checks elsewhere stay small.
+    const expectedFiles = Array.from({ length: 2005 }, (_, index) => `file-${String(index).padStart(4, '0')}.txt`)
+    for (const name of expectedFiles) fs.writeFileSync(path.join(projectPath, name), name)
+    fs.mkdirSync(path.join(projectPath, 'folder-first'))
+    fs.writeFileSync(path.join(projectPath, '.env.pagination'), 'hidden fixture')
+    if (process.platform !== 'win32') {
+      fs.symlinkSync(path.join(projectPath, 'folder-first'), path.join(projectPath, 'symlink'))
+      fs.symlinkSync(data, path.join(projectPath, 'outside'))
+    }
+    const tree = page.getByTestId('run-panel')
+    const listingPath = `/api/v1/projects/${projectId}/files`
+    const nextPage = cursor => page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === listingPath && url.searchParams.get('page') === '1' && url.searchParams.get('cursor') === cursor
+    })
+    await buttons('文件面板').click()
+    const firstPage = nextPage(null)
+    await tree.getByTestId('tab-tree').click()
+    const firstListing = await firstPage
+    assert.equal(firstListing.headers()['cache-control'], 'no-store')
+    const first = await firstListing.json()
+    assert.equal(first.entries.length, 200)
+    assert.equal(first.entries[0].path, 'folder-first')
+    assert.equal(first.pagination.complete, false)
+    assert(first.pagination.nextCursor)
+    const more = tree.getByRole('button', { name: '加载更多项目根目录文件', exact: true })
+    const secondPage = nextPage(first.pagination.nextCursor)
+    await more.press('Enter')
+    const second = await (await secondPage).json()
+    assert.equal(second.entries[0].path, expectedFiles[199])
+    await tree.getByRole('treeitem', { name: expectedFiles[0], exact: true }).waitFor()
+    assert(await tree.getByRole('treeitem').count() < 40)
+    const headers = { 'x-rpi-web': '1' }
+    const authorization = await firstListing.request().headerValue('authorization')
+    if (authorization) headers.authorization = authorization
+    const readList = async params => await page.request.get(firstListing.url().split('?')[0], { params, headers })
+    const allEntries = [...first.entries, ...second.entries]
+    let pagination = second.pagination
+    let pages = 2
+    while (pagination.nextCursor && pages < 12) {
+      const response = await readList({ page: '1', cursor: pagination.nextCursor })
+      assert(response.ok(), 'real continuation: ' + await response.text())
+      const listing = await response.json()
+      assert(listing.entries.length > 0 && listing.entries.length <= 200)
+      allEntries.push(...listing.entries)
+      pagination = listing.pagination
+      pages++
+    }
+    assert.equal(pages, 11)
+    assert.deepEqual(pagination, { complete: true })
+    assert.deepEqual(allEntries.map(entry => entry.path), ['folder-first', ...expectedFiles])
+    assert.equal((await readList({})).status(), 413, 'legacy listing retains its full-list limit')
+    assert.equal((await readList({ page: '1', cursor: 'malformed' })).status(), 400)
+    assert.equal((await readList({ page: '1', path: 'folder-first', cursor: first.pagination.nextCursor })).status(), 409)
+    assert.equal((await readList({ page: '1', path: '..' })).status(), 403)
+    if (process.platform !== 'win32') {
+      assert.equal((await readList({ page: '1', path: 'outside' })).status(), 403)
+    }
+    fs.writeFileSync(path.join(projectPath, 'added.txt'), '')
+    await more.press('Enter')
+    await tree.getByRole('alert').filter({ hasText: '项目根目录内容已变化' }).waitFor()
+    await tree.getByRole('button', { name: '刷新项目根目录', exact: true }).click()
+    await tree.getByRole('treeitem', { name: 'added.txt', exact: true }).waitFor()
+    pass('real owner pages beyond the legacy limit, enforces project boundaries, and rejects changed listings')
     const shots = path.join(repoRoot, 'artifacts/confirmed-workbench')
     fs.mkdirSync(shots, { recursive: true })
     await page.screenshot({ path: path.join(shots, 'creation-hosted.png'), animations: 'disabled' })

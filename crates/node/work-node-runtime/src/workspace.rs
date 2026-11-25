@@ -34,6 +34,7 @@ mod authoring;
 mod command_allowlist;
 mod components;
 mod configuration;
+mod directory;
 mod migration;
 pub mod operations;
 mod packages;

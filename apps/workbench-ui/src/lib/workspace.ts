@@ -14,6 +14,7 @@ import {
   type NodeChangedFile,
   type NodeProvider,
   type NodeFileEntry,
+  type DirectoryPage,
   type NodeModel,
   type NodeQueue,
   type NodeRuntime,
@@ -115,7 +116,7 @@ export type Workspace = {
   openChange: (path: string, staged?: boolean) => Promise<void>
   openFile: (path: string) => Promise<void>
   /** Read one directory; null means there is no longer a current scope. */
-  listDir: (path: string) => Promise<NodeFileEntry[] | null>
+  listDir: (path: string, cursor?: string) => Promise<DirectoryPage | null>
   refreshQueue: () => Promise<void>
   queueMessage: (text: string) => Promise<boolean>
   cancelQueued: (entryId: string) => Promise<void>
@@ -765,12 +766,12 @@ export function useWorkspace(): Workspace {
   const openFile = useCallback((path: string) => readFile(path, 'source'), [readFile])
 
   const listDir = useCallback(
-    async (path: string) => {
+    async (path: string, cursor?: string) => {
       const scope = projectScope(selected.project, selected.session)
       if (!scope) return null
       try {
-        const listing = await scope.conn.files(selected.project, path)
-        return scope.current() ? listing.entries : null
+        const listing = await scope.conn.filesPage(selected.project, path, cursor)
+        return scope.current() ? listing : null
       } catch (cause) {
         if (!scope.current()) return null
         throw cause

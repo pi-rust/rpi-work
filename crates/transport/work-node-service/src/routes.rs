@@ -375,6 +375,17 @@ async fn perform(
         ("POST", ["projects", id, "rename"]) => {
             json!({"project":w.rename_project(id,text(&body,"name")?).await?})
         }
+        ("GET", ["projects", id, "files"])
+            if query.contains_key("page") || query.contains_key("cursor") =>
+        {
+            if query.get("page").map(String::as_str) != Some("1") {
+                return Err(ApiError(StatusCode::BAD_REQUEST, "expected page=1".into()));
+            }
+            json!(
+                w.files_page(id, path_query, query.get("cursor").map(String::as_str))
+                    .await?
+            )
+        }
         ("GET", ["projects", id, "files"]) => json!(w.files(id, path_query).await?),
         ("GET", ["projects", id, "file"]) => json!(w.file(id, path_query).await?),
         ("GET", ["projects", id, "image"]) => {
@@ -551,7 +562,8 @@ async fn perform(
     let mut response = Json(value).into_response();
     if matches!(
         (method.as_str(), parts.as_slice()),
-        ("GET", ["sessions"]) | (_, ["sessions", _, "configuration" | "access" | "dialogs"])
+        ("GET", ["sessions"] | ["projects", _, "files"])
+            | (_, ["sessions", _, "configuration" | "access" | "dialogs"])
     ) {
         response
             .headers_mut()

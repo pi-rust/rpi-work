@@ -220,8 +220,8 @@ fn qr_error(error: ClientError) -> ClientError {
 
 pub use work_core::api::{
     AgentBackendOption, AuthState, AuthStatus, AuthStatusProvider, Capabilities, ChangedFile,
-    CompactionEntry, Diff, FileContent, FileEntry, FileListing, GitStatus, Health, History,
-    HostResponse, ModelDescriptor, PROJECT_IMAGE_MAX_BYTES, PendingDialog, Project,
+    CompactionEntry, Diff, FileContent, FileEntry, FileListing, FilePagination, GitStatus, Health,
+    History, HostResponse, ModelDescriptor, PROJECT_IMAGE_MAX_BYTES, PendingDialog, Project,
     ProjectCreation, ProjectFolder, ProjectFolders, ProjectImage, QrAuthorization,
     QueueCancellation, QueueItem, QueueMutation, QueueSnapshot, RuntimeState, SessionAgentBinding,
     SessionBranch, SessionMutation, SessionPreferences, SessionSummary, Snapshot, SnapshotEvent,
@@ -522,6 +522,41 @@ impl WorkClient {
         let mut url = self.url(&format!("api/v1/projects/{project_id}/files"))?;
         url.query_pairs_mut().append_pair("path", path);
         self.get_url(url).await
+    }
+
+    /// Read a bounded directory page, with a full-listing fallback for older nodes.
+    pub async fn files_page(
+        &self,
+        project_id: &str,
+        path: &str,
+        cursor: Option<&str>,
+    ) -> Result<FileListing, ClientError> {
+        let mut url = self.url("api/v1/projects/")?;
+        url.path_segments_mut()
+            .map_err(|()| ClientError::ProtocolMismatch("Invalid HTTP API URL".into()))?
+            .pop_if_empty()
+            .push(project_id)
+            .push("files");
+        url.query_pairs_mut()
+            .append_pair("path", path)
+            .append_pair("page", "1")
+            .extend_pairs(cursor.map(|cursor| ("cursor", cursor)));
+        let listing: FileListing = self.get_url(url).await?;
+        let valid_page = match &listing.pagination {
+            None => cursor.is_none(),
+            Some(page) if page.complete => page.next_cursor.is_none(),
+            Some(page) => {
+                !listing.entries.is_empty()
+                    && page
+                        .next_cursor
+                        .as_deref()
+                        .is_some_and(|next| !next.is_empty() && Some(next) != cursor)
+            }
+        };
+        if listing.path != path || !valid_page {
+            return Err(ClientError::Protocol("invalid directory page".into()));
+        }
+        Ok(listing)
     }
 
     pub async fn file(&self, project_id: &str, path: &str) -> Result<FileContent, ClientError> {

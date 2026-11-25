@@ -465,6 +465,68 @@ const roots = [entry('src'), entry('empty'), entry('README.md', 'file')]
         assert.deepEqual(requests.map(request => request.path), ['', 'src', '', 'empty', '', 'src', '', 'empty'])
       } finally { await other.close() }
     })
+    await check('directory continuation keeps loaded rows, retries the same cursor, and refreshes its loaded range', async ({ page, panel, group, requests, gate, rendered }) => {
+      const row = name => panel.getByRole('treeitem', { name, exact: true })
+      const held = gate(), failed = gate()
+      const root = group('')
+      const loadMore = root.getByRole('button', { name: '加载更多项目根目录文件', exact: true })
+      const refresh = panel.getByRole('button', { name: '刷新目录', exact: true })
+      const response = (entries, nextCursor) => ({ json: { path: '', entries, pagination: { complete: !nextCursor, nextCursor } } })
+      let revision = 'original', attempts = 0
+      await row('initial.txt').waitFor()
+      await page.route(url => url.pathname.endsWith('/files'), route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        if (!cursor) {
+          const name = revision === 'original' ? 'initial.txt' : 'refreshed.txt'
+          return route.fulfill(response([entry(name, 'file')], revision))
+        }
+        if (cursor === 'original') return ++attempts === 1
+          ? failed.hold(route, { status: 503, json: { error: 'temporarily unavailable' } })
+          : held.hold(route, response([entry('last.txt', 'file')]))
+        return route.fulfill(response([entry('replacement.txt', 'file')]))
+      })
+      await refresh.click()
+      await loadMore.waitFor()
+      await loadMore.press('Enter'); await failed.entered()
+      await root.getByRole('status').filter({ hasText: '正在加载' }).waitFor()
+      await row('initial.txt').waitFor()
+      const count = requests.length
+      await loadMore.evaluate(button => button.click()); await rendered()
+      assert.equal(requests.length, count)
+      await failed.flush()
+      await root.getByRole('alert').filter({ hasText: '后续页读取失败' }).waitFor()
+      const retry = root.getByRole('button', { name: '重试加载项目根目录文件', exact: true })
+      await retry.press('Enter'); await held.entered()
+      assert.equal(requests.at(-1).url, requests.at(-2).url)
+      await held.flush(); await row('last.txt').waitFor()
+      assert.equal(await root.count(), 0)
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '刷新目录')
+      await row('initial.txt').waitFor()
+      revision = 'updated'
+      await refresh.press('Enter'); await row('replacement.txt').waitFor()
+      assert.equal(await row('last.txt').count(), 0)
+      assert.deepEqual(requests.slice(-2).map(request => new URL(request.url).searchParams.get('cursor')), [null, 'updated'])
+      assert(requests.every(request => new URL(request.url).searchParams.get('page') === '1'))
+    }, async ({ page }) => {
+      await page.route(url => url.pathname.endsWith('/files'), route => route.fulfill({ json: { path: '', entries: [entry('initial.txt', 'file')] } }))
+    })
+    await check('partial parent listing restores a saved expanded folder from a later page', async ({ page, panel, requests, expand }) => {
+      await panel.getByRole('treeitem', { name: 'src', exact: true }).waitFor()
+      await expand('src')
+      await panel.getByRole('treeitem', { name: 'theme.rs', exact: true }).waitFor()
+      await page.route(url => url.pathname.endsWith('/files') && !url.searchParams.get('path'), route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({ json: { path: '', entries: cursor ? [entry('src')] : [entry('alpha')],
+          pagination: cursor ? { complete: true } : { complete: false, nextCursor: 'later' } } })
+      })
+      await page.reload()
+      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor()
+      await page.getByRole('button', { name: '文件面板', exact: true }).click()
+      await panel.getByTestId('tab-tree').click()
+      await panel.getByRole('treeitem', { name: 'theme.rs', exact: true }).waitFor()
+      assert.equal(await panel.getByRole('treeitem', { name: 'src', exact: true }).getAttribute('aria-expanded'), 'true')
+      assert.deepEqual(requests.slice(-3).map(request => [request.path, new URL(request.url).searchParams.get('cursor')]), [['', null], ['', 'later'], ['src', null]])
+    })
     await check('large directory windows retain the full keyboard order and exact file paths', async ({ page, panel, requests, rendered }) => {
       const row = name => panel.getByRole('treeitem', { name, exact: true })
       const first = row('large-0000.txt'), last = row('large-1999.txt')
