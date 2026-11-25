@@ -42,7 +42,9 @@ export default function App() {
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
   const [page, setPage] = useState<'chat' | 'resources'>('chat')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const messageScroll = useConversationScroll(scrollScope, workspace.transcript?.parts, page === 'chat')
+  const ready = workspace.presentationReady && (workspace.status === 'fixture' || workspace.status === 'ready')
+  const messageScroll = useConversationScroll(scrollScope, ready ? workspace.transcript?.parts : undefined, page === 'chat',
+    live && Boolean(workspace.selected.project && workspace.selected.session))
   const isMobile = useIsMobile()
   const isPanelOverlay = useMediaQuery('(max-width: 900px)')
   const [drawer, setDrawer] = useState(false)
@@ -97,7 +99,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const ready = workspace.presentationReady && (workspace.status === 'fixture' || workspace.status === 'ready')
   const theme = useTheme(workspace.presentationReady)
   const messageLayout = useMessageLayout()
   const dark = theme.choice.dark
@@ -423,7 +424,7 @@ export default function App() {
                 </div>
                 )}
               </div>
-                {messageScroll.away && page === 'chat' ? (
+                {messageScroll.away && page === 'chat' && ready && workspace.transcript?.parts.length ? (
                   <Button className="wb-latest-button absolute bottom-3 left-1/2 z-20 -translate-x-1/2 shadow-md" size="sm" variant="secondary" onClick={messageScroll.jumpToLatest}>
                     {messageScroll.unread ? '有新消息 · 回到底部' : '回到底部'}
                   </Button>

@@ -7,7 +7,7 @@ use work_core::api::events::content_text;
 use work_core::{ConnectionState, MessageBlock, RunPhase, SettlementOutcome, ToolStatus};
 
 use crate::session_controls::PendingRequests;
-use crate::transcript::{OrderedRow, RowSource, history_id};
+use crate::transcript::{OrderedRow, RowSource, history_id, message_id};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +21,8 @@ pub struct ConversationView {
 pub enum Part {
     Message {
         key: String,
+        #[serde(rename = "readingKey", skip_serializing_if = "Option::is_none")]
+        reading_key: Option<String>,
         role: &'static str,
         text: String,
     },
@@ -175,10 +177,15 @@ impl Builder {
             });
         }
     }
-    fn text(&mut self, key: String, role: &'static str, text: String) {
+    fn text(&mut self, key: String, reading_key: Option<String>, role: &'static str, text: String) {
         if !text.trim().is_empty() {
             self.flush();
-            self.parts.push(Part::Message { key, role, text });
+            self.parts.push(Part::Message {
+                key,
+                reading_key,
+                role,
+                text,
+            });
         }
     }
     fn tool(&mut self, block: ToolView) {
@@ -203,13 +210,17 @@ impl Builder {
         };
         let content = &message["content"];
         let id = history_id(message, index);
+        // Ordered row keys and index-based fallback IDs are local to a view.
+        let durable = message_id(message).is_some_and(|id| !id.is_empty());
         if role == "user" || !content.is_array() {
-            let identity = if role == "user" {
-                format!("row/{key}")
+            let (identity, reading_key) = if role == "user" {
+                (format!("row/{key}"), durable.then(|| format!("user/{id}")))
             } else {
-                format!("text/{id}-text-0")
+                let identity = format!("text/{id}-text-0");
+                let reading_key = durable.then(|| identity.clone());
+                (identity, reading_key)
             };
-            self.text(identity, role, content_text(content));
+            self.text(identity, reading_key, role, content_text(content));
             return;
         }
         for (part, value) in content.as_array().into_iter().flatten().enumerate() {
@@ -266,14 +277,18 @@ impl Builder {
                         });
                     }
                 }
-                _ => self.text(format!("text/{id}-text-{part}"), role, content_text(value)),
+                _ => {
+                    let identity = format!("text/{id}-text-{part}");
+                    let reading_key = durable.then(|| identity.clone());
+                    self.text(identity, reading_key, role, content_text(value));
+                }
             }
         }
     }
     fn block(&mut self, block: &MessageBlock, _key: u64) {
         match block {
             MessageBlock::Text { id, text } | MessageBlock::PublicSummary { id, text } => {
-                self.text(format!("text/{id}"), "assistant", text.clone());
+                self.text(format!("text/{id}"), None, "assistant", text.clone());
             }
             MessageBlock::Thinking { id, text } => self.activity.push(ActivityItem::Note {
                 key: id.clone(),

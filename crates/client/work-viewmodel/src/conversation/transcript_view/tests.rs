@@ -29,6 +29,50 @@ fn tool(status: ToolStatus) -> MessageBlock {
     }
 }
 #[test]
+fn reading_keys_use_history_identity_without_replacing_render_keys() {
+    let prompt = json!({"entryId": "user-id", "role": "user", "content": "prompt"});
+    let reply = json!({"messageId": "answer-id", "role": "assistant", "content": [
+        {"type": "text", "text": "first"}, {"type": "text", "text": "second"}
+    ]});
+    let first = view(
+        &[prompt.clone(), reply.clone()],
+        &[],
+        RunPhase::Ready,
+        PendingRequests::default(),
+    );
+    let shifted = view(
+        &[
+            json!({"role": "user", "content": "anonymous"}),
+            prompt,
+            reply,
+            json!({"id": "", "role": "assistant", "content": "empty identity"}),
+        ],
+        &[MessageBlock::Text {
+            id: "draft-text-0".into(),
+            text: "streamed".into(),
+        }],
+        RunPhase::Ready,
+        PendingRequests::default(),
+    );
+    let parts = shifted["parts"].as_array().unwrap();
+    assert_ne!(first["parts"][0]["key"], parts[1]["key"]);
+    for (index, key) in [
+        "user/user-id",
+        "text/answer-id-text-0",
+        "text/answer-id-text-1",
+    ]
+    .iter()
+    .enumerate()
+    {
+        assert_eq!(first["parts"][index]["readingKey"], *key);
+        assert_eq!(parts[index + 1]["readingKey"], *key);
+    }
+    for index in [0, 4, 5] {
+        assert!(parts[index].get("readingKey").is_none());
+    }
+}
+
+#[test]
 fn completed_tool_does_not_imply_agent_completion() {
     for phase in [
         RunPhase::Tool,

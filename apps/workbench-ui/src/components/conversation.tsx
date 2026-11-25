@@ -64,13 +64,9 @@ export function Conversation({ view, details, observed = true, choices }: { view
       <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key}>
         <ActivityBlock part={part} details={details} choices={choices} />
       </div>
-    ) : part.role === 'user' ? (
-      <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key}>
-        <UserRow message={{ id: part.key, role: part.role, content: part.text }} />
-      </div>
     ) : (
-      <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key}>
-        <AnswerRow text={part.text} />
+      <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key} data-reading-anchor={part.readingKey}>
+        {part.role === 'user' ? <UserRow message={{ id: part.key, role: part.role, content: part.text }} /> : <AnswerRow text={part.text} />}
       </div>
     ))}
   </>

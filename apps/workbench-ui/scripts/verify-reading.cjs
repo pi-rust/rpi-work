@@ -378,7 +378,17 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
         await connect(other.url)
         await page.getByText('other-node-39 independent reading', { exact: true }).waitFor()
         await page.waitForFunction(() => { const log = document.querySelector('.wb-message-scroll'); return log.scrollHeight - log.scrollTop - log.clientHeight < 2 })
-        await log.evaluate(node => { node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.72); node.dispatchEvent(new Event('scroll')) })
+        const otherTop = await log.evaluate(node => {
+          node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) * 0.72)
+          node.dispatchEvent(new Event('scroll'))
+          return node.scrollTop
+        })
+        await page.reload()
+        await page.getByText('scroll-new-history', { exact: false }).waitFor()
+        await page.waitForFunction(top => Math.abs(document.querySelector('.wb-message-scroll').scrollTop - top) < 2, saved)
+        await connect(other.url)
+        await page.getByText('other-node-39 independent reading', { exact: true }).waitFor()
+        await page.waitForFunction(top => Math.abs(document.querySelector('.wb-message-scroll').scrollTop - top) < 2, otherTop)
         await connect(origin)
         await page.getByText('scroll-new-history', { exact: false }).waitFor()
         await rendered()
@@ -412,6 +422,105 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
         assert.equal(await page.getByRole('status', { name: '会话运行观察' }).textContent(), '会话观察：尚无运行阶段观察')
         assert.equal(await page.getByRole('button', { name: '发送', exact: true }).isDisabled(), true)
       } finally { delete fixture.controls.accessStatus }
+    })
+    const readingPrompt = { entryId: 'user-dark', role: 'user', content: '帮我为工作台增加一个深色主题，并保持手机端可用。' }
+    const readingHistory = Array.from({ length: 18 }, (_, index) => ({
+      entryId: `reload-anchor-${index}`, role: 'user', content: `恢复位置 ${index} ${'同一条历史消息的内容。'.repeat(24)}`,
+    }))
+    const atOffset = (log, { text, top }) => {
+      const anchor = [...log.querySelectorAll('[data-conversation-anchor]')].find(node => node.textContent.includes(text))
+      if (!anchor) throw Error('Expected history anchor is missing')
+      log.scrollTop += anchor.getBoundingClientRect().top - log.getBoundingClientRect().top - top
+      log.dispatchEvent(new Event('scroll'))
+      return log.scrollTop
+    }
+    const offsetOf = ({ text, top }) => {
+      const log = document.querySelector('.wb-message-scroll')
+      const anchor = [...log.querySelectorAll('[data-conversation-anchor]')].find(node => node.textContent.includes(text))
+      return anchor && Math.abs(anchor.getBoundingClientRect().top - log.getBoundingClientRect().top - top) < 2
+    }
+    await check('reload restores the same canonical user message after earlier history shifts its row index', async ({ page, open }) => {
+      fixture.setMessages([readingPrompt, ...readingHistory])
+      await open()
+      const location = { text: '恢复位置 8 ', top: -16 }
+      const scroll = page.locator('.wb-message-scroll')
+      const previousTop = await scroll.evaluate(atOffset, location)
+      await page.getByRole('button', { name: '回到底部', exact: true }).waitFor()
+      const inserted = { entryId: 'reload-new-earlier', role: 'user', content: `${'前面插入另一条长消息。'.repeat(46)}` }
+      fixture.setMessages([readingPrompt, inserted, ...readingHistory])
+      let release
+      const held = new Promise(resolve => { release = resolve })
+      const snapshot = url => url.pathname.endsWith('/sessions/dark/snapshot')
+      await page.route(snapshot, async route => { await held; await route.continue() })
+      try {
+        await Promise.all([page.waitForRequest(request => snapshot(new URL(request.url()))), page.reload()])
+        assert.equal(await page.locator('[data-conversation-anchor]').count(), 0)
+        assert.equal(await page.getByRole('button', { name: '回到底部', exact: true }).count(), 0)
+      } finally { release() }
+      await page.getByText(readingHistory[8].content, { exact: true }).waitFor()
+      await page.waitForFunction(offsetOf, location, { timeout: 3000 })
+      assert(await scroll.evaluate(node => node.scrollTop) > previousTop)
+      await page.getByRole('button', { name: '回到底部', exact: true }).waitFor()
+      assert.equal(await page.getByRole('button', { name: '有新消息 · 回到底部', exact: true }).count(), 0)
+    })
+    await check('an unavailable anchor restores the saved pixels, and an explicit jump persists bottom following', async ({ page, open }) => {
+      fixture.setMessages([readingPrompt, ...readingHistory])
+      await open()
+      const scroll = page.locator('.wb-message-scroll')
+      const location = { text: '恢复位置 8 ', top: -20 }
+      const previousTop = await scroll.evaluate(atOffset, location)
+      await page.getByRole('button', { name: '回到底部', exact: true }).waitFor()
+      fixture.setMessages([readingPrompt, ...readingHistory.filter((_, index) => index !== 8)])
+      await page.reload()
+      await page.getByText(readingHistory[17].content, { exact: true }).waitFor()
+      assert.equal(await page.getByText(readingHistory[8].content, { exact: true }).count(), 0)
+      await page.waitForFunction(top => Math.abs(document.querySelector('.wb-message-scroll').scrollTop - top) < 2, previousTop)
+      await page.getByRole('button', { name: '回到底部', exact: true }).click()
+      await page.reload()
+      await page.getByText(readingHistory[17].content, { exact: true }).waitFor()
+      const following = () => { const log = document.querySelector('.wb-message-scroll'); return log.scrollHeight - log.scrollTop - log.clientHeight <= 2 }
+      await page.waitForFunction(following)
+      fixture.emit({ type: 'message_end', message: { entryId: 'reload-following', role: 'assistant', content: '刷新后仍跟随新消息' } })
+      await page.getByText('刷新后仍跟随新消息', { exact: true }).waitFor()
+      await page.waitForFunction(following)
+    })
+    await check('saved positions remain isolated across reloaded sessions and store no message or draft text', async ({ page, open }) => {
+      fixture.setMessages([readingPrompt, ...readingHistory])
+      const architecture = readingHistory.map(message => ({ ...message, content: message.content.replace('恢复位置', '架构位置') }))
+      fixture.setMessages(architecture, 'architecture')
+      await open()
+      const scroll = page.locator('.wb-message-scroll')
+      const darkLocation = { text: '恢复位置 4 ', top: -20 }, architectureLocation = { text: '架构位置 11 ', top: -12 }
+      await scroll.evaluate(atOffset, darkLocation)
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await page.getByText(architecture[11].content, { exact: true }).waitFor()
+      await scroll.evaluate(atOffset, architectureLocation)
+      await page.locator('textarea').fill('这是单独保存的草稿')
+      await page.reload()
+      await page.getByText(readingHistory[4].content, { exact: true }).waitFor()
+      await page.waitForFunction(offsetOf, darkLocation)
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await page.getByText(architecture[11].content, { exact: true }).waitFor()
+      await page.waitForFunction(offsetOf, architectureLocation)
+      assert.equal(await page.locator('textarea').inputValue(), '这是单独保存的草稿')
+      const saved = await page.evaluate(() => Object.keys(localStorage).map(key => localStorage.getItem(key)).find(value => value.includes('user/reload-anchor-11')))
+      assert(saved, 'browser has a persisted reading checkpoint')
+      assert.doesNotMatch(saved, /同一条历史消息|这是单独保存的草稿|unread/)
+    })
+    await check('rejected storage still preserves the reading anchor in memory while switching sessions', async ({ context, page, open }) => {
+      await context.addInitScript(() => {
+        Storage.prototype.getItem = () => { throw Error('storage unavailable') }
+        Storage.prototype.setItem = () => { throw Error('storage unavailable') }
+      })
+      fixture.setMessages([readingPrompt, ...readingHistory])
+      await open()
+      const location = { text: '恢复位置 5 ', top: -19 }
+      await page.locator('.wb-message-scroll').evaluate(atOffset, location)
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await page.getByText(/架构位置 11 /).waitFor()
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      await page.getByText(readingHistory[5].content, { exact: true }).waitFor()
+      await page.waitForFunction(offsetOf, location)
     })
     assert.deepEqual(failures, [], 'reading layout regressions remain')
   } finally {
