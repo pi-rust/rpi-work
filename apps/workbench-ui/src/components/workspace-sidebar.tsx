@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react'
-import { Archive, ChevronDown, Folder, ListFilter, Network, PanelLeftClose, Pin, Plus, Search, SquarePen } from 'lucide-react'
-import type { Project, Session } from '@/lib/types'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Archive, ChevronDown, Folder, ListChecks, Network, PanelLeftClose, Pin, Plus, Search, SquarePen } from 'lucide-react'
+import type { Project, Session, SessionActivityRead, SessionFilter } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Section = 'projects' | 'node' | 'pinned' | 'recent'
@@ -14,6 +14,7 @@ function readPreferences(scope: string): Preferences {
 }
 type Props = {
   projects: Project[]; sessions: Session[]; project: string; session: string
+  filter: SessionFilter; onFilter?: (mode: SessionFilter) => void; activityRead: SessionActivityRead
   onProject: (id: string) => void; onSession: (id: string) => void
   onNewChat?: () => void; onAddProject?: () => void; creationHint?: string; onSearch?: () => void; onArchives?: () => void; onClose: () => void
   className?: string; connection?: ReactNode; nodeLabel: string; scope: string
@@ -21,8 +22,14 @@ type Props = {
 }
 
 /** Presentation-only preferences; session pin/archive facts remain node-owned. */
-export function Sidebar({ projects, sessions, project, session, onProject, onSession, onNewChat, onAddProject, creationHint, onSearch, onArchives, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
+export function Sidebar({ projects, sessions, project, session, filter, onFilter, activityRead, onProject, onSession, onNewChat, onAddProject, creationHint, onSearch, onArchives, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
   const [preferences, setPreferences] = useState(() => readPreferences(scope))
+  const [filterOpen, setFilterOpen] = useState(false)
+  const filterButton = useRef<HTMLButtonElement>(null)
+  const filterSelect = useRef<HTMLSelectElement>(null)
+  useEffect(() => { if (filterOpen) filterSelect.current?.focus() }, [filterOpen])
+  const closeFilter = () => { setFilterOpen(false); filterButton.current?.focus() }
+
   function save(next: Preferences) {
     setPreferences(next)
     try { localStorage.setItem(`rpi.work.sidebar.v1:${scope}`, JSON.stringify(next)) } catch { /* In-memory preferences remain usable. */ }
@@ -30,7 +37,14 @@ export function Sidebar({ projects, sessions, project, session, onProject, onSes
   const toggle = (section: Section) => save({ ...preferences, folded: { ...preferences.folded, [section]: !preferences.folded[section] } })
   const pinnedProjects = new Set(preferences.projectPins)
   const orderedProjects = [...projects].sort((a, b) => Number(pinnedProjects.has(b.id)) - Number(pinnedProjects.has(a.id)))
-  const visibleSessions = [...sessions].filter(item => !item.archived).sort((a, b) => b.updatedAt - a.updatedAt)
+  const availableSessions = sessions.filter(item => !item.archived)
+  const visibleSessions = availableSessions.filter(item => filter === 'all' || (activityRead === 'ready' &&
+    (item.activity === 'awaitingApproval' || (filter === 'running' && item.activity === 'running'))))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+  const hasUnknownActivity = filter !== 'all' && activityRead === 'ready' && availableSessions.some(item => !item.activity || item.activity === 'unknown')
+  const filterNotice = filter === 'all' ? null : activityRead === 'loading' ? '正在读取会话状态…'
+    : activityRead === 'error' ? '会话状态读取失败，正在等待重试。'
+    : hasUnknownActivity ? '部分会话状态未知。' : null
   const pinnedSessions = visibleSessions.filter(item => item.pinned)
   function heading(section: Section, label: string) {
     return <button type="button" className="wb-section-toggle" aria-label={section === 'projects' ? '项目列表' : `${label}列表`} aria-expanded={!preferences.folded[section]} aria-controls={`wb-${section}`} onClick={() => toggle(section)}><span>{label}</span><ChevronDown aria-hidden="true" /></button>
@@ -40,10 +54,19 @@ export function Sidebar({ projects, sessions, project, session, onProject, onSes
   }
   return (
     <aside className={cn('wb-sidebar', className)} aria-label="项目和会话">
-      <div className="wb-brand"><strong data-testid="sidebar-brand">RPI Work</strong><div>
-        <button type="button" className="wb-icon" aria-label="筛选会话" disabled title="状态筛选尚未接入统一会话状态投影"><ListFilter aria-hidden="true" /></button>
+      <div className="wb-brand"><strong data-testid="sidebar-brand">RPI Work</strong><div className="wb-sidebar-utilities">
+        <button ref={filterButton} type="button" className="wb-icon" aria-label="筛选会话" title="筛选会话" disabled={!onFilter}
+          aria-controls="wb-session-filter" aria-expanded={filterOpen} aria-pressed={filter !== 'all'} onClick={() => setFilterOpen(!filterOpen)}><ListChecks aria-hidden="true" /></button>
         <button type="button" className="wb-icon" aria-label="搜索项目与会话" title="搜索会话" onClick={onSearch}><Search aria-hidden="true" /></button>
         <button type="button" className="wb-icon" aria-label="收起会话侧栏" title="收起会话侧栏" onClick={onClose}><PanelLeftClose aria-hidden="true" /></button>
+      </div><div id="wb-session-filter" className="wb-session-filter" hidden={!filterOpen}>
+        <label htmlFor="wb-session-filter-mode">显示会话</label>
+        <select id="wb-session-filter-mode" ref={filterSelect} value={filter} onChange={event => { onFilter?.(event.target.value as SessionFilter); closeFilter() }}
+          onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeFilter() } }}>
+          <option value="all">全部会话</option>
+          <option value="running">执行中</option>
+          <option value="approval">待审批</option>
+        </select>
       </div></div>
       <button type="button" className="wb-new-chat" onClick={onNewChat} disabled={!onNewChat} title={!onNewChat ? creationHint ?? '请先连接节点并选择项目；不会清空当前草稿' : undefined}><SquarePen aria-hidden="true" />新对话</button>
       <nav className="wb-project-scroll" aria-label="项目与会话">
@@ -63,7 +86,7 @@ export function Sidebar({ projects, sessions, project, session, onProject, onSes
           </div>
         </section>
         {pinnedSessions.length ? <section aria-label="置顶会话" className="wb-sidebar-section"><div className="wb-project-heading">{heading('pinned', '置顶')}</div><div id="wb-pinned" hidden={preferences.folded.pinned}>{threads(pinnedSessions)}</div></section> : null}
-        <section aria-label="最近会话" className="wb-sidebar-section"><div className="wb-project-heading">{heading('recent', '最近')}</div><div id="wb-recent" hidden={preferences.folded.recent}>{threads(visibleSessions.filter(item => !item.pinned))}{!visibleSessions.length ? <p className="wb-empty">{nodeState === 'disconnected' ? '连接节点后显示会话' : '当前节点没有会话'}</p> : null}</div></section>
+        <section aria-label="最近会话" className="wb-sidebar-section"><div className="wb-project-heading">{heading('recent', '最近')}</div><div id="wb-recent" hidden={preferences.folded.recent}>{threads(visibleSessions.filter(item => !item.pinned))}{filterNotice ? <p className="wb-empty" role="status">{filterNotice}</p> : null}{!visibleSessions.length && !filterNotice ? <p className="wb-empty">{filter === 'approval' ? '没有等待审批的会话' : filter === 'running' ? '没有正在执行的会话' : nodeState === 'disconnected' ? '连接节点后显示会话' : '当前节点没有会话'}</p> : null}</div></section>
       </nav>
       <div className="wb-sidebar-footer">
         {connection}

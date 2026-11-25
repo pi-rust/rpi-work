@@ -5,6 +5,7 @@
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use work_client::{LocalWorkspace, WorkClient, WorkspaceClient};
+use work_node_api::api::SessionActivity;
 use work_node_service::{HttpServer, ServerConfig};
 
 #[test]
@@ -173,6 +174,13 @@ async fn scenario() {
             prompt_client.prompt(&prompt_id, "permission").await
         });
         let request_id = next_dialog(&mut stream).await;
+        let listed = remote.sessions().await.unwrap();
+        assert!(listed.iter().any(|entry| entry.session_id == id
+            && entry.activity == Some(SessionActivity::AwaitingApproval)));
+        assert!(
+            listed.iter().any(|entry| entry.session_id == other
+                && entry.activity == Some(SessionActivity::Inactive))
+        );
         let snapshot = remote.connect_session(id.clone()).await.unwrap();
         assert_eq!(snapshot.pending_dialogs(), stream.pending_dialogs());
         drop(snapshot);
@@ -215,6 +223,10 @@ async fn scenario() {
                 .unwrap();
         }
         prompt.await.unwrap().unwrap(); // fixture validates original wire ID and exact option/cancel result
+        let listed = remote.sessions().await.unwrap();
+        assert!(listed.iter().any(
+            |entry| entry.session_id == id && entry.activity == Some(SessionActivity::Inactive)
+        ));
         while !stream.pending_dialogs().is_empty() {
             stream.next().await.unwrap().unwrap();
         }

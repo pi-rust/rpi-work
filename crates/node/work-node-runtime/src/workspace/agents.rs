@@ -17,8 +17,8 @@ use std::{
 use tokio::sync::{broadcast, oneshot, watch};
 use work_node_api::AgentDescriptor;
 use work_node_api::api::{
-    AgentBackendOption, SessionAgentBinding, SessionMutation, SessionPreferences, SessionSummary,
-    Snapshot, WireEvent,
+    AgentBackendOption, SessionActivity, SessionAgentBinding, SessionMutation, SessionPreferences,
+    SessionSummary, Snapshot, WireEvent,
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -422,10 +422,30 @@ impl Manager {
         Ok(lock_store(&self.store)?.records.contains_key(id))
     }
     pub(super) fn summaries(&self) -> Result<Vec<SessionSummary>, WorkspaceError> {
-        Ok(lock_store(&self.store)?
+        let store = lock_store(&self.store)?;
+        Ok(store
             .records
             .values()
-            .map(|r| r.summary.clone())
+            .map(|record| {
+                let mut summary = record.summary.clone();
+                let awaiting_approval =
+                    store
+                        .runtime
+                        .get(&summary.session_id)
+                        .is_some_and(|runtime| {
+                            runtime.terminal.is_none() && !runtime.permissions.is_empty()
+                        });
+                summary.activity = Some(if awaiting_approval {
+                    SessionActivity::AwaitingApproval
+                } else {
+                    match summary.status.as_str() {
+                        "running" => SessionActivity::Running,
+                        "idle" | "offline" => SessionActivity::Inactive,
+                        _ => SessionActivity::Unknown,
+                    }
+                });
+                summary
+            })
             .collect())
     }
     pub(super) fn summary(&self, id: &str) -> Result<SessionSummary, WorkspaceError> {
@@ -550,6 +570,7 @@ impl Manager {
                 project_id: project,
                 title: None,
                 status: "offline".into(),
+                activity: None,
                 created_at: now(),
                 updated_at: now(),
                 last_seq: 0,

@@ -451,6 +451,12 @@ async function startFixture(port=0,options={}){
   await new Promise(resolve=>server.listen(port,'127.0.0.1',resolve));
   return {
     url:`http://127.0.0.1:${server.address().port}/`,requests,controls,
+    setActivity(sessionId,activity){
+      const session=sessions.find(entry=>entry.sessionId===sessionId);
+      if(!session) throw new Error(`Unknown activity fixture session ${sessionId}`);
+      if(activity===undefined) delete session.activity;
+      else session.activity=activity;
+    },
     setQueue(items,sessionId='dark'){sessionQueues.set(sessionId,structuredClone(items));},
     setMessages(items,sessionId='dark'){sessionMessages.set(sessionId,structuredClone(items));},
     emit(event,sessionId='dark'){

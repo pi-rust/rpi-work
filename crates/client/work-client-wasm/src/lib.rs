@@ -164,7 +164,7 @@ impl NodeClient {
         })
     }
 
-    /// `[{sessionId,projectId,title,status,updatedAt,lastSeq,archived,pinned}]`
+    /// `[{sessionId,projectId,title,status,activity,updatedAt,lastSeq,archived,pinned}]`
     pub fn sessions(&self) -> Promise {
         let client = self.client.clone();
         future_to_promise(async move {
@@ -180,6 +180,7 @@ impl NodeClient {
                         "projectId": session.project_id,
                         "title": session.title,
                         "status": session.status,
+                        "activity": session.activity,
                         "updatedAt": session.updated_at,
                         "lastSeq": session.last_seq,
                         "archived": session.archived,

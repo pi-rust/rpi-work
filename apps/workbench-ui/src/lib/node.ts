@@ -6,6 +6,7 @@
  */
 import clientWasmUrl from '../pkg/work_client_bg.wasm?url'
 import initClient, { NodeClient, SessionClient } from '../pkg/work_client.js'
+import type { SessionActivity } from '@/lib/types'
 import type { LiveView } from '@/lib/viewmodel'
 
 export type NodeProject = { id: string; name: string; path: string }
@@ -23,6 +24,7 @@ export type NodeSession = {
   projectId: string | null
   title: string | null
   status: string
+  activity?: SessionActivity | null
   updatedAt: number
   lastSeq: number
   archived: boolean

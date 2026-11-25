@@ -22,8 +22,9 @@ use std::{
 use work_node_api::api::{
     AuthState, AuthStatus, Capabilities, Diff, FileContent, FileListing, GitStatus, Health,
     History, HostResponse, ModelDescriptor, Project, ProjectFolder, ProjectFolders,
-    QueueCancellation, QueueMutation, QueueSnapshot, RuntimeState, SessionBranch, SessionMutation,
-    SessionPreferences, SessionSummary, Snapshot, ToolCatalog, WireEvent, payload_with_type,
+    QueueCancellation, QueueMutation, QueueSnapshot, RuntimeState, SessionActivity, SessionBranch,
+    SessionMutation, SessionPreferences, SessionSummary, Snapshot, ToolCatalog, WireEvent,
+    payload_with_type,
 };
 use work_node_api::{AgentDescriptor, CapabilitySet, TransportIdentity};
 mod access;
@@ -758,7 +759,17 @@ impl LocalWorkspace {
             let listing: Listing = decode(
                 service::list_sessions(&service, service::SessionListQuery::default()).await,
             )?;
-            all.extend(listing.sessions);
+            all.extend(listing.sessions.into_iter().map(|mut summary| {
+                // extcore reports awaiting_input while a live dialog is open,
+                // until it observes the close event or the run settles.
+                summary.activity = Some(match summary.status.as_str() {
+                    "running" => SessionActivity::Running,
+                    "awaiting_input" => SessionActivity::AwaitingApproval,
+                    "ready" | "closed" | "offline" => SessionActivity::Inactive,
+                    _ => SessionActivity::Unknown,
+                });
+                summary
+            }));
         }
         all.extend(self.inner.agents.summaries()?);
         Ok(all)

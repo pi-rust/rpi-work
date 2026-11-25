@@ -30,7 +30,7 @@ import {
   type ResourceView,
   type RowRef,
 } from '@/lib/viewmodel'
-import type { Block, HistoryMessage, Project, Session } from '@/lib/types'
+import type { Block, HistoryMessage, Project, Session, SessionActivityRead, SessionFilter } from '@/lib/types'
 
 export type PendingDialog = SessionDialog
 export type Source = { kind: 'disconnected' } | { kind: 'fixture' } | { kind: 'live'; origin: string }
@@ -64,6 +64,9 @@ export type Workspace = {
   error: string | null
   projects: Project[]
   sessions: Session[]
+  sessionFilter: SessionFilter
+  setSessionFilter: (filter: SessionFilter) => void
+  sessionActivityRead: SessionActivityRead
   /** Canonical messages for the selected session (fixture: also projected). */
   history: HistoryMessage[]
   blocks: Block[]
@@ -132,6 +135,7 @@ const asSession = (session: NodeSession): Session => ({
   id: session.sessionId,
   projectId: session.projectId ?? '',
   title: session.title ?? '(未命名会话)',
+  activity: session.activity ?? undefined,
   updatedAt: session.updatedAt,
   pinned: session.pinned,
   archived: session.archived,
@@ -169,6 +173,15 @@ export function useWorkspace(): Workspace {
   const [sessionManagement, setSessionManagement] = useState<Workspace['sessionManagement']>(initialSessionManagement)
   const sessionEditRequest = useRef<object | null>(null)
   const sessionEditLocks = useRef(new Map<string, Set<string>>())
+  const sessionListVersion = useRef(0)
+  const [filterSelection, setFilterSelection] = useState<{ connectionId: number; mode: SessionFilter }>({ connectionId: 0, mode: 'all' })
+  const [activityRead, setActivityRead] = useState<SessionActivityRead>('loading')
+  const sessionFilter = source.kind === 'live' && filterSelection.connectionId === connectionId ? filterSelection.mode : 'all'
+  const setSessionFilter = (mode: SessionFilter) => {
+    if (source.kind !== 'live') return
+    if (sessionFilter === 'all') setActivityRead('loading')
+    setFilterSelection({ connectionId, mode })
+  }
   const pendingOrigin = useRef<string>('')
   // Read-only history may finish before the render that publishes the presenter.
   const presenterRef = useRef<TranscriptPresenter | null>(null)
@@ -348,6 +361,31 @@ export function useWorkspace(): Workspace {
       setStatus('ready')
     }
   }, [clearSession, loadSession])
+
+  const observeActivity = sessionFilter !== 'all'
+  useEffect(() => {
+    const conn = connection.current
+    if (!observeActivity || !conn || creation.busy || sessionManagement.busy) return
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const current = () => !disposed && connection.current === conn && epoch.current === connectionId
+    const refresh = async () => {
+      const version = sessionListVersion.current
+      try {
+        const listed = await conn.sessions()
+        if (current() && version === sessionListVersion.current) {
+          setSessions(listed.map(asSession))
+          setActivityRead('ready')
+        }
+      } catch {
+        if (current() && version === sessionListVersion.current) setActivityRead('error')
+      } finally {
+        if (current()) timer = setTimeout(() => void refresh(), 2000)
+      }
+    }
+    void refresh()
+    return () => { disposed = true; clearTimeout(timer) }
+  }, [observeActivity, connectionId, creation.busy, sessionManagement.busy])
 
   const openNode = useCallback(
     async (origin: string) => {
@@ -811,6 +849,7 @@ export function useWorkspace(): Workspace {
   // node-returned ID; an unknown outcome stays locked and is never re-posted.
   const readCreation = useCallback(async (request: Creation): Promise<boolean> => {
     if (request.reading) return false
+    sessionListVersion.current++
     request.reading = true
     const current = () => connection.current === request.conn && epoch.current === request.epoch && creationRequest.current === request
     try {
@@ -856,6 +895,7 @@ export function useWorkspace(): Workspace {
       return false
     }
     const request: Creation = { conn, epoch: epoch.current, ticket: sessionTicket.current, kind }
+    sessionListVersion.current++
     creationRequest.current = request
     const current = () => connection.current === conn && epoch.current === request.epoch && creationRequest.current === request
     setCreation({ busy: true, uncertain: false, message: '正在创建并核对节点列表；关闭窗口不会取消节点请求。' })
@@ -930,6 +970,7 @@ export function useWorkspace(): Workspace {
         (archived === true && (!controls?.online || controls.busy))) return 'failed'
     const request = {}
     const ticket = sessionTicket.current
+    sessionListVersion.current++
     sessionEditRequest.current = request
     setSessionManagement(state => ({
       ...state, busy: true, forkSession: forking ? id : null,
@@ -1029,6 +1070,9 @@ export function useWorkspace(): Workspace {
     error,
     projects,
     sessions,
+    sessionFilter,
+    setSessionFilter,
+    sessionActivityRead: activityRead,
     history,
     blocks,
     selected,

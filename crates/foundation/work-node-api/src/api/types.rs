@@ -324,6 +324,17 @@ pub struct SessionAgentBinding {
     pub external_session_id: Option<String>,
 }
 
+/// Activity observed by the session owner for workspace navigation.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionActivity {
+    Inactive,
+    Running,
+    AwaitingApproval,
+    #[serde(other)]
+    Unknown,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct SessionSummary {
     #[serde(rename = "sessionId")]
@@ -332,6 +343,8 @@ pub struct SessionSummary {
     pub project_id: Option<String>,
     pub title: Option<String>,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<SessionActivity>,
     #[serde(rename = "createdAt")]
     pub created_at: u64,
     #[serde(rename = "updatedAt")]

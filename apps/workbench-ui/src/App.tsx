@@ -168,6 +168,9 @@ export default function App() {
           className={isMobile ? 'relative z-50 h-full shadow-xl' : undefined}
           projects={workspace.projects}
           sessions={workspace.sessions}
+          filter={workspace.sessionFilter}
+          activityRead={workspace.sessionActivityRead}
+          onFilter={live ? workspace.setSessionFilter : undefined}
           project={workspace.selected.project}
           session={workspace.selected.session}
           onProject={id => showChat(() => workspace.selectProject(id))}

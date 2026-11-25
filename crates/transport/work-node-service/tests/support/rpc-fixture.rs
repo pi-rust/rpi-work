@@ -157,6 +157,21 @@ fn main() {
                     json!({"type":"agent_start","eventId":"headless-run-start"}),
                 );
             }
+            "prompt" if hosted_creation && request["message"] == "hosted-filter-permission" => {
+                held_run = true;
+                emit(
+                    &mut stdout,
+                    json!({"type":"response","id":id,"command":"prompt","success":true,"data":{"accepted":true}}),
+                );
+                emit(
+                    &mut stdout,
+                    json!({"type":"agent_start","eventId":"hosted-filter-start"}),
+                );
+                emit(
+                    &mut stdout,
+                    json!({"type":"ui_dialog_request","requestId":"hosted-filter-approval","ui":{"purpose":"permission","question":"托管筛选待审批"}}),
+                );
+            }
             "abort" if held_run => {
                 held_run = false;
                 emit(
