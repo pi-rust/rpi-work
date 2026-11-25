@@ -3,10 +3,13 @@
 
 #[path = "composer.rs"]
 pub(crate) mod editor;
+#[path = "rich_text.rs"]
+mod rich_text;
 #[path = "session_action.rs"]
 pub(crate) mod session_action;
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use gpui::{
     AnyElement, Context, Div, FocusHandle, FontWeight, Hsla, ScrollHandle, SharedString, Task,
@@ -16,7 +19,7 @@ use serde_json::Value;
 use work_client::ClientError;
 use work_core::{MessageBlock, RunProjection};
 use work_viewmodel::conversation::transcript_view::{self, ActivityItem, Part, ToolView};
-use work_viewmodel::conversation::{code_tokens, tool_display};
+use work_viewmodel::conversation::{code_tokens, markdown, tool_display};
 use work_viewmodel::observability::metrics::{percent, tokens};
 use work_viewmodel::session_controls::{SessionControls, SessionObservation, controls};
 use work_viewmodel::session_receipts::{command_admission, interpret_receipt};
@@ -31,7 +34,11 @@ const READING_INSET: f32 = 24.0;
 
 enum Row {
     User(String),
-    Assistant(String),
+    Assistant {
+        key: String,
+        source: String,
+        view: Rc<markdown::MarkdownView>,
+    },
     Tool(ToolView),
 }
 
@@ -95,6 +102,7 @@ impl Shell {
             &snapshot.history,
             &snapshot.blocks,
             None,
+            &[],
         );
         let mut shell = Self {
             session: session.filter(|_| fixture),
@@ -230,6 +238,7 @@ impl Shell {
             &frame.history,
             &frame.projection.blocks,
             Some(&frame.projection),
+            &self.rows,
         );
         self.rows = rows;
         self.observation = Some(observation);
@@ -743,10 +752,9 @@ impl Shell {
                                 .bg(palette.subtle),
                         )
                         .into_any_element(),
-                    Row::Assistant(text) => self
-                        .text(text.clone(), 15.0, palette.text)
-                        .line_height(px(25.0))
-                        .into_any_element(),
+                    Row::Assistant { key, view, .. } => {
+                        self.rich_answer(key, view).into_any_element()
+                    }
                     Row::Tool(block) => self.tool_card(index, block, cx),
                 });
         div()
@@ -1065,7 +1073,8 @@ impl Render for Shell {
                         "  row {}",
                         match row {
                             Row::User(text) => format!("user {:?}", short(text)),
-                            Row::Assistant(text) => format!("assistant {:?}", short(text)),
+                            Row::Assistant { source, .. } =>
+                                format!("assistant {:?}", short(source)),
                             Row::Tool(block) => format!(
                                 "tool {} {}",
                                 block.name,
@@ -1120,6 +1129,7 @@ fn present_rows(
     history: &[Value],
     blocks: &[MessageBlock],
     projection: Option<&RunProjection>,
+    previous: &[Row],
 ) -> (Vec<Row>, &'static str) {
     let ordered = order.update(scope, history, blocks);
     let conversation = transcript_view::present(
@@ -1130,13 +1140,39 @@ fn present_rows(
         projection.map(|run| &run.connection),
         Default::default(),
     );
+    let previous: HashMap<_, _> = previous
+        .iter()
+        .filter_map(|row| match row {
+            Row::Assistant { key, source, view } => Some((key.as_str(), (source, view))),
+            _ => None,
+        })
+        .collect();
     let mut rows = Vec::new();
     for part in conversation.parts {
         match part {
             Part::Message {
                 role: "user", text, ..
             } => rows.push(Row::User(text)),
-            Part::Message { text, .. } => rows.push(Row::Assistant(text)),
+            Part::Message {
+                key,
+                reading_key,
+                text,
+                ..
+            } => {
+                let key = reading_key.unwrap_or(key);
+                let view = previous
+                    .get(key.as_str())
+                    .filter(|(source, _)| *source == &text)
+                    .map_or_else(
+                        || Rc::new(markdown::present(&text)),
+                        |(_, view)| Rc::clone(view),
+                    );
+                rows.push(Row::Assistant {
+                    key,
+                    source: text,
+                    view,
+                });
+            }
             Part::Activity { items, .. } => {
                 rows.extend(items.into_iter().filter_map(|item| match item {
                     ActivityItem::Tool { block, .. } => Some(Row::Tool(block)),
