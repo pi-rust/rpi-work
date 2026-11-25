@@ -14,8 +14,9 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, Context, Div, FocusHandle, FontWeight, Hsla, ScrollHandle, SharedString, Task,
-    Window, WindowControlArea, div, point, prelude::*, px, relative,
+    AnyElement, Context, CursorStyle, Div, FocusHandle, FontWeight, Hsla, MouseButton,
+    MouseMoveEvent, ScrollHandle, SharedString, Task, Window, WindowControlArea, div, point,
+    prelude::*, px, relative,
 };
 use serde_json::Value;
 use work_client::ClientError;
@@ -27,12 +28,19 @@ use work_viewmodel::session_controls::{SessionControls, SessionObservation, cont
 use work_viewmodel::session_receipts::{command_admission, interpret_receipt};
 use work_viewmodel::transcript::TranscriptOrder;
 
-use crate::data::{Node, SessionFrame, Snapshot};
+use crate::data::{Creation, Node, SessionFrame, Snapshot};
+use crate::icons::icon;
 use crate::prompt::Draft;
 use crate::theme::Palette;
 
 const READING_WIDTH: f32 = 768.0;
 const READING_INSET: f32 = 24.0;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Overlay {
+    Navigation,
+    Inspector,
+}
 
 enum Row {
     User(String),
@@ -59,7 +67,17 @@ pub struct Shell {
     dark: bool,
     navigation_open: bool,
     overview_open: bool,
+    inspector_full: bool,
+    inspector_width: Option<f32>,
+    resizing_inspector: bool,
+    overlay: Option<Overlay>,
+    session_history: Vec<(Option<usize>, Option<usize>)>,
+    history_position: usize,
     files: project_files::Panel,
+    creating_session: Option<Task<()>>,
+    creation_error: Option<(bool, String)>,
+    creation_readback: Option<(usize, String)>,
+    navigation_revision: u64,
     rows: Vec<Row>,
     project: Option<usize>,
     session: Option<usize>,
@@ -126,7 +144,17 @@ impl Shell {
             dark: false,
             navigation_open: true,
             overview_open: true,
+            inspector_full: false,
+            inspector_width: None,
+            resizing_inspector: false,
+            overlay: None,
+            session_history: vec![(project, session)],
+            history_position: 0,
             files: project_files::Panel::default(),
+            creating_session: None,
+            creation_error: None,
+            creation_readback: None,
+            navigation_revision: 0,
             rows,
             expanded: HashSet::new(),
             drafts: HashMap::new(),
@@ -136,8 +164,11 @@ impl Shell {
             order,
             traced: false,
         };
-        if !fixture && session.is_some() {
-            shell.change_session(session, cx);
+        if !fixture {
+            if session.is_some() {
+                shell.change_session(session, cx);
+            }
+            shell.show_project_tab(project_files::Tab::Changes, cx);
         }
         shell
     }
@@ -147,11 +178,7 @@ impl Shell {
     }
 
     fn select_project(&mut self, index: usize, cx: &mut Context<Self>) {
-        let changed = self.project != Some(index);
-        self.project = Some(index);
-        if changed {
-            self.reset_project_files(cx);
-        }
+        self.set_project(Some(index), cx);
         let session = self
             .snapshot
             .sessions
@@ -160,11 +187,115 @@ impl Shell {
             .filter(|(_, session)| session.project_id == self.snapshot.projects[index].id)
             .max_by_key(|(_, session)| session.updated_at)
             .map(|(index, _)| index);
-        self.change_session(session, cx);
+        self.navigate_session(session, cx);
+    }
+
+    fn set_project(&mut self, project: Option<usize>, cx: &mut Context<Self>) {
+        if self.project != project {
+            self.project = project;
+            self.navigation_revision += 1;
+            self.reset_project_files(cx);
+        }
     }
 
     fn select_session(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.change_session(Some(index), cx);
+        let project = self
+            .snapshot
+            .projects
+            .iter()
+            .position(|project| project.id == self.snapshot.sessions[index].project_id);
+        self.set_project(project, cx);
+        self.navigate_session(Some(index), cx);
+        if self.overlay == Some(Overlay::Navigation) {
+            self.overlay = None;
+        }
+    }
+
+    fn navigate_session(&mut self, session: Option<usize>, cx: &mut Context<Self>) {
+        let target = (self.project, session);
+        if self.session_history[self.history_position] != target {
+            self.session_history.truncate(self.history_position + 1);
+            self.session_history.push(target);
+            self.history_position += 1;
+        }
+        self.change_session(session, cx);
+    }
+
+    fn step_history(&mut self, forward: bool, cx: &mut Context<Self>) {
+        self.history_position = if forward {
+            (self.history_position + 1).min(self.session_history.len() - 1)
+        } else {
+            self.history_position.saturating_sub(1)
+        };
+        let (project, session) = self.session_history[self.history_position];
+        self.set_project(project, cx);
+        self.change_session(session, cx);
+    }
+
+    fn can_create_session(&self) -> bool {
+        self.node.is_some()
+            && self.project.is_some()
+            && self.creating_session.is_none()
+            && !self
+                .creation_error
+                .as_ref()
+                .is_some_and(|(unknown, _)| *unknown)
+    }
+
+    fn create_session(&mut self, cx: &mut Context<Self>) {
+        if !self.can_create_session() {
+            return;
+        }
+        let (Some(node), Some(project)) = (self.node.as_ref(), self.project) else {
+            return;
+        };
+        let retry = self.creation_readback.take();
+        let (project, id) = retry.map_or((project, None), |(project, id)| (project, Some(id)));
+        let work = node.create_session(self.snapshot.projects[project].id.clone(), id);
+        let revision = self.navigation_revision;
+        self.creation_error = None;
+        self.creating_session = Some(cx.spawn(async move |this, cx| {
+            let result = work.await;
+            let _ = this.update(cx, |shell, cx| {
+                shell.creating_session = None;
+                match result {
+                    Ok(Creation::Created(session)) => {
+                        let index = match shell
+                            .snapshot
+                            .sessions
+                            .iter()
+                            .position(|item| item.id == session.id)
+                        {
+                            Some(index) => {
+                                shell.snapshot.sessions[index] = session;
+                                index
+                            }
+                            None => {
+                                shell.snapshot.sessions.push(session);
+                                shell.snapshot.sessions.len() - 1
+                            }
+                        };
+                        if shell.project == Some(project) && shell.navigation_revision == revision {
+                            shell.select_session(index, cx);
+                        }
+                    }
+                    Ok(Creation::ReadFailed { id, error }) => {
+                        shell.creation_readback = Some((project, id));
+                        shell.creation_error =
+                            Some((false, format!("节点已创建会话，读取详情失败：{error}")));
+                    }
+                    Ok(Creation::WriteFailed(error)) if rejected(&error) => {
+                        shell.creation_error = Some((false, format!("新建对话失败：{error}")));
+                    }
+                    _ => {
+                        shell.creation_error =
+                            Some((true, "新建结果未知。重新连接后可查看节点会话列表。".into()));
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
     }
 
     fn change_session(&mut self, session: Option<usize>, cx: &mut Context<Self>) {
@@ -174,6 +305,7 @@ impl Shell {
             return;
         }
         if changed {
+            self.navigation_revision += 1;
             if let Some(draft) = self.drafts.get_mut(&self.session) {
                 draft.input.finish_composition();
             }
@@ -446,11 +578,34 @@ impl Shell {
             .rounded(px(6.0))
             .cursor_pointer()
             .hover(move |style| style.bg(palette.hover))
-            .child(self.text(label.to_owned(), 12.0, palette.muted))
+            .when(!label.is_empty(), |button| {
+                button.child(self.text(label.to_owned(), 12.0, palette.muted))
+            })
+    }
+
+    fn icon_button(
+        &self,
+        id: &'static str,
+        shape: &'static str,
+        width: f32,
+    ) -> gpui::Stateful<Div> {
+        self.button(id, "")
+            .w(px(width))
+            .child(icon(shape, 16.0, self.palette.muted))
     }
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
+        let mut sessions: HashMap<&str, Vec<(usize, &crate::data::SessionItem)>> = HashMap::new();
+        for (index, session) in self.snapshot.sessions.iter().enumerate() {
+            sessions
+                .entry(&session.project_id)
+                .or_default()
+                .push((index, session));
+        }
+        for group in sessions.values_mut() {
+            group.sort_by_key(|(_, session)| std::cmp::Reverse(session.updated_at));
+        }
         let projects = self
             .snapshot
             .projects
@@ -458,73 +613,45 @@ impl Shell {
             .enumerate()
             .map(|(index, project)| {
                 div()
-                    .id(("project", index))
                     .flex()
-                    .items_center()
-                    .gap_2()
-                    .h(px(31.0))
-                    .px(px(10.0))
-                    .rounded(px(9.0))
-                    .cursor_pointer()
-                    .when(self.project == Some(index), |row| row.bg(palette.hover))
-                    .hover(move |row| row.bg(palette.hover))
-                    .child(self.text("▱", 15.0, palette.muted))
+                    .flex_col()
+                    .mb_2()
                     .child(
-                        self.text(project.name.clone(), 14.0, palette.text)
-                            .truncate(),
+                        div()
+                            .id(("project", index))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .h(px(30.0))
+                            .px(px(10.0))
+                            .rounded(px(10.0))
+                            .cursor_pointer()
+                            .hover(move |row| row.bg(palette.hover))
+                            .child(icon("folder", 15.0, palette.muted))
+                            .child(
+                                self.text(project.name.clone(), 14.0, palette.text)
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .truncate(),
+                            )
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.select_project(index, cx)),
+                            ),
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| this.select_project(index, cx)))
+                    .children(
+                        sessions
+                            .get(project.id.as_str())
+                            .into_iter()
+                            .flatten()
+                            .map(|&(index, session)| self.session_row(index, session, cx)),
+                    )
             });
-        let mut sessions: Vec<_> = self
-            .snapshot
-            .sessions
-            .iter()
-            .enumerate()
-            .filter(|(_, session)| {
-                self.project
-                    .is_none_or(|index| self.snapshot.projects[index].id == session.project_id)
-            })
-            .collect();
-        sessions.sort_by_key(|(_, session)| std::cmp::Reverse(session.updated_at));
-        let sessions = sessions.into_iter().map(|(index, session)| {
-            let selected = self.session == Some(index);
-            let title = if session.title.is_empty() {
-                "未命名会话"
-            } else {
-                &session.title
-            };
-            div()
-                .id(("session", index))
-                .flex()
-                .items_center()
-                .h(px(31.0))
-                .px(px(10.0))
-                .rounded(px(9.0))
-                .cursor_pointer()
-                .when(selected, |row| {
-                    row.bg(palette.hover).font_weight(FontWeight::MEDIUM)
-                })
-                .hover(move |row| row.bg(palette.hover))
-                .child(
-                    self.text(
-                        title.to_owned(),
-                        14.0,
-                        if selected {
-                            palette.text
-                        } else {
-                            palette.muted
-                        },
-                    )
-                    .truncate(),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| this.select_session(index, cx)))
-        });
-
         div()
             .flex()
             .flex_col()
             .flex_none()
             .w(px(275.0))
+            .h_full()
+            .min_h(px(0.0))
             .px(px(9.0))
             .bg(palette.side)
             .border_r_1()
@@ -533,14 +660,53 @@ impl Shell {
                 div()
                     .flex()
                     .items_center()
-                    .h(px(52.0))
-                    .px(px(8.0))
+                    .justify_between()
+                    .h(px(46.0))
+                    .pl(px(7.0))
                     .flex_none()
                     .child(
                         self.text("RPI Work", 16.0, palette.text)
                             .font_weight(FontWeight::SEMIBOLD),
+                    )
+                    .child(
+                        self.icon_button("fold-navigation", "panel-left", 25.0)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.close_navigation(cx);
+                            })),
                     ),
             )
+            .when(self.node.is_some() && self.project.is_some(), |sidebar| {
+                let enabled = self.can_create_session();
+                let label = if self.creating_session.is_some() {
+                    "正在读取…"
+                } else if self.creation_readback.is_some() {
+                    "核对新会话"
+                } else {
+                    "新对话"
+                };
+                sidebar
+                    .child(
+                        self.button("new-session", "")
+                            .justify_start()
+                            .gap(px(8.0))
+                            .h(px(30.0))
+                            .child(icon("compose", 15.0, palette.text))
+                            .child(
+                                self.text(label, 14.0, palette.text)
+                                    .font_weight(FontWeight::MEDIUM),
+                            )
+                            .when(enabled, |button| {
+                                button.on_click(cx.listener(|shell, _, window, cx| {
+                                    shell.focus_composer(window);
+                                    shell.create_session(cx);
+                                }))
+                            })
+                            .when(!enabled, |button| button.opacity(0.6).cursor_default()),
+                    )
+                    .when_some(self.creation_error.as_ref(), |sidebar, (_, error)| {
+                        sidebar.child(self.text(error.clone(), 12.0, palette.danger).p_2())
+                    })
+            })
             .child(
                 div()
                     .id("navigation-scroll")
@@ -549,120 +715,309 @@ impl Shell {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
+                    .pt(px(16.0))
                     .child(
-                        self.text("项目", 12.0, palette.muted)
+                        self.text("最近", 12.0, palette.muted)
                             .px(px(10.0))
-                            .pb(px(7.0)),
+                            .pb(px(3.0)),
                     )
                     .children(projects)
-                    .child(
-                        self.text("最近会话", 12.0, palette.muted)
-                            .px(px(10.0))
-                            .pt(px(22.0))
-                            .pb(px(7.0)),
-                    )
-                    .children(sessions),
+                    .children(
+                        sessions
+                            .iter()
+                            .filter(|(id, _)| {
+                                !self
+                                    .snapshot
+                                    .projects
+                                    .iter()
+                                    .any(|project| project.id == **id)
+                            })
+                            .flat_map(|(_, group)| group.iter())
+                            .map(|&(index, session)| self.session_row(index, session, cx)),
+                    ),
             )
-            .child(
-                self.text(self.snapshot.mode.clone(), 11.0, palette.muted)
-                    .px(px(10.0))
-                    .py(px(12.0))
-                    .truncate(),
-            )
+            .when(self.node.is_none(), |sidebar| {
+                sidebar.child(
+                    self.text(self.snapshot.mode.clone(), 11.0, palette.muted)
+                        .px(px(10.0))
+                        .py(px(12.0)),
+                )
+            })
     }
 
-    fn rail(&self, overview_available: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn session_row(
+        &self,
+        index: usize,
+        session: &crate::data::SessionItem,
+        cx: &Context<Self>,
+    ) -> gpui::Stateful<Div> {
         let palette = self.palette;
+        let selected = self.session == Some(index);
+        let title = if session.title.is_empty() {
+            "未命名会话"
+        } else {
+            &session.title
+        };
+        div()
+            .id(("session", index))
+            .flex()
+            .items_center()
+            .h(px(30.0))
+            .pl(px(33.0))
+            .pr(px(10.0))
+            .rounded(px(10.0))
+            .cursor_pointer()
+            .hover(move |style| style.bg(palette.hover))
+            .when(selected, |row| {
+                row.bg(palette.hover).font_weight(FontWeight::MEDIUM)
+            })
+            .child(
+                self.text(
+                    title.to_owned(),
+                    14.0,
+                    if selected {
+                        palette.text
+                    } else {
+                        palette.muted
+                    },
+                )
+                .truncate(),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| this.select_session(index, cx)))
+    }
+
+    fn close_navigation(&mut self, cx: &mut Context<Self>) {
+        if self.overlay == Some(Overlay::Navigation) {
+            self.overlay = None;
+        } else {
+            self.navigation_open = false;
+        }
+        cx.notify();
+    }
+
+    fn toggle_navigation(&mut self, narrow: bool, cx: &mut Context<Self>) {
+        if narrow {
+            self.overlay =
+                (self.overlay != Some(Overlay::Navigation)).then_some(Overlay::Navigation);
+        } else {
+            self.navigation_open = !self.navigation_open;
+        }
+        cx.notify();
+    }
+
+    fn toggle_inspector(&mut self, tab: project_files::Tab, narrow: bool, cx: &mut Context<Self>) {
+        let same = self.files.tab == tab;
+        if narrow {
+            self.overlay =
+                (!(same && self.overlay == Some(Overlay::Inspector))).then_some(Overlay::Inspector);
+        } else {
+            self.overview_open = !same || !self.overview_open;
+        }
+        self.show_project_tab(tab, cx);
+        cx.notify();
+    }
+
+    fn rail(&self, inspector_overlay: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = self.palette;
+        let dock_button = |tab, id, shape, cx: &mut Context<Self>| {
+            self.icon_button(id, shape, 34.0)
+                .h(px(34.0))
+                .rounded(px(9.0))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.toggle_inspector(tab, inspector_overlay, cx)
+                }))
+        };
         div()
             .flex()
             .flex_col()
             .items_center()
             .flex_none()
             .w(px(52.0))
-            .py(px(10.0))
-            .gap_2()
-            .bg(palette.side)
-            .border_r_1()
-            .border_color(palette.line)
+            .py(px(8.0))
+            .gap(px(5.0))
+            .bg(palette.titlebar)
             .child(
-                self.button("rail-navigation", "›_")
+                self.icon_button("rail-conversation", "terminal", 34.0)
+                    .h(px(34.0))
                     .bg(palette.hover)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.navigation_open = !this.navigation_open;
-                        cx.notify();
-                    })),
+                    .on_click(cx.listener(|this, _, window, _| this.focus_composer(window))),
             )
-            .when(overview_available, |rail| {
-                rail.child(self.button("rail-project", "▱").on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.overview_open = !this.overview_open;
-                        cx.notify();
-                    },
-                )))
-            })
+            .child(
+                self.icon_button("rail-navigation", "folder", 34.0)
+                    .h(px(34.0))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_navigation(false, cx))),
+            )
+            .child(div().w(px(22.0)).h(px(1.0)).my(px(5.0)).bg(palette.line))
+            .child(dock_button(
+                project_files::Tab::Overview,
+                "rail-project",
+                "globe",
+                cx,
+            ))
+            .child(dock_button(
+                project_files::Tab::Files,
+                "rail-files",
+                "code-xml",
+                cx,
+            ))
             .child(div().flex_1())
             .child(
-                self.button("appearance", if self.dark { "浅色" } else { "深色" })
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_dark(cx))),
+                self.icon_button("appearance", "settings", 34.0)
+                    .h(px(34.0))
+                    .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
+                        if event.modifiers().shift {
+                            this.next_theme(cx);
+                        } else {
+                            this.toggle_dark(cx);
+                        }
+                    })),
             )
     }
 
-    fn header(&self, overview_available: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn header(&self, width: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
-        let preset = Palette::presets()
-            .into_iter()
-            .find(|(id, _)| id == &self.theme_id)
-            .map(|(_, name)| name)
-            .unwrap_or_default();
+        let compact = width <= 700.0;
+        let overlay = width <= 900.0;
         div()
+            .relative()
             .flex()
             .flex_none()
             .items_center()
-            .h(px(46.0))
+            .justify_between()
+            .h(px(if compact { 44.0 } else { 46.0 }))
             .bg(palette.titlebar)
-            .border_b_1()
-            .border_color(palette.line)
-            .pr(px(12.0))
-            .gap_2()
-            .when(cfg!(target_os = "macos"), |bar| bar.pl(px(78.0)))
-            .when(!cfg!(target_os = "macos"), |bar| bar.pl(px(12.0)))
-            .child(
-                self.button("navigation", "侧栏")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.navigation_open = !this.navigation_open;
-                        cx.notify();
-                    })),
-            )
+            .pr(px(if compact { 5.0 } else { 12.0 }))
+            .pl(px(if cfg!(target_os = "macos") {
+                75.0
+            } else {
+                12.0
+            }))
             .child(
                 div()
                     .flex()
                     .items_center()
+                    .gap(px(2.0))
+                    .children(
+                        [
+                            (
+                                false,
+                                "session-back",
+                                "history-back",
+                                self.history_position > 0,
+                            ),
+                            (
+                                true,
+                                "session-forward",
+                                "history-forward",
+                                self.history_position + 1 < self.session_history.len(),
+                            ),
+                        ]
+                        .into_iter()
+                        .filter(|_| !compact)
+                        .map(|(forward, id, shape, enabled)| {
+                            self.icon_button(id, shape, 24.0)
+                                .when(!enabled, |button| button.opacity(0.35).cursor_default())
+                                .when(enabled, |button| {
+                                    button.on_click(cx.listener(move |this, _, _, cx| {
+                                        this.step_history(forward, cx)
+                                    }))
+                                })
+                        }),
+                    )
+                    .child(self.icon_button("navigation", "panel-left", 28.0).on_click(
+                        cx.listener(move |this, _, _, cx| this.toggle_navigation(compact, cx)),
+                    )),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(if compact { 112.0 } else { width * 0.22 }))
+                    .right(px(if compact { 100.0 } else { width * 0.22 }))
+                    .top_0()
+                    .bottom_0()
+                    .flex()
+                    .items_center()
                     .justify_center()
-                    .flex_1()
-                    .h_full()
                     .min_w(px(0.0))
                     .window_control_area(WindowControlArea::Drag)
                     .child(
                         self.text(self.title().to_owned(), 14.0, palette.text)
-                            .font_weight(FontWeight::SEMIBOLD)
+                            .font_weight(FontWeight::MEDIUM)
                             .truncate(),
                     ),
             )
             .child(
-                self.button("theme", &preset)
-                    .on_click(cx.listener(|this, _, _, cx| this.next_theme(cx))),
+                div().flex().items_center().gap(px(4.0)).children(
+                    [
+                        (
+                            project_files::Tab::Overview,
+                            "header-overview",
+                            "globe",
+                            "项目概览",
+                        ),
+                        (
+                            project_files::Tab::Files,
+                            "header-files",
+                            "code-xml",
+                            "代码",
+                        ),
+                        (
+                            project_files::Tab::Changes,
+                            "header-changes",
+                            "file-diff",
+                            "变更",
+                        ),
+                    ]
+                    .into_iter()
+                    .map(|(tab, id, shape, label)| {
+                        let active = self.files.tab == tab
+                            && if overlay {
+                                self.overlay == Some(Overlay::Inspector)
+                            } else {
+                                self.overview_open
+                            };
+                        self.button(id, "")
+                            .gap(px(6.0))
+                            .child(icon(shape, 15.0, palette.muted))
+                            .when(!compact, |button| {
+                                button.child(self.text(label, 12.0, palette.muted))
+                            })
+                            .when(active, |button| button.bg(palette.subtle))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.toggle_inspector(tab, overlay, cx)
+                            }))
+                    }),
+                ),
             )
-            .when(overview_available, |header| {
-                header.child(self.button("overview", "项目概览").on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.overview_open = !this.overview_open;
-                        cx.notify();
-                    },
-                )))
-            })
     }
 
-    fn overview(&self, width: f32, cx: &mut Context<Self>) -> impl IntoElement {
+    fn inspector_divider(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .id("inspector-divider")
+            .absolute()
+            .left(px(-4.0))
+            .top_0()
+            .bottom_0()
+            .w(px(8.0))
+            .cursor(CursorStyle::ResizeLeftRight)
+            .flex()
+            .justify_center()
+            .hover(|style| style.bg(self.palette.line.opacity(0.5)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    if event.click_count == 2 {
+                        this.inspector_width = None;
+                        this.resizing_inspector = false;
+                        cx.notify();
+                    } else {
+                        this.resizing_inspector = true;
+                    }
+                }),
+            )
+    }
+
+    fn overview(&self, width: f32, overlay: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
         let project = self
             .project
@@ -679,6 +1034,7 @@ impl Shell {
             .flex_col()
             .flex_none()
             .w(px(width))
+            .h_full()
             .bg(palette.bg)
             .border_l_1()
             .border_color(palette.line)
@@ -688,16 +1044,35 @@ impl Shell {
                     .items_center()
                     .justify_between()
                     .h(px(46.0))
-                    .px(px(15.0))
+                    .px(px(8.0))
                     .border_b_1()
                     .border_color(palette.line)
                     .child(self.project_tabs(cx))
-                    .child(self.button("close-overview", "×").on_click(cx.listener(
-                        |this, _, _, cx| {
-                            this.overview_open = false;
-                            cx.notify();
-                        },
-                    ))),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(2.0))
+                            .when(!overlay, |row| {
+                                row.child(
+                                    self.icon_button("inspector-full", "panel-right", 26.0)
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.inspector_full = !this.inspector_full;
+                                            cx.notify();
+                                        })),
+                                )
+                            })
+                            .child(self.icon_button("close-overview", "x", 26.0).on_click(
+                                cx.listener(move |this, _, _, cx| {
+                                    if overlay {
+                                        this.overlay = None;
+                                    } else {
+                                        this.overview_open = false;
+                                    }
+                                    cx.notify();
+                                }),
+                            )),
+                    ),
             )
             .child(if self.files.is_overview() {
                 div()
@@ -736,8 +1111,14 @@ impl Shell {
             })
     }
 
-    fn transcript(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn transcript(
+        &self,
+        inset: f32,
+        reading_width: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let palette = self.palette;
+        let prompt_width = (reading_width * 0.9).min((reading_width * 0.77).max(320.0));
         let show_rows = self.session.is_some() && self.session == self.transcript_session;
         let empty_text = match (self.watcher.is_some() && self.frame.is_none(), self.session) {
             (true, _) => "正在读取会话…",
@@ -752,11 +1133,12 @@ impl Shell {
                 .map(|(index, row)| match row {
                     Row::User(text) => div()
                         .flex()
-                        .justify_end()
+                        .flex_col()
+                        .items_end()
                         .child(
-                            self.text(text.clone(), 15.0, palette.text)
-                                .line_height(px(24.0))
-                                .max_w(relative(0.86))
+                            self.text(text.clone(), 16.0, palette.text)
+                                .line_height(px(24.8))
+                                .max_w(px(prompt_width))
                                 .px(px(15.0))
                                 .py(px(10.0))
                                 .rounded(px(19.0))
@@ -774,15 +1156,15 @@ impl Shell {
             .min_h(px(0.0))
             .overflow_y_scroll()
             .track_scroll(&self.transcript_scroll)
-            .px(px(READING_INSET))
-            .py(px(24.0))
+            .px(px(inset))
+            .pt(px(28.0))
+            .pb(px(12.0))
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(22.0))
-                    .max_w(px(READING_WIDTH))
-                    .w_full()
+                    .w(px(reading_width))
                     .mx_auto()
                     .children(rows)
                     .when_some(self.load_error.as_ref(), |column, error| {
@@ -925,7 +1307,7 @@ impl Shell {
             .children(lines)
     }
 
-    fn composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn composer(&self, inset: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
         let draft = self.drafts.get(&self.session);
         let loaded_sample = self.node.is_none()
@@ -965,7 +1347,8 @@ impl Shell {
         div()
             .flex_none()
             .bg(palette.bg)
-            .px(px(READING_INSET))
+            .px(px(inset))
+            .pt(px(4.0))
             .pb(px(14.0))
             .child(
                 div()
@@ -1097,33 +1480,124 @@ impl Render for Shell {
             }
         }
         let width = f32::from(window.viewport_size().width);
-        let overview_available = width >= 1080.0;
-        let overview_width = (width * 0.38).min(547.0);
+        let compact = width <= 700.0;
+        let overlay = width <= 900.0;
+        let rail = if compact { 0.0 } else { 52.0 };
+        let navigation = if !compact && self.navigation_open {
+            275.0
+        } else {
+            0.0
+        };
+        let remaining = width - rail - navigation;
+        let dock_width = self
+            .inspector_width
+            .unwrap_or((width * 0.38).round())
+            .clamp(320.0, (remaining - 350.0).max(320.0));
+        let docked = self.overview_open && !overlay;
+        let full = docked && self.inspector_full;
+        let inset = if compact { 14.0 } else { READING_INSET };
+        let reading_width =
+            (remaining - if docked { dock_width } else { 0.0 } - inset * 2.0).min(READING_WIDTH);
+        let palette = self.palette;
         div()
             .flex()
             .flex_col()
             .size(relative(1.0))
-            .bg(self.palette.bg)
-            .child(self.header(overview_available, cx))
+            .bg(palette.bg)
+            .child(self.header(width, cx))
             .child(
                 div()
+                    .id("workbench-body")
+                    .relative()
                     .flex()
                     .flex_1()
                     .min_h(px(0.0))
-                    .child(self.rail(overview_available, cx))
-                    .when(self.navigation_open, |body| body.child(self.sidebar(cx)))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .child(self.transcript(cx))
-                            .child(self.composer(cx)),
+                    .when(!compact, |body| body.child(self.rail(overlay, cx)))
+                    .when(navigation > 0.0, |body| body.child(self.sidebar(cx)))
+                    .when(!full, |body| {
+                        body.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .child(self.transcript(inset, reading_width, cx))
+                                .child(self.composer(inset, cx)),
+                        )
+                    })
+                    .when(docked, |body| {
+                        body.child(
+                            div()
+                                .relative()
+                                .flex_none()
+                                .h_full()
+                                .child(self.overview(
+                                    if full { remaining } else { dock_width },
+                                    false,
+                                    cx,
+                                ))
+                                .when(!full, |dock| dock.child(self.inspector_divider(cx))),
+                        )
+                    })
+                    .when(
+                        (compact && self.overlay == Some(Overlay::Navigation))
+                            || (overlay && self.overlay == Some(Overlay::Inspector)),
+                        |body| {
+                            body.child(
+                                div()
+                                    .id("workbench-scrim")
+                                    .absolute()
+                                    .inset_0()
+                                    .bg(gpui::rgba(0x00000028))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.overlay = None;
+                                        cx.notify();
+                                    })),
+                            )
+                            .when(self.overlay == Some(Overlay::Navigation), |body| {
+                                body.child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .top_0()
+                                        .bottom_0()
+                                        .child(self.sidebar(cx)),
+                                )
+                            })
+                            .when(
+                                self.overlay == Some(Overlay::Inspector),
+                                |body| {
+                                    body.child(div().absolute().right_0().top_0().bottom_0().child(
+                                        self.overview(
+                                            if self.files.is_overview() {
+                                                (width - 20.0).min(560.0)
+                                            } else {
+                                                (width - 20.0)
+                                                    .min((width * 0.38).clamp(360.0, 560.0))
+                                            },
+                                            true,
+                                            cx,
+                                        ),
+                                    ))
+                                },
+                            )
+                        },
                     )
-                    .when(self.overview_open && overview_available, |body| {
-                        body.child(self.overview(overview_width, cx))
-                    }),
+                    .on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _, cx| {
+                        if this.resizing_inspector && event.dragging() {
+                            this.inspector_width =
+                                Some((width - f32::from(event.position.x)).round());
+                            cx.notify();
+                        }
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| this.resizing_inspector = false),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| this.resizing_inspector = false),
+                    ),
             )
     }
 }

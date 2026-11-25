@@ -4,6 +4,7 @@
 //! provides windowing, layout and input.
 
 mod data;
+mod icons;
 mod prompt;
 mod shell;
 mod theme;
@@ -38,28 +39,30 @@ fn main() {
         }
     };
 
-    Application::new().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1440.0), px(940.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(720.0), px(480.0))),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("RPI Work".into()),
-                    appears_transparent: cfg!(target_os = "macos"),
-                    traffic_light_position: Some(point(px(12.0), px(17.0))),
-                }),
-                ..Default::default()
-            },
-            |window, cx| {
-                let view = cx.new(|cx| Shell::new(snapshot, node, cx));
-                view.read(cx).focus_composer(window);
-                view
-            },
-        )
-        .expect("open window");
-        cx.activate(true);
-    });
+    Application::new()
+        .with_assets(icons::Icons)
+        .run(move |cx: &mut App| {
+            let bounds = Bounds::centered(None, size(px(1440.0), px(940.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(520.0), px(480.0))),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("RPI Work".into()),
+                        appears_transparent: cfg!(target_os = "macos"),
+                        traffic_light_position: Some(point(px(12.0), px(16.0))),
+                    }),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    let view = cx.new(|cx| Shell::new(snapshot, node, cx));
+                    view.read(cx).focus_composer(window);
+                    view
+                },
+            )
+            .expect("open window");
+            cx.activate(true);
+        });
 }
 
 enum Target {

@@ -293,9 +293,9 @@ impl Shell {
             } else {
                 palette.hover
             })
-            .child(self.text(
-                if stop { "■" } else { "↑" },
-                if stop { 11.0 } else { 15.0 },
+            .child(crate::icons::icon(
+                if stop { "square" } else { "arrow-up" },
+                15.0,
                 if can_send {
                     palette.bg
                 } else if can_abort {

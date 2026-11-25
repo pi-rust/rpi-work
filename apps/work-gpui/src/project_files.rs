@@ -8,9 +8,10 @@ use work_client::{ClientError, Diff, FileContent, FileListing, GitStatus, Worksp
 use work_viewmodel::{diff_view, file_view};
 
 use super::Shell;
+use crate::icons::icon;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum Tab {
+pub(super) enum Tab {
     #[default]
     Overview,
     Files,
@@ -104,12 +105,13 @@ impl Drop for Pending {
 
 #[derive(Default)]
 pub(super) struct Panel {
-    tab: Tab,
+    pub(super) tab: Tab,
     route: Option<Route>,
     history: Vec<Route>,
     sequence: u64,
     pending: Option<Pending>,
     result: Option<Result<Contents, String>>,
+    changes: Option<GitStatus>,
 }
 
 impl Panel {
@@ -121,6 +123,7 @@ impl Panel {
 impl Shell {
     pub(super) fn reset_project_files(&mut self, cx: &mut Context<Self>) {
         self.files.history.clear();
+        self.files.changes = None;
         self.read_project(self.files.tab.root(), cx);
     }
 
@@ -157,8 +160,29 @@ impl Shell {
             };
             let _ = this.update(cx, |shell, cx| {
                 if shell.files.sequence == sequence {
-                    shell.files.result = Some(result);
-                    cx.notify();
+                    if let Ok(Contents::Changes(status)) = result {
+                        let first = status.files.iter().find_map(|file| {
+                            if file.status == "??" {
+                                Some(Route::Source(file.path.clone()))
+                            } else if file.unstaged || file.staged {
+                                Some(Route::Diff {
+                                    path: file.path.clone(),
+                                    staged: !file.unstaged,
+                                })
+                            } else {
+                                None
+                            }
+                        });
+                        shell.files.changes = Some(status);
+                        if first.is_some() {
+                            shell.read_project(first, cx);
+                        } else {
+                            cx.notify();
+                        }
+                    } else {
+                        shell.files.result = Some(result);
+                        cx.notify();
+                    }
                 }
             });
         });
@@ -168,18 +192,28 @@ impl Shell {
         });
     }
 
+    pub(super) fn show_project_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
+        if self.files.tab != tab {
+            self.files.tab = tab;
+            self.reset_project_files(cx);
+        }
+    }
+
     pub(super) fn project_tabs(&self, cx: &mut Context<Self>) -> Div {
         div().flex().items_center().gap_1().children(
             [
-                (Tab::Overview, "project-overview", "项目概览"),
-                (Tab::Files, "project-files", "文件"),
-                (Tab::Changes, "project-changes", "变更"),
+                (Tab::Overview, "project-overview", "globe", "项目概览"),
+                (Tab::Files, "project-files", "code-xml", "文件"),
+                (Tab::Changes, "project-changes", "file-diff", "变更"),
             ]
             .into_iter()
-            .map(|(tab, id, label)| {
-                self.button(id, label)
+            .map(|(tab, id, shape, label)| {
+                self.button(id, "")
+                    .gap(px(6.0))
+                    .child(crate::icons::icon(shape, 15.0, self.palette.muted))
+                    .child(self.text(label, 12.0, self.palette.muted))
                     .when(self.files.tab == tab, |button| {
-                        button.bg(self.palette.hover)
+                        button.bg(self.palette.subtle)
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.files.tab != tab {
@@ -192,6 +226,9 @@ impl Shell {
     }
 
     pub(super) fn project_contents(&self, cx: &mut Context<Self>) -> AnyElement {
+        if self.files.tab == Tab::Changes {
+            return self.review_panel(cx);
+        }
         let Some(route) = self.files.route.as_ref() else {
             return div().into_any_element();
         };
@@ -233,12 +270,9 @@ impl Shell {
             Some(Ok(Contents::Directory(listing))) => {
                 self.directory(listing, cx).into_any_element()
             }
-            Some(Ok(Contents::Changes(status))) => self.changes(status, cx),
-            Some(Ok(Contents::Source(file))) => self.file_preview(&file.path, &file.content, None),
-            Some(Ok(Contents::Diff(diff))) => {
-                let staged = matches!(route, Route::Diff { staged: true, .. });
-                self.file_preview(&diff.path, &diff.patch, Some(staged))
-            }
+            Some(Ok(Contents::Changes(_))) => unreachable!("Git status is stored separately"),
+            Some(Ok(Contents::Source(file))) => self.file_preview(&file.path, &file.content),
+            Some(Ok(Contents::Diff(_))) => unreachable!("diffs belong to the review tab"),
         };
         div()
             .flex()
@@ -322,102 +356,297 @@ impl Shell {
             )
     }
 
-    fn changes(&self, status: &GitStatus, cx: &mut Context<Self>) -> AnyElement {
+    fn review_panel(&self, cx: &Context<Self>) -> AnyElement {
+        let palette = self.palette;
+        let Some(status) = self.files.changes.as_ref() else {
+            let message = match self.files.result.as_ref() {
+                Some(Err(error)) => self.project_note(error, true),
+                _ => self.project_note("正在读取工作树…", false),
+            };
+            return div()
+                .child(message)
+                .when(
+                    self.files.result.is_some() && self.node.is_some(),
+                    |panel| {
+                        panel.child(
+                            self.button("review-retry", "重新读取")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.reset_project_files(cx);
+                                })),
+                        )
+                    },
+                )
+                .into_any_element();
+        };
         if !status.is_repository {
             return self.project_note("该项目没有 Git 工作树。", false);
         }
-        if status.files.is_empty() {
-            return self.project_note("工作树没有改动。", false);
-        }
-        div()
+        let summary = div()
             .flex()
-            .flex_col()
-            .p_2()
-            .children(status.files.iter().enumerate().map(|(index, file)| {
-                let path = file.path.clone();
-                let untracked = file.status == "??";
+            .items_center()
+            .justify_between()
+            .gap(px(8.0))
+            .h(px(39.0))
+            .border_b_1()
+            .border_color(palette.line)
+            .child(
                 div()
-                    .id(("change", index))
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .px_2()
-                    .py_1()
-                    .child(self.text(file.status.clone(), 12.0, self.palette.muted))
+                    .gap(px(6.0))
+                    .min_w(px(0.0))
+                    .child(icon("git-branch", 13.0, palette.muted))
                     .child(
-                        self.text(path, 13.0, self.palette.text)
+                        self.text(
+                            status
+                                .branch
+                                .clone()
+                                .unwrap_or_else(|| "分离的 HEAD".into()),
+                            11.0,
+                            palette.muted,
+                        )
+                        .font_family("Menlo")
+                        .truncate(),
+                    ),
+            )
+            .child(
+                self.text(
+                    format!("{} 个文件已修改", status.files.len()),
+                    11.0,
+                    palette.muted,
+                )
+                .flex_none(),
+            );
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .mt(px(8.0))
+            .mb(px(4.0))
+            .child(self.text("变更文件", 12.0, palette.text))
+            .child(
+                self.button("refresh-changes", "刷新")
+                    .h(px(24.0))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.reset_project_files(cx);
+                    })),
+            );
+        let files = status.files.iter().enumerate().filter_map(|(index, file)| {
+            let unstaged = file.unstaged;
+            let staged = file.staged;
+            let path = file.path.clone();
+            let target = if file.status == "??" {
+                Route::Source(path.clone())
+            } else if staged || unstaged {
+                Route::Diff { path: path.clone(), staged: !unstaged }
+            } else { return None };
+            let selected = matches!(self.files.route.as_ref(), Some(Route::Diff { path: active, .. } | Route::Source(active)) if active == &path);
+            Some(div().id(("change", index)).flex().items_center().gap(px(7.0)).h(px(34.0)).px(px(7.0))
+                .rounded(px(7.0)).cursor_pointer().hover(|style| style.bg(palette.hover))
+                .when(selected, |row| row.bg(palette.subtle))
+                .child(icon("file-diff", 14.0, palette.muted))
+                .child(self.text(path, 12.0, palette.text).font_family("Menlo").flex_1().min_w(px(0.0)).truncate())
+                .child(self.text(file.status.clone(), 11.0, palette.muted).flex_none())
+                .on_click(cx.listener(move |this, _, _, cx| this.read_project(Some(target.clone()), cx))))
+        });
+        let preview = match (&self.files.route, &self.files.result) {
+            (Some(Route::Diff { path, staged }), result) => {
+                let file = status.files.iter().find(|file| &file.path == path);
+                let patch = match result {
+                    Some(Ok(Contents::Diff(diff))) => Some(diff.patch.as_str()),
+                    _ => None,
+                };
+                let caption = div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .h(px(38.0))
+                    .px(px(9.0))
+                    .bg(palette.subtle)
+                    .child(
+                        self.text(path.clone(), 12.0, palette.text)
+                            .font_family("Menlo")
                             .flex_1()
                             .min_w(px(0.0))
                             .truncate(),
                     )
                     .children(
                         [
-                            (true, file.staged, "staged", "已暂存"),
-                            (false, file.unstaged, "unstaged", "未暂存"),
+                            ("staged-preview", true, "已暂存"),
+                            ("unstaged-preview", false, "未暂存"),
                         ]
                         .into_iter()
-                        .filter(|&(_, present, _, _)| present && !untracked)
-                        .map(|(staged, _, id, label)| {
-                            let target = Route::Diff {
-                                path: file.path.clone(),
-                                staged,
-                            };
+                        .filter(|&(_, scope, _)| {
+                            file.is_some_and(|file| if scope { file.staged } else { file.unstaged })
+                        })
+                        .map(|(id, scope, label)| {
+                            let path = path.clone();
                             self.button(id, label)
+                                .h(px(23.0))
+                                .px(px(5.0))
+                                .when(*staged == scope, |button| {
+                                    button.bg(palette.bg).border_1().border_color(palette.line)
+                                })
                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.open_project_path(target.clone(), cx)
+                                    this.read_project(
+                                        Some(Route::Diff {
+                                            path: path.clone(),
+                                            staged: scope,
+                                        }),
+                                        cx,
+                                    );
                                 }))
                         }),
                     )
-                    .when(untracked, |row| {
-                        let path = file.path.clone();
-                        row.child(
-                            self.button("untracked-source", "源码")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.open_project_path(Route::Source(path.clone()), cx);
-                                })),
+                    .when_some(patch, |bar, patch| {
+                        let copy = SharedString::from(patch.to_owned());
+                        bar.child(
+                            self.icon_button("copy-patch", "copy", 23.0)
+                                .h(px(23.0))
+                                .on_click(move |_, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        copy.to_string(),
+                                    ))
+                                }),
                         )
+                    });
+                div()
+                    .mt(px(15.0))
+                    .rounded(px(7.0))
+                    .border_1()
+                    .border_color(palette.line)
+                    .overflow_hidden()
+                    .child(caption)
+                    .child(match result {
+                        Some(Err(error)) => self.project_note(error, true),
+                        Some(Ok(Contents::Diff(diff))) => self.diff_preview(diff),
+                        _ => self.project_note("正在读取差异…", false),
                     })
-            }))
+                    .into_any_element()
+            }
+            (Some(Route::Source(_)), Some(Ok(Contents::Source(file)))) => div()
+                .mt(px(15.0))
+                .border_1()
+                .border_color(palette.line)
+                .rounded(px(7.0))
+                .overflow_hidden()
+                .child(self.file_preview(&file.path, &file.content))
+                .into_any_element(),
+            (_, Some(Err(error))) => self.project_note(error, true),
+            (Some(Route::Source(_)), None) => self.project_note("正在读取源码…", false),
+            _ => div().into_any_element(),
+        };
+        div()
+            .id("project-review")
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .px(px(15.0))
+                    .pt(px(8.0))
+                    .pb(px(24.0))
+                    .child(summary)
+                    .child(header)
+                    .when(status.files.is_empty(), |body| {
+                        body.child(self.project_note("工作树没有改动。", false))
+                    })
+                    .children(files)
+                    .child(preview),
+            )
             .into_any_element()
     }
 
-    fn file_preview(&self, path: &str, source: &str, staged: Option<bool>) -> AnyElement {
+    fn diff_preview(&self, diff: &Diff) -> AnyElement {
+        if diff.patch.is_empty() {
+            return self.project_note("此范围没有文本差异。", false);
+        }
+        let palette = self.palette;
+        let view = diff_view::present(&diff.patch, &diff.path);
+        let gutter = (view.gutter_digits as f32 * 7.0 + 8.0).max(23.0);
+        let rows = view.rows.iter().filter_map(|row| {
+            let first = row.line.tokens.first().map_or("", |token| token.text);
+            if view.structured && row.line.kind == "meta" && !first.starts_with("@@") {
+                return None;
+            }
+            let body = row
+                .line
+                .tokens
+                .iter()
+                .map(|token| token.text)
+                .collect::<String>();
+            if view.structured && first.starts_with("@@") {
+                return Some(
+                    div()
+                        .px(px(7.0))
+                        .line_height(px(24.0))
+                        .text_color(palette.muted)
+                        .bg(palette.subtle)
+                        .child(body),
+                );
+            }
+            let (background, color) = match row.line.kind {
+                "add" => (palette.diff_add_bg, palette.success),
+                "remove" => (palette.diff_remove_bg, palette.danger),
+                _ => (palette.bg, palette.text),
+            };
+            Some(
+                div()
+                    .flex()
+                    .min_h(px(22.5))
+                    .line_height(px(22.5))
+                    .bg(background)
+                    .text_color(color)
+                    .when(view.structured, |line| {
+                        line.children([row.old_number, row.new_number].map(|number| {
+                            div()
+                                .flex()
+                                .justify_end()
+                                .flex_none()
+                                .w(px(gutter))
+                                .pr(px(5.0))
+                                .text_size(px(10.0))
+                                .text_color(palette.muted)
+                                .child(number.map(|number| number.to_string()).unwrap_or_default())
+                        }))
+                    })
+                    .child(div().flex_none().pl(px(2.0)).pr(px(7.0)).child(body)),
+            )
+        });
+        div()
+            .id("diff-scroll")
+            .overflow_scroll()
+            .max_h(px(460.0))
+            .border_t_1()
+            .border_color(palette.line)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .w_full()
+                    .font_family("Menlo")
+                    .text_size(px(11.0))
+                    .whitespace_nowrap()
+                    .children(rows),
+            )
+            .into_any_element()
+    }
+
+    fn file_preview(&self, path: &str, source: &str) -> AnyElement {
         let copy = SharedString::from(source.to_owned());
-        let label = match staged {
-            Some(true) => "已暂存差异",
-            Some(false) => "未暂存差异",
-            None => "源码",
-        };
-        let mut body = div()
+        let lines = file_view::present(source, path, false);
+        let width = lines.len().to_string().len();
+        let body = div()
             .flex()
             .flex_col()
             .font_family("Menlo")
             .text_size(px(12.0))
-            .line_height(px(20.0))
+            .line_height(px(22.8))
             .whitespace_nowrap()
-            .text_color(self.palette.text);
-        if let Some(_staged) = staged {
-            let diff = diff_view::present(source, path);
-            body = body.children(diff.rows.iter().map(|row| {
-                self.file_line(
-                    &row.line,
-                    diff.structured.then(|| {
-                        format!(
-                            "{:>width$} {:>width$}",
-                            row.old_number.map(|n| n.to_string()).unwrap_or_default(),
-                            row.new_number.map(|n| n.to_string()).unwrap_or_default(),
-                            width = diff.gutter_digits,
-                        )
-                    }),
-                )
-            }));
-        } else {
-            let lines = file_view::present(source, path, false);
-            let width = lines.len().to_string().len();
-            body = body.children(lines.iter().map(|line| {
+            .text_color(self.palette.text)
+            .children(lines.iter().map(|line| {
                 self.file_line(line, line.number.map(|number| format!("{number:>width$}")))
             }));
-        }
         div()
             .child(
                 div()
@@ -427,7 +656,7 @@ impl Shell {
                     .px_3()
                     .py_1()
                     .bg(self.palette.subtle)
-                    .child(self.text(label, 12.0, self.palette.muted))
+                    .child(self.text("源码", 12.0, self.palette.muted))
                     .child(
                         self.button("copy-project-text", "复制")
                             .on_click(move |_, _, cx| {
@@ -449,12 +678,7 @@ impl Shell {
         for token in &line.tokens {
             let start = text.len();
             text.push_str(token.text);
-            let color = match line.kind {
-                "add" => self.palette.success,
-                "remove" => self.palette.danger,
-                "meta" => self.palette.muted,
-                _ => self.palette.code_token(token.class),
-            };
+            let color = self.palette.code_token(token.class);
             if text.len() > start {
                 highlights.push((
                     start..text.len(),

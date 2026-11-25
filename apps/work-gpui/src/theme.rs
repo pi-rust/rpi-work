@@ -19,6 +19,8 @@ pub struct Palette {
     pub line: Hsla,
     pub success: Hsla,
     pub danger: Hsla,
+    pub diff_add_bg: Hsla,
+    pub diff_remove_bg: Hsla,
     /// Code token colors, mapped from the same token contract.
     pub keyword: Hsla,
     pub string: Hsla,
@@ -43,19 +45,28 @@ impl Palette {
                 .and_then(|value| parse_hex(value))
                 .unwrap_or_else(|| rgb(fallback).into())
         };
+        let chrome = |key, light, dark_value| {
+            if id == "codex" {
+                rgb(if dark { dark_value } else { light }).into()
+            } else {
+                color(key, light)
+            }
+        };
         let accent = color("accent", 0x202020);
         Self {
             bg: color("bg", 0xffffff),
-            side: color("side", 0xf7f7f7),
-            titlebar: color("accent-bg", 0xeeeeee),
-            subtle: color("code", 0xf4f4f4),
+            side: chrome("side", 0xfafafa, 0x1b1b1b),
+            titlebar: chrome("accent-bg", 0xf0f0f0, 0x191919),
+            subtle: chrome("code", 0xf2f2f2, 0x2c2c2c),
             hover: color("selected-bg", 0xeaeaea),
             strong_line: color("line-strong", 0xd8d8d8),
             text: color("text", 0x202020),
             muted: color("muted", 0x6b6b6b),
-            line: color("line", 0xe5e5e5),
+            line: chrome("line", 0xe3e3e3, 0x373737),
             success: color("success", 0x2d694d),
             danger: color("danger", 0xa03c35),
+            diff_add_bg: chrome("diff-add-bg", 0xedf8ef, 0x263c2d),
+            diff_remove_bg: chrome("diff-del-bg", 0xfff0f0, 0x412c2c),
             keyword: accent,
             string: color("success", 0x2d694d),
             comment: color("muted", 0x6b6b6b),

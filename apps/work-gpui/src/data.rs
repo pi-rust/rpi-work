@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinHandle};
 use work_client::{ClientError, SessionAccess, SessionConnection, WorkspaceClient};
 use work_core::api::realtime::{OperationRef, OperationStatus};
-use work_core::api::{HostResponse, PendingDialog};
+use work_core::api::{HostResponse, PendingDialog, SessionSummary};
 use work_core::{ApplyResult, MessageBlock, RunProjection, ToolStatus};
 use work_viewmodel::observability::metrics::{Context, Metrics};
 
@@ -19,6 +19,23 @@ pub struct SessionItem {
     pub project_id: String,
     pub title: String,
     pub updated_at: u64,
+}
+
+impl From<SessionSummary> for SessionItem {
+    fn from(session: SessionSummary) -> Self {
+        Self {
+            id: session.session_id,
+            project_id: session.project_id.unwrap_or_default(),
+            title: session.title.unwrap_or_default(),
+            updated_at: session.updated_at,
+        }
+    }
+}
+
+pub enum Creation {
+    Created(SessionItem),
+    WriteFailed(ClientError),
+    ReadFailed { id: String, error: ClientError },
 }
 
 /// Initial project and session list. Sample conversations are supplied only in sample mode.
@@ -168,15 +185,7 @@ impl Node {
                         name: project.name,
                     })
                     .collect(),
-                sessions: sessions
-                    .into_iter()
-                    .map(|session| SessionItem {
-                        id: session.session_id,
-                        project_id: session.project_id.unwrap_or_default(),
-                        title: session.title.unwrap_or_default(),
-                        updated_at: session.updated_at,
-                    })
-                    .collect(),
+                sessions: sessions.into_iter().map(SessionItem::from).collect(),
                 history: Vec::new(),
                 blocks: Vec::new(),
                 metrics: Metrics::default(),
@@ -201,6 +210,46 @@ impl Node {
             }
         });
         (rx, task.abort_handle())
+    }
+
+    pub fn create_session(
+        &self,
+        project_id: String,
+        known_id: Option<String>,
+    ) -> JoinHandle<Creation> {
+        use work_viewmodel::config_requests::bounded;
+
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            let id = match known_id {
+                Some(id) => id,
+                None => match bounded("新建对话", client.create_session(Some(&project_id))).await
+                {
+                    Ok(id) if !id.trim().is_empty() => id,
+                    Ok(_) => {
+                        return Creation::WriteFailed(ClientError::Protocol(
+                            "节点未返回会话标识".into(),
+                        ));
+                    }
+                    Err(error) => return Creation::WriteFailed(error),
+                },
+            };
+            let summary = bounded("核对新会话", client.get_session(&id))
+                .await
+                .and_then(|summary| {
+                    if summary.session_id == id
+                        && summary.project_id.as_deref() == Some(project_id.as_str())
+                    {
+                        Ok(summary)
+                    } else {
+                        Err(ClientError::Protocol("新会话身份与请求不一致".into()))
+                    }
+                });
+            match summary {
+                Ok(summary) => Creation::Created(summary.into()),
+                Err(error) => Creation::ReadFailed { id, error },
+            }
+        })
     }
 
     pub fn read_project(

@@ -20,8 +20,8 @@ impl Shell {
             .id(SharedString::from(key.to_owned()))
             .min_w(px(0.0))
             .text_color(self.palette.text)
-            .text_size(px(15.0))
-            .line_height(px(25.0))
+            .text_size(px(16.0))
+            .line_height(px(26.4))
             .child(render.blocks(&view.nodes, 16.0))
             .when(view.plain, |answer| {
                 answer.child(self.text("内容较复杂，已按原文显示。", 12.0, self.palette.muted))
@@ -199,27 +199,40 @@ impl Markdown {
     }
 
     fn code(&self, code: &str, language: &str, tokens: &[CodeToken]) -> impl IntoElement {
+        let copy = SharedString::from(code.to_owned());
+        let display = code.strip_suffix('\n').unwrap_or(code);
+        let lines = if code.is_empty() {
+            0
+        } else {
+            display.split('\n').count()
+        };
+        let numbers = (lines > 0 && lines <= 10_000).then(|| {
+            (1..=lines)
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
         let mut offset = 0;
         let highlights: Vec<_> = tokens
             .iter()
-            .map(|token| {
+            .filter_map(|token| {
                 let start = offset;
                 offset += token.text.len();
-                (
-                    start..offset,
+                let end = offset.min(display.len());
+                (start < end).then_some((
+                    start..end,
                     HighlightStyle {
                         color: Some(self.palette.code_token(token.class)),
                         ..Default::default()
                     },
-                )
+                ))
             })
             .collect();
-        let code = SharedString::from(code.to_owned());
-        let copy = code.clone();
+        let display = SharedString::from(display.to_owned());
         div()
             .min_w(px(0.0))
             .overflow_hidden()
-            .rounded(px(9.0))
+            .rounded(px(10.0))
             .border_1()
             .border_color(self.palette.line)
             .bg(self.palette.subtle)
@@ -228,7 +241,7 @@ impl Markdown {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .h(px(37.0))
+                    .h(px(39.0))
                     .px(px(10.0))
                     .border_b_1()
                     .border_color(self.palette.line)
@@ -246,6 +259,7 @@ impl Markdown {
                             .on_click(move |_, _, cx| {
                                 cx.write_to_clipboard(ClipboardItem::new_string(copy.to_string()))
                             })
+                            .text_size(px(12.0))
                             .child("复制代码"),
                     ),
             )
@@ -254,12 +268,32 @@ impl Markdown {
                     .id("code-scroll")
                     .overflow_scroll()
                     .max_h(px(560.0))
-                    .p_3()
+                    .px(px(15.0))
+                    .py(px(12.0))
                     .font_family("Menlo")
                     .text_size(px(13.0))
-                    .line_height(px(23.0))
+                    .line_height(px(23.4))
                     .whitespace_nowrap()
-                    .child(StyledText::new(code).with_highlights(highlights)),
+                    .child(
+                        div()
+                            .flex()
+                            .when_some(numbers, |row, numbers| {
+                                row.child(
+                                    div()
+                                        .flex_none()
+                                        .pr(px(12.0))
+                                        .min_w(px(23.0))
+                                        .text_size(px(11.0))
+                                        .text_color(self.palette.muted)
+                                        .child(StyledText::new(numbers)),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .child(StyledText::new(display).with_highlights(highlights)),
+                            ),
+                    ),
             )
     }
 
