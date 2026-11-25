@@ -515,7 +515,7 @@ export default function App() {
                   {railTab === 'files' ? (
                     <FilePanel
                       key={`${workspace.connectionId}:${workspace.selected.project}:${workspace.selected.session}`}
-                      live={live}
+                      live={live && Boolean(workspace.selected.project)}
                       presentationReady={workspace.presentationReady}
                       changes={workspace.changes}
                       fileRead={workspace.fileRead}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useTree } from '@headless-tree/react'
 import {
@@ -15,6 +15,8 @@ import type { FileRead } from '@/lib/workspace'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { NodeChangedFile, NodeFileEntry } from '@/lib/node'
+
+type DirectoryRead = { status: 'loading' } | { status: 'ready'; empty: boolean } | { status: 'error'; error: string }
 
 type Props = {
   live: boolean
@@ -47,6 +49,13 @@ function ReadyFilePanel({
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
   // Node directory entries are cached by path; headless-tree asks lazily.
   const entries = useRef(new Map<string, NodeFileEntry>())
+  const [directoryReads, setDirectoryReads] = useState<Record<string, DirectoryRead>>({})
+  const requests = useRef(new Map<string, symbol>())
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   // A file that is also changed should open its diff, not its saved source.
   const changed = new Set(changes.map((change) => change.path))
   const openPath = (path: string) => changed.has(path) ? onOpen(path, staged) : onOpenSource(path)
@@ -64,13 +73,31 @@ function ReadyFilePanel({
           size: 0,
         },
       getChildren: async (itemId) => {
-        const children = await listDir(itemId)
-        for (const entry of children) entries.current.set(entry.path, entry)
-        return children.map((entry) => entry.path)
+        const request = Symbol(itemId)
+        requests.current.set(itemId, request)
+        const current = () => mounted.current && requests.current.get(itemId) === request
+        setDirectoryReads(reads => ({ ...reads, [itemId]: { status: 'loading' } }))
+        try {
+          const children = await listDir(itemId)
+          if (!current()) return []
+          for (const entry of children) entries.current.set(entry.path, entry)
+          setDirectoryReads(reads => ({ ...reads, [itemId]: { status: 'ready', empty: children.length === 0 } }))
+          return children.map((entry) => entry.path)
+        } catch (cause) {
+          if (current()) setDirectoryReads(reads => ({ ...reads, [itemId]: { status: 'error', error: String(cause) } }))
+          // Headless-tree caches this result; the explicit error remains distinct
+          // from a successful empty listing. Only an explicit retry invalidates it.
+          return []
+        }
       },
     },
     features: [asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
   })
+  const items = tree.getItems()
+  const visible = new Set(items.map(item => item.getId()))
+  const notices = Object.entries(directoryReads).filter(([path, read]) =>
+    (path === '' || (visible.has(path) && tree.getItemInstance(path).isExpanded())) &&
+    (read.status !== 'ready' || read.empty))
 
   return (
     <div className="wb-file-panel flex min-h-0 flex-1 flex-col">
@@ -115,8 +142,18 @@ function ReadyFilePanel({
       </div>
       <div className="max-h-48 shrink-0 overflow-y-auto px-2 py-1">
         {tab === 'tree' ? (
+          <>
+          {notices.map(([path, read]) => {
+            const label = path ? `目录 ${path}` : '项目根目录'
+            return <div key={path} role="group" aria-label={label} className="wb-directory-notice">
+              {read.status === 'error' ? <>
+                <p role="alert">{label}读取失败：{read.error}</p>
+                <Button variant="outline" size="sm" onClick={() => void tree.getItemInstance(path).invalidateChildrenIds()}>重试读取{label}</Button>
+              </> : <p role="status">{read.status === 'loading' ? `正在读取${label}…` : `${label}${path ? ' ' : ''}为空。`}</p>}
+            </div>
+          })}
           <Tree tree={tree} className="py-1 text-[11px]">
-            {tree.getItems().map((item) => (
+            {items.map((item) => (
               <TreeItem
                 key={item.getId()}
                 item={item}
@@ -139,6 +176,7 @@ function ReadyFilePanel({
               </TreeItem>
             ))}
           </Tree>
+          </>
         ) : changes.length === 0 ? (
           <p className="text-muted-foreground px-1 py-2 text-[11px]">没有未提交的改动。</p>
         ) : (

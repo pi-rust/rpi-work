@@ -23,7 +23,7 @@
 | 阅读列与消息层次 | 第六/七/九批已迁入阅读/经典、完成折叠、阅读锚点及共享Rust富内容/复制；扩展消息细节仍待核对 | 流式、失败、历史恢复、滚动锚点、草稿/选区保留 |
 | Composer、模型、思考、队列与审批 | 第五批已接通并本地验收：canonical绑定、共享Rust准入、ACK/结算分离、真实选项单次回复及typed回执只读恢复；整体UI迁移仍未完成 | IME、accepted 未确认、迟到回调、能力变化、附件边界 |
 | 右侧浏览器 | 首批施工：真实 HTTP(S) 页面、多标签、地址与历史、刷新、视口 | 隔离的真实 HTTP 页面；拒绝危险协议/凭据；不传节点密钥；隐藏不重载 |
-| 源码、目录与 diff | 第十批已迁入只读源码/原始Diff与明确读取状态；复用NodeConnection和共享Rust行展示；结构化hunk/反馈、能力允许的写入仍待核对 | ticket/revision、固定行号/局部横滚、主题对比度、不得将原型写入演示冒充真实能力 |
+| 源码、目录与 diff | 第十批已迁入只读源码/原始Diff与明确读取状态；第十一批补齐目录加载/成功空态/局部失败及同GET重试；复用NodeConnection和共享Rust行展示；结构化hunk/反馈、能力允许的写入仍待核对 | ticket/revision、固定行号/局部横滚、主题对比度、不得将原型写入演示冒充真实能力 |
 | 居中设置与本地偏好 | 第八批已接通真实居中设置窗口及既有外观偏好；未支持能力不搬演示状态 | 搜索、焦点恢复、原型布局；本地偏好与执行配置分离 |
 | 工作协同与多节点 | 原型里的发现/开关/授权为 fixture，不得照搬为真实成功 | 真实节点授权、独立入口、过期/撤销与权限隔离；不支持时明确禁用 |
 | 项目添加与本机 rpi 设置 | typed 项目登记/会话创建已接通；目录/程序选择、安装仍需平台桥，原型下载是假流程 | 能力明确、真实校验；浏览器不能假装发现绝对路径或执行安装 |
@@ -127,3 +127,11 @@
 - 验收中hosted旧测试曾在侧栏选中后立即检查snapshot请求，尚未发出时误失败。原精确会话ID断言保留，新增同ID成功snapshot响应完成的确定性等待（兼容已收到响应），既不放宽ID也不改SDK/owner或增加sleep。此修复不是“侧栏选中/ACK即canonical载入”的产品假设。
 - 最终产品/fixture双构建、17套完整浏览器全绿（files11、rich9、reading12、settings14、scopes6等保留），共享Rust161→165（文件展示4项）及WASM绑定7项通过，三crate WASM严格Clippy、fmt/diff/CI YAML通过；lint67警告/0错误，比原69少2项源于移除旧面板死代码，无压制。没有新增依赖或Cargo.lock改动；只本地提交、不推送，截图实际查看并仅存忽略artifacts/files（source/diff×light/dark×1440/320），日志/tmp；两个保护服务与三张原PNG不动。
 - **总目标仍active**：本批是源码／原始Diff只读体验，不是完整结构化Diff、编辑/反馈或Git工作流。其他消息细节、未接通设置/协同、本机桥与Native/Android、刷新阅读持久化、真实模型长会话/各平台手验和正式发行仍待实施；没有远程CI或真实模型/平台验收声明。
+
+## 第十一批：真实目录读取状态与明确重试（已接通并本地验收）
+
+- 先核对现有链路：`workspace.listDir` 已正确传播错误，不是新的HTTP/协议缺口；缺失的是ReUI/headless-tree界面的加载、失败、成功空目录和重试。未改NodeConnection/typed NodeApi、Rust语义、SDK owner或scope guards，前端只保存逐目录的本地读取展示状态，沿用既有树缓存/懒加载/键盘。旧产品在根加载、空根/空子目录和失败反馈断言上先失败（`/tmp/rpi-tree-before.log`），不将测试入口/选择器错误算作产品缺陷。
+- 根目录及可见且展开的子目录有带精确路径的局部反馈；失败明确独立于成功空列表，不串到发送错误，不移除其他目录或已选源码。捕获拒绝后以空children缓存结束第三方树加载，但外部展示保留error分类，绝不把缓存形状当作成功空目录。只在显式按钮手势后调用该item已有的 `invalidateChildrenIds()` 重读同一GET；pending不提供重复按钮，折叠/重开不偷偷重发。树组件卸载和每路径请求令牌阻止迟到状态写回，继续依赖App既有连接/项目/会话key及listDir作用域保护，不引入读取执行机。
+- 原tree专项4项扩为10项、去掉目录断言前的固定sleep：保留真实根目录/懒加载/改动文件Diff与无pageerror；增加已连接但未选项目时的不可读工作区边界（App不挂树、不请求目录，不借listDir无scope的空返回冒充成功空根，该缺口另有先失败证据`/tmp/rpi-tree-no-workspace-before.log`）、HTTP gate根加载、根503/同URL同GET且仅明确重试、成功空根、子目录独立错误/空态与既有源码同DOM、折叠缓存、跨会话同路径旧成功及旧失败不能清新loading、明暗1440/320的子目录pending/失败/重试与44px、草稿选区及真实HTTP iframe身份/表单/加载次数。原生ArrowRight展开、Enter打开/重试、Space重试、Tab离开及Shift-Tab返回验证；focus-visible检查使用实际键盘并等待可观察outline过渡终态，不用程序focus冒充键盘态或sleep猜完成。
+- 产品/fixture双构建、17套完整浏览器全绿，files11/rich9/reading12/settings14/scopes6等原断言保留；共享Rust165及WASM绑定7、三crate wasm32严格Clippy、fmt/diff/CI YAML通过，lint67警告/0错误。无Rust/协议/依赖或Cargo.lock变更；截图实际查看并只在忽略artifacts/tree，日志/tmp，只本地提交。两个保护Python服务及原三张PNG保留。
+- **总目标仍active**：本批不包含通用目录刷新、分页/虚拟化、树展开持久化，也不是结构化Diff/编辑/Git写入、真实协同/本机桥、Native/Android或正式发行交付；没有远程CI、真实模型或平台手验声明。
