@@ -27,10 +27,12 @@ import {
   resourceRows,
   sealTicket,
   TranscriptPresenter,
+  worktreeReviewPrompt,
   type ConversationView,
   type ResourceView,
   type RowRef,
 } from '@/lib/viewmodel'
+import type { ReviewDelivery } from '@/lib/review-delivery'
 import type { Block, HistoryMessage, Project, Session, SessionActivityRead, SessionFilter } from '@/lib/types'
 
 export type PendingDialog = SessionDialog
@@ -111,6 +113,8 @@ export type Workspace = {
   changes: NodeChangedFile[]
   files: NodeFileEntry[]
   fileRead: FileRead | null
+  changeReview: { pending: boolean; notice: string | null }
+  reviewChanges: (delivery: ReviewDelivery) => Promise<void>
   loadChanges: () => Promise<void>
   loadFiles: (path?: string) => Promise<void>
   openChange: (path: string, staged?: boolean) => Promise<void>
@@ -170,7 +174,7 @@ export function useWorkspace(): Workspace {
   const installRequest = useRef<object | null>(null)
   const [connectionId, setConnectionId] = useState(0)
   const [creation, setCreation] = useState<Workspace['creation']>({ busy: false, uncertain: false, message: null })
-  type Creation = { conn: NodeConnection; epoch: number; ticket: number; kind: 'project' | 'session'; id?: string; reading?: boolean }
+  type Creation = { conn: NodeConnection; epoch: number; ticket: number; kind: 'project' | 'session'; project?: string; id?: string; reading?: boolean }
   const creationRequest = useRef<Creation | null>(null)
   const [sessionManagement, setSessionManagement] = useState<Workspace['sessionManagement']>(initialSessionManagement)
   const sessionEditRequest = useRef<object | null>(null)
@@ -190,6 +194,10 @@ export function useWorkspace(): Workspace {
   const historyRef = useRef<HistoryMessage[]>(sample?.history ?? [])
   const binding = useRef<BoundSession | null>(null)
   const bindingEpoch = useRef(0)
+  const observedControls = useRef<SessionControls | null>(null)
+  const reviewRequest = useRef<object | null>(null)
+  const [reviewPending, setReviewPending] = useState(false)
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null)
   const [controls, setControls] = useState<SessionControls | null>(null)
   const [recovery, setRecovery] = useState<SessionRecovery | null>(null)
   const [liveView, setLiveView] = useState<SessionView | null>(null)
@@ -238,6 +246,7 @@ export function useWorkspace(): Workspace {
     binding.current?.close()
     binding.current = null
     bindingEpoch.current = 0
+    observedControls.current = null
   }, [])
 
   // The visit and selection change together, before the async session read starts.
@@ -286,6 +295,7 @@ export function useWorkspace(): Workspace {
     setChanges([])
     setFiles([])
     setFileRead(null)
+    setReviewNotice(null)
     setResources({ rows: [], counts: [0, 0, 0] })
   }, [stopLive, visit])
 
@@ -309,6 +319,7 @@ export function useWorkspace(): Workspace {
         setHistory(messages)
         setLiveView(view)
         setBlocks(view.blocks as Block[])
+        observedControls.current = view.controls
         setControls(view.controls)
         setRecovery(view.recovery)
         setRuntime(view.runtime)
@@ -392,6 +403,8 @@ export function useWorkspace(): Workspace {
   const openNode = useCallback(
     async (origin: string) => {
       const generation = ++epoch.current
+      reviewRequest.current = null
+      setReviewPending(false)
       setConnectionId(generation)
       clearSession('')
       setProjects([])
@@ -464,19 +477,18 @@ export function useWorkspace(): Workspace {
   )
 
   // Promise scope only: execution phases and action admission are Rust-owned.
-  const boundScope = useCallback(() => {
+  const scopeForSession = useCallback((sessionId: string) => {
     const session = binding.current
-    if (!session || epoch.current !== connectionId || sessionIdRef.current !== selected.session) return null
+    if (!session || epoch.current !== connectionId || sessionIdRef.current !== sessionId) return null
     const conn = connection.current
     const generation = connectionId
     const ticket = sessionTicket.current
     const observation = bindingEpoch.current
     return { session, current: () => binding.current === session && bindingEpoch.current === observation && connection.current === conn && epoch.current === generation && sessionTicket.current === ticket }
-  }, [connectionId, selected.session])
+  }, [connectionId])
+  const boundScope = useCallback(() => scopeForSession(selected.session), [scopeForSession, selected.session])
 
-  const send = useCallback(async (text: string) => {
-    const scope = boundScope()
-    if (!scope || !text.trim()) return false
+  const submitPrompt = useCallback(async (scope: NonNullable<ReturnType<typeof scopeForSession>>, text: string) => {
     setSendError(null)
     try {
       const reply = await scope.session.prompt(text)
@@ -487,7 +499,12 @@ export function useWorkspace(): Workspace {
       if (scope.current()) setSendError(String(cause))
       return false
     }
-  }, [boundScope])
+  }, [])
+
+  const send = useCallback(async (text: string) => {
+    const scope = boundScope()
+    return scope && text.trim() ? submitPrompt(scope, text) : false
+  }, [boundScope, submitPrompt])
 
   const refreshQueue = useCallback(async () => {
     const scope = boundScope()
@@ -818,6 +835,9 @@ export function useWorkspace(): Workspace {
     creationRequest.current = null
     sessionEditRequest.current = null
     setSessionManagement(initialSessionManagement)
+    reviewRequest.current = null
+    setReviewPending(false)
+    setReviewNotice(null)
     setCreation({ busy: false, uncertain: false, message: null })
     connection.current = null
     setLiveView(null)
@@ -873,7 +893,7 @@ export function useWorkspace(): Workspace {
         setCreation({ busy: false, uncertain: true, message: '已刷新列表，但创建结果仍未确认。请在节点核对，勿重复提交；重连不会取消原请求。' })
         return false
       }
-      const verified = request.kind === 'project' ? nodeProjects.some(item => item.id === request.id) : mapped.some(item => item.id === request.id)
+      const verified = request.kind === 'project' ? nodeProjects.some(item => item.id === request.id) : mapped.some(item => item.id === request.id && item.projectId === request.project)
       if (!verified) throw new Error(`列表尚未包含节点返回的 ${request.id}`)
       const sameSelection = sessionTicket.current === request.ticket
       if (sameSelection) {
@@ -897,7 +917,7 @@ export function useWorkspace(): Workspace {
     }
   }, [clearSession, loadSession])
 
-  const create = useCallback(async (kind: 'project' | 'session', name = '', path = ''): Promise<boolean> => {
+  const create = useCallback(async (kind: 'project' | 'session', name = '', path = '', onOpened?: (id: string) => Promise<void>): Promise<boolean> => {
     const conn = connection.current
     if (!conn || source.kind !== 'live' || status !== 'ready' || creationRequest.current || sessionEditRequest.current) return false
     if (kind === 'session' && !projects.some(project => project.id === selected.project)) return false
@@ -905,7 +925,7 @@ export function useWorkspace(): Workspace {
       setCreation({ busy: false, uncertain: false, message: '请填写项目名称和目标节点上的目录路径。' })
       return false
     }
-    const request: Creation = { conn, epoch: epoch.current, ticket: sessionTicket.current, kind }
+    const request: Creation = { conn, epoch: epoch.current, ticket: sessionTicket.current, kind, project: kind === 'session' ? selected.project : undefined }
     sessionListVersion.current++
     creationRequest.current = request
     const current = () => connection.current === conn && epoch.current === request.epoch && creationRequest.current === request
@@ -921,7 +941,9 @@ export function useWorkspace(): Workspace {
       }
       request.id = typeof reply.value === 'string' ? reply.value : reply.value.id
       if (!request.id) throw new Error('节点未返回有效创建ID')
-      return await readCreation(request)
+      const opened = await readCreation(request)
+      if (opened && sessionTicket.current === request.ticket + 1) await onOpened?.(request.id)
+      return opened
     } catch (cause) {
       if (current()) setCreation({ busy: false, uncertain: true, message: `创建结果未确认：${String(cause)}。勿重复提交，请先核对节点。` })
       return false
@@ -936,6 +958,55 @@ export function useWorkspace(): Workspace {
     setCreation({ busy: true, uncertain: true, message: '正在核对列表；不会重新发送创建请求。' })
     return readCreation(request)
   }, [creation.busy, readCreation])
+
+  const reviewChanges = async (delivery: ReviewDelivery) => {
+    const scope = projectScope(selected.project, selected.session)
+    if (!scope || !selected.session || status !== 'ready' || reviewRequest.current || creationRequest.current || sessionEditRequest.current) return
+    const request = {}
+    reviewRequest.current = request
+    setReviewPending(true)
+    setReviewNotice(null)
+    try {
+      const git = await scope.conn.gitStatus(selected.project)
+      if (!scope.current()) return
+      setChanges(git.isRepository ? git.files.slice(0, 200) : [])
+      if (!git.isRepository) {
+        setReviewNotice('当前项目没有可审阅的 Git 工作区。')
+        return
+      }
+      if (!git.files.length) {
+        setReviewNotice('当前项目没有未提交的改动。')
+        return
+      }
+      const text = worktreeReviewPrompt()
+      if (delivery === 'detached') {
+        const opened = await create('session', '', '', async id => {
+          const destination = scopeForSession(id)
+          if (!destination || !observedControls.current?.send) {
+            setReviewNotice('已创建独立会话。当前尚不能提交审阅请求。')
+            return
+          }
+          const accepted = await submitPrompt(destination, text)
+          if (destination.current()) setReviewNotice(accepted ? '独立会话已受理审阅请求。' : '独立会话的审阅请求未获确认，请查看会话状态。')
+        })
+        if (!opened && scope.current()) setReviewNotice('独立审阅未启动，请查看会话创建状态。')
+        return
+      }
+      // Reuse the selected session and its latest Rust admission observation.
+      const admitted = observedControls.current
+      const accepted = admitted?.send ? await send(text) : admitted?.queue ? await queueMessage(text) : false
+      if (scope.current()) setReviewNotice(accepted
+        ? admitted?.send ? '当前会话已受理审阅请求。' : '审阅请求已加入当前会话队列。'
+        : '当前会话的审阅请求未获确认，请查看会话状态。')
+    } catch (cause) {
+      if (scope.current()) setReviewNotice(`无法读取项目改动：${String(cause)}`)
+    } finally {
+      if (reviewRequest.current === request) {
+        reviewRequest.current = null
+        setReviewPending(false)
+      }
+    }
+  }
 
   const openSelection = (project: string, session = '', position?: number) => {
     if (source.kind === 'live' && connection.current && epoch.current === connectionId) {
@@ -1125,6 +1196,8 @@ export function useWorkspace(): Workspace {
     changes,
     files,
     fileRead,
+    changeReview: { pending: reviewPending, notice: reviewNotice },
+    reviewChanges,
     loadChanges,
     loadFiles,
     openChange,

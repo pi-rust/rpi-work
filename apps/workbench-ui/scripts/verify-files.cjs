@@ -16,6 +16,20 @@ async function addFeedback(viewer, side, text) {
   await dialog.getByRole('button', { name: '添加到草稿', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
 }
+async function reviewDelivery(page, mode) {
+  await page.getByRole('button', { name: '打开显示选项', exact: true }).click()
+  await page.locator('header').getByRole('button', { name: '设置', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '设置', exact: true })
+  await dialog.getByRole('searchbox').fill('审查结果呈现方式')
+  await dialog.getByRole('button', { name: '常规', exact: true }).click()
+  const option = dialog.getByRole('combobox', { name: '审查结果呈现方式', exact: true })
+  if (mode) await option.selectOption(mode)
+  const result = await option.inputValue()
+  await page.keyboard.press('Escape')
+  return result
+}
+const reviewCommands = (fixture, from) => fixture.requests.slice(from).filter(({ body }) => body.type === 'execute' && ['prompt', 'queue_message'].includes(body.payload?.type))
+const reviewPrompt = '请审阅当前项目未提交的改动，包括已暂存、未暂存和未跟踪文件。只做审阅，勿修改文件、暂存或提交。优先报告具体的功能缺陷、回归和缺失的测试，给出文件路径、行号和原因。如果没有发现，请明确说明。'
 function contrastRows(viewer) {
   const ctx = document.createElement('canvas').getContext('2d')
   const luminance = color => {
@@ -264,6 +278,116 @@ function contrastRows(viewer) {
         fixture.setQueue([])
         fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
       }
+    })
+    await check('current-session review refreshes Git once, then sends or queues without consuming draft or feedback', async ({ page, panel, viewer, diff, gate }) => {
+      const draft = page.locator('main textarea').first()
+      const run = panel.getByRole('button', { name: '运行审阅', exact: true })
+      await diff(); await addFeedback(viewer, '旧', '独立保存的草稿标签')
+      await draft.fill('稍后发送的正文')
+      await draft.evaluate(node => node.setSelectionRange(1, 3))
+      const start = fixture.requests.length
+      const git = gate()
+      const held = async route => git.hold(route, { response: await route.fetch() })
+      await page.route('**/git/status', held)
+      try {
+        assert.equal(await reviewDelivery(page), 'inline')
+        await run.evaluate(node => { node.click(); node.click() })
+        await git.entered()
+        assert.equal(reviewCommands(fixture, start).length, 0)
+        assert.equal(await run.getAttribute('aria-disabled'), 'true')
+        await git.flush()
+        await panel.getByRole('status').filter({ hasText: '当前会话已受理审阅请求。' }).waitFor()
+        await page.unroute('**/git/status', held)
+        assert.equal(fixture.requests.slice(start).filter(({ path }) => path.endsWith('/git/status')).length, 1)
+        fixture.emit({ type: 'agent_start' })
+        await run.click()
+        await panel.getByRole('status').filter({ hasText: '审阅请求已加入当前会话队列。' }).waitFor()
+        assert.deepEqual(reviewCommands(fixture, start).map(({ body }) => [body.payload.type, body.payload.message]), [['prompt', reviewPrompt], ['queue_message', reviewPrompt]])
+        assert.equal(fixture.requests.slice(start).some(({ path, method }) => path === '/api/v1/sessions' && method === 'POST'), false)
+        assert.deepEqual(await draft.evaluate(node => [node.value, node.selectionStart, node.selectionEnd]), ['稍后发送的正文', 1, 3])
+        await page.getByRole('list', { name: '行内反馈草稿', exact: true }).waitFor()
+      } finally {
+        fixture.setQueue([])
+        fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
+      }
+    })
+    await check('detached review persists its preference and submits only to the reconciled owner session', async ({ page, panel }) => {
+      assert.equal(await reviewDelivery(page, 'detached'), 'detached')
+      await page.reload()
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).waitFor()
+      assert.equal(await reviewDelivery(page), 'detached')
+      const run = panel.getByRole('button', { name: '运行审阅', exact: true })
+      if (!await run.isVisible()) await page.getByRole('button', { name: '文件面板', exact: true }).click()
+      const draft = page.locator('main textarea').first()
+      await draft.fill('独立审阅前的草稿')
+      const start = fixture.requests.length
+      const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/sessions' && response.request().method() === 'POST')
+      await run.click()
+      const response = await created
+      const { sessionId } = await response.json()
+      assert.equal(response.request().postDataJSON().projectId, 'rpi-work')
+      await panel.getByRole('status').filter({ hasText: '独立会话已受理审阅请求。' }).waitFor()
+      await page.locator('.wb-thread[aria-current="true"]').filter({ hasText: '新会话' }).waitFor()
+      assert.equal(await draft.inputValue(), '')
+      const calls = fixture.requests.slice(start)
+      const commands = reviewCommands(fixture, start)
+      assert.equal(commands.length, 1)
+      const reservation = calls.find(({ body }) => body.type === 'reserve' && body.sessionId === sessionId)
+      assert(reservation)
+      assert(calls.findIndex(({ path, method }) => path === '/api/v1/sessions' && method === 'GET') < calls.indexOf(reservation))
+      assert.equal(commands[0].body.payload.message, reviewPrompt)
+      assert.equal(calls.filter(({ body }) => body.type === 'reserve').length, 1)
+      fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false }, sessionId)
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      assert.equal(await draft.inputValue(), '独立审阅前的草稿')
+    })
+    await check('a delayed detached create cannot start a review after the selection changes', async ({ page, panel, gate }) => {
+      await reviewDelivery(page, 'detached')
+      const run = panel.getByRole('button', { name: '运行审阅', exact: true })
+      const created = gate()
+      let id
+      await page.route('**/api/v1/sessions', async route => {
+        if (route.request().method() !== 'POST') return route.continue()
+        const response = await route.fetch()
+        id = (await response.json()).sessionId
+        return created.hold(route, { response })
+      })
+      const start = fixture.requests.length
+      await run.click(); await created.entered()
+      const other = page.getByRole('button', { name: '梳理 Agent 架构', exact: true })
+      await other.click()
+      await page.locator('main textarea').first().fill('切换后的草稿')
+      await created.flush()
+      await panel.getByText('正在提交审阅请求…', { exact: true }).waitFor({ state: 'hidden' })
+      assert(id)
+      assert.equal(reviewCommands(fixture, start).length, 0)
+      assert.equal(await other.getAttribute('aria-current'), 'true')
+      assert.equal(await page.locator('main textarea').first().inputValue(), '切换后的草稿')
+    })
+    await check('a fresh empty Git status and an unknown detached create never issue a prompt', async ({ page, panel }) => {
+      const run = panel.getByRole('button', { name: '运行审阅', exact: true })
+      const start = fixture.requests.length
+      const empty = route => route.fulfill({ json: { isRepository: true, branch: null, files: [] } })
+      await page.route('**/git/status', empty)
+      await run.click()
+      await panel.getByText('当前项目没有未提交的改动。', { exact: true }).waitFor()
+      assert.equal(await run.getAttribute('aria-disabled'), 'true')
+      await page.unroute('**/git/status', empty)
+      await panel.getByRole('button', { name: '刷新改动', exact: true }).click()
+      await reviewDelivery(page, 'detached')
+      let posts = 0
+      await page.route('**/api/v1/sessions', route => {
+        if (route.request().method() !== 'POST') return route.continue()
+        posts++
+        return route.fulfill({ status: 500, json: { error: 'fixture unknown outcome' } })
+      })
+      await run.click()
+      const readback = page.getByRole('button', { name: '核对创建结果', exact: true })
+      await readback.click()
+      await page.getByText(/已刷新列表，但创建结果仍未确认/).waitFor()
+      assert.equal(posts, 1)
+      assert.equal(await run.getAttribute('aria-disabled'), 'true')
+      assert.equal(reviewCommands(fixture, start).length, 0)
     })
     await check('maximum valid line numbers fit both sticky columns without clipping or leaking page width', async ({ page, panel, viewer, diff }) => {
       const text = '--- a/file\n+++ b/file\n@@ -4294967295 +4294967295 @@\n-old\n+new ' + 'long '.repeat(200) + '\n'

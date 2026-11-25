@@ -13,6 +13,7 @@ import init, { resource_rows, seal_ticket,
   format_tokens,
   diff_view,
   diff_feedback_draft,
+  worktree_review_prompt,
   file_view,
   metrics_session,
   markdown_view,
@@ -33,6 +34,7 @@ export const fileView = (source: string, path: string, diff: boolean): FileLine[
 export type DiffLine = Omit<FileLine, 'kind'> & { kind: FileLine['kind'] | 'hunk' | 'note'; old_number: number | null; new_number: number | null }
 export type DiffView = { rows: DiffLine[]; structured: boolean; fallback_reason: 'limit' | 'invalid' | 'unsupported' | 'no_hunks' | null; gutter_digits: number; feedback_revision: string | null }
 export const diffView = (source: string, path: string): DiffView => JSON.parse(diff_view(source, path)) as DiffView
+export { worktree_review_prompt as worktreeReviewPrompt }
 export type DraftFeedback = { path: string; staged: boolean; index: number; revision: string; location: string; comment: string; message: string }
 export function diffFeedbackDraft(expected: string, fresh: string, path: string, staged: boolean, index: number, text: string): DraftFeedback | null {
   const result = diff_feedback_draft(expected, fresh, path, staged, index, text)

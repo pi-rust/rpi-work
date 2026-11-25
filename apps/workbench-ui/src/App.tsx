@@ -26,6 +26,7 @@ import { useDraft } from '@/lib/drafts'
 import { useTheme } from '@/lib/theme'
 import { useMessageLayout } from '@/lib/message-layout'
 import { useProjectGrouping } from '@/lib/project-grouping'
+import { useReviewDelivery } from '@/lib/review-delivery'
 import { useConversationScroll } from '@/lib/use-conversation-scroll'
 import { useScopedPresentation } from '@/lib/use-scoped-presentation'
 import { readDirectoryExpansion, saveDirectoryExpansion } from '@/lib/directory-expansion'
@@ -111,6 +112,9 @@ export default function App() {
   const theme = useTheme(workspace.presentationReady)
   const messageLayout = useMessageLayout()
   const projectGrouping = useProjectGrouping()
+  const review = useReviewDelivery()
+  const reviewDisabled = !ready || workspace.creation.busy || workspace.creation.uncertain || workspace.sessionManagement.busy ||
+    (review.delivery === 'inline' && !workspace.controls?.send && !workspace.controls?.queue)
   const dark = theme.choice.dark
   const openSettings = () => {
     setSettingsOpen(true)
@@ -552,6 +556,12 @@ export default function App() {
                       }}
                       presentationReady={workspace.presentationReady}
                       changes={workspace.changes}
+                      review={workspace.selected.session ? {
+                        ...workspace.changeReview,
+                        disabled: reviewDisabled,
+                        delivery: review.delivery,
+                        run: () => void workspace.reviewChanges(review.delivery),
+                      } : undefined}
                       fileRead={workspace.fileRead}
                       onRefresh={() => void workspace.loadChanges()}
                       onOpen={(path, staged) => void workspace.openChange(path, staged)}
@@ -627,6 +637,13 @@ export default function App() {
                   onChange={event => projectGrouping.updateGrouping(event.target.value === 'flat' ? 'flat' : 'node')}>
                   <option value="node">按节点分组</option>
                   <option value="flat">平铺</option>
+                </select>
+              </label>
+              <label className="wb-settings-preference" htmlFor="wb-review-delivery">审查结果呈现方式
+                <select id="wb-review-delivery" value={review.delivery}
+                  onChange={event => review.updateDelivery(event.target.value === 'detached' ? 'detached' : 'inline')}>
+                  <option value="inline">当前会话</option>
+                  <option value="detached">独立会话</option>
                 </select>
               </label>
             </section>

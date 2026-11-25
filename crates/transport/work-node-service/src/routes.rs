@@ -564,7 +564,7 @@ async fn perform(
         (method.as_str(), parts.as_slice()),
         (
             "GET",
-            ["sessions"] | ["projects", _, "files"] | ["projects", _, "git", "diff"]
+            ["sessions"] | ["projects", _, "files"] | ["projects", _, "git", "diff" | "status"]
         ) | (_, ["sessions", _, "configuration" | "access" | "dialogs"])
     ) {
         response

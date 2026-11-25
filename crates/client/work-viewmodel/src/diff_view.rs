@@ -3,6 +3,10 @@ use crate::file_view::{self, FileLine};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+/// Review the worktree as it exists when the Agent runs. A queued review may
+/// see different changes from the list observed at submission time.
+pub const WORKTREE_REVIEW_PROMPT: &str = "请审阅当前项目未提交的改动，包括已暂存、未暂存和未跟踪文件。只做审阅，勿修改文件、暂存或提交。优先报告具体的功能缺陷、回归和缺失的测试，给出文件路径、行号和原因。如果没有发现，请明确说明。";
+
 #[derive(Serialize)]
 pub struct DiffLine<'a> {
     #[serde(flatten)]

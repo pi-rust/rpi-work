@@ -267,6 +267,11 @@ pub fn file_view(source: &str, path: &str, diff: bool) -> String {
         .unwrap_or_else(|_| "[]".into())
 }
 
+#[wasm_bindgen]
+pub fn worktree_review_prompt() -> String {
+    work_viewmodel::diff_view::WORKTREE_REVIEW_PROMPT.into()
+}
+
 /// Validated unified-diff rows and eligibility for draft feedback.
 #[wasm_bindgen]
 pub fn diff_view(source: &str, path: &str) -> String {

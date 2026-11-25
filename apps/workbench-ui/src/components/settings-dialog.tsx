@@ -4,7 +4,7 @@ import './settings-dialog.css'
 
 export type SettingsCategory = 'general' | 'providers' | 'connections' | 'appearance' | 'about'
 const destinations = [
-  { id: 'general', label: '常规', group: '应用', terms: '工作区 项目列表显示 按节点分组 平铺', icon: Settings2 },
+  { id: 'general', label: '常规', group: '应用', terms: '工作区 项目列表显示 按节点分组 平铺 审查结果呈现方式 审阅 当前会话 独立会话', icon: Settings2 },
   { id: 'appearance', label: '外观', group: '应用', terms: '主题 明暗 密度 阅读 经典 消息布局', icon: Palette },
   { id: 'providers', label: '提供商', group: '节点', terms: '配置 API 密钥 模型 provider revision', icon: KeyRound },
   { id: 'connections', label: '工作协同', group: '节点', terms: '节点 地址 项目 会话 手机 二维码 一次性授权', icon: Globe },

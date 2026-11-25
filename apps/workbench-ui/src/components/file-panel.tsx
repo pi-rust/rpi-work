@@ -10,7 +10,8 @@ import {
 import { DirectoryTree } from '@/components/directory-tree'
 import { ChangesGrid } from '@/components/changes-grid'
 import { FileViewer } from '@/components/file-viewer'
-import type { FileRead } from '@/lib/workspace'
+import type { FileRead, Workspace } from '@/lib/workspace'
+import type { ReviewDelivery } from '@/lib/review-delivery'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -30,6 +31,7 @@ type Props = {
   visible: boolean
   presentationReady: boolean
   changes: NodeChangedFile[]
+  review?: Workspace['changeReview'] & { disabled: boolean; delivery: ReviewDelivery; run: () => void }
   fileRead: FileRead | null
   onRefresh: () => void
   onOpen: (path: string, staged?: boolean) => void
@@ -51,6 +53,7 @@ export function FilePanel(props: Props) {
 function ReadyFilePanel({
   visible,
   changes,
+  review,
   fileRead,
   onRefresh,
   onOpen,
@@ -287,6 +290,12 @@ function ReadyFilePanel({
           </Button>
         </div>
       </div>
+      {review && tab === 'changes' ? <div className="flex flex-wrap items-center gap-x-2 px-3 text-[11px]">
+        <Button type="button" variant="outline" size="sm" className="h-7 aria-disabled:opacity-50" aria-disabled={review.disabled || review.pending || changes.length === 0}
+          onClick={() => { if (!review.disabled && !review.pending && changes.length) review.run() }}>运行审阅</Button>
+        <span className="text-muted-foreground">{review.delivery === 'detached' ? '独立会话' : '当前会话'}</span>
+        {review.pending ? <p role="status" className="basis-full py-1">正在提交审阅请求…</p> : review.notice ? <p role="status" className="basis-full break-words py-1">{review.notice}</p> : null}
+      </div> : null}
       <div ref={viewport} className="wb-directory-viewport max-h-48 shrink-0 overflow-y-auto px-2 py-1">
         {tab === 'tree' ? (
           <>
