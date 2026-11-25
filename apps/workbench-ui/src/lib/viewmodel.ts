@@ -11,6 +11,7 @@ import init, { resource_rows, seal_ticket,
   context_reported,
   format_percent,
   format_tokens,
+  diff_view,
   file_view,
   metrics_session,
   markdown_view,
@@ -28,6 +29,9 @@ export type RowRef = { key: number; source: 'history' | 'projection'; index: num
 export type Token = { text: string; class: string }
 export type FileLine = { number: number | null; kind: 'source' | 'meta' | 'add' | 'remove' | 'context' | 'plain'; tokens: Token[] }
 export const fileView = (source: string, path: string, diff: boolean): FileLine[] => JSON.parse(file_view(source, path, diff)) as FileLine[]
+export type DiffLine = Omit<FileLine, 'kind'> & { kind: FileLine['kind'] | 'hunk' | 'note'; old_number: number | null; new_number: number | null }
+export type DiffView = { rows: DiffLine[]; structured: boolean; fallback_reason: 'limit' | 'invalid' | 'unsupported' | 'no_hunks' | null; gutter_digits: number }
+export const diffView = (source: string, path: string): DiffView => JSON.parse(diff_view(source, path)) as DiffView
 export type MarkdownTag = 'div' | 'p' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'blockquote' | 'ul' | 'ol' | 'li' | 'em' | 'strong' | 'del' | 'code' | 'span' | 'br' | 'hr' | 'table' | 'thead' | 'tbody' | 'tr' | 'th' | 'td'
 export type MarkdownNode =
   | { kind: 'text'; text: string }

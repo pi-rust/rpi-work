@@ -15,8 +15,9 @@ function contrastRows(viewer) {
     ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1)
     return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(v => { const c = v / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4 }).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0)
   }
-  return [...viewer.querySelectorAll('.wb-source-number, code > span[class], [data-kind="meta"] code, [data-kind="add"] code, [data-kind="remove"] code')].map(node => {
-    const foreground = luminance(getComputedStyle(node).color), background = luminance(getComputedStyle(node.closest('.wb-source-line')).backgroundColor)
+  return [...viewer.querySelectorAll('.wb-source-number, .wb-diff-number, code > span[class], [data-kind="meta"] code, [data-kind="hunk"] code, [data-kind="note"] code, [data-kind="add"] code, [data-kind="remove"] code')].map(node => {
+    const backgroundNode = node.matches('.wb-diff-number') ? node : node.closest('.wb-source-line')
+    const foreground = luminance(getComputedStyle(node).color), background = luminance(getComputedStyle(backgroundNode).backgroundColor)
     return { role: node.className || node.parentElement.dataset.kind, ratio: (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05) }
   })
 }
@@ -84,15 +85,67 @@ function contrastRows(viewer) {
       assert.deepEqual(await page.evaluate(() => clip.calls), [source])
       assert.equal(await panel.getByRole('button', { name: '保存', exact: true }).count(), 0)
     })
-    await check('raw Diff keeps headers and signs, never invents hunk numbers or feedback actions', async ({ page, panel, viewer, diff }) => {
+    await check('raw Diff keeps every header/sign and copy payload without invented numbers or feedback', async ({ page, panel, viewer, diff }) => {
+      const raw = patch.replace('@@ -1 +1 @@', '@@ -1,2 +1,2 @@')
+      await page.route(url => url.pathname.endsWith('/git/diff'), route => route.fulfill({ json: { path: 'src/theme.rs', patch: raw } }))
       await diff(); await viewer.waitFor()
+      await panel.getByText('此 Diff 未通过统一差异校验，按完整原文显示；不提供行号。', { exact: true }).waitFor()
       assert.equal(await viewer.locator('[data-kind="add"]').count(), 1)
       assert.equal(await viewer.locator('[data-kind="remove"]').count(), 1)
-      assert.equal(await viewer.locator('.wb-source-number').count(), 0)
+      assert.equal(await viewer.locator('.wb-source-number, .wb-diff-number').count(), 0)
       await panel.getByRole('button', { name: '复制 Diff', exact: true }).click()
       await panel.locator('[data-copy-state="success"]').waitFor()
-      assert.deepEqual(await page.evaluate(() => clip.calls), [patch])
+      assert.deepEqual(await page.evaluate(() => clip.calls), [raw])
       assert.equal(await viewer.getByRole('button').count(), 0)
+    })
+    await check('validated unified hunks show real old/new numbers and treat header-like source as changes', async ({ page, panel, viewer, diff }) => {
+      const text = 'diff --git a/src/theme.rs b/src/theme.rs\r\n--- a/src/theme.rs\r\n+++ b/src/theme.rs\r\n@@ -10,2 +20,2 @@ function\r\n--- source content\r\n+++ source content <script>window.diffAttack=1</script>\r\n context\r\n\\ No newline at end of file\r\n'
+      await page.route(url => url.pathname.endsWith('/git/diff'), route => route.fulfill({ json: { path: 'src/theme.rs', patch: text } }))
+      await diff(); await viewer.waitFor()
+      assert.equal(await viewer.locator('[data-kind="remove"]').count(), 1)
+      assert.equal(await viewer.locator('[data-kind="add"]').count(), 1)
+      const changes = viewer.locator('[data-kind="remove"], [data-kind="add"], [data-kind="context"]')
+      assert.deepEqual(await changes.locator('.wb-diff-old').allTextContents(), ['10', '', '11'])
+      assert.deepEqual(await changes.locator('.wb-diff-new').allTextContents(), ['', '20', '21'])
+      assert.equal(await viewer.locator('script').count(), 0)
+      assert.equal(await page.evaluate(() => window.diffAttack), undefined)
+      await panel.getByRole('button', { name: '复制 Diff', exact: true }).click()
+      await panel.locator('[data-copy-state="success"]').waitFor()
+      assert.deepEqual(await page.evaluate(() => clip.calls), [text])
+    })
+    await check('zero ranges and multiple files reset counters; unsupported or malformed patches clear every number', async ({ page, panel, viewer, diff }) => {
+      const valid = '--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+created\ndiff --git a/old b/old\n--- a/old\n+++ /dev/null\n@@ -10 +0,0 @@\n-removed\n'
+      const cases = [valid, 'diff --cc file\n@@@ -1 -1 +1 @@@\n', 'diff --git a/file b/file\nGIT binary patch\nliteral 0\n', '--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-old\n+new\n', '--- a/x\n+++ b/x\n@@ -4294967296 +1 @@\n-old\n+new\n', 'diff --git a/old b/new\nrename from old\nrename to new\n', valid]
+      for (const text of cases) {
+        await page.route(url => url.pathname.endsWith('/git/diff'), route => route.fulfill({ json: { path: 'src/theme.rs', patch: text } }))
+        await diff(); await viewer.waitFor()
+        if (text === valid) {
+          assert.deepEqual(await viewer.locator('.wb-diff-old').allTextContents(), ['', '10'])
+          assert.deepEqual(await viewer.locator('.wb-diff-new').allTextContents(), ['1', ''])
+          await panel.getByText('统一 Diff · 工作区', { exact: true }).waitFor()
+        } else {
+          assert.equal(await viewer.locator('.wb-diff-number').count(), 0)
+          await panel.getByText('原始 Diff · 工作区', { exact: true }).waitFor()
+          assert.match(await panel.locator('.wb-file-status').textContent(), /按完整原文显示/)
+        }
+        await panel.getByRole('button', { name: '复制 Diff', exact: true }).click(); await panel.locator('[data-copy-state="success"]').waitFor()
+        assert.equal(await page.evaluate(() => clip.calls.at(-1)), text)
+      }
+    })
+    await check('maximum valid line numbers fit both sticky columns without clipping or leaking page width', async ({ page, panel, viewer, diff }) => {
+      const text = '--- a/file\n+++ b/file\n@@ -4294967295 +4294967295 @@\n-old\n+new ' + 'long '.repeat(200) + '\n'
+      await page.route(url => url.pathname.endsWith('/git/diff'), route => route.fulfill({ json: { path: 'src/theme.rs', patch: text } }))
+      await diff(); await viewer.waitFor()
+      assert.deepEqual(await viewer.locator('.wb-diff-old').allTextContents(), ['4294967295', ''])
+      assert.deepEqual(await viewer.locator('.wb-diff-new').allTextContents(), ['', '4294967295'])
+      await viewer.evaluate(node => { node.scrollLeft = node.clientWidth + 100 })
+      const left = (await viewer.boundingBox()).x
+      const before = await viewer.locator('.wb-diff-old').first().boundingBox(), after = await viewer.locator('.wb-diff-new').first().boundingBox()
+      assert(Math.abs(before.x - left) < 1); assert(Math.abs(after.x - before.x - before.width) < 1); assert(before.width >= 80)
+      for (const overflow of await viewer.locator('.wb-diff-number').evaluateAll(nodes => nodes.map(node => node.scrollWidth > node.clientWidth))) assert.equal(overflow, false)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 1440)
+      await panel.getByRole('button', { name: '复制 Diff', exact: true }).click(); await panel.locator('[data-copy-state="success"]').waitFor()
+      assert.equal(await page.evaluate(() => clip.calls.at(-1)), text)
     })
     await check('pending selection clears old content; late A cannot replace B or clear its loading state', async ({ page, panel, viewer, select, gate }) => {
       await select('other.rs'); await viewer.waitFor()
@@ -184,6 +237,13 @@ function contrastRows(viewer) {
             if (mode === 'source') {
               const left = (await viewer.boundingBox()).x
               for (const rect of await viewer.locator('.wb-source-number').evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, width: node.getBoundingClientRect().width })))) { assert(Math.abs(rect.x - left) < 1, JSON.stringify({ rect, left, width, dark })); assert.equal(rect.width, 40) }
+            } else {
+              const left = (await viewer.boundingBox()).x
+              for (const [selector, offset] of [['.wb-diff-old', 0], ['.wb-diff-new', 40]]) {
+                const numbers = await viewer.locator(selector).evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, width: node.getBoundingClientRect().width })))
+                assert(numbers.length > 0)
+                for (const rect of numbers) { assert(Math.abs(rect.x - left - offset) < 1, JSON.stringify({ selector, rect, left, width, dark })); assert.equal(rect.width, 40) }
+              }
             }
             await page.keyboard.press('Tab'); assert.equal(await viewer.evaluate(node => document.activeElement === node), false)
             await page.keyboard.press('Shift+Tab'); assert.equal(await viewer.evaluate(node => document.activeElement === node), true)

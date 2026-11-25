@@ -267,6 +267,13 @@ pub fn file_view(source: &str, path: &str, diff: bool) -> String {
         .unwrap_or_else(|_| "[]".into())
 }
 
+/// Read-only validated unified-diff rows. No review or write identities.
+#[wasm_bindgen]
+pub fn diff_view(source: &str, path: &str) -> String {
+    serde_json::to_string(&work_viewmodel::diff_view::present(source, path))
+        .expect("diff presentation contains only serializable JSON values")
+}
+
 /// Per-line tokens for the shared lexer: `[[{text, class}]]`.
 #[wasm_bindgen]
 pub fn tokenize_file(source: &str, path: &str) -> String {
@@ -420,6 +427,20 @@ mod tests {
             let expected =
                 serde_json::to_value(work_viewmodel::file_view::present(text, "main.rs", diff))
                     .unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn diff_binding_preserves_validated_numbers_and_whole_patch_fallback() {
+        for source in [
+            "--- a/x\r\n+++ b/x\r\n@@ -1 +1 @@\r\n--- body\r\n+++ body\r\n",
+            "@@@ invalid",
+            "--- a/x\n+++ b/x\n@@ -1,2 +1 @@\n-old\n+new\n",
+        ] {
+            let actual: Value = serde_json::from_str(&diff_view(source, "x")).unwrap();
+            let expected =
+                serde_json::to_value(work_viewmodel::diff_view::present(source, "x")).unwrap();
             assert_eq!(actual, expected);
         }
     }

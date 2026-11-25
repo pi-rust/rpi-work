@@ -23,7 +23,7 @@
 | 阅读列与消息层次 | 第六/七/九批已迁入阅读/经典、完成折叠、阅读锚点及共享Rust富内容/复制；扩展消息细节仍待核对 | 流式、失败、历史恢复、滚动锚点、草稿/选区保留 |
 | Composer、模型、思考、队列与审批 | 第五批已接通并本地验收：canonical绑定、共享Rust准入、ACK/结算分离、真实选项单次回复及typed回执只读恢复；整体UI迁移仍未完成 | IME、accepted 未确认、迟到回调、能力变化、附件边界 |
 | 右侧浏览器 | 首批施工：真实 HTTP(S) 页面、多标签、地址与历史、刷新、视口 | 隔离的真实 HTTP 页面；拒绝危险协议/凭据；不传节点密钥；隐藏不重载 |
-| 源码、目录与 diff | 第十批已迁入只读源码/原始Diff与明确读取状态；第十一批补齐目录加载/成功空态/局部失败及同GET重试；复用NodeConnection和共享Rust行展示；结构化hunk/反馈、能力允许的写入仍待核对 | ticket/revision、固定行号/局部横滚、主题对比度、不得将原型写入演示冒充真实能力 |
+| 源码、目录与 diff | 第十批已迁入只读源码/原始Diff与明确读取状态；第十一批补齐目录加载/成功空态/局部失败及同GET重试，第十二批迁入共享Rust已校验unified Diff的双行号及原文回退；复用NodeConnection和共享Rust行展示；反馈身份、能力允许的写入仍待核对 | ticket/revision、固定行号/局部横滚、主题对比度、不得将原型写入演示冒充真实能力 |
 | 居中设置与本地偏好 | 第八批已接通真实居中设置窗口及既有外观偏好；未支持能力不搬演示状态 | 搜索、焦点恢复、原型布局；本地偏好与执行配置分离 |
 | 工作协同与多节点 | 原型里的发现/开关/授权为 fixture，不得照搬为真实成功 | 真实节点授权、独立入口、过期/撤销与权限隔离；不支持时明确禁用 |
 | 项目添加与本机 rpi 设置 | typed 项目登记/会话创建已接通；目录/程序选择、安装仍需平台桥，原型下载是假流程 | 能力明确、真实校验；浏览器不能假装发现绝对路径或执行安装 |
@@ -135,3 +135,13 @@
 - 原tree专项4项扩为10项、去掉目录断言前的固定sleep：保留真实根目录/懒加载/改动文件Diff与无pageerror；增加已连接但未选项目时的不可读工作区边界（App不挂树、不请求目录，不借listDir无scope的空返回冒充成功空根，该缺口另有先失败证据`/tmp/rpi-tree-no-workspace-before.log`）、HTTP gate根加载、根503/同URL同GET且仅明确重试、成功空根、子目录独立错误/空态与既有源码同DOM、折叠缓存、跨会话同路径旧成功及旧失败不能清新loading、明暗1440/320的子目录pending/失败/重试与44px、草稿选区及真实HTTP iframe身份/表单/加载次数。原生ArrowRight展开、Enter打开/重试、Space重试、Tab离开及Shift-Tab返回验证；focus-visible检查使用实际键盘并等待可观察outline过渡终态，不用程序focus冒充键盘态或sleep猜完成。
 - 产品/fixture双构建、17套完整浏览器全绿，files11/rich9/reading12/settings14/scopes6等原断言保留；共享Rust165及WASM绑定7、三crate wasm32严格Clippy、fmt/diff/CI YAML通过，lint67警告/0错误。无Rust/协议/依赖或Cargo.lock变更；截图实际查看并只在忽略artifacts/tree，日志/tmp，只本地提交。两个保护Python服务及原三张PNG保留。
 - **总目标仍active**：本批不包含通用目录刷新、分页/虚拟化、树展开持久化，也不是结构化Diff/编辑/Git写入、真实协同/本机桥、Native/Android或正式发行交付；没有远程CI、真实模型或平台手验声明。
+
+## 第十二批：只读 unified Diff 双行号（已接通并本地验收）
+
+- typed NodeApi仍只返回`Diff { path, patch }`，继续调用原NodeConnection/gitDiff与fileTicket/projectScope，没有新endpoint或owner。只读参考旧Dioxus私有review parser的hunk内`---`/`+++`边界，不引用或修改旧`apps/work-ui`；旧parser会丢metadata且忽略count/未checked递增，不能直接当新共享验证器。新增纯Rust `diff_view`复用file_view的有界原始行，TS仅WASM/DTO/标签渲染；无新依赖。
+- 整份patch先检查hunk语法、旧/新范围计数、递增顺序及u32边界，全部通过才发布行号，后段失败也撤去全份数字，避免局部猜测。支持省略count=1、合法零范围、上下文/增删、多个hunk/文件重置、CRLF、Unicode及两侧no-newline标记；range与递增checked，u32最后一行有效但越界不展示。完整hunk内`---`/`+++`按删除/新增正文，metadata/原始符号和note均保留。binary/combined/未知格式、损坏/截断hunk、范围溢出或无可编号hunk，按相应原因明确完整原文回退；沿既有1MiB/1万换行的单节点完整降级，不截断复制载荷。
+- 这是展示结构检查，不是git apply验证，不确认路径、仓库revision、当前源码或可写能力；行号不是可提交的review身份/目标。没有行反馈、暂存写入、编辑保存、操作执行机或协议扩展。复制始终取节点原patch（CRLF/末尾换行/metadata），不带行号及屏幕阅读器标签；复用旧复制失败/迟到隔离。
+- 原型双列sticky与hunk标记迁入；Rust提供最大行号位数、CSS统一旧新列宽至少40px，10位极值不裁切，两列横滚超过一屏仍固定。屏幕阅读器有旧/新行说明；局部滚动、内侧焦点、44px/草稿/选区/真实iframe保留，颜色仅既有Rust code/diff主题角色。正文增删背景与gutter自身背景分别按实际计算色审计，避免拿相邻底色冒充实际背景。
+- files11→14项，沿原runner/CI仍17套；先在旧build复现完整hunk正文被当metadata（`/tmp/rpi-diff-before.log`，原11通过/新1失败）。保留raw无伪行号/精确复制断言，改用明确截断hunk作为raw夹具；新增真实双列及CRLF/header-like正文/HTML inert、零范围/多文件与unsupported/损坏/metadata切换回退、u32极值列宽。原四宽×明暗局部滚动断言增加每条旧/新列几何，5主题审计增加gutter/hunk/note；不放宽scope、pending、复制、草稿/iframe原断言。
+- 最终双构建/17套完整浏览器全绿，Rust165→172（7组Diff边界）及WASM7→8通过，三crate wasm32严格Clippy、fmt/diff/YAML过，lint67警告/0错误。初轮并行工具等待超时后先查日志/进程（测试与Clippy已结束），未盲重发或清cache；最后串行完整重验获得确定结果。截图实际查看并仅忽略artifacts/files，日志/tmp/rpi-diff-*，只本地提交，不推送；两个保护预览及三张原PNG不动。
+- **总目标仍active**：只读结构化展示不等于完整审阅/反馈/编辑/Git工作流，也未完成通用目录刷新/分页/持久化、其他消息/设置/协同、多节点/本机桥、Native/Android、真实模型长会话/平台手验和正式发行；没有远程CI或真实平台成功声明。

@@ -53,7 +53,7 @@ npm run lint
 | `verify:mobile` | 320/390视口与抽屉 |
 | `verify:settings` | Provider目录/CAS写回执/一次性授权、居中原生设置窗口、分类搜索/双向Tab/焦点归还、聊天/真实iframe保持、偏好刷新、关闭清除私密输入、320/390px及断连边界，14项 |
 | `verify:tree` | 根/子目录懒加载与键盘、无工作区/成功空态/局部失败/同GET重试、跨会话迟到成功与失败、明暗桌面/320px焦点及草稿/真实iframe保持，10项 |
-| `verify:files` | Rust源码行号/token与原始Diff、精确CRLF复制、加载/失败/空态/迟到隔离、只读重试/暂存查询范围、手机局部滚动及固定行号、全主题4.5:1、完整原文降级与迟到WASM，11项 |
+| `verify:files` | Rust源码与已校验unified Diff双行号、原始patch安全回退/精确复制、零范围/多文件/极值行号、加载/失败/迟到隔离、只读GET/暂存查询、手机固定双列与局部滚动、全主题4.5:1、完整原文降级与迟到WASM，14项 |
 | `verify:live` | typed读取、真实命令路径、IME、中止、队列、草稿、配置与断开不回样例 |
 | `verify:hosted` | 真实隔离Rust owner同源托管、认证、项目/会话创建及草稿，8项 |
 | `verify:browser` | 隔离真实HTTP页面、沙箱、标签/地址栏历史/刷新、表单/选区/草稿保留 |
@@ -97,6 +97,8 @@ hosted只使用独立Work/Agent目录及现有无凭据RPC fixture；专用副�
 - 第十批验证：新增files11项进入runner/CI，产品+fixture双构建与17套完整回归通过；共享Rust165项（新增文件展示4项）、WASM绑定7项、严格三crate WASM Clippy、fmt/diff/YAML通过，lint67警告/0错误（移除旧面板死代码减少2项，未压制规则）。旧产品缺文件阅读区、长横滚短行行号消失、迟到WASM无加载保护均有先失败后修复证据。完整回归另复现hosted原断言抢在SDK请求前检查侧栏选择，保留精确ID断言并增强为等待该ID的成功snapshot响应完成，不改owner或加sleep。截图实际复核，仅忽略artifacts/files；没有远程CI、真实模型或Native验收声明。
 - 目录读取（第十一批已接通并本地验收）：保留既有NodeConnection/listDir的错误传播及Rust endpoint/作用域保护，只补树组件的本地展示状态。根/展开的子目录明确显示加载、成功空态或路径对应的失败；失败不冒充空目录，也不显示为聊天发送错误。仅明确重试才使headless-tree该目录的children缓存失效并重读同一GET，pending无可重入按钮；折叠/重新展开使用已观察的成功或失败缓存，不自动重发。其他目录反馈及已选源码不被清除；卸载/跨scope迟到响应不进入新树。没有新增协议、依赖、写动作或执行owner。
 - 第十一批验证：原tree专项移除固定sleep并扩为10项，已连接但未选项目时不挂树、不请求文件、不冒充空根；根目录HTTP gate、局部503/精确GET重试、空根/空子目录、独立子目录反馈/既有源码DOM、折叠缓存、跨会话旧成功/旧失败对新loading的隔离、原生ArrowRight/Enter/Space、实际Tab往返及内侧焦点、44px、明暗1440/320、草稿选区和真实HTTP iframe同DOM/表单/加载次数均通过。产品/fixture双构建、17套完整回归、共享Rust165/WASM绑定7、三crate WASM严格Clippy和格式/结构检查通过，lint仍67警告/0错误，未压规则。截图仅忽略artifacts/tree，日志/tmp；本批不声明通用目录刷新、分页/虚拟化、刷新后树状态持久化、远程CI或平台/真实模型验收。
+- 结构化Diff（第十二批已接通并本地验收）：新增共享Rust `diff_view`，复用有界原始行展示，先完整检查hunk语法、计数、顺序及checked行号，再一次性发布旧/新行号。支持省略count、零范围、多hunk/文件、CRLF、Unicode和no-newline；hunk中的`---`/`+++`是正文，不冒充文件头。保留全部metadata/原始符号，源码与Diff复制仍是完整节点原字符串。范围损坏/截断/溢出、未知行及binary/combined等不支持格式，整份回退原始Diff并说明，不保留局部推算数字；超大输入沿既有完整原文降级。此检查只用于展示，不验证路径、真实仓库版本或patch可应用性，不生成review身份/权限，也没有行反馈、编辑或Git写入。
+- 双列沿确认原型sticky，Rust提供所需数字位数、CSS统一列宽（至少40px，u32极值不裁字），长横滚后两列均固定；hunk/note只读标记，屏幕阅读器可读旧/新行标签，内侧焦点和手机44px不变，复用全部现有主题token。扩files11→14项（runner仍17套）：先在旧build复现hunk正文误判；保留raw回退的无行号/精确copy断言，加真实双行号/CRLF/HTML inert、零范围与跨文件重置、损坏/combined/binary/metadata回退、极值列宽，并把明暗四宽横滚及全5主题审计扩至两列/hunk/note；草稿/真实iframe与scope断言不放宽。产品/fixture双构建、17套回归、Rust172/WASM8、三crate WASM严格Clippy/fmt/diff/YAML通过，lint67警告/0错误。无新依赖、协议或旧UI修改；截图实际看并仅忽略artifacts/files，日志/tmp/rpi-diff-*，不声明远程CI/真实模型或平台验收。
 - **整体仍未完成**：位置/展开/选区仅SPA内存恢复，不包含刷新/重启持久化；历史锚点已不在当前canonical页时只按保存的像素位置有界回退，不发起新协议或猜造历史。真实模型长会话与各平台手动验收、其他消息细节、未接通的设置能力、真实协同/本机桥接、Native/Android适配和正式发行仍待完成。Provider保存提示只表示节点管理回执，不代表当前Agent已加载。没有可关联的新结算不能借Ready/旧终态解锁，无ref且无原setter ACK证据的未知结果继续锁定。
 
 组件仅使用免费MIT的ReUI/shadcn生态；许可证说明见 [NOTICE.md](NOTICE.md)，没有引入Pro资产或授权密钥。

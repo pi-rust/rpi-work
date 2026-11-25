@@ -16,6 +16,11 @@
 .wb-source-code:focus-visible { outline: 2px solid var(--foreground); outline-offset: -3px; }
 .wb-source-line { display: grid; grid-template-columns: minmax(max-content,1fr); min-width: max-content; min-height: 1.9em; color: var(--foreground); background: var(--code-background); }
 .wb-source-line[data-kind="source"] { grid-template-columns: 40px minmax(max-content,1fr); }
+.wb-source-line.wb-diff-row { grid-template-columns: var(--wb-diff-gutter) var(--wb-diff-gutter) minmax(max-content,1fr); }
+.wb-diff-number { position: sticky; left: 0; z-index: 1; padding: 0 7px; text-align: right; user-select: none; color: var(--muted-foreground); background: var(--code-background); }
+.wb-diff-new { left: var(--wb-diff-gutter); }
+.wb-source-line:is([data-kind="hunk"], [data-kind="note"]) { color: var(--muted-foreground); }
+.wb-source-line[data-kind="hunk"] { border-block: 1px solid var(--border); font-weight: 600; }
 .wb-source-line code { padding: 0 10px; white-space: pre; font: inherit; }
 .wb-source-number { position: sticky; left: 0; z-index: 1; padding: 0 7px; text-align: right; user-select: none; color: var(--muted-foreground); background: var(--code-background); }
 .wb-source-line[data-kind="add"] { color: var(--diff-add); background: var(--diff-add-bg); }
