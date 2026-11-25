@@ -45,24 +45,25 @@ enum CreationReply<T> {
 fn creation_reply<T>(result: Result<T, work_client::ClientError>) -> CreationReply<T> {
     match result {
         Ok(value) => CreationReply::Created { value },
-        Err(error) => {
-            let rejected = match &error {
-                work_client::ClientError::Api { status, .. } => {
-                    matches!(
-                        status.as_u16(),
-                        400 | 401 | 403 | 404 | 405 | 409 | 422 | 429
-                    )
-                }
-                work_client::ClientError::Unsupported { .. } => true,
-                _ => false,
-            };
-            let error = error.to_string();
-            if rejected {
-                CreationReply::Rejected { error }
-            } else {
-                CreationReply::Unknown { error }
-            }
+        Err(error) if explicitly_rejected(&error) => CreationReply::Rejected {
+            error: error.to_string(),
+        },
+        Err(error) => CreationReply::Unknown {
+            error: error.to_string(),
+        },
+    }
+}
+
+fn explicitly_rejected(error: &work_client::ClientError) -> bool {
+    match error {
+        work_client::ClientError::Api { status, .. } => {
+            matches!(
+                status.as_u16(),
+                400 | 401 | 403 | 404 | 405 | 409 | 422 | 429
+            )
         }
+        work_client::ClientError::Unsupported { .. } => true,
+        _ => false,
     }
 }
 
@@ -169,6 +170,44 @@ impl NodeClient {
                     }))
                     .collect::<Vec<_>>()
             ))
+        })
+    }
+
+    pub fn supports_session_preferences(&self) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let capabilities = client
+                .capabilities()
+                .await
+                .map_err(|error| failure("节点能力读取失败", error))?;
+            Ok(JsValue::from_bool(
+                capabilities
+                    .supported_actions
+                    .iter()
+                    .any(|action| action == "session_metadata"),
+            ))
+        })
+    }
+
+    pub fn set_session_archived(&self, session_id: String, archived: bool) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let reply = match client
+                .session_preferences(&session_id, Some(archived), None)
+                .await
+            {
+                Ok(value) if value.session_id == session_id && value.archived == archived => {
+                    serde_json::json!({"outcome": "saved", "value": value})
+                }
+                Ok(_) => {
+                    serde_json::json!({"outcome": "unknown", "error": "节点回执与会话归档请求不符"})
+                }
+                Err(error) if explicitly_rejected(&error) => {
+                    serde_json::json!({"outcome": "rejected", "error": error.to_string()})
+                }
+                Err(error) => serde_json::json!({"outcome": "unknown", "error": error.to_string()}),
+            };
+            json_string(&reply)
         })
     }
 

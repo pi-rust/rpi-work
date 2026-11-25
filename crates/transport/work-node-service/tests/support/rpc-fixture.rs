@@ -52,6 +52,9 @@ fn main() {
     let mut stdout = io::BufWriter::new(io::stdout());
     let mut hanging = false;
     let mut held_run = false;
+    let hosted_creation = std::env::args()
+        .next()
+        .is_some_and(|name| name.contains("creation-native-queries-fixture"));
     // Only the dedicated seed session opts into bounded native reads. Existing
     // tests retain their original advertisements, including get_commands.
     let native_queries = std::env::args().any(|arg| arg.contains("native-queries-fixture"));
@@ -204,18 +207,40 @@ fn main() {
                 &mut stdout,
                 json!({"type":"response","id":id,"command":kind,"success":true,"data":{"request":request,"fixturePid":std::process::id()}}),
             ),
-            "get_state" => emit(
-                &mut stdout,
-                json!({"type":"response","id":id,"command":"get_state","success":true,"data":{"accepted":true,"sessionId":"fixture-session","fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run,"context":{"fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run}}}),
-            ),
+            "get_state" => {
+                let mut data = json!({"accepted":true,"sessionId":"fixture-session","fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run,"context":{"fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run}});
+                if hosted_creation {
+                    // Native facts used by the real owner's idle retirement check.
+                    data["activeOperation"] = if held_run {
+                        json!({"id":"headless-run"})
+                    } else {
+                        Value::Null
+                    };
+                    data["queue"] = json!({"steering":[],"followUp":[]});
+                }
+                emit(
+                    &mut stdout,
+                    json!({"type":"response","id":id,"command":kind,"success":true,"data":data}),
+                );
+            }
             "get_messages" => emit(
                 &mut stdout,
                 json!({"type":"response","id":id,"command":"get_messages","success":true,"data":{"messages":[],"total":0,"truncated":false,"pendingResume":false,"hasMore":false}}),
             ),
-            "get_history" => emit(
-                &mut stdout,
-                json!({"type":"response","id":id,"command":"get_history","success":true,"data":{"records":[],"total":0,"hasMore":false}}),
-            ),
+            "get_history" => {
+                let mut data = json!({"records":[],"total":0,"hasMore":false});
+                if hosted_creation {
+                    data["openOperations"] = if held_run {
+                        json!([{"id":"headless-run"}])
+                    } else {
+                        json!([])
+                    };
+                }
+                emit(
+                    &mut stdout,
+                    json!({"type":"response","id":id,"command":kind,"success":true,"data":data}),
+                );
+            }
             "get_session_branch" => emit_branch(&mut stdout, &request),
             "get_queue" => emit(
                 &mut stdout,

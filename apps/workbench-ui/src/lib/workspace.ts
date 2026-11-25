@@ -51,6 +51,8 @@ export type Workspace = {
   createProject: (name: string, path: string) => Promise<boolean>
   createSession: () => Promise<boolean>
   recheckCreation: () => Promise<boolean>
+  archive: { supported: boolean; busy: boolean; message: string | null; locked: string[] }
+  setArchived: (id: string, archived: boolean) => Promise<'selected' | 'saved' | 'failed'>
   source: Source
   error: string | null
   projects: Project[]
@@ -157,6 +159,9 @@ export function useWorkspace(): Workspace {
   const [creation, setCreation] = useState<Workspace['creation']>({ busy: false, uncertain: false, message: null })
   type Creation = { conn: NodeConnection; epoch: number; ticket: number; kind: 'project' | 'session'; id?: string; reading?: boolean }
   const creationRequest = useRef<Creation | null>(null)
+  const [archive, setArchive] = useState<Workspace['archive']>({ supported: false, busy: false, message: null, locked: [] })
+  const archiveRequest = useRef<object | null>(null)
+  const archiveLocks = useRef(new Map<string, Set<string>>())
   const pendingOrigin = useRef<string>('')
   // Read-only history may finish before the render that publishes the presenter.
   const presenterRef = useRef<TranscriptPresenter | null>(null)
@@ -321,6 +326,11 @@ export function useWorkspace(): Workspace {
     const [nodeProjects, nodeSessions] = await Promise.all([conn.projects(), conn.sessions()])
     if (connection.current !== conn || epoch.current !== generation) return
     const mappedSessions = nodeSessions.map(asSession)
+    void conn.supportsSessionPreferences().then(supported => {
+      if (connection.current === conn && epoch.current === generation) {
+        setArchive({ supported, busy: false, message: null, locked: [...(archiveLocks.current.get(conn.origin) ?? [])] })
+      }
+    }).catch(() => {})
     setSource({ kind: 'live', origin: conn.origin })
     setProjects(nodeProjects.map(({ id, name }) => ({ id, name })))
     setSessions(mappedSessions)
@@ -354,6 +364,8 @@ export function useWorkspace(): Workspace {
       setSource({ kind: 'disconnected' })
       connection.current = null
       creationRequest.current = null
+      archiveRequest.current = null
+      setArchive({ supported: false, busy: false, message: null, locked: [] })
       setCreation({ busy: false, uncertain: false, message: null })
       setError(null)
       setStatus('connecting')
@@ -748,6 +760,8 @@ export function useWorkspace(): Workspace {
     setConnectionId(++epoch.current)
     sessionTicket.current++
     creationRequest.current = null
+    archiveRequest.current = null
+    setArchive({ supported: false, busy: false, message: null, locked: [] })
     setCreation({ busy: false, uncertain: false, message: null })
     connection.current = null
     setLiveView(null)
@@ -828,7 +842,7 @@ export function useWorkspace(): Workspace {
 
   const create = useCallback(async (kind: 'project' | 'session', name = '', path = ''): Promise<boolean> => {
     const conn = connection.current
-    if (!conn || source.kind !== 'live' || status !== 'ready' || creationRequest.current) return false
+    if (!conn || source.kind !== 'live' || status !== 'ready' || creationRequest.current || archiveRequest.current) return false
     if (kind === 'session' && !projects.some(project => project.id === selected.project)) return false
     if (kind === 'project' && (!name.trim() || !path.trim())) {
       setCreation({ busy: false, uncertain: false, message: '请填写项目名称和目标节点上的目录路径。' })
@@ -860,7 +874,7 @@ export function useWorkspace(): Workspace {
   const createSession = useCallback(() => create('session'), [create])
   const recheckCreation = useCallback(async () => {
     const request = creationRequest.current
-    if (!request || creation.busy) return false
+    if (!request || creation.busy || archiveRequest.current) return false
     setCreation({ busy: true, uncertain: true, message: '正在核对列表；不会重新发送创建请求。' })
     return readCreation(request)
   }, [creation.busy, readCreation])
@@ -887,6 +901,50 @@ export function useWorkspace(): Workspace {
   const selectSession = (id: string) => {
     const session = sessions.find(item => item.id === id)
     if (session) openSelection(session.projectId, session.id)
+  }
+
+  const setArchived: Workspace['setArchived'] = async (id, archived) => {
+    const conn = connection.current
+    const session = sessions.find(item => item.id === id)
+    if (!conn || epoch.current !== connectionId || source.kind !== 'live' || status !== 'ready' ||
+        !archive.supported || archiveRequest.current || creation.busy || creationRequest.current?.reading || !session || session.archived === archived ||
+        archiveLocks.current.get(conn.origin)?.has(id) ||
+        (archived && (selected.session !== id || !controls?.online || controls.busy))) return 'failed'
+    const request = {}
+    const ticket = sessionTicket.current
+    archiveRequest.current = request
+    setArchive(state => ({ ...state, busy: true, message: null }))
+    const locked = archiveLocks.current.get(conn.origin) ?? new Set<string>()
+    archiveLocks.current.set(conn.origin, locked)
+    // Keep an in-flight or uncertain mutation protected even across a same-origin reconnect.
+    locked.add(id)
+    const current = () => connection.current === conn && epoch.current === connectionId && archiveRequest.current === request
+    try {
+      const reply = await conn.setSessionArchived(id, archived)
+      if (reply.outcome !== 'unknown' && current()) locked.delete(id)
+      if (!current()) return 'failed'
+      if (reply.outcome !== 'saved') {
+        const detail = reply.outcome === 'unknown' ? '。结果尚未确认，本页暂不能重试此会话。' : ''
+        setArchive(state => ({ ...state, message: `${reply.error}${detail}`, locked: [...locked] }))
+        return 'failed'
+      }
+      setSessions(items => items.map(item => item.id === id ? { ...item, archived: reply.value.archived, pinned: reply.value.pinned } : item))
+      if (ticket !== sessionTicket.current) return 'saved'
+      if (archived) {
+        const next = sessions.find(item => item.id !== id && !item.archived)
+        if (next) openSelection(next.projectId, next.id)
+        else openSelection(session.projectId)
+      } else openSelection(session.projectId, id)
+      return 'selected'
+    } catch (cause) {
+      if (current()) setArchive(state => ({ ...state, message: `${String(cause)}。结果尚未确认，本页暂不能重试此会话。`, locked: [...locked] }))
+      return 'failed'
+    } finally {
+      if (current()) {
+        archiveRequest.current = null
+        setArchive(state => ({ ...state, busy: false }))
+      }
+    }
   }
 
   const stepSelection = (direction: -1 | 1) => {
@@ -924,6 +982,8 @@ export function useWorkspace(): Workspace {
     createProject,
     createSession,
     recheckCreation,
+    archive,
+    setArchived,
     source,
     error,
     projects,

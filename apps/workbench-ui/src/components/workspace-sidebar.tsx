@@ -15,13 +15,13 @@ function readPreferences(scope: string): Preferences {
 type Props = {
   projects: Project[]; sessions: Session[]; project: string; session: string
   onProject: (id: string) => void; onSession: (id: string) => void
-  onNewChat?: () => void; onAddProject?: () => void; creationHint?: string; onSearch?: () => void; onClose: () => void
+  onNewChat?: () => void; onAddProject?: () => void; creationHint?: string; onSearch?: () => void; onArchives?: () => void; onClose: () => void
   className?: string; connection?: ReactNode; nodeLabel: string; scope: string
   nodeState: 'fixture' | 'online' | 'offline' | 'disconnected'
 }
 
 /** Presentation-only preferences; session pin/archive facts remain node-owned. */
-export function Sidebar({ projects, sessions, project, session, onProject, onSession, onNewChat, onAddProject, creationHint, onSearch, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
+export function Sidebar({ projects, sessions, project, session, onProject, onSession, onNewChat, onAddProject, creationHint, onSearch, onArchives, onClose, className, connection, nodeLabel, nodeState, scope }: Props) {
   const [preferences, setPreferences] = useState(() => readPreferences(scope))
   function save(next: Preferences) {
     setPreferences(next)
@@ -68,7 +68,7 @@ export function Sidebar({ projects, sessions, project, session, onProject, onSes
       <div className="wb-sidebar-footer">
         {connection}
         <div className="wb-node-status" data-state={nodeState}><span aria-hidden="true" />{nodeState === 'fixture' ? '示例数据 · 非真实节点' : nodeState === 'online' ? nodeLabel : nodeState === 'disconnected' ? '未连接节点' : '连接未就绪'}</div>
-        <button type="button" className="wb-archive" disabled title="归档管理尚未接入真实客户端"><Archive aria-hidden="true" />已归档会话</button>
+        <button type="button" className="wb-archive" aria-haspopup="dialog" disabled={!onArchives} onClick={onArchives}><Archive aria-hidden="true" />已归档会话</button>
       </div>
     </aside>
   )

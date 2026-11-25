@@ -13,6 +13,10 @@ export type CreationReply<T> =
   | { outcome: 'created'; value: T }
   | { outcome: 'rejected' | 'unknown'; error: string }
 
+export type ArchiveReply =
+  | { outcome: 'saved'; value: { sessionId: string; archived: boolean; pinned: boolean } }
+  | { outcome: 'rejected' | 'unknown'; error: string }
+
 export type NodeSession = {
   sessionId: string
   projectId: string | null
@@ -151,6 +155,14 @@ export class NodeConnection {
 
   async sessions(): Promise<NodeSession[]> {
     return parse<NodeSession[]>(await this.client.sessions())
+  }
+
+  async supportsSessionPreferences(): Promise<boolean> {
+    return this.client.supports_session_preferences()
+  }
+
+  async setSessionArchived(id: string, archived: boolean): Promise<ArchiveReply> {
+    return parse(await this.client.set_session_archived(id, archived))
   }
 
   async createProject(name: string, path: string): Promise<CreationReply<NodeProject>> {

@@ -19,6 +19,7 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { ActivityRail } from '@/components/activity-rail'
 import { ProjectDialog } from '@/components/project-dialog'
+import { SessionArchiveDialog } from '@/components/session-archive-dialog'
 import './workbench-shell.css'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
@@ -55,6 +56,8 @@ export default function App() {
   const [navigation, setNavigation] = useState(true)
   const [palette, setPalette] = useState(false)
   const [projectDialogFor, setProjectDialogFor] = useState<number | null>(null)
+  const [archiveDialog, setArchiveDialog] = useState<{ connectionId: number; mode: 'list' | 'current' } | null>(null)
+  const openArchiveDialog = (mode: 'list' | 'current') => setArchiveDialog({ connectionId: workspace.connectionId, mode })
   // The run panel is a side column on desktop and an overlay on phones, so it
   // must start closed on narrow viewports instead of covering the transcript.
   useEffect(() => {
@@ -127,7 +130,8 @@ export default function App() {
       ? `${formatTokens(context.used)} / ${formatTokens(context.window)} · ${context.percentText}`
       : '— / —'
 
-  const title = workspace.sessions.find((entry) => entry.id === workspace.selected.session)?.title ?? '新对话'
+  const currentSession = workspace.sessions.find(entry => entry.id === workspace.selected.session)
+  const title = currentSession?.title ?? '新对话'
   const model = workspace.runtime?.modelId ?? fixture?.node.model ?? '—'
   const modelLabel = model.split('/').slice(-1)[0]
   const thinking = workspace.runtime?.thinkingLevel ?? fixture?.node.thinking ?? '—'
@@ -136,7 +140,7 @@ export default function App() {
     label: model.name || model.id.split('/').slice(-1)[0],
     provider: model.provider,
   }))
-  const canCreate = live && ready && !workspace.creation.busy && !workspace.creation.uncertain
+  const canCreate = live && ready && !workspace.creation.busy && !workspace.creation.uncertain && !workspace.archive.busy
   const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
   const showChat = (select: () => void) => {
     select()
@@ -169,6 +173,7 @@ export default function App() {
           onProject={id => showChat(() => workspace.selectProject(id))}
           onSession={selectSession}
           onSearch={() => setPalette(true)}
+          onArchives={live ? () => openArchiveDialog('list') : undefined}
           onNewChat={canCreate && workspace.selected.project ? () => { setPage('chat'); if (isMobile) setDrawer(false); void workspace.createSession() } : undefined}
           onAddProject={canCreate ? () => { setPage('chat'); setProjectDialogFor(workspace.connectionId) } : undefined}
           creationHint={!live ? fixture ? '示例模式不创建真实数据；请连接节点' : '请先连接节点' : workspace.creation.busy ? '正在创建并核对，请勿重复提交' : workspace.creation.uncertain ? '上次创建结果尚未确认，请先核对' : '请先连接节点并选择项目'}
@@ -243,6 +248,7 @@ export default function App() {
             <div className="wb-window-title">
             <span className="sr-only">{workspace.selected.project}</span>
             <span className="truncate text-[14px] font-medium">{title}</span>
+            {live && currentSession && !currentSession.archived ? <button type="button" className="wb-icon pointer-events-auto shrink-0" aria-label="会话操作" aria-haspopup="dialog" title="会话操作" onClick={() => openArchiveDialog('current')}><Ellipsis aria-hidden="true" /></button> : null}
             <Badge variant="outline" className="ml-1 h-5 gap-1 px-1.5 text-[10px] font-normal">
               <span className={`size-1.5 rounded-full ${live && workspace.status === 'ready' ? 'bg-emerald-500' : workspace.status === 'fixture' ? 'bg-muted-foreground' : 'bg-amber-500'}`} />
               {workspace.status === 'boot' ? '加载中' : workspace.status === 'connecting'
@@ -651,6 +657,18 @@ export default function App() {
         onCreate={workspace.createProject}
         onRecheck={workspace.recheckCreation}
         onClose={() => setProjectDialogFor(null)}
+      /> : null}
+      {archiveDialog?.connectionId === workspace.connectionId && live ? <SessionArchiveDialog
+        mode={archiveDialog.mode}
+        sessions={workspace.sessions}
+        projects={workspace.projects}
+        current={currentSession}
+        archive={workspace.archive}
+        canArchive={workspace.archive.supported && Boolean(workspace.controls?.online) && !workspace.busy}
+        disabled={workspace.status !== 'ready' || workspace.archive.busy || workspace.creation.busy}
+        onChange={workspace.setArchived}
+        onSelected={() => { setPage('chat'); setDrawer(false) }}
+        onClose={() => setArchiveDialog(null)}
       /> : null}
       <CommandPalette
         open={palette}

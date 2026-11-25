@@ -30,6 +30,7 @@ export function CommandPalette({ open, projects, sessions, onClose, onSelect }: 
   const entries = useMemo<Entry[]>(() => {
     const names = new Map(projects.map((project) => [project.id, project.name]))
     return sessions
+      .filter(session => !session.archived)
       .map((session) => ({
         id: session.id,
         label: session.title,
