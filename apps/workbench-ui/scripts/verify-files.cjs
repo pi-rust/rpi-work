@@ -9,6 +9,13 @@ const freePort = () => new Promise(resolve => { const server = net.createServer(
 const bounded = async promise => { let timer; try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('HTTP gate timeout')), 10000) })]) } finally { clearTimeout(timer) } }
 const source = 'pub fn main() {\r\n    let ready = true;\r\n    // ' + 'long source 界 '.repeat(90) + '\r\n}\r\n'
 const patch = 'diff --git a/src/theme.rs b/src/theme.rs\n--- a/src/theme.rs\n+++ b/src/theme.rs\n@@ -1 +1 @@\n-let theme = "light";\n+let theme = "dark"; // ' + 'long diff '.repeat(120) + '\n\\ No newline at end of file\n'
+async function addFeedback(viewer, side, text) {
+  await viewer.getByRole('button', { name: `在 src/theme.rs · ${side}行 1 添加反馈`, exact: true }).click()
+  const dialog = viewer.page().getByRole('dialog', { name: '行内反馈', exact: true })
+  await dialog.getByLabel('反馈内容').fill(text)
+  await dialog.getByRole('button', { name: '添加到草稿', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+}
 function contrastRows(viewer) {
   const ctx = document.createElement('canvas').getContext('2d')
   const luminance = color => {
@@ -133,7 +140,7 @@ function contrastRows(viewer) {
         assert.equal(await page.evaluate(() => clip.calls.at(-1)), text)
       }
     })
-    await check('line feedback re-reads the exact Diff and appends only to the current draft', async ({ page, viewer, diff, gate, rendered }) => {
+    await check('line feedback re-reads the exact Diff and creates a scoped feedback chip without changing the input', async ({ page, viewer, diff, gate, rendered }) => {
       await diff(); await viewer.waitFor()
       const draft = page.locator('main textarea').first()
       await draft.fill('existing draft')
@@ -151,7 +158,9 @@ function contrastRows(viewer) {
       assert.equal(await draft.inputValue(), 'existing draft')
       await form.getByRole('button', { name: '正在核对…', exact: true }).waitFor()
       await verification.flush(); await form.waitFor({ state: 'hidden' }); await rendered()
-      assert.equal(await draft.inputValue(), 'existing draft\n\n行内反馈 · src/theme.rs · 工作区 Diff · 旧行 1\n  -let theme = "light";\n保留兼容路径')
+      await page.getByRole('button', { name: '移除 src/theme.rs · 旧行 1 · 工作区 的反馈', exact: true }).waitFor()
+      await viewer.locator('[data-kind="remove"] .wb-inline-feedback').getByText('保留兼容路径', { exact: true }).waitFor()
+      assert.equal(await draft.inputValue(), 'existing draft')
       assert.deepEqual(await draft.evaluate(node => [node.selectionStart, node.selectionEnd]), [2, 6])
       assert.equal(await action.evaluate(node => node === document.activeElement), true)
       assert.deepEqual(requests.map(([method, url]) => [method, url.searchParams.get('path'), url.searchParams.get('staged')]), [['GET', 'src/theme.rs', 'false']])
@@ -178,6 +187,83 @@ function contrastRows(viewer) {
       await form.getByRole('button', { name: '取消', exact: true }).click(); await late.flush()
       await form.waitFor({ state: 'hidden' })
       assert.equal(await draft.inputValue(), 'keep draft')
+      assert.equal(await page.getByRole('list', { name: '行内反馈草稿', exact: true }).count(), 0)
+    })
+    await check('feedback restores after reload, stays session scoped, and only annotates the exact Diff revision', async ({ page, panel, viewer, diff, rendered }) => {
+      const draft = page.locator('main textarea').first()
+      const chip = page.getByRole('button', { name: '移除 src/theme.rs · 旧行 1 · 工作区 的反馈', exact: true })
+      const row = viewer.locator('.wb-inline-feedback')
+      let currentPatch = patch
+      await page.route(url => url.pathname.endsWith('/git/diff'), route => route.fulfill({ json: { path: 'src/theme.rs', staged: new URL(route.request().url()).searchParams.get('staged') === 'true', patch: currentPatch } }))
+      await diff(); await addFeedback(viewer, '旧', '仅保存在当前会话')
+      await chip.waitFor()
+      await page.getByRole('button', { name: '梳理 Agent 架构', exact: true }).click()
+      await chip.waitFor({ state: 'hidden' })
+      await page.getByRole('button', { name: '为工作台添加深色模式', exact: true }).click()
+      await chip.waitFor()
+      await page.reload()
+      await chip.waitFor()
+      assert.equal(await draft.inputValue(), '')
+      assert.equal(await page.getByRole('button', { name: '发送', exact: true }).isDisabled(), true)
+      const files = page.getByRole('button', { name: '文件面板', exact: true })
+      if (!await panel.getByTestId('tab-changes').isVisible()) await files.click()
+      await diff(); await row.waitFor()
+      await panel.getByTestId('staged-toggle').check()
+      await panel.getByText('统一 Diff · 已暂存', { exact: true }).waitFor()
+      await viewer.waitFor(); await rendered()
+      assert.equal(await row.count(), 0)
+      currentPatch = patch.replace('light', 'earlier')
+      await panel.getByTestId('staged-toggle').uncheck()
+      await viewer.getByText('-let theme = "earlier";', { exact: true }).waitFor()
+      assert.equal(await row.count(), 0)
+      await chip.press('Enter')
+      await chip.waitFor({ state: 'hidden' })
+      assert.equal(await draft.evaluate(node => node === document.activeElement), true)
+      await page.reload()
+      await page.getByText('帮我为工作台增加一个深色主题，并保持手机端可用。', { exact: true }).waitFor()
+      assert.equal(await chip.count(), 0)
+    })
+    await check('send and queue deliver exact feedback text; a late ACK clears only submitted draft parts', async ({ page, viewer, diff }) => {
+      const draft = page.locator('main textarea').first()
+      const chips = page.getByRole('list', { name: '行内反馈草稿', exact: true })
+      await diff()
+      await draft.fill('检查更改')
+      await addFeedback(viewer, '旧', '第一条反馈')
+      await page.evaluate(() => {
+        const originalSend = WebSocket.prototype.send
+        WebSocket.prototype.send = function (data) {
+          const frame = typeof data === 'string' ? JSON.parse(data) : null
+          if (frame?.type === 'execute' && frame.payload?.type === 'prompt') {
+            WebSocket.prototype.send = originalSend
+            window.releaseFeedbackPrompt = () => originalSend.call(this, data)
+            return
+          }
+          return originalSend.call(this, data)
+        }
+      })
+      const calls = fixture.requests.length
+      try {
+        await draft.press('Meta+Enter')
+        await page.waitForFunction(() => typeof window.releaseFeedbackPrompt === 'function')
+        assert.equal(await chips.getByRole('listitem').count(), 1)
+        await draft.fill('后续修改')
+        await addFeedback(viewer, '新', '回执期间新增反馈')
+        await page.evaluate(() => window.releaseFeedbackPrompt())
+        await chips.getByRole('button', { name: /旧行 1/ }).waitFor({ state: 'hidden' })
+        assert.equal(await draft.inputValue(), '后续修改')
+        assert.equal(await chips.getByRole('listitem').count(), 1)
+        const writes = command => fixture.requests.slice(calls).filter(({ body }) => body.type === 'execute' && body.payload?.type === command).map(({ body }) => body.payload.message)
+        assert.deepEqual(writes('prompt'), ['检查更改\n\n行内反馈 · src/theme.rs · 工作区 Diff · 旧行 1\n  -let theme = "light";\n第一条反馈'])
+        fixture.emit({ type: 'agent_start' })
+        const queue = page.getByRole('button', { name: '加入队列', exact: true })
+        await queue.click()
+        await chips.waitFor({ state: 'hidden' })
+        assert.equal(await draft.inputValue(), '')
+        assert.deepEqual(writes('queue_message'), [`后续修改\n\n行内反馈 · src/theme.rs · 工作区 Diff · 新行 1\n  ${patch.split('\n')[5].slice(0, 240)}…\n回执期间新增反馈`])
+      } finally {
+        fixture.setQueue([])
+        fixture.emit({ type: 'agent_settled', outcome: 'completed', pendingResume: false })
+      }
     })
     await check('maximum valid line numbers fit both sticky columns without clipping or leaking page width', async ({ page, panel, viewer, diff }) => {
       const text = '--- a/file\n+++ b/file\n@@ -4294967295 +4294967295 @@\n-old\n+new ' + 'long '.repeat(200) + '\n'
@@ -265,6 +351,7 @@ function contrastRows(viewer) {
       await page.getByRole('button', { name: '文件面板', exact: true }).click()
       const draft = page.locator('textarea')
       await draft.fill('文件阅读草稿 selection'); await draft.evaluate(node => node.setSelectionRange(2, 7))
+      await diff(); await addFeedback(viewer, '新', '调整后的行需要核对窄屏布局和水平滚动。'.repeat(3))
       for (const dark of [false, true]) {
         await page.setViewportSize({ width: 1440, height: 940 })
         if (dark) await page.getByRole('button', { name: '切换主题', exact: true }).click()
@@ -286,6 +373,8 @@ function contrastRows(viewer) {
               for (const rect of await viewer.locator('.wb-source-number').evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, width: node.getBoundingClientRect().width })))) { assert(Math.abs(rect.x - left) < 1, JSON.stringify({ rect, left, width, dark })); assert.equal(rect.width, 40) }
             } else {
               const left = (await viewer.boundingBox()).x
+              const annotation = await viewer.locator('.wb-inline-feedback').boundingBox()
+              assert(annotation && annotation.x >= left + 80 && annotation.x + annotation.width <= left + box.width, JSON.stringify({ width, annotation, box, left }))
               for (const [selector, offset] of [['.wb-diff-old', 0], ['.wb-diff-new', 40]]) {
                 const numbers = await viewer.locator(selector).evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, width: node.getBoundingClientRect().width })))
                 assert(numbers.length > 0)

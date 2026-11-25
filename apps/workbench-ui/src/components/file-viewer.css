@@ -18,7 +18,7 @@
 .wb-file-header .wb-copy-control > span { overflow-wrap: anywhere; }
 .wb-file-notice { margin: 0; overflow: auto; overflow-wrap: anywhere; padding: 12px; font-size: 12px; }
 .wb-file-notice p { margin: 0 0 8px; }
-.wb-source-code { min-height: 0; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(max-content,1fr); align-content: start; padding: 8px 0; font: 12px/1.9 var(--font-mono, ui-monospace, monospace); tab-size: 2; }
+.wb-source-code { container-type: inline-size; min-height: 0; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(max-content,1fr); align-content: start; padding: 8px 0; font: 12px/1.9 var(--font-mono, ui-monospace, monospace); tab-size: 2; }
 .wb-source-code:focus-visible { outline: 2px solid var(--foreground); outline-offset: -3px; }
 .wb-source-line { display: grid; grid-template-columns: minmax(max-content,1fr); min-width: max-content; min-height: 1.9em; color: var(--foreground); background: var(--code-background); }
 .wb-source-line[data-kind="source"] { grid-template-columns: 40px minmax(max-content,1fr); }
@@ -56,3 +56,18 @@
 .wb-feedback-confirmed { padding: 4px 10px; color: var(--muted-foreground); font-size: 11px; }
 .wb-feedback-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 @media (max-width: 700px) { .wb-feedback-line { width: 40px; min-height: 36px; } }
+.wb-inline-feedback {
+  grid-column: 3 / -1;
+  position: sticky;
+  left: calc(2 * var(--wb-diff-gutter));
+  width: min(30rem, calc(100cqw - 2 * var(--wb-diff-gutter) - 16px));
+  margin: 3px 8px 6px;
+  padding: 5px 8px;
+  border-inline-start: 2px solid var(--border);
+  border-radius: 4px;
+  color: var(--foreground);
+  background: var(--background);
+  font: 12px/1.5 var(--font-sans, sans-serif);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

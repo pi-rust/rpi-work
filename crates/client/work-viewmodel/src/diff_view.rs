@@ -1,6 +1,7 @@
 //! Validated unified-diff presentation and draft feedback from an observed patch.
 use crate::file_view::{self, FileLine};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
 pub struct DiffLine<'a> {
@@ -16,7 +17,7 @@ pub struct DiffView<'a> {
     pub structured: bool,
     pub fallback_reason: Option<&'static str>,
     pub gutter_digits: usize,
-    pub feedback_eligible: bool,
+    pub feedback_revision: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -210,7 +211,7 @@ pub fn present<'a>(source: &'a str, path: &str) -> DiffView<'a> {
         structured: false,
         fallback_reason: None,
         gutter_digits: 1,
-        feedback_eligible: false,
+        feedback_revision: None,
     };
     if view.rows.is_empty() {
         return view;
@@ -230,7 +231,9 @@ pub fn present<'a>(source: &'a str, path: &str) -> DiffView<'a> {
                 }
             }
             view.structured = true;
-            view.feedback_eligible = feedback_lines(&view, path);
+            if feedback_lines(&view, path) {
+                view.feedback_revision = Some(format!("{:x}", Sha256::digest(source.as_bytes())));
+            }
         }
         Err(reason) => view.fallback_reason = Some(reason),
     }
@@ -280,25 +283,35 @@ fn feedback_lines(view: &DiffView<'_>, path: &str) -> bool {
         || (old == Some("/dev/null") && new_matches)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftFeedback<'a> {
+    pub path: &'a str,
+    pub staged: bool,
+    pub index: usize,
+    pub revision: String,
+    pub location: String,
+    pub comment: &'a str,
+    pub message: String,
+}
+
 /// A text draft quotes the exact observed row and names its original diff
 /// scope. The caller must first re-read the same file and scope.
 #[must_use]
-pub fn feedback_draft(
+pub fn feedback_draft<'a>(
     expected: &str,
     fresh: &str,
-    path: &str,
+    path: &'a str,
     staged: bool,
     index: usize,
-    text: &str,
-) -> Option<String> {
+    text: &'a str,
+) -> Option<DraftFeedback<'a>> {
     let text = text.trim();
     if expected != fresh || text.is_empty() || text.chars().count() > 2000 {
         return None;
     }
     let view = present(fresh, path);
-    if !view.feedback_eligible {
-        return None;
-    }
+    let revision = view.feedback_revision?;
     let row = view.rows.get(index)?;
     let (side, line) = row
         .new_number
@@ -312,9 +325,17 @@ pub fn feedback_draft(
         ""
     };
     let scope = if staged { "已暂存" } else { "工作区" };
-    Some(format!(
-        "行内反馈 · {path} · {scope} Diff · {side}行 {line}\n  {excerpt}{suffix}\n{text}"
-    ))
+    Some(DraftFeedback {
+        path,
+        staged,
+        index,
+        revision,
+        comment: text,
+        location: format!("{path} · {side}行 {line} · {scope}"),
+        message: format!(
+            "行内反馈 · {path} · {scope} Diff · {side}行 {line}\n  {excerpt}{suffix}\n{text}"
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -323,13 +344,17 @@ mod tests {
     #[test]
     fn feedback_only_quotes_the_exact_single_file_patch_and_line_side() {
         let patch = "--- a/file.rs\r\n+++ b/file.rs\r\n@@ -2 +3 @@\r\n-before\r\n+after\r\n";
-        assert!(present(patch, "file.rs").feedback_eligible);
+        assert!(present(patch, "file.rs").feedback_revision.is_some());
         assert_eq!(
-            feedback_draft(patch, patch, "file.rs", true, 3, " check ").as_deref(),
+            feedback_draft(patch, patch, "file.rs", true, 3, " check ")
+                .map(|feedback| feedback.message)
+                .as_deref(),
             Some("行内反馈 · file.rs · 已暂存 Diff · 旧行 2\n  -before\ncheck")
         );
         assert_eq!(
-            feedback_draft(patch, patch, "file.rs", false, 4, "check").as_deref(),
+            feedback_draft(patch, patch, "file.rs", false, 4, "check")
+                .map(|feedback| feedback.message)
+                .as_deref(),
             Some("行内反馈 · file.rs · 工作区 Diff · 新行 3\n  +after\ncheck")
         );
         assert!(feedback_draft(patch, patch, "file.rs", true, 2, "check").is_none());
@@ -345,7 +370,11 @@ mod tests {
             )
             .is_none()
         );
-        assert!(!present(&format!("{patch}{patch}"), "file.rs").feedback_eligible);
+        assert!(
+            present(&format!("{patch}{patch}"), "file.rs")
+                .feedback_revision
+                .is_none()
+        );
     }
 
     fn numbers(view: &DiffView<'_>) -> Vec<(Option<u32>, Option<u32>)> {

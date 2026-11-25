@@ -306,7 +306,9 @@ async function waitForServer(url, timeoutMs = 60000) {
     assert.equal(diffReceipt.headers()['cache-control'], 'no-store')
     assert.equal((await diffReceipt.json()).staged, false)
     await filePanel.getByRole('status').filter({ hasText: '已添加到当前会话草稿' }).waitFor()
-    assert.equal(await page.locator('main textarea').first().inputValue(), '真实会话草稿\n\n行内反馈 · review-draft.txt · 工作区 Diff · 新行 1\n  +line for review\n复核新增内容')
+    await buttons(`移除 ${reviewPath} · 新行 1 · 工作区 的反馈`).waitFor()
+    await filePanel.locator('[data-kind="add"] .wb-inline-feedback').getByText('复核新增内容', { exact: true }).waitFor()
+    assert.equal(await page.locator('main textarea').first().inputValue(), '真实会话草稿')
     fs.unlinkSync(path.join(projectPath, reviewPath))
     pass('a real worktree diff is verified through the owner and attached to the existing draft')
 

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
-import { ArrowUp, Paperclip, SlidersHorizontal, Square } from 'lucide-react'
+import { ArrowUp, Paperclip, SlidersHorizontal, Square, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -8,11 +8,13 @@ import {
   AvatarFallback,
 } from '@/components/ui/avatar'
 import type { ContextView } from '@/lib/viewmodel'
-import type { DraftSelection } from '@/lib/drafts'
+import type { DraftSelection, FeedbackItem } from '@/lib/drafts'
 
 type Props = {
   draft: string
   selection?: DraftSelection
+  feedback?: FeedbackItem[]
+  onRemoveFeedback?: (id: string) => void
   onDraft: (value: string) => void
   context: ContextView
   onSend: () => void
@@ -38,6 +40,8 @@ type Props = {
 export function Composer({
   draft,
   selection,
+  feedback,
+  onRemoveFeedback,
   onDraft,
   context,
   onSend,
@@ -70,6 +74,13 @@ export function Composer({
   return (
     <div className="bg-background/80 sticky bottom-0 px-3 pt-2 pb-2 backdrop-blur md:px-6 md:pb-3">
       <div className="border-input bg-card focus-within:border-ring/60 mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border p-2.5 shadow-sm md:p-3">
+        {feedback?.length ? <ul aria-label="行内反馈草稿" className="flex max-h-24 min-w-0 flex-wrap gap-1.5 overflow-y-auto p-0.5">
+          {feedback.map(item => <li key={item.id} className="bg-muted flex min-w-0 max-w-full items-center gap-1 rounded-md pl-2 text-xs">
+            <span className="min-w-0 truncate" title={`${item.location}\n${item.comment}`}>{item.location}</span>
+            <Button variant="ghost" size="icon" className="size-7 shrink-0 max-md:size-10" aria-label={`移除 ${item.location} 的反馈`}
+              onClick={() => { onRemoveFeedback?.(item.id); textarea.current?.focus({ preventScroll: true }) }}><X aria-hidden="true" /></Button>
+          </li>)}
+        </ul> : null}
         <Textarea
           ref={textarea}
           value={draft}
@@ -86,7 +97,7 @@ export function Composer({
             if (composing.current || event.nativeEvent.isComposing) return
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
               event.preventDefault()
-              if (!sendDisabledReason) onSend()
+              if (!sendDisabledReason && draft.trim()) onSend()
             }
           }}
           placeholder="给 rpi 发消息…（⌘↵ 发送）"

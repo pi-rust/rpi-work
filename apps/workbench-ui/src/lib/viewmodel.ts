@@ -31,9 +31,13 @@ export type Token = { text: string; class: string }
 export type FileLine = { number: number | null; kind: 'source' | 'meta' | 'add' | 'remove' | 'context' | 'plain'; tokens: Token[] }
 export const fileView = (source: string, path: string, diff: boolean): FileLine[] => JSON.parse(file_view(source, path, diff)) as FileLine[]
 export type DiffLine = Omit<FileLine, 'kind'> & { kind: FileLine['kind'] | 'hunk' | 'note'; old_number: number | null; new_number: number | null }
-export type DiffView = { rows: DiffLine[]; structured: boolean; fallback_reason: 'limit' | 'invalid' | 'unsupported' | 'no_hunks' | null; gutter_digits: number; feedback_eligible: boolean }
+export type DiffView = { rows: DiffLine[]; structured: boolean; fallback_reason: 'limit' | 'invalid' | 'unsupported' | 'no_hunks' | null; gutter_digits: number; feedback_revision: string | null }
 export const diffView = (source: string, path: string): DiffView => JSON.parse(diff_view(source, path)) as DiffView
-export { diff_feedback_draft as diffFeedbackDraft }
+export type DraftFeedback = { path: string; staged: boolean; index: number; revision: string; location: string; comment: string; message: string }
+export function diffFeedbackDraft(expected: string, fresh: string, path: string, staged: boolean, index: number, text: string): DraftFeedback | null {
+  const result = diff_feedback_draft(expected, fresh, path, staged, index, text)
+  return result ? JSON.parse(result) as DraftFeedback : null
+}
 export type MarkdownTag = 'div' | 'p' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'blockquote' | 'ul' | 'ol' | 'li' | 'em' | 'strong' | 'del' | 'code' | 'span' | 'br' | 'hr' | 'table' | 'thead' | 'tbody' | 'tr' | 'th' | 'td'
 export type MarkdownNode =
   | { kind: 'text'; text: string }

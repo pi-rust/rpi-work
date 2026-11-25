@@ -2,7 +2,8 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from '
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CopyTextButton } from '@/components/copy-text-button'
-import { diffFeedbackDraft, diffView, fileView, type DiffView } from '@/lib/viewmodel'
+import { diffFeedbackDraft, diffView, fileView, type DiffView, type DraftFeedback } from '@/lib/viewmodel'
+import type { FeedbackItem } from '@/lib/drafts'
 import type { FileRead } from '@/lib/workspace'
 import './file-viewer.css'
 
@@ -14,7 +15,7 @@ const fallbackLabels: Record<NonNullable<DiffView['fallback_reason']>, string> =
 }
 type ReadyRead = Extract<FileRead, { status: 'ready' }>
 type FeedbackTarget = { file: ReadyRead; index: number; location: string }
-type FeedbackActions = { verify: (path: string, staged: boolean) => Promise<string | null>; append: (text: string) => boolean }
+type FeedbackActions = { verify: (path: string, staged: boolean) => Promise<string | null>; add: (feedback: DraftFeedback) => boolean; items: FeedbackItem[] }
 
 function FeedbackDialog({ target, actions, onClose }: { target: FeedbackTarget; actions: FeedbackActions; onClose: (added: boolean) => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -56,7 +57,7 @@ function FeedbackDialog({ target, actions, onClose }: { target: FeedbackTarget; 
         }
         const addition = diffFeedbackDraft(file.content, fresh, file.path, file.staged, index, text)
         if (!addition) setNotice('Diff 已变化。请关闭反馈，重新读取文件后选择对应行。')
-        else if (!actions.append(addition)) setNotice('草稿超过长度限制。请缩短草稿或反馈后再试。')
+        else if (!actions.add(addition)) setNotice('草稿或反馈已到上限。请缩短草稿或移除部分反馈后再试。')
         else close(true)
       } catch (cause) {
         if (active.current) setNotice(`无法核对 Diff：${cause}`)
@@ -79,7 +80,16 @@ export function FileViewer({ file, retry, feedback }: { file: FileRead; retry: (
   const content = file.status === 'ready' ? file.content : ''
   const diff = file.mode === 'diff'
   const view = useMemo(() => diff ? diffView(content, file.path) : null, [content, file.path, diff])
-  const eligible = view?.feedback_eligible
+  const revision = view?.feedback_revision
+  const comments = new Map<number, FeedbackItem[]>()
+  if (revision && feedback) {
+    for (const item of feedback.items) {
+      if (item.revision !== revision || item.path !== file.path || item.staged !== file.staged) continue
+      const row = comments.get(item.index) ?? []
+      row.push(item)
+      comments.set(item.index, row)
+    }
+  }
   const rows = useMemo(() => view?.rows ?? fileView(content, file.path, false), [view, content, file.path])
   return <section className="wb-file-view" aria-label="文件读取" aria-busy={file.status === 'loading'}>
     <div className="wb-file-header">
@@ -104,12 +114,13 @@ export function FileViewer({ file, retry, feedback }: { file: FileRead; retry: (
               <span className="sr-only">{old !== null ? `旧行 ${old}。` : ''}{next !== null ? `新行 ${next}。` : ''}</span>
             </> : null}
             <code>{row.tokens.map((token, tokenIndex) => <span key={tokenIndex} className={token.class || undefined}>{token.text}</span>)}</code>
-            {feedback && eligible && location && file.status === 'ready' ? <button type="button" className="wb-feedback-line" aria-label={`在 ${location} 添加反馈`}
+            {feedback && revision && location && file.status === 'ready' ? <button type="button" className="wb-feedback-line" aria-label={`在 ${location} 添加反馈`}
               title={`在 ${location} 添加反馈`} onClick={() => setTarget({ file, index, location })}><Plus aria-hidden="true" /></button> : null}
+            {comments.get(index)?.map(item => <p key={item.id} className="wb-inline-feedback">{item.comment}</p>)}
           </div>
         })}
       </div>}
-    <div className="wb-file-status"><span>{view?.fallback_reason ? fallbackLabels[view.fallback_reason] : rows[0]?.kind === 'plain' ? fallbackLabels.limit : file.status === 'ready' ? `${rows.length} 行 · 只读${view?.structured ? eligible && feedback ? ' · 可添加行内反馈' : ' · hunk 行号，仅供阅读' : ''}` : '只读；不支持保存或暂存写入'}</span>{file.status === 'ready' ? <button type="button" onClick={retry}>重新读取文件</button> : null}</div>
+    <div className="wb-file-status"><span>{view?.fallback_reason ? fallbackLabels[view.fallback_reason] : rows[0]?.kind === 'plain' ? fallbackLabels.limit : file.status === 'ready' ? `${rows.length} 行 · 只读${view?.structured ? revision && feedback ? ' · 可添加行内反馈' : ' · hunk 行号，仅供阅读' : ''}` : '只读；不支持保存或暂存写入'}</span>{file.status === 'ready' ? <button type="button" onClick={retry}>重新读取文件</button> : null}</div>
     {addedTo === file ? <p className="wb-feedback-confirmed" role="status">已添加到当前会话草稿</p> : null}
     {feedback && target?.file === file ? <FeedbackDialog target={target} actions={feedback} onClose={added => {
       if (added) setAddedTo(file)

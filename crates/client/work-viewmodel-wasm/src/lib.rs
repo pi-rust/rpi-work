@@ -284,6 +284,7 @@ pub fn diff_feedback_draft(
     text: &str,
 ) -> Option<String> {
     work_viewmodel::diff_view::feedback_draft(expected, fresh, path, staged, index, text)
+        .map(|feedback| serde_json::to_string(&feedback).expect("serializable draft feedback"))
 }
 
 /// Per-line tokens for the shared lexer: `[[{text, class}]]`.

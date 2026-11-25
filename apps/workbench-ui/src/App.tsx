@@ -43,7 +43,8 @@ export default function App() {
   const directoryExpansion = useScopedPresentation(scrollScope, () => ({
     paths: live && workspace.selected.project ? readDirectoryExpansion(scrollScope) : [],
   }))
-  const { draft, setDraft, append: appendDraft, clear: clearDraft, selection } = useDraft(draftScope)
+  const { draft, feedback, sendText, feedbackOverLimit, setDraft, addFeedback, removeFeedback, clear: clearDraft, selection } = useDraft(draftScope)
+  const feedbackLimitReason = feedbackOverLimit ? '草稿和行内反馈超过长度上限，请缩短草稿或移除反馈' : undefined
   const [rail, setRail] = useState(true)
   const [railTab, setRailTab] = useState<'browser' | 'run' | 'files'>('browser')
   const [page, setPage] = useState<'chat' | 'resources'>('chat')
@@ -469,23 +470,25 @@ export default function App() {
               <Composer
                 draft={draft}
                 selection={selection}
+                feedback={feedback}
+                onRemoveFeedback={removeFeedback}
                 onDraft={setDraft}
-                sendDisabledReason={!live ? fixture ? '示例模式不会发送消息' : '请先连接节点' : !ready ? '节点尚未就绪' : !workspace.selected.session ? '请先在侧栏创建真实会话；当前草稿会保留' : !workspace.controls?.send ? workspace.controls?.reason || '未取得当前会话可写观察' : undefined}
-                queueDisabledReason={!workspace.controls?.queue ? workspace.controls?.reason || '当前会话未声明入队能力' : undefined}
+                sendDisabledReason={!live ? fixture ? '示例模式不会发送消息' : '请先连接节点' : !ready ? '节点尚未就绪' : !workspace.selected.session ? '请先在侧栏创建真实会话；当前草稿会保留' : !workspace.controls?.send ? workspace.controls?.reason || '未取得当前会话可写观察' : feedbackLimitReason}
+                queueDisabledReason={!workspace.controls?.queue ? workspace.controls?.reason || '当前会话未声明入队能力' : feedbackLimitReason}
                 abortDisabled={!workspace.controls?.abort}
                 modelDisabled={!workspace.controls?.model}
                 thinkingDisabled={!workspace.controls?.thinking}
                 selectedModel={workspace.runtime?.modelId && workspace.runtime.provider ? { id: workspace.runtime.modelId, provider: workspace.runtime.provider } : undefined}
                 context={context ?? { used: null, window: null, percent: null, threshold: null, percentText: '—' }}
                 onSend={() => {
-                  void workspace.send(draft).then((ok) => {
+                  void workspace.send(sendText).then((ok) => {
                     if (ok) clearDraft()
                   })
                 }}
                 onQueue={
                   live
                     ? () => {
-                        void workspace.queueMessage(draft).then((ok) => {
+                        void workspace.queueMessage(sendText).then((ok) => {
                           if (ok) clearDraft()
                         })
                       }
@@ -554,7 +557,7 @@ export default function App() {
                       onOpen={(path, staged) => void workspace.openChange(path, staged)}
                       onOpenSource={(path) => void workspace.openFile(path)}
                       listDir={workspace.listDir}
-                      feedback={workspace.selected.session ? { verify: workspace.verifyDiff, append: appendDraft } : undefined}
+                      feedback={workspace.selected.session ? { verify: workspace.verifyDiff, add: addFeedback, items: feedback } : undefined}
                     />
                   ) : railTab === 'run' ? (
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
