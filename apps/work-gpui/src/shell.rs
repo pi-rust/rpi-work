@@ -3,6 +3,8 @@
 
 #[path = "composer.rs"]
 pub(crate) mod editor;
+#[path = "session_action.rs"]
+pub(crate) mod session_action;
 
 use std::collections::{HashMap, HashSet};
 
@@ -38,6 +40,8 @@ pub struct Shell {
     node: Option<Node>,
     watcher: Option<(Task<()>, tokio::task::AbortHandle)>,
     frame: Option<SessionFrame>,
+    actions: HashMap<usize, session_action::Request>,
+    next_action: u64,
     checking_receipts: HashSet<usize>,
     load_error: Option<String>,
     observation: Option<&'static str>,
@@ -101,6 +105,8 @@ impl Shell {
             node,
             watcher: None,
             frame: None,
+            actions: HashMap::new(),
+            next_action: 0,
             checking_receipts: HashSet::new(),
             load_error: None,
             observation: None,
@@ -173,7 +179,7 @@ impl Shell {
         }
         if let Some((node, index)) = self.node.as_ref().zip(session) {
             let session_id = self.snapshot.sessions[index].id.clone();
-            let (mut updates, cancel) = node.watch(session_id.clone());
+            let (mut updates, cancel) = node.watch(session_id);
             let display = cx.spawn(async move |this, cx| {
                 while let Some(result) = updates.recv().await {
                     let stop = this
@@ -182,7 +188,7 @@ impl Shell {
                                 return true;
                             }
                             match result {
-                                Ok(frame) => shell.apply_frame(index, &session_id, frame),
+                                Ok(frame) => shell.apply_frame(index, frame),
                                 Err(error) => {
                                     shell.frame = None;
                                     shell.load_error = Some(error.to_string());
@@ -202,7 +208,14 @@ impl Shell {
         cx.notify();
     }
 
-    fn apply_frame(&mut self, index: usize, id: &str, frame: SessionFrame) {
+    fn apply_frame(&mut self, index: usize, frame: SessionFrame) {
+        if self
+            .actions
+            .get(&index)
+            .is_some_and(|request| request.observed(&frame))
+        {
+            self.actions.remove(&index);
+        }
         let draft = self.drafts.entry(Some(index)).or_default();
         draft.observe(
             &frame.event,
@@ -213,7 +226,7 @@ impl Shell {
             <= px(24.0);
         let (rows, observation) = present_rows(
             &mut self.order,
-            id,
+            &frame.session_id,
             &frame.history,
             &frame.projection.blocks,
             Some(&frame.projection),
@@ -231,6 +244,9 @@ impl Shell {
                 frame.event.as_str(),
                 "message_update"
                     | "agent_settled"
+                    | "agent_start"
+                    | "ui_dialog_request"
+                    | "ui_dialog_closed"
                     | "connection_reconnecting"
                     | "connection_online"
             ) {
@@ -242,17 +258,24 @@ impl Shell {
 
     fn session_controls(&self) -> SessionControls {
         let draft = self.drafts.get(&self.session);
+        let mut pending = draft.map(Draft::pending).unwrap_or_default();
+        if let Some(request) = self.session.and_then(|index| self.actions.get(&index)) {
+            request.apply_pending(&mut pending);
+        }
         controls(&SessionObservation {
             projection: self.frame.as_ref().map(|frame| &frame.projection),
             access: self.frame.as_ref().and_then(|frame| frame.access.as_ref()),
             configuration: None,
             runtime: None,
-            has_dialogs: self.frame.as_ref().is_some_and(|frame| frame.has_dialogs),
+            has_dialogs: self
+                .frame
+                .as_ref()
+                .is_some_and(|frame| !frame.dialogs.is_empty()),
             pending_resume: self
                 .frame
                 .as_ref()
                 .is_some_and(|frame| frame.pending_resume),
-            pending: draft.map(Draft::pending).unwrap_or_default(),
+            pending,
         })
     }
 
@@ -260,18 +283,22 @@ impl Shell {
         let Some((node, index)) = self.node.as_ref().zip(self.session) else {
             return;
         };
-        if !self.session_controls().send {
+        let Some(frame) = self.frame.as_ref().filter(|_| self.session_controls().send) else {
             return;
-        }
+        };
         let draft = self.drafts.entry(Some(index)).or_default();
         if !draft.input.can_send() {
             return;
         }
+        if self
+            .actions
+            .get(&index)
+            .is_some_and(|request| !request.locked())
+        {
+            self.actions.remove(&index);
+        }
         draft.begin();
-        let request = node.prompt(
-            self.snapshot.sessions[index].id.clone(),
-            draft.input.text.clone(),
-        );
+        let request = node.prompt(frame.session_id.clone(), draft.input.text.clone());
         cx.spawn(async move |this, cx| {
             let result = request.await;
             this.update(cx, |shell, cx| {
@@ -892,13 +919,23 @@ impl Shell {
             .session
             .is_some_and(|index| self.checking_receipts.contains(&index));
         let can_check = controls.online && !checking && draft.and_then(Draft::receipt).is_some();
-        let notice = draft.and_then(|draft| draft.notice.as_deref());
+        let action = self.session.and_then(|index| self.actions.get(&index));
+        let notice = action
+            .map(session_action::Request::status)
+            .or_else(|| draft.and_then(|draft| draft.notice.as_deref()));
         let status = if checking {
             "正在核对发送回执…"
         } else {
             notice.unwrap_or_else(|| {
                 if self.node.is_none() {
                     "示例 · 草稿保存在当前窗口"
+                } else if controls.online
+                    && self
+                        .frame
+                        .as_ref()
+                        .is_some_and(|frame| !frame.dialogs.is_empty())
+                {
+                    "等待审批回复"
                 } else if !controls.reason.is_empty() {
                     &controls.reason
                 } else {
@@ -918,6 +955,7 @@ impl Shell {
                     .w_full()
                     .max_w(px(READING_WIDTH))
                     .mx_auto()
+                    .child(self.approvals(&controls, cx))
                     .child(
                         div()
                             .id("composer")
@@ -952,31 +990,19 @@ impl Shell {
                                             ),
                                         )
                                     })
-                                    .child(
-                                        div()
-                                            .id("send")
-                                            .flex()
-                                            .flex_none()
-                                            .items_center()
-                                            .justify_center()
-                                            .size(px(28.0))
-                                            .rounded_full()
-                                            .bg(if can_send {
-                                                palette.text
-                                            } else {
-                                                palette.hover
-                                            })
-                                            .child(self.text(
-                                                "↑",
-                                                15.0,
-                                                if can_send { palette.bg } else { palette.muted },
-                                            ))
-                                            .when(can_send, |button| {
-                                                button.cursor_pointer().on_click(
-                                                    cx.listener(|this, _, _, cx| this.send(cx)),
-                                                )
-                                            }),
-                                    ),
+                                    .when(
+                                        action.is_some_and(session_action::Request::can_check)
+                                            && controls.online,
+                                        |bar| {
+                                            bar.child(
+                                                self.button("check-control", "核对操作回执")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        this.check_control(cx)
+                                                    })),
+                                            )
+                                        },
+                                    )
+                                    .child(self.run_button(can_send, &controls, cx)),
                             ),
                     )
                     .child(

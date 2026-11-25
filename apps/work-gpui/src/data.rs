@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinHandle};
 use work_client::{ClientError, SessionAccess, SessionConnection, WorkspaceClient};
-use work_core::api::HostResponse;
 use work_core::api::realtime::{OperationRef, OperationStatus};
+use work_core::api::{HostResponse, PendingDialog};
 use work_core::{ApplyResult, MessageBlock, RunProjection, ToolStatus};
 use work_viewmodel::observability::metrics::{Context, Metrics};
 
@@ -213,6 +213,35 @@ impl Node {
             .spawn(async move { client.prompt(&id, &text).await })
     }
 
+    pub fn control(
+        &self,
+        id: String,
+        action: crate::shell::session_action::Action,
+    ) -> JoinHandle<Result<Option<Result<(), String>>, ClientError>> {
+        use crate::shell::session_action::Action;
+        use work_viewmodel::session_receipts::command_admission;
+
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            match action {
+                Action::Abort => client
+                    .abort(&id)
+                    .await
+                    .map(|reply| command_admission(reply, Some("abort"), false)),
+                Action::Reply { request_id, value } => {
+                    let reply = client
+                        .dialog_response(
+                            &id,
+                            &request_id,
+                            json!({"kind": "selector", "values": [value]}),
+                        )
+                        .await?;
+                    Ok(crate::shell::session_action::dialog_admission(&reply))
+                }
+            }
+        })
+    }
+
     pub fn receipt(
         &self,
         operation: OperationRef,
@@ -220,7 +249,7 @@ impl Node {
         let client = self.client.clone();
         self.runtime.spawn(async move {
             work_viewmodel::config_requests::bounded(
-                "读取发送回执",
+                "读取操作回执",
                 client.operation_status(&operation),
             )
             .await
@@ -229,10 +258,11 @@ impl Node {
 }
 
 pub struct SessionFrame {
+    pub session_id: String,
     pub history: Vec<Value>,
     pub projection: RunProjection,
     pub access: Option<SessionAccess>,
-    pub has_dialogs: bool,
+    pub dialogs: Vec<PendingDialog>,
     pub pending_resume: bool,
     pub event: String,
 }
@@ -244,10 +274,11 @@ impl SessionFrame {
         event: String,
     ) -> Self {
         Self {
+            session_id: connection.session_id().into(),
             history: connection.messages().to_vec(),
             projection: connection.projection().clone(),
             access: access.cloned(),
-            has_dialogs: !connection.pending_dialogs().is_empty(),
+            dialogs: connection.pending_dialogs().to_vec(),
             pending_resume: connection.pending_resume(),
             event,
         }
