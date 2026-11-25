@@ -1,6 +1,8 @@
 //! Native workbench layout. The shared view model owns transcript ordering, tool
 //! labels, code tokens and metrics.
 
+#[path = "browser.rs"]
+mod browser;
 #[path = "composer_config.rs"]
 pub(crate) mod composer_config;
 #[path = "composer.rs"]
@@ -76,6 +78,7 @@ pub struct Shell {
     session_history: Vec<(Option<usize>, Option<usize>)>,
     history_position: usize,
     files: project_files::Panel,
+    browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
     creation_error: Option<(bool, String)>,
@@ -154,6 +157,7 @@ impl Shell {
             session_history: vec![(project, session)],
             history_position: 0,
             files: project_files::Panel::default(),
+            browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
             creation_error: None,
@@ -178,6 +182,7 @@ impl Shell {
     }
 
     pub fn focus_composer(&self, window: &mut Window) {
+        self.browser.restore_composer_focus();
         self.focus.focus(window);
     }
 
@@ -973,7 +978,7 @@ impl Shell {
                             project_files::Tab::Overview,
                             "header-overview",
                             "globe",
-                            "项目概览",
+                            "浏览器",
                         ),
                         (
                             project_files::Tab::Files,
@@ -990,6 +995,13 @@ impl Shell {
                     ]
                     .into_iter()
                     .map(|(tab, id, shape, label)| {
+                        let tab = if tab == project_files::Tab::Overview
+                            && self.files.tab.browser_id().is_some()
+                        {
+                            self.files.tab
+                        } else {
+                            tab
+                        };
                         let active = self.files.tab == tab
                             && if overlay {
                                 self.overlay == Some(Overlay::Inspector)
@@ -1067,7 +1079,17 @@ impl Shell {
                     .px(px(8.0))
                     .border_b_1()
                     .border_color(palette.line)
-                    .child(self.project_tabs(cx))
+                    .child(
+                        div()
+                            .id("inspector-tab-scroll")
+                            .flex()
+                            .items_center()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .overflow_x_scroll()
+                            .child(self.project_tabs(cx))
+                            .child(self.browser_tabs(cx)),
+                    )
                     .child(
                         div()
                             .flex()
@@ -1094,7 +1116,9 @@ impl Shell {
                             )),
                     ),
             )
-            .child(if self.files.is_overview() {
+            .child(if let Some(id) = self.files.tab.browser_id() {
+                self.browser_contents(id)
+            } else if self.files.is_overview() {
                 div()
                     .flex()
                     .flex_col()
@@ -1517,6 +1541,18 @@ impl Render for Shell {
             .clamp(320.0, (remaining - 350.0).max(320.0));
         let docked = self.overview_open && !overlay;
         let full = docked && self.inspector_full;
+        if full || overlay && self.overlay.is_some() {
+            self.composer_config.close_menu();
+        }
+        let browser_visible = docked || overlay && self.overlay == Some(Overlay::Inspector);
+        self.browser.hide_inactive(
+            self.files
+                .tab
+                .browser_id()
+                .filter(|_| browser_visible && !self.composer_config.menu_open()),
+            window,
+            cx,
+        );
         let inset = if compact { 14.0 } else { READING_INSET };
         let reading_width =
             (remaining - if docked { dock_width } else { 0.0 } - inset * 2.0).min(READING_WIDTH);

@@ -16,9 +16,19 @@ pub(super) enum Tab {
     Overview,
     Files,
     Changes,
+    #[cfg(target_os = "macos")]
+    Browser(u64),
 }
 
 impl Tab {
+    pub(super) fn browser_id(self) -> Option<u64> {
+        #[cfg(target_os = "macos")]
+        if let Self::Browser(id) = self {
+            return Some(id);
+        }
+        None
+    }
+
     fn root(self) -> Option<Route> {
         match self {
             Self::Overview => None,
@@ -27,6 +37,8 @@ impl Tab {
                 cursor: None,
             }),
             Self::Changes => Some(Route::Changes),
+            #[cfg(target_os = "macos")]
+            Self::Browser(_) => None,
         }
     }
 }

@@ -7097,7 +7097,9 @@ dependencies = [
 name = "work-gpui"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "gpui",
+ "raw-window-handle",
  "serde_json",
  "tokio",
  "unicode-segmentation",

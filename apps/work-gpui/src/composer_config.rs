@@ -221,6 +221,10 @@ impl Panel {
         self.observation = None;
     }
 
+    pub fn menu_open(&self) -> bool {
+        self.menu.is_some()
+    }
+
     pub fn close_menu(&mut self) -> bool {
         self.catalog = None;
         self.menu.take().is_some()
