@@ -465,6 +465,101 @@ const roots = [entry('src'), entry('empty'), entry('README.md', 'file')]
         assert.deepEqual(requests.map(request => request.path), ['', 'src', '', 'empty', '', 'src', '', 'empty'])
       } finally { await other.close() }
     })
+    await check('large directory windows retain the full keyboard order and exact file paths', async ({ page, panel, requests, rendered }) => {
+      const row = name => panel.getByRole('treeitem', { name, exact: true })
+      const first = row('large-0000.txt'), last = row('large-1999.txt')
+      await first.waitFor()
+      assert(await panel.getByRole('treeitem').count() < 40, 'a large directory renders only a bounded window of rows')
+      assert.deepEqual([await first.getAttribute('aria-setsize'), await first.getAttribute('aria-posinset')], ['2001', '2'])
+      await first.focus(); await page.keyboard.press('End'); await last.waitFor()
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'large-1999.txt')
+      assert.deepEqual([await last.getAttribute('aria-setsize'), await last.getAttribute('aria-posinset')], ['2001', '2001'])
+      await page.keyboard.press('ArrowUp')
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'large-1998.txt')
+      const fileRequest = page.waitForRequest(request => {
+        const url = new URL(request.url())
+        return request.method() === 'GET' && url.pathname.endsWith('/file') && url.searchParams.get('path') === 'large-1998.txt'
+      })
+      await page.keyboard.press('Enter'); await fileRequest
+      await panel.getByRole('region', { name: '只读文件内容', exact: true }).waitFor()
+      await page.keyboard.press('Shift+Tab')
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '刷新目录')
+      await page.keyboard.press('Tab')
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'large-1998.txt')
+      await page.keyboard.press('Home'); await row('src').waitFor()
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'src')
+      await page.keyboard.press('ArrowRight')
+      await page.waitForFunction(() => {
+        const viewport = document.querySelector('.wb-directory-viewport')
+        const folder = document.querySelector('[role="treeitem"][aria-label="src"]')
+        return folder?.getAttribute('aria-expanded') === 'true' &&
+          folder.getBoundingClientRect().top < viewport.getBoundingClientRect().bottom
+      })
+      await row('theme.rs').waitFor()
+      await page.keyboard.press('ArrowDown')
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'theme.rs')
+      assert.deepEqual([await row('theme.rs').getAttribute('aria-level'), await row('theme.rs').getAttribute('aria-setsize')], ['2', '1'])
+      await page.keyboard.press('ArrowLeft')
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'src')
+      await page.keyboard.press('ArrowLeft'); await row('theme.rs').waitFor({ state: 'detached' })
+      await rendered(); assert.deepEqual(requests.map(request => request.path), ['', 'src'])
+    }, async ({ page }) => {
+      const contents = [entry('src'), ...Array.from({ length: 2000 }, (_, i) => entry(`large-${String(i).padStart(4, '0')}.txt`, 'file'))]
+      await page.route(url => url.pathname.endsWith('/files') && !url.searchParams.get('path'), route => route.fulfill({ json: { path: '', entries: contents } }))
+    })
+    await check('mobile scrolling windows long names and keeps directory feedback and source independent', async ({ page, panel, group, requests, gate, rendered }) => {
+      const row = name => panel.getByRole('treeitem', { name, exact: true })
+      const scroll = panel.locator('.wb-directory-viewport')
+      const largeFolder = row('src')
+      const lastName = `${'很长的目录文件名'.repeat(10)}.txt`
+      const large = [entry('src'), ...Array.from({ length: 900 }, (_, i) => entry(`record-${i}.txt`, 'file')), entry(lastName, 'file')]
+      const child = gate()
+      let largeRoot = true
+      await page.route(url => url.pathname.endsWith('/files'), route => {
+        const dir = new URL(route.request().url()).searchParams.get('path') || ''
+        if (dir === 'src') {
+          const response = { status: 503, json: { error: 'nested listing unavailable' } }
+          return largeRoot ? child.hold(route, response) : route.fulfill(response)
+        }
+        return route.fulfill({ json: { path: '', entries: largeRoot ? large : roots } })
+      })
+      await page.getByRole('button', { name: '浏览器', exact: true }).click()
+      await page.getByRole('button', { name: '切换主题', exact: true }).click()
+      await page.setViewportSize({ width: 320, height: 940 }); await panel.waitFor({ state: 'hidden' })
+      await page.getByRole('button', { name: '文件面板', exact: true }).click(); await panel.getByTestId('tab-tree').click()
+      await largeFolder.press('ArrowRight'); await child.entered(); await group('src').getByRole('status').waitFor()
+      await scroll.hover(); await page.mouse.wheel(0, 18000)
+      await page.waitForFunction(() => document.querySelector('.wb-directory-viewport').scrollTop > 10000)
+      await page.waitForFunction(() => [...document.querySelectorAll('.wb-directory-viewport [role="treeitem"]')].some(row => Number(row.getAttribute('aria-posinset')) > 200))
+      assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'src')
+      assert(await panel.getByRole('treeitem').count() < 40)
+      await child.flush(); await page.keyboard.press('End')
+      const last = row(lastName); await last.waitFor()
+      await page.waitForFunction(name => document.activeElement?.getAttribute('aria-label') === name, lastName)
+      const geometry = await last.evaluate(row => {
+        const parent = row.closest('.wb-directory-viewport'), bounds = row.getBoundingClientRect(), clip = parent.getBoundingClientRect()
+        const label = row.querySelector('[title]')
+        return { height: bounds.height, inView: bounds.top >= clip.top - 1 && bounds.bottom <= clip.bottom + 1,
+          pageWidth: document.documentElement.scrollWidth, paneOverflow: parent.scrollWidth - parent.clientWidth,
+          textClips: label.scrollWidth > label.clientWidth, outline: getComputedStyle(row).outlineOffset,
+          innerRing: getComputedStyle(label.parentElement).boxShadow }
+      })
+      assert.deepEqual(geometry, { height: 46, inView: true, pageWidth: 320, paneOverflow: 0, textClips: true, outline: '-2px', innerRing: 'none' })
+      assert.deepEqual(requests.map(request => request.path), ['', '', 'src'])
+      await page.screenshot({ path: path.join(artifacts, 'windowed-dark-320.png') })
+      await page.keyboard.press('Enter')
+      const source = panel.getByRole('region', { name: '只读文件内容', exact: true }); await source.waitFor()
+      await page.evaluate(() => { window.windowedSource = document.querySelector('.wb-source-code') })
+      largeRoot = false
+      const refresh = panel.getByRole('button', { name: '刷新目录', exact: true })
+      await refresh.click(); await row('README.md').waitFor()
+      await page.waitForFunction(() => document.querySelector('[aria-label="刷新目录"]')?.getAttribute('aria-disabled') === null)
+      await group('src').getByRole('alert').waitFor(); await rendered()
+      assert.equal(await panel.getByRole('treeitem').count(), 3)
+      assert.equal(await panel.locator('.wb-directory-window').count(), 0)
+      assert.equal(await page.evaluate(() => windowedSource === document.querySelector('.wb-source-code')), true)
+      assert.deepEqual(requests.map(request => request.path), ['', '', 'src', '', 'src'])
+    })
     console.log(`RESULT ${passed.length} checks passed${failures.length ? `, ${failures.length} failed` : ''}`)
     if (failures.length) process.exitCode = 1
   } finally { if (browser) await browser.close(); preview.kill(); await fixture.close(); await new Promise(resolve => site.close(resolve)) }

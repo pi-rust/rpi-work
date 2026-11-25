@@ -7,7 +7,7 @@ import {
   syncDataLoaderFeature,
 } from '@headless-tree/core'
 
-import { Tree, TreeItem, TreeItemLabel } from '@/components/reui/tree'
+import { DirectoryTree } from '@/components/directory-tree'
 import { ChangesGrid } from '@/components/changes-grid'
 import { FileViewer } from '@/components/file-viewer'
 import type { FileRead } from '@/lib/workspace'
@@ -57,6 +57,8 @@ function ReadyFilePanel({
   const [staged, setStaged] = useState(() => fileRead?.mode === 'diff' && fileRead.staged)
   const [tab, setTab] = useState<'changes' | 'tree'>('changes')
   const treeActive = useRef(false)
+  const viewport = useRef<HTMLDivElement>(null)
+  const noticeContainer = useRef<HTMLDivElement>(null)
   // One listing cache for both the lazy tree and explicit GETs. The sync loader
   // reads it without scheduling network requests when the tree is rebuilt.
   const entries = useRef(new Map<string, NodeFileEntry>())
@@ -153,6 +155,8 @@ function ReadyFilePanel({
     onPrimaryAction: item => { if (!item.isFolder()) openPath(item.getId()) },
     getItemName: (item) => item.getItemData()?.name ?? '',
     isItemFolder: (item) => item.getItemData()?.kind === 'directory',
+    // The virtual range retains the focused row, so keyboard jumps can use its DOM position.
+    scrollToItem: item => item.getElement()?.scrollIntoView({ block: 'nearest', inline: 'nearest' }),
     setExpandedItems: () => {
       if (!mounted.current) return
       onExpandedDirectoriesChange(tree.getState().expandedItems)
@@ -246,9 +250,10 @@ function ReadyFilePanel({
           </Button>
         </div>
       </div>
-      <div className="max-h-48 shrink-0 overflow-y-auto px-2 py-1">
+      <div ref={viewport} className="wb-directory-viewport max-h-48 shrink-0 overflow-y-auto px-2 py-1">
         {tab === 'tree' ? (
           <>
+          <div ref={noticeContainer}>
           {notices.map(([path, read]) => {
             const label = path ? `目录 ${path}` : '项目根目录'
             return <div key={path} role="group" aria-label={label} className="wb-directory-notice">
@@ -258,30 +263,8 @@ function ReadyFilePanel({
               </> : <p role="status">{read.status === 'loading' ? (read.entries ? `正在刷新${label}…（保留上次读取结果）` : `正在读取${label}…`) : `${label}${path ? ' ' : ''}为空。`}</p>}
             </div>
           })}
-          <Tree tree={tree} className="py-1 text-[11px]">
-            {items.map((item) => (
-              <TreeItem
-                key={item.getId()}
-                item={item}
-                className={cn(fileRead?.path === item.getId() && 'bg-muted/70')}
-              >
-                <TreeItemLabel
-                  className="w-full font-mono"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    if (item.isFolder()) {
-                      if (item.isExpanded()) item.collapse()
-                      else item.expand()
-                    } else {
-                      openPath(item.getId())
-                    }
-                  }}
-                >
-                  {item.getItemName()}
-                </TreeItemLabel>
-              </TreeItem>
-            ))}
-          </Tree>
+          </div>
+          <DirectoryTree tree={tree} viewport={viewport} notices={noticeContainer} selectedPath={fileRead?.path} />
           </>
         ) : changes.length === 0 ? (
           <p className="text-muted-foreground px-1 py-2 text-[11px]">没有未提交的改动。</p>

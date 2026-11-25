@@ -168,3 +168,10 @@
 - 打开「文件 → 目录」后使用既有 `workspace.listDir` 读取根目录，再沿已确认且可见的展开分支读取子目录。切到改动页、隐藏右栏或折叠父目录时，后续不可见的分支等到重新显示再读。失败沿用当前路径的反馈和显式重试。成功读取确认分支删除或变为文件时，清理该分支和后代的展开记录。失效的会话响应单独返回取消结果，避免被当成成功空目录。
 - 旧构建通过既有 14 项目录测试，刷新后 `aria-expanded` 断言失败（`/tmp/rpi-tree-state-before.FZun8o/tree.log`）。新增断言覆盖父子请求次序、隐藏后延迟、失败后相同 GET、路径重新出现后保持折叠、同路径跨会话和跨节点隔离。既有明暗桌面与 320px 用例继续检查键盘、焦点、真实 iframe、草稿和选区。
 - 最终目录专项 19 项、产品与 fixture 构建、17 套本地浏览器回归均通过，lint 保留既有 67 条警告、0 条错误。退出回执位于 `/tmp/rpi-tree-state-final.frjqYI/`。已查看 `artifacts/tree/restored-light-320.png` 和 `artifacts/tree/refresh-dark-1440.png`，截图位于忽略目录。目录分页和虚拟化仍待实施。
+
+## 第十六批　大目录可见行虚拟化
+
+- 超过 80 行的展开树使用项目已有的 TanStack Virtual，仅挂载当前滚动范围、少量相邻行和焦点行。Headless Tree 保留完整的已加载顺序和层级，继续提供键盘操作和 `aria-level`、`aria-posinset`、`aria-setsize`。虚拟行沿用目录面板，手机行高 46px。长名称以单行省略展示，行的无障碍名称及指针提示包含完整名称。
+- `WorkClient::files` 的 GET 只传 `path`，`FileListing` 只有 `path` 和 `entries`。实际目录仍由现有客户端读取。滚动窗口变化仅更新展示，文件读取继续使用实际条目路径，目录加载、局部反馈和重试沿用现有状态。服务端分页需要节点支持请求游标、顺序和完成标记。当前传输量和目录数据在内存中的开销仍随返回条目数增长。
+- 旧构建的既有 19 项目录测试通过，2,001 项目录的挂载行数断言失败（`/tmp/rpi-tree-window-before.seSvGh/tree.log`）。新增桌面用例验证视口 DOM 数量、Home/End、方向键、Tab 往返、层级和同级序号、精确文件 GET。新增深色 320px 用例用 HTTP gate 验证滚动期间的独立目录反馈、焦点保留、长名称、触控行高及单层内侧焦点，并核对刷新回小列表时源码区域保持同一 DOM。
+- 一轮全套回归发现连续键盘跳转后子项没有进入滚动窗口。键盘跳转改用已挂载焦点行的实际位置后，产品和 fixture 双构建、目录专项 21 项及全部 17 套本地浏览器回归通过。lint 为 68 条警告、0 条错误，新增一条 TanStack Virtual 的 React Compiler 兼容性诊断。TypeScript、脚本语法、差异和两份工作流 YAML 检查通过。最终退出回执位于 `/tmp/rpi-tree-window-check.zyXfbU/`，320px 深色截图已查看并保存在忽略的 `artifacts/tree/windowed-dark-320.png`。
