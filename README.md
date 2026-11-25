@@ -28,7 +28,7 @@ cargo run --manifest-path apps/work-gpui/Cargo.toml
 task desktop -- --connect http://127.0.0.1:13031
 ```
 
-需要认证时，在环境或 `.env.local` 中设置 `RPI_WORK_PASSWORD`。当前 GPUI 支持只读节点会话和窗口内草稿，发送和正式安装包仍在迁移。参见 [GPUI 构建说明](apps/work-gpui/README.md)。
+需要认证时，在环境或 `.env.local` 中设置 `RPI_WORK_PASSWORD`。当前 GPUI 支持纯文本发送、实时回复与断线恢复。正式安装包仍在迁移。参见 [GPUI 构建说明](apps/work-gpui/README.md)。
 
 ## 架构
 

@@ -1,8 +1,12 @@
 //! Workbench data from an authenticated Work node or the layout sample.
 
 use serde_json::{Value, json};
-use work_client::WorkspaceClient;
-use work_core::{MessageBlock, ToolStatus};
+use tokio::sync::mpsc;
+use tokio::task::{AbortHandle, JoinHandle};
+use work_client::{ClientError, SessionAccess, SessionConnection, WorkspaceClient};
+use work_core::api::HostResponse;
+use work_core::api::realtime::{OperationRef, OperationStatus};
+use work_core::{ApplyResult, MessageBlock, RunProjection, ToolStatus};
 use work_viewmodel::observability::metrics::{Context, Metrics};
 
 pub struct ProjectItem {
@@ -156,7 +160,7 @@ impl Node {
                 .map_err(|error| format!("会话读取失败：{error}"))?;
             Ok::<_, String>(Snapshot {
                 node: origin.to_owned(),
-                mode: "已连接节点 · 只读".into(),
+                mode: "已连接节点".into(),
                 projects: projects
                     .into_iter()
                     .map(|project| ProjectItem {
@@ -182,13 +186,135 @@ impl Node {
         Ok((snapshot, Self { client, runtime }))
     }
 
-    pub fn open(
+    pub fn watch(
         &self,
-        session_id: String,
-    ) -> tokio::task::JoinHandle<Result<work_client::SessionConnection, work_client::ClientError>>
-    {
+        id: String,
+    ) -> (
+        mpsc::Receiver<Result<SessionFrame, ClientError>>,
+        AbortHandle,
+    ) {
+        let client = self.client.clone();
+        let (output, rx) = mpsc::channel(4);
+        let task = self.runtime.spawn(async move {
+            if let Err(error) = watch_session(&client, &id, &output).await {
+                let _ = output.send(Err(error)).await;
+            }
+        });
+        (rx, task.abort_handle())
+    }
+
+    pub fn prompt(
+        &self,
+        id: String,
+        text: String,
+    ) -> JoinHandle<Result<HostResponse<Value>, ClientError>> {
         let client = self.client.clone();
         self.runtime
-            .spawn(async move { client.connect_session(session_id).await })
+            .spawn(async move { client.prompt(&id, &text).await })
     }
+
+    pub fn receipt(
+        &self,
+        operation: OperationRef,
+    ) -> JoinHandle<Result<OperationStatus, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded(
+                "读取发送回执",
+                client.operation_status(&operation),
+            )
+            .await
+        })
+    }
+}
+
+pub struct SessionFrame {
+    pub history: Vec<Value>,
+    pub projection: RunProjection,
+    pub access: Option<SessionAccess>,
+    pub has_dialogs: bool,
+    pub pending_resume: bool,
+    pub event: String,
+}
+
+impl SessionFrame {
+    fn capture(
+        connection: &SessionConnection,
+        access: Option<&SessionAccess>,
+        event: String,
+    ) -> Self {
+        Self {
+            history: connection.messages().to_vec(),
+            projection: connection.projection().clone(),
+            access: access.cloned(),
+            has_dialogs: !connection.pending_dialogs().is_empty(),
+            pending_resume: connection.pending_resume(),
+            event,
+        }
+    }
+}
+
+async fn watch_session(
+    client: &WorkspaceClient,
+    id: &str,
+    output: &mpsc::Sender<Result<SessionFrame, ClientError>>,
+) -> Result<(), ClientError> {
+    use work_viewmodel::config_requests::bounded;
+    let initial_access = bounded("读取会话能力", client.session_access(id)).await?;
+    let mut connection = client
+        .connect_session_with_access(id, &initial_access)
+        .await?;
+    let mut access = Some(initial_access);
+    if output
+        .send(Ok(SessionFrame::capture(
+            &connection,
+            access.as_ref(),
+            String::new(),
+        )))
+        .await
+        .is_err()
+    {
+        return Ok(());
+    }
+    while let Some(event) = connection.next().await? {
+        if matches!(
+            event.applied,
+            ApplyResult::IgnoredStale | ApplyResult::IgnoredDuplicate
+        ) {
+            continue;
+        }
+        let kind = event.wire.event_type;
+        let refresh = matches!(kind.as_str(), "connection_online" | "agent_settled");
+        if refresh || matches!(kind.as_str(), "connection_reconnecting" | "resync_required") {
+            access = None;
+        }
+        if output
+            .send(Ok(SessionFrame::capture(
+                &connection,
+                access.as_ref(),
+                kind,
+            )))
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+        if refresh {
+            access = bounded("读取会话能力", client.session_access(id))
+                .await
+                .ok();
+            if output
+                .send(Ok(SessionFrame::capture(
+                    &connection,
+                    access.as_ref(),
+                    "access".into(),
+                )))
+                .await
+                .is_err()
+            {
+                return Ok(());
+            }
+        }
+    }
+    Err(ClientError::Protocol("会话事件流已结束".into()))
 }

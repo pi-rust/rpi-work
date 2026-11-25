@@ -4,6 +4,7 @@
 //! provides windowing, layout and input.
 
 mod data;
+mod prompt;
 mod shell;
 mod theme;
 
@@ -77,4 +78,4 @@ fn parse(arguments: &[String]) -> Result<Target, String> {
 const HELP: &str = "work-gpui —— GPUI 工作台\n\
 用法：work-gpui [--connect HTTP(S)_ORIGIN]\n\
 默认：打开标注「示例 · 未连接」的布局样例。\n\
---connect：通过 work-client 读取真实节点的项目、会话与消息（只读；密码从 RPI_WORK_PASSWORD 读取）。";
+--connect：通过 work-client 读取真实节点的项目、会话与消息（密码从 RPI_WORK_PASSWORD 读取）。";

@@ -8,13 +8,17 @@ use gpui::{
     SharedString, Task, Window, WindowControlArea, div, point, prelude::*, px, relative,
 };
 use serde_json::Value;
-use work_core::MessageBlock;
+use work_client::ClientError;
+use work_core::{MessageBlock, RunProjection};
 use work_viewmodel::conversation::transcript_view::{self, ActivityItem, Part, ToolView};
 use work_viewmodel::conversation::{code_tokens, tool_display};
 use work_viewmodel::observability::metrics::{percent, tokens};
+use work_viewmodel::session_controls::{SessionControls, SessionObservation, controls};
+use work_viewmodel::session_receipts::{command_admission, interpret_receipt};
 use work_viewmodel::transcript::TranscriptOrder;
 
-use crate::data::{Node, Snapshot};
+use crate::data::{Node, SessionFrame, Snapshot};
+use crate::prompt::Draft;
 use crate::theme::Palette;
 
 const READING_WIDTH: f32 = 768.0;
@@ -29,8 +33,11 @@ enum Row {
 pub struct Shell {
     snapshot: Snapshot,
     node: Option<Node>,
-    loading: Option<(Task<()>, tokio::task::AbortHandle)>,
+    watcher: Option<(Task<()>, tokio::task::AbortHandle)>,
+    frame: Option<SessionFrame>,
+    checking_receipts: HashSet<usize>,
     load_error: Option<String>,
+    observation: Option<&'static str>,
     palette: Palette,
     theme_id: String,
     dark: bool,
@@ -42,7 +49,7 @@ pub struct Shell {
     transcript_session: Option<usize>,
     transcript_scroll: ScrollHandle,
     expanded: HashSet<String>,
-    drafts: HashMap<Option<usize>, String>,
+    drafts: HashMap<Option<usize>, Draft>,
     focus: FocusHandle,
     order: TranscriptOrder,
     /// One-shot diagnostic so a headless launch can prove the first frame ran.
@@ -73,7 +80,13 @@ impl Shell {
             None => (!snapshot.projects.is_empty()).then_some(0),
         };
         let mut order = TranscriptOrder::default();
-        let rows = present_rows(&mut order, "fixture", &snapshot.history, &snapshot.blocks);
+        let (rows, _) = present_rows(
+            &mut order,
+            "fixture",
+            &snapshot.history,
+            &snapshot.blocks,
+            None,
+        );
         let mut shell = Self {
             session: session.filter(|_| fixture),
             transcript_session: session.filter(|_| fixture),
@@ -81,8 +94,11 @@ impl Shell {
             project,
             snapshot,
             node,
-            loading: None,
+            watcher: None,
+            frame: None,
+            checking_receipts: HashSet::new(),
             load_error: None,
+            observation: None,
             palette: Palette::from_preset("codex", false, false),
             theme_id: "codex".into(),
             dark: false,
@@ -106,19 +122,28 @@ impl Shell {
     }
 
     fn typing(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let draft = self.drafts.entry(self.session).or_default();
-        match event.keystroke.key.as_str() {
-            "backspace" => {
-                draft.pop();
+        let key = &event.keystroke;
+        if key.modifiers.platform || key.modifiers.control || key.modifiers.alt {
+            return;
+        }
+        if key.key == "enter" && !key.modifiers.shift {
+            if !event.is_held {
+                self.send(cx);
             }
-            "enter" if event.keystroke.modifiers.shift => draft.push('\n'),
-            "enter" => return,
+            return;
+        }
+        let draft = self.drafts.entry(self.session).or_default();
+        match key.key.as_str() {
+            "backspace" if !draft.text.is_empty() => {
+                draft.text.pop();
+            }
+            "enter" => draft.text.push('\n'),
             _ => {
-                if let Some(text) = &event.keystroke.key_char {
-                    draft.push_str(text);
-                }
+                let Some(text) = &key.key_char else { return };
+                draft.text.push_str(text);
             }
         }
+        draft.revision = draft.revision.wrapping_add(1);
         cx.notify();
     }
 
@@ -140,53 +165,196 @@ impl Shell {
     }
 
     fn change_session(&mut self, session: Option<usize>, cx: &mut Context<Self>) {
-        if self.session == session && self.load_error.is_none() {
+        let changed = self.session != session;
+        if !changed && self.load_error.is_none() {
             cx.notify();
             return;
         }
         self.session = session;
-        self.transcript_scroll.set_offset(point(px(0.0), px(0.0)));
-        self.expanded.clear();
-        self.load_error = None;
-        if let Some((_, request)) = self.loading.take() {
-            request.abort();
+        if changed {
+            self.transcript_scroll.set_offset(point(px(0.0), px(0.0)));
+            self.expanded.clear();
+            if self.node.is_some() {
+                self.transcript_session = None;
+                self.rows.clear();
+            }
         }
-        if self.node.is_some() {
-            self.transcript_session = None;
-            self.rows.clear();
+        self.frame = None;
+        self.observation = None;
+        self.load_error = None;
+        if let Some((_, request)) = self.watcher.take() {
+            request.abort();
         }
         if let Some((node, index)) = self.node.as_ref().zip(session) {
             let session_id = self.snapshot.sessions[index].id.clone();
-            let open = node.open(session_id);
-            let request = open.abort_handle();
+            let (mut updates, cancel) = node.watch(session_id.clone());
             let display = cx.spawn(async move |this, cx| {
-                let result = match open.await {
-                    Ok(result) => result.map_err(|error| error.to_string()),
-                    Err(error) => Err(error.to_string()),
-                };
-                this.update(cx, |shell, cx| {
-                    shell.loading = None;
-                    match result {
-                        Ok(connection) => {
-                            shell.transcript_session = Some(index);
-                            shell.rows = present_rows(
-                                &mut shell.order,
-                                connection.session_id(),
-                                connection.messages(),
-                                &connection.projection().blocks,
-                            );
-                            if std::env::var_os("RPI_GPUI_TRACE").is_some() {
-                                eprintln!("session loaded: {} transcript rows", shell.rows.len());
+                while let Some(result) = updates.recv().await {
+                    let stop = this
+                        .update(cx, |shell, cx| {
+                            if shell.session != Some(index) {
+                                return true;
                             }
-                        }
-                        Err(error) => shell.load_error = Some(error),
+                            match result {
+                                Ok(frame) => shell.apply_frame(index, &session_id, frame),
+                                Err(error) => {
+                                    shell.frame = None;
+                                    shell.load_error = Some(error.to_string());
+                                }
+                            }
+                            cx.notify();
+                            shell.load_error.is_some()
+                        })
+                        .unwrap_or(true);
+                    if stop {
+                        break;
                     }
-                    cx.notify();
-                })
-                .ok();
+                }
             });
-            self.loading = Some((display, request));
+            self.watcher = Some((display, cancel));
         }
+        cx.notify();
+    }
+
+    fn apply_frame(&mut self, index: usize, id: &str, frame: SessionFrame) {
+        let draft = self.drafts.entry(Some(index)).or_default();
+        draft.observe(
+            &frame.event,
+            &frame.projection.phase,
+            &frame.projection.connection,
+        );
+        let follow = self.transcript_scroll.max_offset().height + self.transcript_scroll.offset().y
+            <= px(24.0);
+        let (rows, observation) = present_rows(
+            &mut self.order,
+            id,
+            &frame.history,
+            &frame.projection.blocks,
+            Some(&frame.projection),
+        );
+        self.rows = rows;
+        self.observation = Some(observation);
+        if follow {
+            self.transcript_scroll.scroll_to_bottom();
+        }
+        self.transcript_session = Some(index);
+        if std::env::var_os("RPI_GPUI_TRACE").is_some() {
+            if frame.event.is_empty() {
+                eprintln!("session loaded: {} transcript rows", self.rows.len());
+            } else if matches!(
+                frame.event.as_str(),
+                "message_update"
+                    | "agent_settled"
+                    | "connection_reconnecting"
+                    | "connection_online"
+            ) {
+                eprintln!("session event: {}", frame.event);
+            }
+        }
+        self.frame = Some(frame);
+    }
+
+    fn session_controls(&self) -> SessionControls {
+        let draft = self.drafts.get(&self.session);
+        controls(&SessionObservation {
+            projection: self.frame.as_ref().map(|frame| &frame.projection),
+            access: self.frame.as_ref().and_then(|frame| frame.access.as_ref()),
+            configuration: None,
+            runtime: None,
+            has_dialogs: self.frame.as_ref().is_some_and(|frame| frame.has_dialogs),
+            pending_resume: self
+                .frame
+                .as_ref()
+                .is_some_and(|frame| frame.pending_resume),
+            pending: draft.map(Draft::pending).unwrap_or_default(),
+        })
+    }
+
+    fn send(&mut self, cx: &mut Context<Self>) {
+        let Some((node, index)) = self.node.as_ref().zip(self.session) else {
+            return;
+        };
+        if !self.session_controls().send {
+            return;
+        }
+        let draft = self.drafts.entry(Some(index)).or_default();
+        if draft.text.trim().is_empty() {
+            return;
+        }
+        draft.begin();
+        let request = node.prompt(self.snapshot.sessions[index].id.clone(), draft.text.clone());
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |shell, cx| {
+                let draft = shell.drafts.entry(Some(index)).or_default();
+                match result {
+                    Ok(Ok(reply)) => match command_admission(reply, Some("prompt"), false) {
+                        Some(Ok(())) => draft.accept(),
+                        Some(Err(reason)) => draft.reject(reason),
+                        None => draft.unknown(None),
+                    },
+                    Ok(Err(ClientError::OperationOutcomeUnknown { operation })) => {
+                        draft.unknown(Some(operation))
+                    }
+                    Ok(Err(error)) if rejected(&error) => draft.reject(error.to_string()),
+                    _ => draft.unknown(None),
+                }
+                if std::env::var_os("RPI_GPUI_TRACE").is_some() {
+                    eprintln!(
+                        "prompt acknowledgement: {}",
+                        if draft.pending().uncertain {
+                            "unknown"
+                        } else if draft.notice.is_some() {
+                            "rejected"
+                        } else {
+                            "accepted"
+                        }
+                    );
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn check_receipt(&mut self, cx: &mut Context<Self>) {
+        let Some((node, index)) = self.node.as_ref().zip(self.session) else {
+            return;
+        };
+        if !self.session_controls().online || self.checking_receipts.contains(&index) {
+            return;
+        }
+        let Some(operation) = self
+            .drafts
+            .get(&Some(index))
+            .and_then(Draft::receipt)
+            .cloned()
+        else {
+            return;
+        };
+        self.checking_receipts.insert(index);
+        let task = node.receipt(operation);
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            this.update(cx, |shell, cx| {
+                shell.checking_receipts.remove(&index);
+                let draft = shell.drafts.entry(Some(index)).or_default();
+                match result
+                    .ok()
+                    .and_then(Result::ok)
+                    .and_then(|status| interpret_receipt(status, Some("prompt"), false))
+                {
+                    Some(Ok(())) => draft.accept(),
+                    Some(Err(reason)) => draft.reject(reason),
+                    None => draft.notice = Some("暂无可验证的发送回执，草稿已保留".into()),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
         cx.notify();
     }
 
@@ -535,7 +703,7 @@ impl Shell {
     fn transcript(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
         let show_rows = self.session.is_some() && self.session == self.transcript_session;
-        let empty_text = match (self.loading.is_some(), self.session) {
+        let empty_text = match (self.watcher.is_some() && self.frame.is_none(), self.session) {
             (true, _) => "正在读取会话…",
             (false, Some(_)) => "此会话暂无消息",
             (false, None) => "从侧栏选择会话",
@@ -724,10 +892,10 @@ impl Shell {
 
     fn composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
-        let (value, color) = self
-            .drafts
-            .get(&self.session)
-            .filter(|draft| !draft.is_empty())
+        let draft = self.drafts.get(&self.session);
+        let (value, color) = draft
+            .map(|draft| &draft.text)
+            .filter(|text| !text.is_empty())
             .map_or_else(
                 || ("要求后续更改".into(), palette.muted),
                 |draft| (draft.clone(), palette.text),
@@ -736,83 +904,140 @@ impl Shell {
             && self.session.is_some()
             && self.session == self.transcript_session;
         let metrics = &self.snapshot.metrics;
-        div().flex_none().px(px(READING_INSET)).pb(px(14.0)).child(
-            div()
-                .flex()
-                .flex_col()
-                .w_full()
-                .max_w(px(READING_WIDTH))
-                .mx_auto()
-                .child(
-                    div()
-                        .id("composer")
-                        .flex()
-                        .flex_col()
-                        .bg(palette.bg)
-                        .rounded(px(22.0))
-                        .border_1()
-                        .border_color(palette.strong_line)
-                        .px(px(10.0))
-                        .pt(px(12.0))
-                        .pb(px(9.0))
-                        .track_focus(&self.focus)
-                        .on_click(cx.listener(|this, _, window, _| this.focus_composer(window)))
-                        .on_key_down(cx.listener(Self::typing))
-                        .child(
-                            self.text(value, 15.0, color)
-                                .px(px(4.0))
-                                .min_h(px(47.0))
-                                .max_h(px(126.0))
-                                .overflow_hidden(),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .h(px(28.0))
-                                .pl(px(4.0))
-                                .child(self.text("只读 · 草稿保存在当前窗口", 12.0, palette.muted))
-                                .child(
-                                    self.text("↑", 15.0, palette.muted)
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .size(px(28.0))
-                                        .rounded_full()
-                                        .bg(palette.hover),
-                                ),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .h(px(32.0))
-                        .px(px(6.0))
-                        .gap_2()
-                        .child(
-                            self.text(self.snapshot.node.clone(), 11.0, palette.muted)
-                                .truncate(),
-                        )
-                        .when(loaded_sample, |bar| {
-                            bar.child(
-                                self.text(
-                                    format!(
-                                        "↑ {}   ↓ {}   上下文 {}",
-                                        tokens(metrics.input),
-                                        tokens(metrics.output),
-                                        percent(self.snapshot.context.percent)
-                                    ),
-                                    11.0,
-                                    palette.muted,
-                                )
-                                .truncate(),
+        let controls = self.session_controls();
+        let can_send = controls.send && draft.is_some_and(|draft| !draft.text.trim().is_empty());
+        let checking = self
+            .session
+            .is_some_and(|index| self.checking_receipts.contains(&index));
+        let can_check = controls.online && !checking && draft.and_then(Draft::receipt).is_some();
+        let notice = draft.and_then(|draft| draft.notice.as_deref());
+        let status = if checking {
+            "正在核对发送回执…"
+        } else {
+            notice.unwrap_or_else(|| {
+                if self.node.is_none() {
+                    "示例 · 草稿保存在当前窗口"
+                } else if !controls.reason.is_empty() {
+                    &controls.reason
+                } else {
+                    "Enter 发送 · Shift+Enter 换行"
+                }
+            })
+        };
+        div()
+            .flex_none()
+            .bg(palette.bg)
+            .px(px(READING_INSET))
+            .pb(px(14.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .w_full()
+                    .max_w(px(READING_WIDTH))
+                    .mx_auto()
+                    .child(
+                        div()
+                            .id("composer")
+                            .flex()
+                            .flex_col()
+                            .bg(palette.bg)
+                            .rounded(px(22.0))
+                            .border_1()
+                            .border_color(palette.strong_line)
+                            .px(px(10.0))
+                            .pt(px(12.0))
+                            .pb(px(9.0))
+                            .track_focus(&self.focus)
+                            .on_click(cx.listener(|this, _, window, _| this.focus_composer(window)))
+                            .on_key_down(cx.listener(Self::typing))
+                            .child(
+                                self.text(value, 15.0, color)
+                                    .px(px(4.0))
+                                    .min_h(px(47.0))
+                                    .max_h(px(126.0))
+                                    .overflow_hidden(),
                             )
-                        }),
-                ),
-        )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .h(px(28.0))
+                                    .pl(px(4.0))
+                                    .child(
+                                        self.text(status.to_owned(), 12.0, palette.muted)
+                                            .min_w(px(0.0))
+                                            .truncate(),
+                                    )
+                                    .when(can_check, |toolbar| {
+                                        toolbar.child(
+                                            self.button("check-receipt", "核对回执").on_click(
+                                                cx.listener(|this, _, _, cx| {
+                                                    this.check_receipt(cx)
+                                                }),
+                                            ),
+                                        )
+                                    })
+                                    .child(
+                                        div()
+                                            .id("send")
+                                            .flex()
+                                            .flex_none()
+                                            .items_center()
+                                            .justify_center()
+                                            .size(px(28.0))
+                                            .rounded_full()
+                                            .bg(if can_send {
+                                                palette.text
+                                            } else {
+                                                palette.hover
+                                            })
+                                            .child(self.text(
+                                                "↑",
+                                                15.0,
+                                                if can_send { palette.bg } else { palette.muted },
+                                            ))
+                                            .when(can_send, |button| {
+                                                button.cursor_pointer().on_click(
+                                                    cx.listener(|this, _, _, cx| this.send(cx)),
+                                                )
+                                            }),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .h(px(32.0))
+                            .px(px(6.0))
+                            .gap_2()
+                            .child(
+                                self.text(self.snapshot.node.clone(), 11.0, palette.muted)
+                                    .truncate(),
+                            )
+                            .when_some(self.observation, |bar, observation| {
+                                bar.child(self.text(observation, 11.0, palette.muted))
+                            })
+                            .when(loaded_sample, |bar| {
+                                bar.child(
+                                    self.text(
+                                        format!(
+                                            "↑ {}   ↓ {}   上下文 {}",
+                                            tokens(metrics.input),
+                                            tokens(metrics.output),
+                                            percent(self.snapshot.context.percent)
+                                        ),
+                                        11.0,
+                                        palette.muted,
+                                    )
+                                    .truncate(),
+                                )
+                            }),
+                    ),
+            )
     }
 }
 
@@ -884,15 +1109,28 @@ impl Render for Shell {
     }
 }
 
+fn rejected(error: &ClientError) -> bool {
+    matches!(error, ClientError::Unsupported { .. })
+        || matches!(error, ClientError::Api { status, .. }
+            if matches!(status.as_u16(), 400 | 401 | 403 | 404 | 405 | 409 | 422 | 429))
+}
+
 fn present_rows(
     order: &mut TranscriptOrder,
     scope: &str,
     history: &[Value],
     blocks: &[MessageBlock],
-) -> Vec<Row> {
+    projection: Option<&RunProjection>,
+) -> (Vec<Row>, &'static str) {
     let ordered = order.update(scope, history, blocks);
-    let conversation =
-        transcript_view::present(&ordered, history, blocks, None, None, Default::default());
+    let conversation = transcript_view::present(
+        &ordered,
+        history,
+        blocks,
+        projection.map(|run| &run.phase),
+        projection.map(|run| &run.connection),
+        Default::default(),
+    );
     let mut rows = Vec::new();
     for part in conversation.parts {
         match part {
@@ -908,7 +1146,7 @@ fn present_rows(
             }
         }
     }
-    rows
+    (rows, conversation.observation)
 }
 
 fn tool_detail_label(name: &str) -> &'static str {

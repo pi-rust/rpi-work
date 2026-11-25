@@ -28,7 +28,7 @@ The initial window contains a labeled, disconnected layout sample. To read proje
 task desktop -- --connect http://127.0.0.1:13031
 ```
 
-Set `RPI_WORK_PASSWORD` in the environment or `.env.local` when the node requires authentication. GPUI currently provides read-only node access and in-window drafts. Sending messages and GPUI installers are still being migrated. See the [GPUI build notes](apps/work-gpui/README.md).
+Set `RPI_WORK_PASSWORD` in the environment or `.env.local` when the node requires authentication. GPUI supports plain-text prompts, streamed replies, and session recovery. Release packages are still in development. See the [GPUI build notes](apps/work-gpui/README.md).
 
 ## Architecture
 

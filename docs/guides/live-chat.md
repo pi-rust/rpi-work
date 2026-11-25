@@ -1,6 +1,6 @@
 # 真实节点聊天
 
-> 本文记录历史客户端的聊天流程。当前启动入口为 [GPUI 工作台](../../apps/work-gpui/README.md)，节点访问仍为只读。
+> 本文记录历史客户端的聊天流程。当前启动入口及纯文本聊天用法见 [GPUI 工作台](../../apps/work-gpui/README.md)。
 
 桌面是节点宿主：本机 RPC 与内嵌 HTTP/WebSocket 共用同一份 `LocalWorkspace`，Web/手机是访问入口。独立 `rpi-http` 不等于桌面 owner。旧迁移副本不自动搬回或合并。
 

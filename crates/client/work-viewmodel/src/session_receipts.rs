@@ -20,27 +20,7 @@ pub fn interpret_receipt(
     };
     if expected_command.is_some() || value.get("type").and_then(Value::as_str) == Some("response") {
         let reply: HostResponse<Value> = serde_json::from_value(value).ok()?;
-        if reply.response_type != "response"
-            || expected_command.is_some_and(|command| reply.command != command)
-        {
-            return None;
-        }
-        let acceptance = reply
-            .data
-            .as_ref()
-            .and_then(|data| data.get("accepted"))
-            .and_then(Value::as_bool);
-        let accepted = reply.success
-            && if requires_acceptance {
-                acceptance?
-            } else {
-                acceptance != Some(false)
-            };
-        return Some(if accepted {
-            Ok(())
-        } else {
-            Err(reply.error.unwrap_or_else(|| "节点明确拒绝了原请求".into()))
-        });
+        return command_admission(reply, expected_command, requires_acceptance);
     }
     if requires_acceptance {
         return value
@@ -55,6 +35,37 @@ pub fn interpret_receipt(
             });
     }
     Some(Ok(()))
+}
+
+/// Interpret the request acknowledgement using the same identity and acceptance
+/// checks as a recovered receipt. An acknowledgement never settles a run.
+#[must_use]
+pub fn command_admission(
+    reply: HostResponse<Value>,
+    expected_command: Option<&str>,
+    requires_acceptance: bool,
+) -> Option<Result<(), String>> {
+    if reply.response_type != "response"
+        || expected_command.is_some_and(|command| reply.command != command)
+    {
+        return None;
+    }
+    let acceptance = reply
+        .data
+        .as_ref()
+        .and_then(|data| data.get("accepted"))
+        .and_then(Value::as_bool);
+    let accepted = reply.success
+        && if requires_acceptance {
+            acceptance?
+        } else {
+            acceptance != Some(false)
+        };
+    return Some(if accepted {
+        Ok(())
+    } else {
+        Err(reply.error.unwrap_or_else(|| "节点明确拒绝了原请求".into()))
+    });
 }
 
 fn operation_result(status: OperationStatus) -> Option<Result<Value, String>> {
