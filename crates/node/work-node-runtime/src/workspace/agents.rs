@@ -488,6 +488,7 @@ impl Manager {
         Ok(SessionMutation {
             session_id: id.into(),
             source_session_id: None,
+            entry_id: None,
             title: Some(title),
             status: None,
         })

@@ -23,6 +23,8 @@ pub enum Part {
         key: String,
         #[serde(rename = "readingKey", skip_serializing_if = "Option::is_none")]
         reading_key: Option<String>,
+        #[serde(rename = "forkEntryId", skip_serializing_if = "Option::is_none")]
+        fork_entry_id: Option<String>,
         role: &'static str,
         text: String,
     },
@@ -177,12 +179,20 @@ impl Builder {
             });
         }
     }
-    fn text(&mut self, key: String, reading_key: Option<String>, role: &'static str, text: String) {
+    fn text(
+        &mut self,
+        key: String,
+        reading_key: Option<String>,
+        fork_entry_id: Option<&str>,
+        role: &'static str,
+        text: String,
+    ) {
         if !text.trim().is_empty() {
             self.flush();
             self.parts.push(Part::Message {
                 key,
                 reading_key,
+                fork_entry_id: fork_entry_id.map(str::to_owned),
                 role,
                 text,
             });
@@ -212,6 +222,9 @@ impl Builder {
         let id = history_id(message, index);
         // Ordered row keys and index-based fallback IDs are local to a view.
         let durable = message_id(message).is_some_and(|id| !id.is_empty());
+        let fork_entry = (role == "assistant")
+            .then(|| work_client::canonical_entry_id(message))
+            .flatten();
         if role == "user" || !content.is_array() {
             let (identity, reading_key) = if role == "user" {
                 (format!("row/{key}"), durable.then(|| format!("user/{id}")))
@@ -220,7 +233,13 @@ impl Builder {
                 let reading_key = durable.then(|| identity.clone());
                 (identity, reading_key)
             };
-            self.text(identity, reading_key, role, content_text(content));
+            self.text(
+                identity,
+                reading_key,
+                fork_entry,
+                role,
+                content_text(content),
+            );
             return;
         }
         for (part, value) in content.as_array().into_iter().flatten().enumerate() {
@@ -280,7 +299,7 @@ impl Builder {
                 _ => {
                     let identity = format!("text/{id}-text-{part}");
                     let reading_key = durable.then(|| identity.clone());
-                    self.text(identity, reading_key, role, content_text(value));
+                    self.text(identity, reading_key, fork_entry, role, content_text(value));
                 }
             }
         }
@@ -288,7 +307,7 @@ impl Builder {
     fn block(&mut self, block: &MessageBlock, _key: u64) {
         match block {
             MessageBlock::Text { id, text } | MessageBlock::PublicSummary { id, text } => {
-                self.text(format!("text/{id}"), None, "assistant", text.clone());
+                self.text(format!("text/{id}"), None, None, "assistant", text.clone());
             }
             MessageBlock::Thinking { id, text } => self.activity.push(ActivityItem::Note {
                 key: id.clone(),

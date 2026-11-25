@@ -13,7 +13,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{future_to_promise, spawn_local};
 use work_client::{
     ClientError, RuntimeState, SessionAccess, SessionConfiguration, SessionConnection,
-    WorkspaceClient,
+    WorkspaceClient, canonical_entry_id,
 };
 use work_core::{ApplyResult, ConnectionState, RunPhase, RunProjection};
 use work_viewmodel::{
@@ -24,7 +24,7 @@ use work_viewmodel::{
     transcript::{RowSource, TranscriptOrder},
 };
 
-use super::{NodeClient, failure, json_string};
+use super::{NodeClient, failure, json_string, session_management_reply};
 
 mod actions;
 mod recovery;
@@ -66,6 +66,19 @@ impl State {
         })
     }
 
+    fn fork_available(&self) -> bool {
+        let controls = self.controls();
+        controls.online
+            && !controls.busy
+            && !self.pending.configuring
+            && !self.pending.uncertain
+            && self.dialogs.is_empty()
+            && self
+                .access
+                .as_ref()
+                .is_some_and(|access| access.descriptor.identity.protocol == "rpi")
+    }
+
     fn payload(&mut self) -> Value {
         let ordered = self
             .order
@@ -98,6 +111,8 @@ impl State {
             "phase": format!("{:?}", self.projection.phase),
             "settled": matches!(self.projection.phase, RunPhase::Settled(_)),
             "controls": self.controls(),
+            "forkAvailable": self.fork_available(),
+            "forkFromEntry": self.access.as_ref().is_some_and(|access| access.supports_command("navigate")),
             "dialogs": self.dialogs.iter().map(|dialog| json!({
                 "requestId":dialog.request_id, "purpose":dialog.ui.purpose,
                 "replyEnabled":self.controls().reply && !self.replying.contains(&dialog.request_id),
@@ -356,6 +371,51 @@ impl SessionClient {
     pub fn close(&self) {
         self.state.borrow().closed.set(true);
         self.stop.abort();
+    }
+
+    pub fn fork(&self, entry_id: Option<String>, source_title: String) -> Promise {
+        let client = self.client.clone();
+        let id = self.id.clone();
+        let observed = self.state.clone();
+        future_to_promise(async move {
+            let allowed = {
+                let state = observed.borrow();
+                state.fork_available()
+                    && entry_id.as_deref().is_none_or(|entry| {
+                        state
+                            .access
+                            .as_ref()
+                            .is_some_and(|access| access.supports_command("navigate"))
+                            && state.messages.iter().any(|message| {
+                                message["role"] == "assistant"
+                                    && canonical_entry_id(message) == Some(entry)
+                            })
+                    })
+            };
+            if !allowed {
+                return json_string(
+                    &json!({"outcome": "rejected", "error": "当前会话或历史消息暂不能分叉"}),
+                );
+            }
+            let suffix = "（分叉）";
+            let base: String = source_title
+                .trim()
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(120 - suffix.chars().count())
+                .collect();
+            let title = format!("{}{suffix}", base.trim_end());
+            let result = client
+                .fork_session(&id, entry_id.as_deref(), Some(&title))
+                .await;
+            session_management_reply(result, |value| {
+                !value.session_id.trim().is_empty()
+                    && value.session_id != id
+                    && value.source_session_id.as_deref() == Some(id.as_str())
+                    && value.entry_id == entry_id
+                    && value.title.as_deref() == Some(title.as_str())
+            })
+        })
     }
 
     /// Accepted is only admission; settlement continues through SessionConnection.

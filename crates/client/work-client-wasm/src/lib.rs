@@ -206,6 +206,7 @@ impl NodeClient {
             json_string(&serde_json::json!({
                 "preferences": supports("session_metadata"),
                 "rename": supports("session_organization"),
+                "fork": supports("fork"),
             }))
         })
     }

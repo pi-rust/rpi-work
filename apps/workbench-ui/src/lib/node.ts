@@ -13,7 +13,7 @@ export type CreationReply<T> =
   | { outcome: 'created'; value: T }
   | { outcome: 'rejected' | 'unknown'; error: string }
 
-export type SessionManagementCapabilities = { preferences: boolean; rename: boolean }
+export type SessionManagementCapabilities = { preferences: boolean; rename: boolean; fork: boolean }
 export type SessionManagementReply<T> =
   | { outcome: 'saved'; value: T }
   | { outcome: 'rejected' | 'unknown'; error: string }
@@ -102,6 +102,7 @@ export type SessionDialog = {
 export type SessionRecovery = { canCheck: boolean; checking: boolean; count: number; unreceipted: boolean; message: string | null }
 export type SessionView = LiveView & {
   recovery: SessionRecovery
+  forkAvailable: boolean; forkFromEntry: boolean
   scopeEpoch: number; messages: unknown[]; controls: SessionControls; dialogs: SessionDialog[]
   runtime: NodeRuntime | null; models: NodeModel[]; thinkingLevels: string[]; error: string | null
 }
@@ -113,6 +114,7 @@ export class BoundSession {
   close() { this.client.close(); this.client.free() }
   async recheck(): Promise<SessionRecovery> { return parse(await this.client.recheck()) }
   async prompt(text: string): Promise<{ accepted: boolean; error: string | null }> { return parse(await this.client.prompt(text)) }
+  async fork(entryId: string | null, title: string): Promise<SessionManagementReply<{ sessionId: string }>> { return parse(await this.client.fork(entryId ?? undefined, title)) }
   async abort(): Promise<unknown> { return parse(await this.client.abort()) }
   async queue(): Promise<NodeQueue> { return parse(await this.client.queue()) }
   async queueMessage(text: string): Promise<{ accepted: boolean | null }> { return parse(await this.client.queue_message(text, 'followUp')) }

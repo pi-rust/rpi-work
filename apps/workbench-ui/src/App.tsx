@@ -371,6 +371,7 @@ export default function App() {
                   />
                 ) : (
                 <div className="wb-transcript mx-auto flex w-full max-w-[48rem] flex-col gap-8">
+                  {workspace.forkFeedback && archiveDialog?.connectionId !== workspace.connectionId ? <p className="wb-creation-message" role={workspace.sessionManagement.busy ? 'status' : 'alert'}>{workspace.forkFeedback}</p> : null}
                   {workspace.creation.message ? <div className="wb-creation-message" role={workspace.creation.busy ? 'status' : 'alert'}><p>{workspace.creation.message}</p>{workspace.creation.uncertain ? <button type="button" disabled={workspace.creation.busy} onClick={() => void workspace.recheckCreation()}>核对创建结果</button> : null}</div> : null}
                   {workspace.dialogs.map((dialog) => (
                     <div
@@ -429,7 +430,9 @@ export default function App() {
                     </form>
                   ) : ready || workspace.status === 'disconnected' ? (
                     workspace.transcript && workspace.transcript.parts.length > 0 ? (
-                      <Conversation key={scrollScope} view={workspace.transcript} choices={choices} details={fixture?.toolMeta} observed={live} />
+                      <Conversation key={scrollScope} view={workspace.transcript} choices={choices} details={fixture?.toolMeta} observed={live}
+                        forkDisabled={!workspace.forkAvailable}
+                        onFork={currentSession && workspace.forkFromEntry ? entryId => void workspace.editSession(currentSession.id, { forkEntryId: entryId }) : undefined} />
                     ) : (
                       <EmptyState live={live} fixture={!!fixture} hasSession={!!workspace.selected.session} />
                     )
@@ -665,6 +668,7 @@ export default function App() {
         projects={workspace.projects}
         current={currentSession}
         management={workspace.sessionManagement}
+        canFork={workspace.forkAvailable}
         canArchive={workspace.sessionManagement.capabilities.preferences && Boolean(workspace.controls?.online) && !workspace.busy}
         disabled={workspace.status !== 'ready' || workspace.sessionManagement.busy || workspace.creation.busy}
         onChange={workspace.editSession}

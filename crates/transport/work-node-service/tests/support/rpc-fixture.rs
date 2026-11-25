@@ -55,6 +55,13 @@ fn main() {
     let hosted_creation = std::env::args()
         .next()
         .is_some_and(|name| name.contains("creation-native-queries-fixture"));
+    let forked = hosted_creation && std::env::args().any(|arg| arg == "--fork");
+    let session_id = if forked {
+        format!("fixture-fork-{}", std::process::id())
+    } else {
+        "fixture-session".into()
+    };
+    let mut fork_at_answer = false;
     // Only the dedicated seed session opts into bounded native reads. Existing
     // tests retain their original advertisements, including get_commands.
     let native_queries = std::env::args().any(|arg| arg.contains("native-queries-fixture"));
@@ -66,6 +73,12 @@ fn main() {
     if native_queries {
         let commands = ready["supportedCommands"].as_array_mut().unwrap();
         commands.extend([json!("get_message_summaries"), json!("get_message_window")]);
+    }
+    if hosted_creation {
+        ready["supportedCommands"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("navigate"));
     }
     emit(&mut stdout, ready);
     for line in stdin.lock().lines().map_while(Result::ok) {
@@ -208,7 +221,7 @@ fn main() {
                 json!({"type":"response","id":id,"command":kind,"success":true,"data":{"request":request,"fixturePid":std::process::id()}}),
             ),
             "get_state" => {
-                let mut data = json!({"accepted":true,"sessionId":"fixture-session","fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run,"context":{"fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run}});
+                let mut data = json!({"accepted":true,"sessionId":session_id,"fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run,"context":{"fixturePid":std::process::id(),"isRunning":held_run,"isStreaming":held_run}});
                 if hosted_creation {
                     // Native facts used by the real owner's idle retirement check.
                     data["activeOperation"] = if held_run {
@@ -223,10 +236,32 @@ fn main() {
                     json!({"type":"response","id":id,"command":kind,"success":true,"data":data}),
                 );
             }
-            "get_messages" => emit(
-                &mut stdout,
-                json!({"type":"response","id":id,"command":"get_messages","success":true,"data":{"messages":[],"total":0,"truncated":false,"pendingResume":false,"hasMore":false}}),
-            ),
+            "navigate" if forked => {
+                fork_at_answer = request["targetId"] == "fixture-fork-answer";
+                let data = if fork_at_answer {
+                    json!({"outcome":"navigated"})
+                } else {
+                    json!({"outcome":"failed","error":"unknown fixture fork anchor"})
+                };
+                emit(
+                    &mut stdout,
+                    json!({"type":"response","id":id,"command":kind,"success":fork_at_answer,"data":data}),
+                );
+            }
+            "get_messages" => {
+                let mut messages = Vec::new();
+                if hosted_creation {
+                    messages.push(json!({"entryId":"fixture-fork-user","role":"user","content":"托管历史问题"}));
+                    messages.push(json!({"entryId":"fixture-fork-answer","role":"assistant","content":"托管历史回答"}));
+                    if !fork_at_answer {
+                        messages.push(json!({"entryId":"fixture-fork-later","role":"user","content":"托管历史后续"}));
+                    }
+                }
+                emit(
+                    &mut stdout,
+                    json!({"type":"response","id":id,"command":kind,"success":true,"data":{"total":messages.len(),"messages":messages,"truncated":false,"pendingResume":false,"hasMore":false}}),
+                );
+            }
             "get_history" => {
                 let mut data = json!({"records":[],"total":0,"hasMore":false});
                 if hosted_creation {

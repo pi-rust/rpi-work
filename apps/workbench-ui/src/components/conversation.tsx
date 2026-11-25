@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, GitFork } from 'lucide-react'
 import { AnswerRow, ToolCard, UserRow } from '@/components/transcript'
 import type { ConversationPart, ConversationView } from '@/lib/viewmodel'
 import type { ToolDetail } from '@/lib/types'
@@ -57,7 +57,10 @@ const observationClasses = {
 }
 
 /** Parts already contain canonical identity, history/tool normalization and grouping. */
-export function Conversation({ view, details, observed = true, choices }: { view: ConversationView; details?: Record<string, ToolDetail>; observed?: boolean; choices: Choices }) {
+export function Conversation({ view, details, observed = true, choices, onFork, forkDisabled }: {
+  view: ConversationView; details?: Record<string, ToolDetail>; observed?: boolean; choices: Choices
+  onFork?: (entryId: string) => void; forkDisabled?: boolean
+}) {
   return <>
     {observed ? <p className={`wb-observation text-[12px] ${observationClasses[view.observationTone]}`} data-tone={view.observationTone} role="status" aria-label="会话运行观察">会话观察：{view.observation}</p> : null}
     {view.parts.map((part) => part.kind === 'activity' ? (
@@ -66,7 +69,9 @@ export function Conversation({ view, details, observed = true, choices }: { view
       </div>
     ) : (
       <div key={part.key} className="wb-conversation-anchor min-w-0" data-conversation-anchor={part.key} data-reading-anchor={part.readingKey}>
-        {part.role === 'user' ? <UserRow message={{ id: part.key, role: part.role, content: part.text }} /> : <AnswerRow text={part.text} />}
+        {part.role === 'user' ? <UserRow message={{ id: part.key, role: part.role, content: part.text }} /> : <AnswerRow text={part.text} action={onFork && part.forkEntryId ? <span className="wb-copy-control">
+          <button type="button" aria-label="从此处开始新对话" title="从此处开始新对话" disabled={forkDisabled} onClick={() => onFork(part.forkEntryId!)}><GitFork aria-hidden="true" /></button>
+        </span> : undefined} />}
       </div>
     ))}
   </>

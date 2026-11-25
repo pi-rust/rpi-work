@@ -19,14 +19,13 @@ import {
   type NodeRuntime,
   type NodeSession,
   type SessionManagementCapabilities,
-  type SessionManagementReply,
+  type SessionView,
 } from '@/lib/node'
 import {
   initViewModel,
   resourceRows,
   sealTicket,
   TranscriptPresenter,
-  type LiveView,
   type ConversationView,
   type ResourceView,
   type RowRef,
@@ -43,8 +42,8 @@ export type FileRead = { path: string; mode: 'source' | 'diff'; staged: boolean 
   | { status: 'error'; error: string }
 )
 
-type SessionEdit = { archived: boolean } | { pinned: boolean } | { title: string }
-const initialSessionManagement = { capabilities: { preferences: false, rename: false }, busy: false, message: null, locked: [] }
+type SessionEdit = { archived: boolean } | { pinned: boolean } | { title: string } | { forkEntryId: string | null }
+const initialSessionManagement = { capabilities: { preferences: false, rename: false, fork: false }, busy: false, message: null, locked: [], forkSession: null }
 
 type Selection = { project: string; session: string }
 
@@ -56,7 +55,10 @@ export type Workspace = {
   createProject: (name: string, path: string) => Promise<boolean>
   createSession: () => Promise<boolean>
   recheckCreation: () => Promise<boolean>
-  sessionManagement: { capabilities: SessionManagementCapabilities; busy: boolean; message: string | null; locked: string[] }
+  sessionManagement: { capabilities: SessionManagementCapabilities; busy: boolean; message: string | null; locked: string[]; forkSession: string | null }
+  forkAvailable: boolean
+  forkFromEntry: boolean
+  forkFeedback: string | null
   editSession: (id: string, edit: SessionEdit) => Promise<'selected' | 'saved' | 'failed'>
   source: Source
   error: string | null
@@ -175,7 +177,7 @@ export function useWorkspace(): Workspace {
   const bindingEpoch = useRef(0)
   const [controls, setControls] = useState<SessionControls | null>(null)
   const [recovery, setRecovery] = useState<SessionRecovery | null>(null)
-  const [liveView, setLiveView] = useState<LiveView | null>(null)
+  const [liveView, setLiveView] = useState<SessionView | null>(null)
   const [readOnlyTranscript, setReadOnlyTranscript] = useState<ConversationView | null>(null)
   const [runtime, setRuntime] = useState<NodeRuntime | null>(null)
   const [models, setModels] = useState<NodeModel[]>([])
@@ -333,7 +335,7 @@ export function useWorkspace(): Workspace {
     const mappedSessions = nodeSessions.map(asSession)
     void conn.sessionManagementCapabilities().then(capabilities => {
       if (connection.current === conn && epoch.current === generation) {
-        setSessionManagement({ capabilities, busy: false, message: null, locked: [...(sessionEditLocks.current.get(conn.origin) ?? [])] })
+        setSessionManagement({ ...initialSessionManagement, capabilities, locked: [...(sessionEditLocks.current.get(conn.origin) ?? [])] })
       }
     }).catch(() => {})
     setSource({ kind: 'live', origin: conn.origin })
@@ -908,38 +910,62 @@ export function useWorkspace(): Workspace {
     if (session) openSelection(session.projectId, session.id)
   }
 
+  const forkAvailable = Boolean(sessionManagement.capabilities.fork && liveView?.forkAvailable &&
+    !sessionManagement.busy && !creation.busy && !sessionManagement.locked.includes(selected.session))
+
   const editSession: Workspace['editSession'] = async (id, edit) => {
     const conn = connection.current
     const session = sessions.find(item => item.id === id)
     const archived = 'archived' in edit ? edit.archived : undefined
     const restoring = archived === false
+    const forking = 'forkEntryId' in edit
+    const forkScope = forking ? boundScope() : null
     const capabilities = sessionManagement.capabilities
     if (!conn || epoch.current !== connectionId || source.kind !== 'live' || status !== 'ready' ||
         !session || sessionEditRequest.current || creation.busy || creationRequest.current?.reading ||
         sessionEditLocks.current.get(conn.origin)?.has(id) ||
-        ('title' in edit ? !capabilities.rename || !edit.title.trim() : !capabilities.preferences) ||
+        (forking ? !forkAvailable || !forkScope || (edit.forkEntryId !== null && !liveView?.forkFromEntry)
+          : 'title' in edit ? !capabilities.rename || !edit.title.trim() : !capabilities.preferences) ||
         (restoring ? !session.archived : selected.session !== id || session.archived) ||
         (archived === true && (!controls?.online || controls.busy))) return 'failed'
     const request = {}
     const ticket = sessionTicket.current
     sessionEditRequest.current = request
-    setSessionManagement(state => ({ ...state, busy: true, message: null }))
+    setSessionManagement(state => ({
+      ...state, busy: true, forkSession: forking ? id : null,
+      message: forking ? '正在分叉并核对节点会话列表…' : null,
+    }))
     const locked = sessionEditLocks.current.get(conn.origin) ?? new Set<string>()
     sessionEditLocks.current.set(conn.origin, locked)
     // Keep an in-flight or uncertain mutation protected even across a same-origin reconnect.
     locked.add(id)
     const current = () => connection.current === conn && epoch.current === connectionId && sessionEditRequest.current === request
     try {
-      const reply: SessionManagementReply<Partial<Pick<Session, 'title' | 'archived' | 'pinned'>>> = 'title' in edit
-        ? await conn.renameSession(id, edit.title)
+      const reply = forking ? await forkScope!.session.fork(edit.forkEntryId, session.title)
+        : 'title' in edit ? await conn.renameSession(id, edit.title)
         : await conn.setSessionPreferences(id, edit)
-      if (reply.outcome !== 'unknown' && current()) locked.delete(id)
       if (!current()) return 'failed'
+      if (reply.outcome === 'rejected') locked.delete(id)
       if (reply.outcome !== 'saved') {
         const detail = reply.outcome === 'unknown' ? '。结果尚未确认，本页暂不能重试此会话。' : ''
         setSessionManagement(state => ({ ...state, message: `${reply.error}${detail}`, locked: [...locked] }))
         return 'failed'
       }
+      if ('sessionId' in reply.value) {
+        const destination = reply.value.sessionId
+        if (!destination || sessions.some(item => item.id === destination)) throw new Error('节点未返回新的分叉会话 ID')
+        const listed = (await conn.sessions()).map(asSession)
+        if (!current()) return 'failed'
+        const branch = listed.find(item => item.id === destination && item.projectId === session.projectId && !item.archived)
+        if (!branch) throw new Error(`列表尚未确认分叉会话 ${destination}`)
+        setSessions(listed)
+        locked.delete(id)
+        setSessionManagement(state => ({ ...state, message: null, forkSession: null }))
+        if (!forkScope?.current()) return 'saved'
+        openSelection(branch.projectId, branch.id)
+        return 'selected'
+      }
+      locked.delete(id)
       setSessions(items => items.map(item => item.id === id ? { ...item, ...reply.value } : item))
       if (archived === undefined || ticket !== sessionTicket.current) return 'saved'
       if (archived) {
@@ -995,6 +1021,9 @@ export function useWorkspace(): Workspace {
     createSession,
     recheckCreation,
     sessionManagement,
+    forkAvailable,
+    forkFromEntry: Boolean(sessionManagement.capabilities.fork && liveView?.forkFromEntry),
+    forkFeedback: sessionManagement.forkSession === selected.session ? sessionManagement.message : null,
     editSession,
     source,
     error,

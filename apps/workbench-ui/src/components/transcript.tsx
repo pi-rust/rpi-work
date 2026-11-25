@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Check,
   ChevronRight,
@@ -40,7 +40,7 @@ export function UserRow({ message }: { message: HistoryMessage }) {
   )
 }
 
-export function AnswerRow({ text, model }: { text: string; model?: string }) {
+export function AnswerRow({ text, model, action }: { text: string; model?: string; action?: ReactNode }) {
   // Assistant prose owns the reading column; tool rows sit underneath at the same
   // left edge so a turn reads as one block.
   return (
@@ -51,7 +51,7 @@ export function AnswerRow({ text, model }: { text: string; model?: string }) {
           {model.split('/').at(-1)}
         </Badge> : null}
       </span>
-      <RichAnswer text={text} />
+      <RichAnswer text={text} action={action} />
     </div>
   )
 }

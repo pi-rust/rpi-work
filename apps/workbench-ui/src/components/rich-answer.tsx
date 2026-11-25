@@ -32,11 +32,11 @@ function Content({ node }: { node: MarkdownNode }) {
 
 /** Rust owns the bounded AST, safe links, readable copy payload and lexer.
  * React renders text nodes/allowlisted tags, never dangerous inner HTML. */
-export function RichAnswer({ text }: { text: string }) {
+export function RichAnswer({ text, action }: { text: string; action?: ReactNode }) {
   const view = useMemo(() => markdownView(text), [text])
   return <>
     <div className="wb-prose" data-plain={view.plain || undefined}>{nodes(view.nodes)}</div>
     {view.plain ? <p role="status" className="text-muted-foreground text-[12px]">内容较复杂，已按原文显示。</p> : null}
-    <div className="wb-answer-actions"><CopyTextButton text={view.copyText} label="复制回答" /></div>
+    <div className="wb-answer-actions"><CopyTextButton text={view.copyText} label="复制回答" />{action}</div>
   </>
 }

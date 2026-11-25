@@ -263,6 +263,31 @@ fn failure_cancellation_unknown_and_running_items_keep_attention_even_after_comp
 }
 
 #[test]
+fn fork_anchors_require_canonical_assistant_history() {
+    let history = [
+        json!({"entryId":"prompt","role":"user","content":"question"}),
+        json!({"entryId":"pending","__rpiClientAnonymousId":true,"role":"assistant","content":"unresolved"}),
+        json!({"entryId":"previous","__rpiClientAnonymousId":true,"__rpiClientCanonicalId":"committed","role":"assistant","content":"reconciled"}),
+    ];
+    let blocks = [MessageBlock::Text {
+        id: "streamed-text-0".into(),
+        text: "live projection".into(),
+    }];
+    let result = view(
+        &history,
+        &blocks,
+        RunPhase::Ready,
+        PendingRequests::default(),
+    );
+    let parts = result["parts"].as_array().unwrap();
+    assert_eq!(parts.len(), 4);
+    assert_eq!(parts[2]["forkEntryId"], "committed");
+    for index in [0, 1, 3] {
+        assert!(parts[index].get("forkEntryId").is_none());
+    }
+}
+
+#[test]
 fn canonical_text_identity_survives_scalar_and_content_array_history_transfer() {
     for content in [json!("answer"), json!([{"type":"text","text":"answer"}])] {
         let blocks = [MessageBlock::Text {

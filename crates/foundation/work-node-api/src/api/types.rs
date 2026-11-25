@@ -482,6 +482,8 @@ pub struct SessionMutation {
     pub session_id: String,
     #[serde(rename = "sourceSessionId")]
     pub source_session_id: Option<String>,
+    #[serde(rename = "entryId", default, skip_serializing_if = "Option::is_none")]
+    pub entry_id: Option<String>,
     pub title: Option<String>,
     pub status: Option<String>,
 }
