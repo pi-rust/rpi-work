@@ -1,6 +1,8 @@
 //! Native workbench layout. The shared view model owns transcript ordering, tool
 //! labels, code tokens and metrics.
 
+#[path = "composer_config.rs"]
+pub(crate) mod composer_config;
 #[path = "composer.rs"]
 pub(crate) mod editor;
 #[path = "project_files.rs"]
@@ -74,6 +76,7 @@ pub struct Shell {
     session_history: Vec<(Option<usize>, Option<usize>)>,
     history_position: usize,
     files: project_files::Panel,
+    composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
     creation_error: Option<(bool, String)>,
     creation_readback: Option<(usize, String)>,
@@ -151,6 +154,7 @@ impl Shell {
             session_history: vec![(project, session)],
             history_position: 0,
             files: project_files::Panel::default(),
+            composer_config: composer_config::Panel::default(),
             creating_session: None,
             creation_error: None,
             creation_readback: None,
@@ -319,6 +323,7 @@ impl Shell {
             }
         }
         self.session = session;
+        self.composer_config.reset_observation();
         self.frame = None;
         self.observation = None;
         self.load_error = None;
@@ -336,9 +341,10 @@ impl Shell {
                                 return true;
                             }
                             match result {
-                                Ok(frame) => shell.apply_frame(index, frame),
+                                Ok(frame) => shell.apply_frame(index, frame, cx),
                                 Err(error) => {
                                     shell.frame = None;
+                                    shell.composer_config.reset_observation();
                                     shell.load_error = Some(error.to_string());
                                 }
                             }
@@ -356,7 +362,7 @@ impl Shell {
         cx.notify();
     }
 
-    fn apply_frame(&mut self, index: usize, frame: SessionFrame) {
+    fn apply_frame(&mut self, index: usize, frame: SessionFrame, cx: &mut Context<Self>) {
         if self
             .actions
             .get(&index)
@@ -402,7 +408,17 @@ impl Shell {
                 eprintln!("session event: {}", frame.event);
             }
         }
+        let refresh_config = frame.event.is_empty() || frame.event == "access";
+        let clear_config = frame.access.is_none();
         self.frame = Some(frame);
+        if refresh_config {
+            self.observe_config(cx);
+        } else if clear_config {
+            self.composer_config.reset_observation();
+        } else {
+            self.composer_config
+                .close_if_locked(&self.session_controls());
+        }
     }
 
     fn session_controls(&self) -> SessionControls {
@@ -411,11 +427,15 @@ impl Shell {
         if let Some(request) = self.session.and_then(|index| self.actions.get(&index)) {
             request.apply_pending(&mut pending);
         }
+        if let Some(index) = self.session {
+            self.composer_config.pending(index, &mut pending);
+        }
+        let config = self.composer_config.observed.as_ref();
         controls(&SessionObservation {
             projection: self.frame.as_ref().map(|frame| &frame.projection),
             access: self.frame.as_ref().and_then(|frame| frame.access.as_ref()),
-            configuration: None,
-            runtime: None,
+            configuration: config.map(|config| &config.schema),
+            runtime: config.map(|config| &config.runtime),
             has_dialogs: self
                 .frame
                 .as_ref()
@@ -1323,24 +1343,23 @@ impl Shell {
         let action = self.session.and_then(|index| self.actions.get(&index));
         let notice = action
             .map(session_action::Request::status)
-            .or_else(|| draft.and_then(|draft| draft.notice.as_deref()));
+            .or_else(|| draft.and_then(|draft| draft.notice.as_deref()))
+            .or_else(|| self.config_notice());
         let status = if checking {
-            "正在核对发送回执…"
+            Some("正在核对发送回执…")
         } else {
-            notice.unwrap_or_else(|| {
+            notice.or_else(|| {
                 if self.node.is_none() {
-                    "示例 · 草稿保存在当前窗口"
+                    Some("示例 · 草稿保存在当前窗口")
                 } else if controls.online
                     && self
                         .frame
                         .as_ref()
                         .is_some_and(|frame| !frame.dialogs.is_empty())
                 {
-                    "等待审批回复"
-                } else if !controls.reason.is_empty() {
-                    &controls.reason
+                    Some("等待审批回复")
                 } else {
-                    "Enter 发送 · Shift+Enter 换行"
+                    (!controls.reason.is_empty()).then_some(controls.reason.as_str())
                 }
             })
         };
@@ -1371,6 +1390,13 @@ impl Shell {
                             .pt(px(12.0))
                             .pb(px(9.0))
                             .child(self.input_element(cx))
+                            .when_some(status, |composer, status| {
+                                composer.child(
+                                    self.text(status.to_owned(), 12.0, palette.muted)
+                                        .px(px(4.0))
+                                        .py_1(),
+                                )
+                            })
                             .child(
                                 div()
                                     .flex()
@@ -1378,11 +1404,7 @@ impl Shell {
                                     .justify_between()
                                     .h(px(28.0))
                                     .pl(px(4.0))
-                                    .child(
-                                        self.text(status.to_owned(), 12.0, palette.muted)
-                                            .min_w(px(0.0))
-                                            .truncate(),
-                                    )
+                                    .child(self.config_toolbar(&controls, cx))
                                     .when(can_check, |toolbar| {
                                         toolbar.child(
                                             self.button("check-receipt", "核对回执").on_click(
@@ -1500,6 +1522,13 @@ impl Render for Shell {
             (remaining - if docked { dock_width } else { 0.0 } - inset * 2.0).min(READING_WIDTH);
         let palette = self.palette;
         div()
+            .id("workbench")
+            .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" && shell.composer_config.close_menu() {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
             .flex()
             .flex_col()
             .size(relative(1.0))

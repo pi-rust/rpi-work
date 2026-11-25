@@ -252,6 +252,37 @@ impl Node {
         })
     }
 
+    pub fn observe_config(
+        &self,
+        id: String,
+    ) -> JoinHandle<Result<crate::shell::composer_config::Observed, ClientError>> {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { crate::shell::composer_config::observe(&client, &id).await })
+    }
+
+    pub fn config_choices(
+        &self,
+        id: String,
+        field: work_viewmodel::config_requests::ConfigField,
+    ) -> JoinHandle<crate::shell::composer_config::CatalogResult> {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { crate::shell::composer_config::choices(&client, &id, field).await })
+    }
+
+    pub fn update_config(
+        &self,
+        id: String,
+        choice: crate::shell::composer_config::Choice,
+        evidence: Option<crate::shell::composer_config::Evidence>,
+    ) -> JoinHandle<crate::shell::composer_config::ResultState> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            crate::shell::composer_config::update(&client, &id, &choice, evidence).await
+        })
+    }
+
     pub fn read_project(
         &self,
         id: String,
