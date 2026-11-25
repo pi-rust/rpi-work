@@ -23,6 +23,7 @@ gpui = "0.2.2"
 [dependencies]
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+unicode-segmentation = "1"
 work-client = { path = "../../crates/client/work-client" }
 work-core = { path = "../../crates/foundation/work-core" }
 work-viewmodel = { path = "../../crates/client/work-viewmodel" }

@@ -7100,6 +7100,7 @@ dependencies = [
  "gpui",
  "serde_json",
  "tokio",
+ "unicode-segmentation",
  "work-client",
  "work-core",
  "work-viewmodel",

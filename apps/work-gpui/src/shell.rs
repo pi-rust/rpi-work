@@ -1,11 +1,14 @@
 //! Native workbench layout. The shared view model owns transcript ordering, tool
 //! labels, code tokens and metrics.
 
+#[path = "composer.rs"]
+pub(crate) mod editor;
+
 use std::collections::{HashMap, HashSet};
 
 use gpui::{
-    AnyElement, Context, Div, FocusHandle, FontWeight, Hsla, KeyDownEvent, ScrollHandle,
-    SharedString, Task, Window, WindowControlArea, div, point, prelude::*, px, relative,
+    AnyElement, Context, Div, FocusHandle, FontWeight, Hsla, ScrollHandle, SharedString, Task,
+    Window, WindowControlArea, div, point, prelude::*, px, relative,
 };
 use serde_json::Value;
 use work_client::ClientError;
@@ -51,6 +54,8 @@ pub struct Shell {
     expanded: HashSet<String>,
     drafts: HashMap<Option<usize>, Draft>,
     focus: FocusHandle,
+    input_layout: Option<editor::Layout>,
+    input_dragging: bool,
     order: TranscriptOrder,
     /// One-shot diagnostic so a headless launch can prove the first frame ran.
     traced: bool,
@@ -108,6 +113,8 @@ impl Shell {
             expanded: HashSet::new(),
             drafts: HashMap::new(),
             focus: cx.focus_handle(),
+            input_layout: None,
+            input_dragging: false,
             order,
             traced: false,
         };
@@ -119,32 +126,6 @@ impl Shell {
 
     pub fn focus_composer(&self, window: &mut Window) {
         self.focus.focus(window);
-    }
-
-    fn typing(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let key = &event.keystroke;
-        if key.modifiers.platform || key.modifiers.control || key.modifiers.alt {
-            return;
-        }
-        if key.key == "enter" && !key.modifiers.shift {
-            if !event.is_held {
-                self.send(cx);
-            }
-            return;
-        }
-        let draft = self.drafts.entry(self.session).or_default();
-        match key.key.as_str() {
-            "backspace" if !draft.text.is_empty() => {
-                draft.text.pop();
-            }
-            "enter" => draft.text.push('\n'),
-            _ => {
-                let Some(text) = &key.key_char else { return };
-                draft.text.push_str(text);
-            }
-        }
-        draft.revision = draft.revision.wrapping_add(1);
-        cx.notify();
     }
 
     fn select_project(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -170,8 +151,12 @@ impl Shell {
             cx.notify();
             return;
         }
-        self.session = session;
         if changed {
+            if let Some(draft) = self.drafts.get_mut(&self.session) {
+                draft.input.finish_composition();
+            }
+            self.input_layout = None;
+            self.input_dragging = false;
             self.transcript_scroll.set_offset(point(px(0.0), px(0.0)));
             self.expanded.clear();
             if self.node.is_some() {
@@ -179,6 +164,7 @@ impl Shell {
                 self.rows.clear();
             }
         }
+        self.session = session;
         self.frame = None;
         self.observation = None;
         self.load_error = None;
@@ -278,11 +264,14 @@ impl Shell {
             return;
         }
         let draft = self.drafts.entry(Some(index)).or_default();
-        if draft.text.trim().is_empty() {
+        if !draft.input.can_send() {
             return;
         }
         draft.begin();
-        let request = node.prompt(self.snapshot.sessions[index].id.clone(), draft.text.clone());
+        let request = node.prompt(
+            self.snapshot.sessions[index].id.clone(),
+            draft.input.text.clone(),
+        );
         cx.spawn(async move |this, cx| {
             let result = request.await;
             this.update(cx, |shell, cx| {
@@ -893,19 +882,12 @@ impl Shell {
     fn composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
         let draft = self.drafts.get(&self.session);
-        let (value, color) = draft
-            .map(|draft| &draft.text)
-            .filter(|text| !text.is_empty())
-            .map_or_else(
-                || ("要求后续更改".into(), palette.muted),
-                |draft| (draft.clone(), palette.text),
-            );
         let loaded_sample = self.node.is_none()
             && self.session.is_some()
             && self.session == self.transcript_session;
         let metrics = &self.snapshot.metrics;
         let controls = self.session_controls();
-        let can_send = controls.send && draft.is_some_and(|draft| !draft.text.trim().is_empty());
+        let can_send = controls.send && draft.is_some_and(|draft| draft.input.can_send());
         let checking = self
             .session
             .is_some_and(|index| self.checking_receipts.contains(&index));
@@ -948,16 +930,7 @@ impl Shell {
                             .px(px(10.0))
                             .pt(px(12.0))
                             .pb(px(9.0))
-                            .track_focus(&self.focus)
-                            .on_click(cx.listener(|this, _, window, _| this.focus_composer(window)))
-                            .on_key_down(cx.listener(Self::typing))
-                            .child(
-                                self.text(value, 15.0, color)
-                                    .px(px(4.0))
-                                    .min_h(px(47.0))
-                                    .max_h(px(126.0))
-                                    .overflow_hidden(),
-                            )
+                            .child(self.input_element(cx))
                             .child(
                                 div()
                                     .flex()

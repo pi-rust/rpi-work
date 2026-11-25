@@ -2,10 +2,11 @@ use work_core::api::realtime::OperationRef;
 use work_core::{ConnectionState, RunPhase};
 use work_viewmodel::session_controls::PendingRequests;
 
+use crate::shell::editor::Buffer;
+
 #[derive(Default)]
 pub struct Draft {
-    pub text: String,
-    pub revision: u64,
+    pub input: Buffer,
     request: Option<Submission>,
     pub notice: Option<String>,
 }
@@ -28,7 +29,7 @@ impl Draft {
         self.notice = None;
         self.request = Some(Submission {
             stage: Stage::Sending,
-            revision: self.revision,
+            revision: self.input.revision,
             saw_activity: false,
             settled: false,
         });
@@ -38,8 +39,8 @@ impl Draft {
         let Some(request) = &mut self.request else {
             return;
         };
-        if self.revision == request.revision {
-            self.text.clear();
+        if self.input.revision == request.revision {
+            self.input = Buffer::default();
         }
         self.notice = None;
         request.stage = Stage::Accepted;
@@ -111,10 +112,8 @@ mod tests {
 
     #[test]
     fn acceptance_requires_new_activity_and_settlement() {
-        let mut draft = Draft {
-            text: "hello".into(),
-            ..Default::default()
-        };
+        let mut draft = Draft::default();
+        draft.input.replace(None, "hello");
         draft.begin();
         draft.accept();
         draft.observe("", &RunPhase::Accepted, &ONLINE);
@@ -123,23 +122,21 @@ mod tests {
         draft.observe("agent_start", &RunPhase::Accepted, &ONLINE);
         draft.observe("agent_settled", &COMPLETED, &ONLINE);
         assert!(!draft.pending().awaiting_reply);
-        assert!(draft.text.is_empty());
+        assert!(draft.input.text.is_empty());
     }
 
     #[test]
     fn late_acceptance_preserves_edits_and_observed_settlement() {
-        let mut draft = Draft {
-            text: "hello".into(),
-            ..Default::default()
-        };
+        let mut draft = Draft::default();
+        draft.input.replace(None, "hello");
         draft.begin();
-        draft.revision += 1;
+        draft.input.replace(None, " again");
         draft.observe("agent_start", &RunPhase::Accepted, &ONLINE);
         draft.observe("connection_online", &COMPLETED, &ONLINE);
         draft.unknown(None);
         assert!(draft.pending().uncertain);
         draft.accept();
-        assert_eq!(draft.text, "hello");
+        assert_eq!(draft.input.text, "hello again");
         assert!(draft.request.is_none());
     }
 }
