@@ -19,7 +19,7 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { Sidebar } from '@/components/workspace-sidebar'
 import { ActivityRail } from '@/components/activity-rail'
 import { ProjectDialog } from '@/components/project-dialog'
-import { SessionArchiveDialog } from '@/components/session-archive-dialog'
+import { SessionManagementDialog } from '@/components/session-management-dialog'
 import './workbench-shell.css'
 import { useWorkspace } from '@/lib/workspace'
 import { useDraft } from '@/lib/drafts'
@@ -140,7 +140,7 @@ export default function App() {
     label: model.name || model.id.split('/').slice(-1)[0],
     provider: model.provider,
   }))
-  const canCreate = live && ready && !workspace.creation.busy && !workspace.creation.uncertain && !workspace.archive.busy
+  const canCreate = live && ready && !workspace.creation.busy && !workspace.creation.uncertain && !workspace.sessionManagement.busy
   const toolCount = workspace.blocks.filter((block) => block.kind === 'tool').length
   const showChat = (select: () => void) => {
     select()
@@ -658,15 +658,16 @@ export default function App() {
         onRecheck={workspace.recheckCreation}
         onClose={() => setProjectDialogFor(null)}
       /> : null}
-      {archiveDialog?.connectionId === workspace.connectionId && live ? <SessionArchiveDialog
+      {archiveDialog?.connectionId === workspace.connectionId && live ? <SessionManagementDialog
+        key={archiveDialog.mode === 'current' ? currentSession?.id : 'archive-list'}
         mode={archiveDialog.mode}
         sessions={workspace.sessions}
         projects={workspace.projects}
         current={currentSession}
-        archive={workspace.archive}
-        canArchive={workspace.archive.supported && Boolean(workspace.controls?.online) && !workspace.busy}
-        disabled={workspace.status !== 'ready' || workspace.archive.busy || workspace.creation.busy}
-        onChange={workspace.setArchived}
+        management={workspace.sessionManagement}
+        canArchive={workspace.sessionManagement.capabilities.preferences && Boolean(workspace.controls?.online) && !workspace.busy}
+        disabled={workspace.status !== 'ready' || workspace.sessionManagement.busy || workspace.creation.busy}
+        onChange={workspace.editSession}
         onSelected={() => { setPage('chat'); setDrawer(false) }}
         onClose={() => setArchiveDialog(null)}
       /> : null}

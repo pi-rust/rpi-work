@@ -13,8 +13,9 @@ export type CreationReply<T> =
   | { outcome: 'created'; value: T }
   | { outcome: 'rejected' | 'unknown'; error: string }
 
-export type ArchiveReply =
-  | { outcome: 'saved'; value: { sessionId: string; archived: boolean; pinned: boolean } }
+export type SessionManagementCapabilities = { preferences: boolean; rename: boolean }
+export type SessionManagementReply<T> =
+  | { outcome: 'saved'; value: T }
   | { outcome: 'rejected' | 'unknown'; error: string }
 
 export type NodeSession = {
@@ -157,12 +158,23 @@ export class NodeConnection {
     return parse<NodeSession[]>(await this.client.sessions())
   }
 
-  async supportsSessionPreferences(): Promise<boolean> {
-    return this.client.supports_session_preferences()
+  async sessionManagementCapabilities(): Promise<SessionManagementCapabilities> {
+    return parse(await this.client.session_management_capabilities())
   }
 
-  async setSessionArchived(id: string, archived: boolean): Promise<ArchiveReply> {
-    return parse(await this.client.set_session_archived(id, archived))
+  async setSessionPreferences(id: string, preferences: { archived: boolean } | { pinned: boolean }): Promise<SessionManagementReply<{ archived: boolean; pinned: boolean }>> {
+    const reply = parse<SessionManagementReply<{ archived: boolean; pinned: boolean }>>(await this.client.set_session_preferences(
+      id, 'archived' in preferences ? preferences.archived : undefined, 'pinned' in preferences ? preferences.pinned : undefined,
+    ))
+    if (reply.outcome !== 'saved') return reply
+    const { archived, pinned } = reply.value
+    return { outcome: 'saved', value: { archived, pinned } }
+  }
+
+  async renameSession(id: string, title: string): Promise<SessionManagementReply<{ title: string }>> {
+    const reply = parse<SessionManagementReply<{ title: string }>>(await this.client.rename_session(id, title))
+    if (reply.outcome !== 'saved') return reply
+    return { outcome: 'saved', value: { title: reply.value.title } }
   }
 
   async createProject(name: string, path: string): Promise<CreationReply<NodeProject>> {

@@ -67,6 +67,23 @@ fn explicitly_rejected(error: &work_client::ClientError) -> bool {
     }
 }
 
+fn session_management_reply<T: serde::Serialize>(
+    result: Result<T, work_client::ClientError>,
+    matches_request: impl FnOnce(&T) -> bool,
+) -> Result<JsValue, JsValue> {
+    let reply = match result {
+        Ok(value) if matches_request(&value) => {
+            serde_json::json!({"outcome": "saved", "value": value})
+        }
+        Ok(_) => serde_json::json!({"outcome": "unknown", "error": "节点回执与会话请求不符"}),
+        Err(error) if explicitly_rejected(&error) => {
+            serde_json::json!({"outcome": "rejected", "error": error.to_string()})
+        }
+        Err(error) => serde_json::json!({"outcome": "unknown", "error": error.to_string()}),
+    };
+    json_string(&reply)
+}
+
 /// One authenticated (or pending) connection to a node origin.
 #[wasm_bindgen]
 pub struct NodeClient {
@@ -173,41 +190,53 @@ impl NodeClient {
         })
     }
 
-    pub fn supports_session_preferences(&self) -> Promise {
+    pub fn session_management_capabilities(&self) -> Promise {
         let client = self.client.clone();
         future_to_promise(async move {
             let capabilities = client
                 .capabilities()
                 .await
                 .map_err(|error| failure("节点能力读取失败", error))?;
-            Ok(JsValue::from_bool(
+            let supports = |name| {
                 capabilities
                     .supported_actions
                     .iter()
-                    .any(|action| action == "session_metadata"),
-            ))
+                    .any(|action| action == name)
+            };
+            json_string(&serde_json::json!({
+                "preferences": supports("session_metadata"),
+                "rename": supports("session_organization"),
+            }))
         })
     }
 
-    pub fn set_session_archived(&self, session_id: String, archived: bool) -> Promise {
+    pub fn set_session_preferences(
+        &self,
+        session_id: String,
+        archived: Option<bool>,
+        pinned: Option<bool>,
+    ) -> Promise {
         let client = self.client.clone();
         future_to_promise(async move {
-            let reply = match client
-                .session_preferences(&session_id, Some(archived), None)
-                .await
-            {
-                Ok(value) if value.session_id == session_id && value.archived == archived => {
-                    serde_json::json!({"outcome": "saved", "value": value})
-                }
-                Ok(_) => {
-                    serde_json::json!({"outcome": "unknown", "error": "节点回执与会话归档请求不符"})
-                }
-                Err(error) if explicitly_rejected(&error) => {
-                    serde_json::json!({"outcome": "rejected", "error": error.to_string()})
-                }
-                Err(error) => serde_json::json!({"outcome": "unknown", "error": error.to_string()}),
-            };
-            json_string(&reply)
+            let result = client
+                .session_preferences(&session_id, archived, pinned)
+                .await;
+            session_management_reply(result, |value| {
+                value.session_id == session_id
+                    && archived.is_none_or(|expected| value.archived == expected)
+                    && pinned.is_none_or(|expected| value.pinned == expected)
+            })
+        })
+    }
+
+    pub fn rename_session(&self, session_id: String, title: String) -> Promise {
+        let client = self.client.clone();
+        future_to_promise(async move {
+            let title = title.trim();
+            let result = client.rename_session(&session_id, title).await;
+            session_management_reply(result, |value| {
+                value.session_id == session_id && value.title.as_deref() == Some(title)
+            })
         })
     }
 

@@ -255,7 +255,7 @@ async function startFixture(port=0,options={}){
       const entry=decodeURIComponent(receipt[1])==='fixture-owner'?operations.get(decodeURIComponent(receipt[2])):null;
       return json(controls.receiptUnknown?{state:'outcomeUnknown'}:entry?.status||{state:'outcomeUnknown'});
     }
-    if(route==='/api/v1/capabilities')return json({protocol:'rpi-web-v1',supportedCommands:defaultCommands,supportedActions:['projects','files','sessions','session_metadata','fork','clone'],parityComplete:false});
+    if(route==='/api/v1/capabilities')return json({protocol:'rpi-web-v1',supportedCommands:defaultCommands,supportedActions:['projects','files','sessions','session_metadata','session_organization','fork','clone'],parityComplete:false});
     if(route==='/api/v1/agent-backends')return json({backends:options.agentBackends||[{id:'rpi',name:'RPI fixture',available:true,reason:null}]});
     if(route==='/api/v1/projects'){
       if(req.method==='POST'){
