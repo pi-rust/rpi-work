@@ -139,17 +139,37 @@ enum Section {
     Review,
 }
 
+type SectionLink = (Section, &'static str, &'static str);
+
 impl Section {
-    const NAVIGATION: [(Self, &str, &str); 9] = [
-        (Self::General, "settings-general", "settings"),
-        (Self::Appearance, "settings-appearance", "appearance"),
-        (Self::Notifications, "settings-notifications", "bell"),
-        (Self::Shortcuts, "settings-shortcuts", "keyboard"),
-        (Self::Archives, "settings-archives", "archive-box"),
-        (Self::Plugins, "settings-plugins", "code-xml"),
-        (Self::Skills, "settings-skills", "list-checks"),
-        (Self::Collaboration, "settings-collaboration", "globe"),
-        (Self::Review, "settings-review", "file-diff"),
+    const NAVIGATION: [(&str, &[SectionLink]); 4] = [
+        (
+            "应用",
+            &[
+                (Self::General, "settings-general", "settings"),
+                (Self::Appearance, "settings-appearance", "appearance"),
+                (Self::Notifications, "settings-notifications", "bell"),
+                (Self::Shortcuts, "settings-shortcuts", "keyboard"),
+            ],
+        ),
+        (
+            "数据与隐私",
+            &[(Self::Archives, "settings-archives", "archive-box")],
+        ),
+        (
+            "集成",
+            &[
+                (Self::Plugins, "settings-plugins", "blocks"),
+                (Self::Skills, "settings-skills", "list-checks"),
+            ],
+        ),
+        (
+            "编码",
+            &[
+                (Self::Collaboration, "settings-collaboration", "globe"),
+                (Self::Review, "settings-review", "file-diff"),
+            ],
+        ),
     ];
 
     fn label(self) -> &'static str {
@@ -261,6 +281,7 @@ struct Destination {
 fn search_destinations(query: &str) -> impl Iterator<Item = Destination> {
     Section::NAVIGATION
         .into_iter()
+        .flat_map(|(_, links)| links.iter().copied())
         .flat_map(move |(section, _, _)| {
             let pane_match = section.label().contains(query);
             pane_match
@@ -294,6 +315,8 @@ pub(super) struct Panel {
     browse: bool,
     browse_focus: FocusHandle,
     first_result: FocusHandle,
+    navigation_focus: Vec<(usize, FocusHandle)>,
+    navigation_scroll: ScrollHandle,
     target: Option<Field>,
     target_focus: FocusHandle,
     reveal: bool,
@@ -310,6 +333,13 @@ impl Panel {
             browse: false,
             browse_focus: cx.focus_handle(),
             first_result: cx.focus_handle(),
+            navigation_focus: Section::NAVIGATION
+                .into_iter()
+                .flat_map(|(_, links)| std::iter::once(None).chain(links.iter().map(Some)))
+                .enumerate()
+                .filter_map(|(index, link)| link.map(|_| (index, cx.focus_handle().tab_stop(true))))
+                .collect(),
+            navigation_scroll: ScrollHandle::new(),
             target: None,
             target_focus: cx.focus_handle(),
             reveal: false,
@@ -468,22 +498,35 @@ impl Shell {
             .flex()
             .flex_col();
         if query.is_empty() {
-            list = list.children(Section::NAVIGATION.map(|(tab, id, shape)| {
-                self.setting_navigation_button(id)
-                    .when(section == tab, |button| button.bg(palette.hover))
-                    .child(icon(shape, 16.0, palette.muted))
-                    .child(self.text(tab.label(), 13.0, palette.text))
-                    .on_click(cx.listener(move |shell, _, window, cx| {
-                        shell.select_settings_destination(
-                            Destination {
-                                section: tab,
-                                field: None,
-                            },
-                            window,
-                            cx,
-                        );
-                    }))
-            }));
+            list = list.track_scroll(&self.settings.navigation_scroll);
+            let mut focus = self.settings.navigation_focus.iter();
+            for (index, (label, links)) in Section::NAVIGATION.into_iter().enumerate() {
+                list = list.child(
+                    self.text(label, 12.0, palette.muted)
+                        .px_2()
+                        .pb_1()
+                        .when(index > 0, |heading| heading.pt_3()),
+                );
+                list = list.children(links.iter().copied().zip(focus.by_ref()).map(
+                    |((tab, id, shape), (_, focus))| {
+                        self.setting_navigation_button(id)
+                            .track_focus(focus)
+                            .when(section == tab, |button| button.bg(palette.hover))
+                            .child(icon(shape, 16.0, palette.muted))
+                            .child(self.text(tab.label(), 13.0, palette.text))
+                            .on_click(cx.listener(move |shell, _, window, cx| {
+                                shell.select_settings_destination(
+                                    Destination {
+                                        section: tab,
+                                        field: None,
+                                    },
+                                    window,
+                                    cx,
+                                );
+                            }))
+                    },
+                ));
+            }
         } else {
             let mut results = search_destinations(query).peekable();
             if results.peek().is_none() {
@@ -712,6 +755,14 @@ impl Shell {
                                 window.focus_prev();
                             } else {
                                 window.focus_next();
+                            }
+                            if let Some((index, _)) = shell
+                                .settings
+                                .navigation_focus
+                                .iter()
+                                .find(|(_, focus)| focus.is_focused(window))
+                            {
+                                shell.settings.navigation_scroll.scroll_to_item(*index);
                             }
                             cx.notify();
                         }
