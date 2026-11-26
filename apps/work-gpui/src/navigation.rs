@@ -218,12 +218,13 @@ impl Shell {
         let navigation = &self.preferences.navigation;
         let mut projects: Vec<_> = self.snapshot.projects.iter().enumerate().collect();
         projects.sort_by_key(|(_, project)| !navigation.pinned(&node, &project.id));
+        let filter = self.session_filter.filter();
         let mut sessions: Vec<_> = self
             .snapshot
             .sessions
             .iter()
             .enumerate()
-            .filter(|(_, session)| !session.archived)
+            .filter(|(_, session)| !session.archived && filter.matches(session.activity))
             .collect();
         sessions.sort_by_key(|(_, session)| Reverse(session.updated_at));
         let (pinned, recent): (Vec<_>, Vec<_>) = sessions
@@ -294,15 +295,17 @@ impl Shell {
                     })
             })
             .child(self.navigation_heading(Section::Recent, cx).mt_2())
+            .children(self.session_filter_notice(!pinned.is_empty() || !recent.is_empty()))
             .when(!collapsed(Section::Recent), |list| {
                 list.children(
                     recent
                         .iter()
                         .map(|&(index, session)| self.session_row(index, session, cx)),
                 )
-                .when(recent.is_empty(), |list| {
-                    list.child(self.text("暂无最近会话", 12.0, palette.muted).px_3().py_1())
-                })
+                .when(
+                    recent.is_empty() && filter == super::session_filter::Filter::All,
+                    |list| list.child(self.text("暂无最近会话", 12.0, palette.muted).px_3().py_1()),
+                )
             })
     }
 

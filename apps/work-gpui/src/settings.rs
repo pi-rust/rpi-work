@@ -180,6 +180,7 @@ impl Shell {
 
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.project_menu = None;
+        self.close_session_filter_menu();
         self.welcome_project_picker = false;
         if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
             draft.input.finish_composition();

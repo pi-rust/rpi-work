@@ -103,13 +103,17 @@ impl Panel {
         self.dialog.is_some()
     }
 
+    pub(super) fn has_request(&self) -> bool {
+        self.request.is_some()
+    }
+
     pub(super) fn editing(&self) -> bool {
         matches!(self.dialog, Some(Dialog::Actions(_)))
             && self.pending.is_none()
             && self.request.is_none()
     }
 
-    fn supports(&self, action: &str) -> bool {
+    pub(super) fn supports(&self, action: &str) -> bool {
         self.capabilities
             .as_ref()
             .is_some_and(|caps| caps.supported_actions.iter().any(|item| item == action))
@@ -157,7 +161,7 @@ impl Shell {
         cx.notify();
     }
 
-    fn read_session_management_capabilities(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn read_session_management_capabilities(&mut self, cx: &mut Context<Self>) {
         let panel = &mut self.session_management;
         if panel.capabilities.is_some() || panel.reading_capabilities.is_some() {
             return;
@@ -217,7 +221,10 @@ impl Shell {
         let Some(session) = self.snapshot.sessions.get(index) else {
             return;
         };
-        if self.session_management.request.is_some() || self.creating_session.is_some() {
+        if self.session_management.request.is_some()
+            || self.creating_session.is_some()
+            || self.session_fork.in_flight()
+        {
             return;
         }
         let action = if matches!(edit, Edit::Rename(_)) {
@@ -236,7 +243,7 @@ impl Shell {
             };
             let controls = self.session_controls();
             if !controls.online
-                || matches!(edit, Edit::Archive(true)) && !self.can_archive_session()
+                || matches!(edit, Edit::Archive(true)) && !self.session_idle_for_history_change()
             {
                 return;
             }
@@ -256,7 +263,7 @@ impl Shell {
         );
     }
 
-    fn can_archive_session(&self) -> bool {
+    pub(super) fn session_idle_for_history_change(&self) -> bool {
         let controls = self.session_controls();
         let pending = self
             .drafts
@@ -306,6 +313,7 @@ impl Shell {
                             shell.input_layout = None;
                         }
                         shell.snapshot.sessions[request.index] = session;
+                        shell.session_catalog_revision += 1;
                         shell.session_management.request = None;
                         if archived && shell.session == Some(request.index) {
                             shell.close_session_management();
@@ -356,7 +364,9 @@ impl Shell {
         let panel = &self.session_management;
         let dialog = panel.dialog?;
         let palette = self.palette;
-        let enabled = panel.request.is_none() && self.creating_session.is_none();
+        let enabled = panel.request.is_none()
+            && self.creating_session.is_none()
+            && !self.session_fork.in_flight();
         let metadata = enabled && panel.supports("session_metadata");
         let rename = enabled && panel.supports("session_organization");
         let title = match dialog {
@@ -397,6 +407,7 @@ impl Shell {
             Dialog::Actions(index) => {
                 let session = &self.snapshot.sessions[index];
                 let online = self.session_controls().online;
+                let can_fork = self.can_fork();
                 content = content
                     .child(self.text("会话名称", 13.0, palette.text))
                     .child(
@@ -462,15 +473,30 @@ impl Shell {
                                 ),
                             )
                             .child(
-                                self.button("archive-session", "归档会话")
-                                    .when(!(metadata && self.can_archive_session()), |button| {
-                                        button.opacity(0.45).cursor_default()
-                                    })
-                                    .when(metadata && self.can_archive_session(), |button| {
-                                        button.on_click(cx.listener(move |shell, _, _, cx| {
-                                            shell.edit_session(index, Edit::Archive(true), cx)
+                                self.button("fork-session", "从历史分叉")
+                                    .when(!can_fork, |button| button.opacity(0.45).cursor_default())
+                                    .when(can_fork, |button| {
+                                        button.on_click(cx.listener(|shell, _, window, cx| {
+                                            shell.close_session_management();
+                                            shell.focus_composer(window);
+                                            shell.start_fork(None, cx);
                                         }))
                                     }),
+                            )
+                            .child(
+                                self.button("archive-session", "归档会话")
+                                    .when(
+                                        !(metadata && self.session_idle_for_history_change()),
+                                        |button| button.opacity(0.45).cursor_default(),
+                                    )
+                                    .when(
+                                        metadata && self.session_idle_for_history_change(),
+                                        |button| {
+                                            button.on_click(cx.listener(move |shell, _, _, cx| {
+                                                shell.edit_session(index, Edit::Archive(true), cx)
+                                            }))
+                                        },
+                                    ),
                             ),
                     );
             }

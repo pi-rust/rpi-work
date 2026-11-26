@@ -25,6 +25,10 @@ mod review;
 mod rich_text;
 #[path = "session_action.rs"]
 pub(crate) mod session_action;
+#[path = "session_filter.rs"]
+mod session_filter;
+#[path = "session_fork.rs"]
+pub(crate) mod session_fork;
 #[path = "session_management.rs"]
 pub(crate) mod session_management;
 #[path = "settings.rs"]
@@ -44,7 +48,9 @@ use work_core::{MessageBlock, RunProjection};
 use work_viewmodel::conversation::transcript_view::{self, ActivityItem, Part, ToolView};
 use work_viewmodel::conversation::{code_tokens, markdown, tool_display};
 use work_viewmodel::observability::metrics::{percent, tokens};
-use work_viewmodel::session_controls::{SessionControls, SessionObservation, controls};
+use work_viewmodel::session_controls::{
+    PendingRequests, SessionControls, SessionObservation, controls,
+};
 use work_viewmodel::session_receipts::{command_admission, interpret_receipt};
 use work_viewmodel::transcript::TranscriptOrder;
 
@@ -91,6 +97,7 @@ enum Row {
         key: String,
         source: String,
         view: Rc<markdown::MarkdownView>,
+        fork_entry_id: Option<String>,
     },
     Tool(ToolView),
 }
@@ -125,6 +132,9 @@ pub struct Shell {
     welcome_project_picker: bool,
     question: Option<question::Question>,
     session_management: session_management::Panel,
+    session_filter: session_filter::Panel,
+    session_fork: session_fork::Panel,
+    session_catalog_revision: u64,
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
@@ -221,6 +231,9 @@ impl Shell {
             welcome_project_picker: false,
             question: None,
             session_management: session_management::Panel::default(),
+            session_filter: session_filter::Panel::new(cx),
+            session_fork: session_fork::Panel::default(),
+            session_catalog_revision: 0,
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
@@ -275,6 +288,7 @@ impl Shell {
                 self.input_layout = None;
                 self.input_dragging = false;
             }
+            self.close_session_filter_menu();
             self.project = project;
             self.navigation_revision += 1;
             self.reset_project_files(cx);
@@ -283,6 +297,7 @@ impl Shell {
 
     fn select_session(&mut self, index: usize, cx: &mut Context<Self>) {
         self.project_menu = None;
+        self.close_session_filter_menu();
         self.welcome_project_picker = false;
         let project = self
             .snapshot
@@ -333,6 +348,7 @@ impl Shell {
         self.node.is_some()
             && self.project.is_some()
             && self.creating_session.is_none()
+            && !self.session_fork.in_flight()
             && !self
                 .creation_error
                 .as_ref()
@@ -378,6 +394,7 @@ impl Shell {
                             cx.notify();
                             return;
                         }
+                        shell.session_catalog_revision += 1;
                         let index = match existing {
                             Some(index) => {
                                 shell.snapshot.sessions[index] = session;
@@ -454,6 +471,7 @@ impl Shell {
             return;
         }
         if changed {
+            self.session_fork.invalidate_follow();
             self.close_question();
             self.cancel_comment();
             self.close_session_management();
@@ -475,6 +493,9 @@ impl Shell {
             }
         }
         self.session = session;
+        if self.session.is_some() {
+            self.read_session_management_capabilities(cx);
+        }
         self.queue.select(session, self.preferences.follow_up);
         self.composer_config.reset_observation();
         self.frame = None;
@@ -499,6 +520,7 @@ impl Shell {
                                     shell.frame = None;
                                     shell.composer_config.reset_observation();
                                     shell.load_error = Some(error.to_string());
+                                    shell.session_fork.invalidate_follow();
                                     shell.send_after_bind = None;
                                     if shell.review_after_bind.take().is_some() {
                                         shell.files.set_review_notice(
@@ -522,6 +544,9 @@ impl Shell {
     }
 
     fn apply_frame(&mut self, index: usize, frame: SessionFrame, cx: &mut Context<Self>) {
+        if frame.projection.connection != work_core::ConnectionState::Online {
+            self.session_fork.invalidate_follow();
+        }
         if frame.projection.connection == work_core::ConnectionState::Online
             && self
                 .question
@@ -623,11 +648,12 @@ impl Shell {
         }
     }
 
-    fn session_controls(&self) -> SessionControls {
+    fn pending_session_requests(&self) -> PendingRequests {
         let draft = self.drafts.get(&self.draft_key());
         let mut pending = draft.map(Draft::pending).unwrap_or_default();
-        pending.submitting |=
-            self.files.checking_review() || self.session_management.blocks_session(self.session);
+        pending.submitting |= self.files.checking_review()
+            || self.session_management.blocks_session(self.session)
+            || self.session_fork.blocks_session(self.session);
         if let Some(request) = self.session.and_then(|index| self.actions.get(&index)) {
             request.apply_pending(&mut pending);
         }
@@ -635,6 +661,10 @@ impl Shell {
             self.composer_config.pending(index, &mut pending);
             self.queue.pending(index, &mut pending);
         }
+        pending
+    }
+
+    fn session_controls(&self) -> SessionControls {
         let config = self.composer_config.observed.as_ref();
         controls(&SessionObservation {
             projection: self.frame.as_ref().map(|frame| &frame.projection),
@@ -649,7 +679,7 @@ impl Shell {
                 .frame
                 .as_ref()
                 .is_some_and(|frame| frame.pending_resume),
-            pending,
+            pending: self.pending_session_requests(),
         })
     }
 
@@ -890,10 +920,23 @@ impl Shell {
                             .font_weight(FontWeight::SEMIBOLD),
                     )
                     .child(
-                        self.icon_button("fold-navigation", "panel-left", 25.0)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.close_navigation(cx);
-                            })),
+                        div()
+                            .relative()
+                            .flex()
+                            .items_center()
+                            .when(self.node.is_some(), |tools| {
+                                tools.child(self.session_filter_button(cx))
+                            })
+                            .child(
+                                self.icon_button("fold-navigation", "panel-left", 25.0)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.close_navigation(cx)),
+                                    ),
+                            )
+                            .children(
+                                self.session_filter_controls(cx)
+                                    .map(|menu| gpui::deferred(menu).with_priority(1)),
+                            ),
                     ),
             )
             .when(self.node.is_some() && self.project.is_some(), |sidebar| {
@@ -1026,6 +1069,7 @@ impl Shell {
 
     fn close_navigation(&mut self, cx: &mut Context<Self>) {
         self.project_menu = None;
+        self.close_session_filter_menu();
         if self.overlay == Some(Overlay::Navigation) {
             self.overlay = None;
         } else {
@@ -1035,6 +1079,7 @@ impl Shell {
     }
 
     fn toggle_navigation(&mut self, narrow: bool, cx: &mut Context<Self>) {
+        self.close_session_filter_menu();
         if narrow {
             self.overlay =
                 (self.overlay != Some(Overlay::Navigation)).then_some(Overlay::Navigation);
@@ -1394,6 +1439,7 @@ impl Shell {
         let classic = self.preferences.classic;
         let prompt_width = (reading_width * 0.9).min((reading_width * 0.77).max(320.0));
         let show_rows = self.session.is_some() && self.session == self.transcript_session;
+        let fork_replies = show_rows && self.can_fork() && self.supports_reply_fork();
         let empty_text = match (self.watcher.is_some() && self.frame.is_none(), self.session) {
             (true, _) => "正在读取会话…",
             (false, Some(_)) => "此会话暂无消息",
@@ -1426,9 +1472,20 @@ impl Shell {
                                 .when(classic, |text| text.font_weight(FontWeight::MEDIUM)),
                         )
                         .into_any_element(),
-                    Row::Assistant { key, view, .. } => {
-                        self.rich_answer(key, view).into_any_element()
-                    }
+                    Row::Assistant {
+                        key,
+                        view,
+                        fork_entry_id,
+                        ..
+                    } => div()
+                        .child(self.rich_answer(key, view))
+                        .children(
+                            fork_entry_id
+                                .as_ref()
+                                .filter(|_| fork_replies)
+                                .map(|entry| self.fork_reply_button(key, entry, cx)),
+                        )
+                        .into_any_element(),
                     Row::Tool(block) => self.tool_card(index, block, cx),
                 });
         div()
@@ -1679,6 +1736,7 @@ impl Shell {
                     .w_full()
                     .max_w(px(READING_WIDTH))
                     .mx_auto()
+                    .children(self.fork_status(cx))
                     .child(self.approvals(&controls, cx))
                     .child(self.queue_panel(&controls, cx))
                     .child(
@@ -1950,6 +2008,7 @@ impl Render for Shell {
                             || shell.close_question()
                             || shell.cancel_comment()
                             || shell.composer_config.close_menu()
+                            || shell.dismiss_session_filter_menu(window)
                             || shell.project_menu.take().is_some()
                             || std::mem::take(&mut shell.welcome_project_picker))
                     {
@@ -2007,7 +2066,9 @@ impl Render for Shell {
                                     .absolute()
                                     .inset_0()
                                     .bg(gpui::rgba(0x00000028))
+                                    .occlude()
                                     .on_click(cx.listener(|this, _, _, cx| {
+                                        this.close_session_filter_menu();
                                         this.overlay = None;
                                         cx.notify();
                                     })),
@@ -2019,6 +2080,7 @@ impl Render for Shell {
                                         .left_0()
                                         .top_0()
                                         .bottom_0()
+                                        .occlude()
                                         .child(self.sidebar(cx)),
                                 )
                             })
@@ -2106,11 +2168,14 @@ fn present_rows(
     let previous: HashMap<_, _> = previous
         .iter()
         .filter_map(|row| match row {
-            Row::Assistant { key, source, view } => Some((key.as_str(), (source, view))),
+            Row::Assistant {
+                key, source, view, ..
+            } => Some((key.as_str(), (source, view))),
             _ => None,
         })
         .collect();
     let mut rows = Vec::new();
+    let mut fork_entries = HashSet::new();
     for part in conversation.parts {
         match part {
             Part::Message {
@@ -2119,6 +2184,7 @@ fn present_rows(
             Part::Message {
                 key,
                 reading_key,
+                fork_entry_id,
                 text,
                 ..
             } => {
@@ -2134,6 +2200,7 @@ fn present_rows(
                     key,
                     source: text,
                     view,
+                    fork_entry_id: fork_entry_id.filter(|entry| fork_entries.insert(entry.clone())),
                 });
             }
             Part::Activity { items, .. } => {

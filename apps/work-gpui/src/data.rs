@@ -7,7 +7,7 @@ use work_client::{
     ClientError, Project, ProjectFolders, SessionAccess, SessionConnection, WorkspaceClient,
 };
 use work_core::api::realtime::{OperationRef, OperationStatus};
-use work_core::api::{HostResponse, PendingDialog, SessionSummary};
+use work_core::api::{HostResponse, PendingDialog, SessionActivity, SessionSummary};
 use work_core::{ApplyResult, MessageBlock, RunProjection, ToolStatus};
 use work_viewmodel::observability::metrics::{Context, Metrics};
 
@@ -34,6 +34,7 @@ pub struct SessionItem {
     pub updated_at: u64,
     pub archived: bool,
     pub pinned: bool,
+    pub activity: Option<SessionActivity>,
 }
 
 impl SessionItem {
@@ -55,6 +56,7 @@ impl From<SessionSummary> for SessionItem {
             updated_at: session.updated_at,
             archived: session.archived,
             pinned: session.pinned,
+            activity: session.activity,
         }
     }
 }
@@ -109,6 +111,7 @@ impl Snapshot {
                     updated_at: 1_792_910_000_000,
                     archived: false,
                     pinned: false,
+                    activity: Some(SessionActivity::Inactive),
                 },
                 SessionItem {
                     id: "architecture".into(),
@@ -117,6 +120,7 @@ impl Snapshot {
                     updated_at: 1_792_900_000_000,
                     archived: false,
                     pinned: false,
+                    activity: Some(SessionActivity::Inactive),
                 },
                 SessionItem {
                     id: "mobile".into(),
@@ -125,6 +129,7 @@ impl Snapshot {
                     updated_at: 1_792_890_000_000,
                     archived: false,
                     pinned: false,
+                    activity: Some(SessionActivity::Inactive),
                 },
                 SessionItem {
                     id: "rpc".into(),
@@ -133,6 +138,7 @@ impl Snapshot {
                     updated_at: 1_792_880_000_000,
                     archived: false,
                     pinned: false,
+                    activity: Some(SessionActivity::Inactive),
                 },
             ],
             history: vec![json!({
@@ -235,6 +241,30 @@ impl Node {
 
     pub fn is_local(&self) -> bool {
         self.client.is_local()
+    }
+
+    pub(super) fn sessions(&self) -> JoinHandle<Result<Vec<SessionItem>, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded("读取会话状态", client.sessions())
+                .await
+                .map(|sessions| sessions.into_iter().map(SessionItem::from).collect())
+        })
+    }
+
+    pub(super) fn fork_session(
+        &self,
+        request: crate::shell::session_fork::Request,
+        readback: Option<String>,
+    ) -> JoinHandle<(
+        crate::shell::session_fork::Request,
+        crate::shell::session_fork::Outcome,
+    )> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            let outcome = request.run(&client, readback).await;
+            (request, outcome)
+        })
     }
 
     pub fn watch(
