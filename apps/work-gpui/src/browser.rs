@@ -99,22 +99,54 @@ impl Shell {
             }))
             .child(
                 self.icon_button("add-browser-tab", "plus", 24.0)
-                    .on_click(cx.listener(|shell, _, _, cx| {
-                        if let Some(surface) = mac::Surface::new() {
-                            shell.browser.next_id += 1;
-                            let id = shell.browser.next_id;
-                            shell.browser.items.push((id, surface));
-                            shell.show_project_tab(Tab::Browser(id), cx);
-                        }
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.add_browser_tab(window, cx);
                     })),
             );
         tabs
+    }
+
+    #[cfg(target_os = "macos")]
+    fn add_browser_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (sender, mut selection) = tokio::sync::mpsc::channel(4);
+        let Some(surface) = mac::Surface::new(sender) else {
+            return;
+        };
+        self.browser.next_id += 1;
+        let id = self.browser.next_id;
+        self.browser.items.push((id, surface));
+        self.show_project_tab(Tab::Browser(id), cx);
+        cx.spawn_in(window, async move |this, cx| {
+            while let Some(selected) = selection.recv().await {
+                let _ = cx.update(|window, cx| {
+                    let _ = this.update(cx, |shell, cx| {
+                        let docked = window.viewport_size().width > px(900.0);
+                        let visible = if docked {
+                            shell.overview_open
+                        } else {
+                            shell.overlay == Some(super::Overlay::Inspector)
+                        };
+                        if visible
+                            && !shell.composer_config.menu_open()
+                            && shell.files.tab == Tab::Browser(id)
+                            && shell.navigation_revision == selected.scope
+                            && shell.frame.is_some()
+                            && shell.session.is_some()
+                        {
+                            shell.open_page_comment(selected.location, window, cx);
+                        }
+                    });
+                });
+            }
+        })
+        .detach();
     }
 
     pub(super) fn browser_contents(&self, id: u64) -> AnyElement {
         #[cfg(target_os = "macos")]
         if let Some((_, surface)) = self.browser.items.iter().find(|(key, _)| *key == id) {
             if self.composer_config.menu_open()
+                || self.comment.is_some()
                 || self.project_form.open
                 || self.question.is_some()
                 || self.session_management.open()
@@ -122,12 +154,16 @@ impl Shell {
                 return gpui::div().flex_1().into_any_element();
             }
             let dark = self.dark;
+            let scope = self.navigation_revision;
+            let annotatable = self.frame.is_some() && self.session.is_some();
             let surface = surface.clone();
             return gpui::canvas(
                 |_, _, _| (),
                 move |bounds, (), window, cx| {
                     // AppKit responder changes run after the GPUI element tree has been drawn.
-                    window.defer(cx, move |window, _| surface.mount(window, bounds, dark));
+                    window.defer(cx, move |window, _| {
+                        surface.mount(window, bounds, dark, scope, annotatable)
+                    });
                 },
             )
             .flex_1()
@@ -142,13 +178,21 @@ impl Shell {
 
 #[cfg(target_os = "macos")]
 mod mac {
-    use std::{ffi::c_void, ptr::NonNull, rc::Rc};
+    use std::{
+        ffi::{CStr, c_char, c_void},
+        ptr::NonNull,
+        rc::Rc,
+    };
+    use tokio::sync::mpsc::Sender;
 
     use gpui::{Bounds, Pixels, Window};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     unsafe extern "C" {
-        fn work_browser_create() -> *mut c_void;
+        fn work_browser_create(
+            context: *const c_void,
+            callback: unsafe extern "C" fn(*const c_void, u64, *const c_char),
+        ) -> *mut c_void;
         fn work_browser_mount(
             view: *mut c_void,
             parent: *mut c_void,
@@ -157,10 +201,29 @@ mod mac {
             width: f64,
             height: f64,
             dark: bool,
+            scope: u64,
+            annotatable: bool,
         );
         fn work_browser_restore_focus(view: *mut c_void);
         fn work_browser_hide(view: *mut c_void);
         fn work_browser_destroy(view: *mut c_void);
+    }
+
+    pub(super) struct Selection {
+        pub(super) scope: u64,
+        pub(super) location: String,
+    }
+
+    unsafe extern "C" fn selected(context: *const c_void, scope: u64, location: *const c_char) {
+        // SAFETY: WorkBrowser borrows the boxed sender until destroy, and the string for this call only.
+        let sender = unsafe { &*context.cast::<Sender<Selection>>() };
+        let location = unsafe { CStr::from_ptr(location) };
+        if let Ok(location) = location.to_str() {
+            let _ = sender.try_send(Selection {
+                scope,
+                location: location.to_owned(),
+            });
+        }
     }
 
     #[derive(Clone)]
@@ -168,16 +231,31 @@ mod mac {
 
     struct View {
         native: NonNull<c_void>,
+        _sender: Box<Sender<Selection>>,
     }
 
     impl Surface {
-        pub(super) fn new() -> Option<Self> {
-            // SAFETY: GPUI invokes the click handler on the AppKit main thread.
-            NonNull::new(unsafe { work_browser_create() })
-                .map(|view| Self(Rc::new(View { native: view })))
+        pub(super) fn new(sender: Sender<Selection>) -> Option<Self> {
+            let sender = Box::new(sender);
+            // SAFETY: GPUI invokes the click handler on the AppKit main thread. The allocation
+            // stays live until View::drop clears the native callback.
+            let native = NonNull::new(unsafe {
+                work_browser_create(std::ptr::from_ref(&*sender).cast(), selected)
+            })?;
+            Some(Self(Rc::new(View {
+                native,
+                _sender: sender,
+            })))
         }
 
-        pub(super) fn mount(&self, window: &Window, bounds: Bounds<Pixels>, dark: bool) {
+        pub(super) fn mount(
+            &self,
+            window: &Window,
+            bounds: Bounds<Pixels>,
+            dark: bool,
+            scope: u64,
+            annotatable: bool,
+        ) {
             let Ok(handle) = HasWindowHandle::window_handle(window) else {
                 return;
             };
@@ -199,6 +277,8 @@ mod mac {
                     bounds.size.width.into(),
                     bounds.size.height.into(),
                     dark,
+                    scope,
+                    annotatable,
                 );
             }
         }

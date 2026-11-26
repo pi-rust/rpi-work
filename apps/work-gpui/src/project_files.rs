@@ -842,9 +842,11 @@ impl Shell {
             .into_iter()
             .flat_map(|draft| &draft.feedback)
             .filter(|item| {
-                Some(&item.revision) == view.feedback_revision.as_ref()
-                    && item.path == diff.path
-                    && item.staged == staged
+                item.diff.as_ref().is_some_and(|anchor| {
+                    Some(&anchor.revision) == view.feedback_revision.as_ref()
+                        && anchor.path == diff.path
+                        && anchor.staged == staged
+                })
             })
             .collect::<Vec<_>>();
         let gutter = (view.gutter_digits as f32 * 7.0 + 8.0).max(23.0);
@@ -929,7 +931,11 @@ impl Shell {
                 div().flex().flex_col().child(line).children(
                     feedback
                         .iter()
-                        .filter(|item| item.index == index)
+                        .filter(|item| {
+                            item.diff
+                                .as_ref()
+                                .is_some_and(|anchor| anchor.index == index)
+                        })
                         .map(|item| {
                             self.text(item.comment.clone(), 11.0, palette.text)
                                 .whitespace_normal()

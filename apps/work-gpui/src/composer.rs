@@ -554,8 +554,8 @@ impl Element for InputElement {
                 shell.project_form.placeholder().into()
             } else if shell.question.is_some() {
                 "输入回答".into()
-            } else if shell.comment.is_some() {
-                "输入行内反馈".into()
+            } else if let Some(comment) = &shell.comment {
+                comment.placeholder().into()
             } else {
                 "要求后续更改".into()
             }

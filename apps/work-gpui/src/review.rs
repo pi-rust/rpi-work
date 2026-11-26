@@ -1,4 +1,4 @@
-//! Line feedback anchored to a verified node patch.
+//! Feedback editor for verified node patches and selected page elements.
 
 use std::rc::Rc;
 
@@ -14,13 +14,30 @@ use super::{
 use crate::prompt::Feedback;
 
 pub(super) struct Comment {
-    diff: Rc<Diff>,
-    staged: bool,
-    row: usize,
+    target: Target,
     location: String,
     pub(super) input: Buffer,
     verifying: bool,
     error: Option<String>,
+}
+
+impl Comment {
+    pub(super) fn placeholder(&self) -> &'static str {
+        match self.target {
+            Target::Diff { .. } => "输入行内反馈",
+            Target::Page => "输入页面批注",
+        }
+    }
+}
+
+enum Target {
+    Diff {
+        diff: Rc<Diff>,
+        staged: bool,
+        row: usize,
+    },
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Page,
 }
 
 impl Shell {
@@ -33,7 +50,32 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.comment.is_some() || self.frame.is_none() {
+        self.show_comment(Target::Diff { diff, staged, row }, location, window, cx);
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn open_page_comment(
+        &mut self,
+        location: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.show_comment(Target::Page, location, window, cx);
+    }
+
+    fn show_comment(
+        &mut self,
+        target: Target,
+        location: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.comment.is_some()
+            || self.frame.is_none()
+            || self.project_form.open
+            || self.question.is_some()
+            || self.session_management.open()
+        {
             return;
         }
         if let Some(draft) = self.drafts.get_mut(&self.session) {
@@ -42,9 +84,7 @@ impl Shell {
         self.input_layout = None;
         self.input_dragging = false;
         self.comment = Some(Comment {
-            diff,
-            staged,
-            row,
+            target,
             location,
             input: Buffer::default(),
             verifying: false,
@@ -74,25 +114,44 @@ impl Shell {
         }) else {
             return;
         };
+        if matches!(comment.target, Target::Page) {
+            if self
+                .drafts
+                .entry(self.session)
+                .or_default()
+                .add_page_feedback(comment.location.clone(), &comment.input.text)
+            {
+                self.finish_comment(cx);
+            } else {
+                comment.error = Some("草稿反馈已达数量或长度上限。".into());
+                cx.notify();
+            }
+            return;
+        }
+        let Target::Diff { diff, staged, row } = &comment.target else {
+            return;
+        };
+        let (staged, row) = (*staged, *row);
         comment.verifying = true;
         comment.error = None;
-        let observed = Rc::clone(&comment.diff);
+        let observed = Rc::clone(diff);
         let revision = comment.input.revision;
         let request = node.read_project(
             self.snapshot.projects[project].id.clone(),
             Route::Diff {
                 path: observed.path.clone(),
-                staged: comment.staged,
+                staged,
             },
         );
         cx.spawn(async move |this, cx| {
             let result = request.await;
             let _ = this.update(cx, |shell, cx| {
-                let Some(comment) = shell
-                    .comment
-                    .as_mut()
-                    .filter(|comment| Rc::ptr_eq(&comment.diff, &observed))
-                else {
+                let Some(comment) = shell.comment.as_mut().filter(|comment| {
+                    comment.verifying
+                        && matches!(&comment.target,
+                        Target::Diff { diff, row: current, staged: scope }
+                            if Rc::ptr_eq(diff, &observed) && *current == row && *scope == staged)
+                }) else {
                     return;
                 };
                 comment.verifying = false;
@@ -103,8 +162,8 @@ impl Shell {
                         &observed.patch,
                         &fresh.patch,
                         &observed.path,
-                        comment.staged,
-                        comment.row,
+                        staged,
+                        row,
                         &comment.input.text,
                     ) {
                         if shell
@@ -113,12 +172,7 @@ impl Shell {
                             .or_default()
                             .add_feedback(item)
                         {
-                            shell.cancel_comment();
-                            shell.inspector_full = false;
-                            if shell.overlay == Some(Overlay::Inspector) {
-                                shell.overlay = None;
-                            }
-                            cx.notify();
+                            shell.finish_comment(cx);
                             return;
                         }
                         "草稿中的行内反馈已达数量或长度上限。"
@@ -136,8 +190,21 @@ impl Shell {
         cx.notify();
     }
 
+    fn finish_comment(&mut self, cx: &mut Context<Self>) {
+        self.cancel_comment();
+        self.inspector_full = false;
+        if self.overlay == Some(Overlay::Inspector) {
+            self.overlay = None;
+        }
+        cx.notify();
+    }
+
     pub(super) fn comment_dialog(&self, comment: &Comment, cx: &mut Context<Self>) -> Div {
         let palette = self.palette;
+        let title = match comment.target {
+            Target::Diff { .. } => "行内反馈",
+            Target::Page => "页面批注",
+        };
         let over_limit = comment.input.text.chars().count() > 2000;
         let enabled = !comment.verifying && !over_limit && comment.input.can_send();
         div()
@@ -167,7 +234,7 @@ impl Shell {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(self.text("行内反馈", 15.0, palette.text))
+                            .child(self.text(title, 15.0, palette.text))
                             .child(self.icon_button("close-line-feedback", "x", 13.0).on_click(
                                 cx.listener(|shell, _, _, cx| {
                                     shell.cancel_comment();
@@ -175,7 +242,10 @@ impl Shell {
                                 }),
                             )),
                     )
-                    .child(self.text(comment.location.clone(), 12.0, palette.muted))
+                    .child(
+                        self.text(comment.location.clone(), 12.0, palette.muted)
+                            .truncate(),
+                    )
                     .child(
                         div()
                             .border_1()
@@ -186,7 +256,7 @@ impl Shell {
                     )
                     .when_some(
                         if over_limit {
-                            Some("行内反馈最多 2000 字。")
+                            Some("反馈最多 2000 字。")
                         } else {
                             comment.error.as_deref()
                         },

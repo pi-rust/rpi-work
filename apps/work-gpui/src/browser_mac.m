@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 static NSURL *previewURL(NSString *address) {
     NSCharacterSet *invalid = NSCharacterSet.whitespaceAndNewlineCharacterSet;
@@ -18,13 +19,80 @@ static NSURL *previewURL(NSString *address) {
     return parts.URL;
 }
 
-@interface WorkBrowser : NSView <WKNavigationDelegate, WKUIDelegate>
+typedef void (*WorkAnnotationSelected)(const void *, uint64_t, const char *);
+
+static WKContentWorld *annotationWorld(void) {
+    return [WKContentWorld worldWithName:@"RPI Work Annotation"];
+}
+
+static NSString *annotationScript(NSNumber *token) {
+    return [NSString stringWithFormat:@"(() => {"
+        "window.workStopAnnotation?.();"
+        "const overlay = document.createElement('div');"
+        "overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;outline:2px solid #477cda;background:#477cda0b;display:none';"
+        "document.documentElement.append(overlay);"
+        "const target = e => e.target instanceof Element"
+        "  ? e.target.closest('h1,h2,h3,h4,p,button,a,label,input,textarea,select,pre,code,img,[role=button]') || e.target"
+        "  : null;"
+        "const move = e => {"
+        "  const node = target(e);"
+        "  if (!e.isTrusted || !node) return;"
+        "  const r = node.getBoundingClientRect();"
+        "  Object.assign(overlay.style, {display:'block',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});"
+        "};"
+        "const hide = () => overlay.style.display = 'none';"
+        "const stop = () => {"
+        "  overlay.remove();"
+        "  window.removeEventListener('pointermove', move, true);"
+        "  window.removeEventListener('pointerdown', move, true);"
+        "  window.removeEventListener('scroll', hide, true);"
+        "  window.removeEventListener('click', pick, true);"
+        "  window.removeEventListener('keydown', key, true);"
+        "  delete window.workStopAnnotation;"
+        "};"
+        "const report = payload => {"
+        "  stop();"
+        "  window.webkit.messageHandlers.workAnnotation.postMessage({token:%@, ...payload});"
+        "};"
+        "const pick = e => {"
+        "  const node = target(e);"
+        "  if (!e.isTrusted || !node) return;"
+        "  e.preventDefault();"
+        "  e.stopImmediatePropagation();"
+        "  const editable = 'input,textarea,select,[contenteditable]';"
+        "  const text = node.closest(editable) || node.querySelector(editable)"
+        "    ? '' : Array.from((node.innerText || '').trim()).slice(0,40).join('');"
+        "  report({tag: node.localName, text});"
+        "};"
+        "const key = e => {"
+        "  if (!e.isTrusted || e.key !== 'Escape') return;"
+        "  e.preventDefault();"
+        "  e.stopImmediatePropagation();"
+        "  report({});"
+        "};"
+        "window.workStopAnnotation = stop;"
+        "window.addEventListener('pointermove', move, true);"
+        "window.addEventListener('pointerdown', move, true);"
+        "window.addEventListener('scroll', hide, true);"
+        "window.addEventListener('click', pick, true);"
+        "window.addEventListener('keydown', key, true);"
+        "})();", token];
+}
+
+@interface WorkBrowser : NSView <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
 @property(nonatomic, strong) WKWebView *page;
 @property(nonatomic, strong) NSTextField *address;
 @property(nonatomic, strong) NSTextField *status;
 @property(nonatomic, strong) NSButton *back;
 @property(nonatomic, strong) NSButton *forward;
 @property(nonatomic, strong) NSButton *reload;
+@property(nonatomic, strong) NSButton *annotate;
+@property(nonatomic, copy) NSNumber *annotationToken;
+@property(nonatomic) uint64_t annotationScope;
+@property(nonatomic) uint64_t annotationCounter;
+@property(nonatomic) BOOL annotatable;
+@property(nonatomic) const void *selectionContext;
+@property(nonatomic) WorkAnnotationSelected selectionCallback;
 @property(nonatomic, strong) NSView *toolbar;
 @property(nonatomic, strong) NSView *footer;
 @property(nonatomic, strong) NSButton *openExternally;
@@ -56,6 +124,10 @@ static NSURL *previewURL(NSString *address) {
     self.back = [self button:@"chevron.left" label:@"后退" action:@selector(goBack:)];
     self.forward = [self button:@"chevron.right" label:@"前进" action:@selector(goForward:)];
     self.reload = [self button:@"arrow.clockwise" label:@"刷新网页" action:@selector(reloadPage:)];
+    self.annotate = [self button:@"bubble.left" label:@"批注" action:@selector(toggleAnnotation:)];
+    [self.annotate setButtonType:NSButtonTypePushOnPushOff];
+    self.annotate.accessibilityLabel = @"批注";
+    self.annotate.font = [NSFont systemFontOfSize:12];
     self.address = [NSTextField textFieldWithString:@""];
     self.address.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
     self.address.placeholderString = @"输入 http:// 或 https:// 地址";
@@ -69,6 +141,7 @@ static NSURL *previewURL(NSString *address) {
     configuration.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
     self.page = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
     self.page.navigationDelegate = self;
+    [configuration.userContentController addScriptMessageHandler:self contentWorld:annotationWorld() name:@"workAnnotation"];
     self.page.UIDelegate = self;
     self.page.hidden = YES;
     [self addSubview:self.page];
@@ -102,7 +175,12 @@ static NSURL *previewURL(NSString *address) {
     self.back.frame = NSMakeRect(6, 7, 26, 28);
     self.forward.frame = NSMakeRect(34, 7, 26, 28);
     self.reload.frame = NSMakeRect(62, 7, 26, 28);
-    self.address.frame = NSMakeRect(96, 7, MAX(0, width - 106), 28);
+    BOOL showAnnotationTitle = width >= 420;
+    CGFloat annotationWidth = showAnnotationTitle ? 56 : 26;
+    self.annotate.title = showAnnotationTitle ? @"批注" : @"";
+    self.annotate.imagePosition = showAnnotationTitle ? NSImageLeft : NSImageOnly;
+    self.address.frame = NSMakeRect(96, 7, MAX(0, width - 110 - annotationWidth), 28);
+    self.annotate.frame = NSMakeRect(MAX(0, width - 8 - annotationWidth), 7, annotationWidth, 28);
     self.status.frame = NSMakeRect(18, 60, MAX(0, width - 36), 66);
     self.footer.frame = NSMakeRect(0, MAX(42, height - 29), width, 29);
     self.openExternally.frame = NSMakeRect(5, 2, 98, 25);
@@ -116,6 +194,56 @@ static NSURL *previewURL(NSString *address) {
     self.forward.enabled = self.page.canGoForward;
     self.reload.enabled = self.page.URL != nil;
     self.openExternally.enabled = self.page.URL != nil;
+    self.annotate.enabled = self.annotatable && !self.page.hidden && self.page.URL != nil;
+}
+
+- (void)cancelAnnotation {
+    if (!self.annotationToken) return;
+    self.annotationToken = nil;
+    self.annotate.state = NSControlStateValueOff;
+    self.annotate.contentTintColor = nil;
+    self.annotate.toolTip = @"批注";
+    [self.page evaluateJavaScript:@"window.workStopAnnotation?.()" inFrame:nil inContentWorld:annotationWorld() completionHandler:nil];
+}
+
+- (void)toggleAnnotation:(id)sender {
+    if (self.annotationToken) { [self cancelAnnotation]; return; }
+    if (!self.annotate.enabled || self.hidden) return;
+    NSNumber *token = @(++self.annotationCounter);
+    self.annotationToken = token;
+    self.annotate.state = NSControlStateValueOn;
+    self.annotate.contentTintColor = NSColor.controlAccentColor;
+    self.annotate.toolTip = @"选择要批注的页面元素，或再次点击取消";
+    [self.window makeFirstResponder:self.page];
+    __weak WorkBrowser *owner = self;
+    [self.page evaluateJavaScript:annotationScript(token) inFrame:nil inContentWorld:annotationWorld()
+       completionHandler:^(id result, NSError *error) {
+        (void)result;
+        WorkBrowser *browser = owner;
+        if (error && [browser.annotationToken isEqual:token]) [browser cancelAnnotation];
+    }];
+}
+
+- (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
+    if (self.hidden || self.page.hidden || !self.annotatable || !self.annotationToken ||
+        message.webView != self.page || !message.frameInfo.isMainFrame || ![message.body isKindOfClass:NSDictionary.class]) return;
+    NSDictionary *body = message.body;
+    if (![self.annotationToken isEqual:body[@"token"]]) return;
+    NSString *tag = body[@"tag"];
+    NSString *text = body[@"text"];
+    NSURL *page = previewURL(self.page.URL.absoluteString ?: @"");
+    [self cancelAnnotation];
+    if (!page || ![tag isKindOfClass:NSString.class] || !tag.length || tag.length > 64 ||
+        ![text isKindOfClass:NSString.class] || text.length > 80 || !self.selectionCallback) return;
+    NSURLComponents *address = [NSURLComponents componentsWithURL:page resolvingAgainstBaseURL:NO];
+    address.query = nil;
+    address.fragment = nil;
+    NSString *url = address.string;
+    if (!url.length || url.length > 1024) return;
+    NSString *label = [[text componentsSeparatedByCharactersInSet:NSCharacterSet.controlCharacterSet] componentsJoinedByString:@" "];
+    NSString *location = [NSString stringWithFormat:@"%@ · <%@>%@", url, tag, label.length ? [@" · " stringByAppendingString:label] : @""];
+    const char *utf8 = location.UTF8String;
+    if (utf8) self.selectionCallback(self.selectionContext, self.annotationScope, utf8);
 }
 
 - (void)goBack:(id)sender { self.navigation = [self.page goBack]; }
@@ -134,10 +262,12 @@ static NSURL *previewURL(NSString *address) {
     NSURL *url = previewURL(text);
     if (!url) {
         self.navigation = nil;
+        [self cancelAnnotation];
         [self.page stopLoading];
         self.page.hidden = YES;
         self.status.hidden = NO;
         self.status.stringValue = @"请输入不含用户名或密码的完整 HTTP(S) 地址。";
+        [self updateButtons];
         return;
     }
     self.navigation = [self.page loadRequest:[NSURLRequest requestWithURL:url]];
@@ -165,8 +295,10 @@ static NSURL *previewURL(NSString *address) {
 }
 
 - (void)webView:(WKWebView *)page didStartProvisionalNavigation:(WKNavigation *)navigation {
+    [self cancelAnnotation];
     self.navigation = navigation;
     self.page.hidden = YES;
+    [self updateButtons];
     self.status.hidden = NO;
     self.status.stringValue = @"正在加载网页…";
 }
@@ -192,6 +324,7 @@ static NSURL *previewURL(NSString *address) {
 }
 
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)page {
+    [self cancelAnnotation];
     self.page.hidden = YES;
     self.status.hidden = NO;
     self.status.stringValue = @"网页进程已退出。可刷新后重新加载。";
@@ -209,16 +342,20 @@ static NSURL *previewURL(NSString *address) {
 
 - (void)hideAndRestoreFocus {
     if (self.hidden) return;
+    [self cancelAnnotation];
     [self restoreFocus];
     self.hidden = YES;
 }
 @end
 
-void *work_browser_create(void) {
-    return (__bridge_retained void *)[[WorkBrowser alloc] initWithFrame:NSZeroRect];
+void *work_browser_create(const void *context, WorkAnnotationSelected callback) {
+    WorkBrowser *browser = [[WorkBrowser alloc] initWithFrame:NSZeroRect];
+    browser.selectionContext = context;
+    browser.selectionCallback = callback;
+    return (__bridge_retained void *)browser;
 }
 
-void work_browser_mount(void *raw, void *parent, double x, double y, double width, double height, bool dark) {
+void work_browser_mount(void *raw, void *parent, double x, double y, double width, double height, bool dark, uint64_t scope, bool annotatable) {
     WorkBrowser *browser = (__bridge WorkBrowser *)raw;
     NSView *host = (__bridge NSView *)parent;
     if (browser.superview != host) [host addSubview:browser];
@@ -235,7 +372,11 @@ void work_browser_mount(void *raw, void *parent, double x, double y, double widt
         browser.toolbar.layer.backgroundColor = controls.CGColor;
         browser.footer.layer.backgroundColor = controls.CGColor;
     }
+    if (browser.annotationScope != scope || !annotatable) [browser cancelAnnotation];
+    browser.annotationScope = scope;
+    browser.annotatable = annotatable;
     browser.hidden = NO;
+    [browser updateButtons];
 }
 
 void work_browser_restore_focus(void *raw) {
@@ -248,7 +389,9 @@ void work_browser_hide(void *raw) {
 
 void work_browser_destroy(void *raw) {
     WorkBrowser *browser = (__bridge_transfer WorkBrowser *)raw;
+    browser.selectionCallback = NULL;
     [browser hideAndRestoreFocus];
+    [browser.page.configuration.userContentController removeScriptMessageHandlerForName:@"workAnnotation" contentWorld:annotationWorld()];
     browser.page.navigationDelegate = nil;
     browser.page.UIDelegate = nil;
     [browser.page stopLoading];

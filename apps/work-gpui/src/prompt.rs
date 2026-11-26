@@ -10,13 +10,17 @@ const MAX_DRAFT: usize = 32_000;
 
 pub struct Feedback {
     pub id: u64,
+    pub diff: Option<DiffAnchor>,
+    pub location: String,
+    pub comment: String,
+    message: String,
+}
+
+pub struct DiffAnchor {
     pub path: String,
     pub staged: bool,
     pub index: usize,
     pub revision: String,
-    pub location: String,
-    pub comment: String,
-    message: String,
 }
 
 #[derive(Default)]
@@ -72,22 +76,45 @@ impl Draft {
     }
 
     pub fn add_feedback(&mut self, item: DraftFeedback<'_>) -> bool {
+        self.push_feedback(
+            Some(DiffAnchor {
+                path: item.path.into(),
+                staged: item.staged,
+                index: item.index,
+                revision: item.revision,
+            }),
+            item.location,
+            item.comment.into(),
+            item.message,
+        )
+    }
+
+    pub fn add_page_feedback(&mut self, location: String, comment: &str) -> bool {
+        let comment = comment.trim();
+        let message = format!("页面批注 · {location}\n{comment}");
+        self.push_feedback(None, location, comment.into(), message)
+    }
+
+    fn push_feedback(
+        &mut self,
+        diff: Option<DiffAnchor>,
+        location: String,
+        comment: String,
+        message: String,
+    ) -> bool {
         let separator = usize::from(!self.input.text.is_empty() || !self.feedback.is_empty()) * 2;
         if self.feedback.len() >= MAX_FEEDBACK
-            || self.message_size() + separator + item.message.encode_utf16().count() > MAX_DRAFT
+            || self.message_size() + separator + message.encode_utf16().count() > MAX_DRAFT
         {
             return false;
         }
         self.next_feedback += 1;
         self.feedback.push(Feedback {
             id: self.next_feedback,
-            path: item.path.into(),
-            staged: item.staged,
-            index: item.index,
-            revision: item.revision,
-            location: item.location,
-            comment: item.comment.into(),
-            message: item.message,
+            diff,
+            location,
+            comment,
+            message,
         });
         true
     }
