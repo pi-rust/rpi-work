@@ -1,4 +1,4 @@
-//! Native text editing and IME geometry for the workbench composer.
+//! Native text editing and IME geometry for the workbench.
 
 use std::ops::Range;
 
@@ -148,6 +148,13 @@ fn to_utf16(text: &str, range: Range<usize>) -> Range<usize> {
 
 impl Shell {
     fn buffer(&self) -> Option<&Buffer> {
+        if self.settings.open {
+            return Some(&self.settings.search);
+        }
+        self.workbench_buffer()
+    }
+
+    fn workbench_buffer(&self) -> Option<&Buffer> {
         if self.session_management.open() {
             return self
                 .session_management
@@ -167,6 +174,9 @@ impl Shell {
     }
 
     fn buffer_mut(&mut self) -> &mut Buffer {
+        if self.settings.open {
+            return &mut self.settings.search;
+        }
         let key = self.draft_key();
         if self.session_management.open() {
             return &mut self.session_management.input;
@@ -184,18 +194,48 @@ impl Shell {
     }
 
     pub(super) fn input_element(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        self.text_input(false, cx)
+    }
+
+    pub(super) fn settings_input_element(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        self.text_input(true, cx)
+    }
+
+    fn text_input(&self, settings_search: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let focus = if settings_search {
+            &self.settings.search_focus
+        } else {
+            &self.focus
+        };
         div()
-            .flex_none()
+            .when(settings_search, |input| {
+                input.flex_1().min_w_0().tab_index(0)
+            })
+            .when(!settings_search, |input| input.flex_none())
             .px(px(4.0))
-            .text_size(px(15.0))
+            .text_size(px(if settings_search { 13.0 } else { 15.0 }))
             .line_height(px(22.0))
-            .track_focus(&self.focus)
+            .track_focus(focus)
             .cursor(CursorStyle::IBeam)
             .on_key_down(cx.listener(Self::input_key))
+            .when(settings_search, |input| {
+                input.on_key_up(cx.listener(|shell, event: &gpui::KeyUpEvent, window, cx| {
+                    if event.keystroke.key == "enter"
+                        && std::mem::take(&mut shell.settings.search_enter)
+                    {
+                        shell.activate_settings_search(true, window, cx);
+                        cx.stop_propagation();
+                    }
+                }))
+            })
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|shell, event: &gpui::MouseDownEvent, window, cx| {
-                    shell.focus_composer(window);
+                cx.listener(move |shell, event: &gpui::MouseDownEvent, window, cx| {
+                    if settings_search {
+                        shell.settings.search_focus.focus(window);
+                    } else {
+                        shell.focus_composer(window);
+                    }
                     shell.select_at(event.position, event.modifiers.shift, cx);
                 }),
             )
@@ -213,7 +253,7 @@ impl Shell {
                 cx.listener(|shell, _, _, _| shell.input_dragging = false),
             )
             .on_scroll_wheel(cx.listener(|shell, event: &gpui::ScrollWheelEvent, _, cx| {
-                if let Some(layout) = shell.input_layout.as_mut() {
+                if let Some(layout) = shell.active_input_layout_mut().as_mut() {
                     let offset = (layout.scroll - event.delta.pixel_delta(layout.line_height).y)
                         .clamp(px(0.0), layout.max_scroll());
                     if offset != layout.scroll {
@@ -223,12 +263,31 @@ impl Shell {
                     }
                 }
             }))
-            .child(InputElement(cx.entity()))
+            .child(InputElement {
+                shell: cx.entity(),
+                settings_search,
+            })
+    }
+
+    fn active_input_layout(&self) -> Option<&Layout> {
+        if self.settings.open {
+            self.settings.search_layout.as_ref()
+        } else {
+            self.input_layout.as_ref()
+        }
+    }
+
+    fn active_input_layout_mut(&mut self) -> &mut Option<Layout> {
+        if self.settings.open {
+            &mut self.settings.search_layout
+        } else {
+            &mut self.input_layout
+        }
     }
 
     fn select_at(&mut self, position: Point<Pixels>, extend: bool, cx: &mut Context<Self>) {
         self.input_dragging = true;
-        let Some(layout) = self.input_layout.as_ref() else {
+        let Some(layout) = self.active_input_layout() else {
             return;
         };
         let offset = layout.index_at(position);
@@ -238,10 +297,21 @@ impl Shell {
         cx.notify();
     }
 
-    fn input_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn input_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
         if self.buffer().is_some_and(|input| input.marked.is_some()) {
+            return;
+        }
+        if self.settings.open && matches!(key, "enter" | "down") {
+            if !event.is_held && !modifiers.modified() {
+                if key == "enter" {
+                    self.settings.search_enter = true;
+                } else {
+                    self.activate_settings_search(false, window, cx);
+                }
+            }
+            cx.stop_propagation();
             return;
         }
         if self.session_management.open() && key == "enter" {
@@ -287,7 +357,13 @@ impl Shell {
                 }
                 "v" => {
                     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                        buffer.replace(None, &text.replace("\r\n", "\n").replace('\r', "\n"));
+                        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+                        let text = if self.settings.open {
+                            text.replace('\n', " ")
+                        } else {
+                            text
+                        };
+                        self.buffer_mut().replace(None, &text);
                     }
                 }
                 _ => return,
@@ -304,7 +380,7 @@ impl Shell {
             } else {
                 let vertical = self
                     .buffer()
-                    .and_then(|buffer| self.input_layout.as_ref()?.vertical(buffer.head, key));
+                    .and_then(|buffer| self.active_input_layout()?.vertical(buffer.head, key));
                 let buffer = self.buffer_mut();
                 let selected = buffer.selection();
                 match key {
@@ -404,7 +480,12 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.buffer_mut().replace(utf16, value);
+        if self.settings.open {
+            self.buffer_mut()
+                .replace(utf16, &value.replace(['\r', '\n'], " "));
+        } else {
+            self.buffer_mut().replace(utf16, value);
+        }
         cx.notify();
     }
 
@@ -427,7 +508,7 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let layout = self.input_layout.as_ref()?;
+        let layout = self.active_input_layout()?;
         let text = self.buffer().map_or("", |buffer| buffer.text.as_str());
         let range = from_utf16(text, utf16);
         let start = layout.position(range.start.min(layout.len))?;
@@ -446,7 +527,7 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        let layout = self.input_layout.as_ref()?;
+        let layout = self.active_input_layout()?;
         if !layout.bounds.contains(&position) {
             return None;
         }
@@ -521,7 +602,20 @@ impl Layout {
     }
 }
 
-struct InputElement(Entity<Shell>);
+struct InputElement {
+    shell: Entity<Shell>,
+    settings_search: bool,
+}
+
+impl InputElement {
+    fn buffer<'a>(&self, shell: &'a Shell) -> Option<&'a Buffer> {
+        if self.settings_search {
+            Some(&shell.settings.search)
+        } else {
+            shell.workbench_buffer()
+        }
+    }
+}
 
 impl IntoElement for InputElement {
     type Element = Self;
@@ -550,9 +644,9 @@ impl Element for InputElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let shell = self.0.read(cx);
+        let shell = self.shell.read(cx);
         let empty = Buffer::default();
-        let buffer = shell.buffer().unwrap_or(&empty);
+        let buffer = self.buffer(shell).unwrap_or(&empty);
         let mut run = window.text_style().to_run(0);
         if buffer.text.is_empty() {
             run.color = shell.palette.muted;
@@ -560,7 +654,9 @@ impl Element for InputElement {
             run.color = shell.palette.text;
         }
         let text: SharedString = if buffer.text.is_empty() {
-            if shell.session_management.editing() {
+            if self.settings_search {
+                "搜索设置".into()
+            } else if shell.session_management.editing() {
                 "输入会话名称".into()
             } else if shell.project_form.open {
                 shell.project_form.placeholder().into()
@@ -610,6 +706,7 @@ impl Element for InputElement {
         let line_height = window.line_height();
         let mut style = Style::default();
         style.size.width = relative(1.0).into();
+        let search = self.settings_search;
         let short_field = shell.project_form.open || shell.session_management.editing();
         let id = window.request_measured_layout(style, {
             let text = text.clone();
@@ -621,7 +718,9 @@ impl Element for InputElement {
                 });
                 let lines = shape(window, text.clone(), font_size, &runs, width);
                 let height = text_height(&lines, line_height);
-                let height = if short_field {
+                let height = if search {
+                    line_height
+                } else if short_field {
                     height.clamp(px(24.0), px(66.0))
                 } else {
                     height.clamp(px(47.0), px(126.0))
@@ -641,9 +740,9 @@ impl Element for InputElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let shell = self.0.read(cx);
+        let shell = self.shell.read(cx);
         let empty = Buffer::default();
-        let buffer = shell.buffer().unwrap_or(&empty);
+        let buffer = self.buffer(shell).unwrap_or(&empty);
         let line_height = *line_height;
         let lines = shape(
             window,
@@ -663,7 +762,11 @@ impl Element for InputElement {
             revision: buffer.revision,
             head: buffer.head,
         };
-        let previous = shell.input_layout.as_ref();
+        let previous = if self.settings_search {
+            shell.settings.search_layout.as_ref()
+        } else {
+            shell.input_layout.as_ref()
+        };
         if let Some(previous) = previous {
             layout.scroll = previous.scroll.min(layout.max_scroll());
         }
@@ -691,14 +794,22 @@ impl Element for InputElement {
         cx: &mut App,
     ) {
         let Some(layout) = layout.take() else { return };
-        let shell = self.0.read(cx);
-        let focus = shell.focus.clone();
+        let shell = self.shell.read(cx);
+        let focus = if self.settings_search {
+            shell.settings.search_focus.clone()
+        } else {
+            shell.focus.clone()
+        };
         let color = shell.palette.text;
         let caret = focus.is_focused(window)
-            && shell
-                .buffer()
+            && self
+                .buffer(shell)
                 .is_none_or(|buffer| buffer.selection().is_empty());
-        window.handle_input(&focus, ElementInputHandler::new(bounds, self.0.clone()), cx);
+        window.handle_input(
+            &focus,
+            ElementInputHandler::new(bounds, self.shell.clone()),
+            cx,
+        );
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             let mut origin = layout.origin();
             for line in &layout.lines {
@@ -732,8 +843,13 @@ impl Element for InputElement {
                 }
             }
         });
-        self.0
-            .update(cx, |shell, _| shell.input_layout = Some(layout));
+        self.shell.update(cx, |shell, _| {
+            if self.settings_search {
+                shell.settings.search_layout = Some(layout);
+            } else {
+                shell.input_layout = Some(layout);
+            }
+        });
     }
 }
 

@@ -1989,6 +1989,15 @@ impl Render for Shell {
                 cx.listener(|shell, event: &gpui::KeyDownEvent, window, cx| {
                     let key = &event.keystroke.key;
                     let modifiers = event.keystroke.modifiers;
+                    let settings_modifier = if cfg!(target_os = "macos") {
+                        modifiers.platform && !modifiers.control
+                    } else {
+                        modifiers.control && !modifiers.platform
+                    };
+                    if key == "," && settings_modifier && !modifiers.alt && !modifiers.shift {
+                        shell.open_settings(window, cx);
+                        cx.stop_propagation();
+                    }
                     if key == "tab"
                         && shell.navigation_keyboard_enabled()
                         && !modifiers.platform
@@ -2136,7 +2145,8 @@ impl Render for Shell {
             )
             .when(self.settings.open, |body| {
                 body.child(
-                    gpui::deferred(self.settings_dialog(width, height, cx)).with_priority(110),
+                    gpui::deferred(self.settings_dialog(width, height, window, cx))
+                        .with_priority(110),
                 )
             })
     }
