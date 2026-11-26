@@ -635,9 +635,8 @@ impl Shell {
         let palette = self.palette;
         let compact = width <= 700.0;
         let section = self.settings.section;
-        let form_open = self.node_connection.open
-            || self.node_share.open
-            || self.provider_settings.editing_credential();
+        let form_open =
+            self.node_connection.open || self.node_share.open || self.provider_settings.editing();
         let dialog_width = if compact {
             width
         } else {
@@ -768,7 +767,7 @@ impl Shell {
                         "escape" if shell.node_share.open => {
                             shell.close_node_share(window, cx);
                         }
-                        "escape" if shell.provider_settings.editing_credential() => {
+                        "escape" if shell.provider_settings.editing() => {
                             shell.cancel_provider_edit(window, cx);
                         }
                         "escape" if !shell.search.buffer.text.is_empty() => {

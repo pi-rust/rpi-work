@@ -161,9 +161,9 @@ impl Shell {
             if select {
                 self.generate_node_qr(window, cx);
             }
-        } else if self.provider_settings.editing_credential() {
+        } else if self.provider_settings.editing() {
             if select {
-                self.submit_provider_key(window, cx);
+                self.activate_provider_input(window, cx);
             }
         } else if self.settings.open {
             self.activate_settings_search(select, window, cx);

@@ -703,6 +703,8 @@ impl Element for InputElement {
             if self.search_field {
                 if shell.provider_settings.masking_credential() {
                     "输入 API 密钥"
+                } else if let Some(label) = shell.provider_settings.field_label() {
+                    label
                 } else if shell.node_connection.password {
                     "输入此节点的密码"
                 } else if shell.node_connection.open || shell.node_share.open {

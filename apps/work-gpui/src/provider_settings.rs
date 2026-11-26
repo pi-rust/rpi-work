@@ -8,11 +8,16 @@ use work_core::api::{
 
 use super::Shell;
 
+#[path = "provider_definition.rs"]
+mod definition;
+
 #[derive(Default)]
 pub(super) struct Panel {
     pending: Option<Task<()>>,
     catalog: Option<Result<ProviderCatalog, ()>>,
     editor: Option<(String, CredentialChange)>,
+    definition: Option<definition::Editor>,
+    unconfirmed_definition: Option<Box<definition::Draft>>,
     notice: Option<Notice>,
     needs_refresh: bool,
     writing: bool,
@@ -55,8 +60,8 @@ enum Notice {
 }
 
 impl Panel {
-    pub(super) fn editing_credential(&self) -> bool {
-        self.editor.is_some()
+    pub(super) fn editing(&self) -> bool {
+        self.editor.is_some() || self.definition.is_some()
     }
 
     pub(super) fn masking_credential(&self) -> bool {
@@ -65,6 +70,7 @@ impl Panel {
 
     pub(super) fn leave(&mut self) {
         self.editor = None;
+        self.definition = None;
         if matches!(self.notice, Some(Notice::InvalidKey)) {
             self.notice = None;
         }
@@ -84,7 +90,7 @@ impl Panel {
 
 impl Shell {
     pub(super) fn read_provider_catalog(&mut self, cx: &mut Context<Self>) {
-        if self.provider_settings.pending.is_some() || self.provider_settings.editing_credential() {
+        if self.provider_settings.pending.is_some() || self.provider_settings.editing() {
             return;
         }
         let Some(node) = &self.node else {
@@ -115,7 +121,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let panel = &mut self.provider_settings;
-        if panel.editor.is_some()
+        if panel.editing()
             || !panel.writable_catalog().is_some_and(|catalog| {
                 catalog
                     .providers
@@ -144,9 +150,11 @@ impl Shell {
         cx.notify();
     }
 
-    pub(super) fn submit_provider_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn activate_provider_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.provider_settings.masking_credential() {
             self.submit_credential_change(window, cx);
+        } else {
+            self.finish_provider_field(window, cx);
         }
     }
 
@@ -155,11 +163,7 @@ impl Shell {
         let Some((id, change)) = panel.editor.clone() else {
             return;
         };
-        let Some(catalog) = panel.writable_catalog() else {
-            return;
-        };
-        let Some(node) = &self.node else { return };
-        if !self.search.buffer.is_committed() {
+        if panel.writable_catalog().is_none() || !self.search.buffer.is_committed() {
             return;
         }
         let action = match change {
@@ -181,11 +185,31 @@ impl Shell {
                 location,
             },
         };
+        self.write_provider(action, id, move |entry| change.observed(entry), window, cx);
+    }
+
+    fn write_provider(
+        &mut self,
+        action: ProviderAction,
+        id: String,
+        matches: impl FnOnce(Option<&ProviderEntry>) -> bool + 'static,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let panel = &mut self.provider_settings;
+        let Some(catalog) = panel.writable_catalog() else {
+            return;
+        };
+        let Some(node) = &self.node else { return };
         let write = node.mutate_provider(ProviderMutation {
             expected_revision: catalog.revision.clone(),
             action,
         });
-        panel.editor = None;
+        let submitted_definition = match panel.definition.take() {
+            Some(definition::Editor::Definition(draft)) => Some(draft),
+            _ => None,
+        };
+        panel.leave();
         panel.notice = None;
         panel.writing = true;
         panel.pending = Some(cx.spawn(async move |this, cx| {
@@ -196,15 +220,18 @@ impl Shell {
                 panel.writing = false;
                 let (receipt, observed) =
                     result.map_or((None, None), |result| (result.receipt, result.observed));
-                let confirmed = receipt.filter(|receipt| {
-                    observed.as_ref().is_some_and(|catalog| {
-                        !catalog.revision.is_empty()
-                            && catalog.revision == receipt.catalog.revision
-                            && change
-                                .observed(catalog.providers.iter().find(|entry| entry.id == id))
-                    })
+                let confirmed = receipt.and_then(|receipt| {
+                    let catalog = observed.as_ref()?;
+                    (!catalog.revision.is_empty()
+                        && catalog.revision == receipt.catalog.revision
+                        && matches(catalog.providers.iter().find(|entry| entry.id == id)))
+                    .then_some(receipt)
                 });
                 panel.needs_refresh = confirmed.is_none();
+                if submitted_definition.is_some() {
+                    panel.unconfirmed_definition =
+                        submitted_definition.filter(|_| panel.needs_refresh);
+                }
                 panel.notice = Some(match confirmed {
                     Some(receipt) => Notice::Saved {
                         requires_restart: receipt.requires_restart,
@@ -224,6 +251,9 @@ impl Shell {
         let panel = &self.provider_settings;
         if let Some((id, change)) = &panel.editor {
             return self.provider_credential_form(id, *change, cx);
+        }
+        if let Some(editor) = &panel.definition {
+            return self.provider_definition_form(editor, cx);
         }
         let palette = self.palette;
         let pending = panel.pending.is_some();
@@ -252,6 +282,16 @@ impl Shell {
                     )
                 }),
         );
+        let body = body.when(panel.writable_catalog().is_some(), |body| {
+            body.child(
+                div().child(
+                    self.provider_button("add-provider-definition", "添加供应商")
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.open_provider_definition(None, false, window, cx)
+                        })),
+                ),
+            )
+        });
         let body = body.when_some(panel.notice, |body, notice| {
             let message = match notice {
                 Notice::Saved {
@@ -261,15 +301,23 @@ impl Shell {
                     requires_restart: false,
                 } => "已回读确认保存状态。",
                 Notice::Unconfirmed if panel.needs_refresh => {
-                    "上次操作结果待核对。请刷新目录，检查已保存的凭据来源。"
+                    "上次操作结果待核对。请刷新目录，检查节点保存的配置。"
                 }
                 Notice::Unconfirmed => "目录已刷新。上次操作仍缺少可核对的回执。",
                 Notice::InvalidKey => return body,
             };
             body.child(self.text(message, 13.0, palette.muted))
         });
+        let body = body.when(panel.can_resume_definition(), |body| {
+            body.child(
+                div().child(
+                    self.provider_button("restore-provider-definition", "恢复上次编辑")
+                        .on_click(cx.listener(Shell::resume_provider_definition)),
+                ),
+            )
+        });
         let body = body.when(panel.writing, |body| {
-            body.child(self.text("正在保存并核对凭据状态…", 13.0, palette.muted))
+            body.child(self.text("正在保存并核对节点配置…", 13.0, palette.muted))
         });
         match &panel.catalog {
             None if self.node.is_none() => {
@@ -339,35 +387,40 @@ impl Shell {
                     "替换已保存凭据"
                 };
                 row.child(
-                    div().flex().flex_wrap().gap_2().children(
-                        [
-                            ("provider-key", set_label, CredentialChange::SetKey),
-                            (
-                                "provider-clear-stored",
-                                "清除已保存凭据",
-                                CredentialChange::Clear(CredentialLocation::Stored),
-                            ),
-                            (
-                                "provider-clear-config",
-                                "清除定义内凭据",
-                                CredentialChange::Clear(CredentialLocation::Config),
-                            ),
-                        ]
-                        .into_iter()
-                        .filter(|(_, _, change)| change.available(provider))
-                        .map(|(button, label, change)| {
-                            let id = provider.id.clone();
-                            self.provider_button(
-                                gpui::SharedString::from(format!("{button}-{id}")),
-                                label,
-                            )
-                            .on_click(cx.listener(
-                                move |shell, _, window, cx| {
-                                    shell.open_credential_editor(&id, change, window, cx)
-                                },
-                            ))
-                        }),
-                    ),
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_2()
+                        .children(self.provider_definition_actions(provider, cx))
+                        .children(
+                            [
+                                ("provider-key", set_label, CredentialChange::SetKey),
+                                (
+                                    "provider-clear-stored",
+                                    "清除已保存凭据",
+                                    CredentialChange::Clear(CredentialLocation::Stored),
+                                ),
+                                (
+                                    "provider-clear-config",
+                                    "清除定义内凭据",
+                                    CredentialChange::Clear(CredentialLocation::Config),
+                                ),
+                            ]
+                            .into_iter()
+                            .filter(|(_, _, change)| change.available(provider))
+                            .map(|(button, label, change)| {
+                                let id = provider.id.clone();
+                                self.provider_button(
+                                    gpui::SharedString::from(format!("{button}-{id}")),
+                                    label,
+                                )
+                                .on_click(cx.listener(
+                                    move |shell, _, window, cx| {
+                                        shell.open_credential_editor(&id, change, window, cx)
+                                    },
+                                ))
+                            }),
+                        ),
                 )
             })
     }
