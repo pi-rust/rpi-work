@@ -181,6 +181,7 @@ pub(super) struct Panel {
     counts_pending: Option<Pending>,
     review_check: Option<Pending>,
     review_error: Option<String>,
+    detached_review: bool,
 }
 
 impl Panel {
@@ -203,6 +204,14 @@ impl Panel {
 
     pub(super) fn cancel_review_check(&mut self) {
         self.review_check = None;
+        self.review_error = None;
+    }
+
+    pub(super) fn set_review_notice(&mut self, message: impl Into<String>) {
+        self.review_error = Some(message.into());
+    }
+
+    pub(super) fn clear_review_notice(&mut self) {
         self.review_error = None;
     }
 
@@ -498,13 +507,21 @@ impl Shell {
             )
     }
 
+    fn can_run_review(&self) -> bool {
+        self.session_controls().send
+            && self.review_after_bind.is_none()
+            && (!self.files.detached_review
+                || (self.can_create_session() && self.creation_readback.is_none()))
+    }
+
     fn run_review(&mut self, cx: &mut Context<Self>) {
         let Some((node, project)) = self.node.as_ref().zip(self.project) else {
             return;
         };
-        if !self.session_controls().send {
+        if !self.can_run_review() {
             return;
         }
+        let detached = self.files.detached_review;
         self.files.review_error = None;
         let work = node.read_project(self.snapshot.projects[project].id.clone(), Route::Changes);
         let request = work.abort_handle();
@@ -517,7 +534,18 @@ impl Shell {
                         if status.is_repository && !status.files.is_empty() =>
                     {
                         if shell.session_controls().send {
-                            shell.send_prompt(true, cx);
+                            if detached {
+                                if shell.can_create_session() && shell.creation_readback.is_none() {
+                                    shell.files.set_review_notice("正在创建独立审阅会话…");
+                                    shell.create_session(true, cx);
+                                } else {
+                                    shell
+                                        .files
+                                        .set_review_notice("请先核对现有的会话创建请求。");
+                                }
+                            } else {
+                                shell.send_prompt(true, cx);
+                            }
                         } else {
                             shell.files.review_error = Some("会话状态已变化，审阅未提交。".into());
                         }
@@ -624,24 +652,48 @@ impl Shell {
                         }),
                     ))
                     .when(!status.files.is_empty(), |header| {
-                        let enabled = self.session_controls().send;
-                        header.child(
-                            self.button(
-                                "run-review",
-                                if self.files.checking_review() {
-                                    "正在核对工作树…"
-                                } else {
-                                    "运行审阅"
-                                },
+                        let enabled = self.can_run_review();
+                        header
+                            .child(
+                                self.button(
+                                    "review-delivery",
+                                    if self.files.detached_review {
+                                        "独立会话"
+                                    } else {
+                                        "当前会话"
+                                    },
+                                )
+                                .h(px(24.0))
+                                .when(
+                                    !self.files.checking_review()
+                                        && self.creating_session.is_none()
+                                        && self.review_after_bind.is_none(),
+                                    |button| {
+                                        button.on_click(cx.listener(|this, _, _, cx| {
+                                            this.files.detached_review =
+                                                !this.files.detached_review;
+                                            cx.notify();
+                                        }))
+                                    },
+                                ),
                             )
-                            .h(px(24.0))
-                            .when(enabled, |button| {
-                                button.on_click(cx.listener(|this, _, _, cx| {
-                                    this.run_review(cx);
-                                }))
-                            })
-                            .when(!enabled, |button| button.opacity(0.6)),
-                        )
+                            .child(
+                                self.button(
+                                    "run-review",
+                                    if self.files.checking_review() {
+                                        "正在核对工作树…"
+                                    } else {
+                                        "运行审阅"
+                                    },
+                                )
+                                .h(px(24.0))
+                                .when(enabled, |button| {
+                                    button.on_click(cx.listener(|this, _, _, cx| {
+                                        this.run_review(cx);
+                                    }))
+                                })
+                                .when(!enabled, |button| button.opacity(0.6)),
+                            )
                     }),
             );
         let files = status.files.iter().enumerate().filter_map(|(index, file)| {

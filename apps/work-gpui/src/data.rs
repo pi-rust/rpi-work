@@ -243,6 +243,7 @@ impl Node {
         &self,
         project_id: String,
         known_id: Option<String>,
+        verify_listing: bool,
     ) -> JoinHandle<Creation> {
         use work_viewmodel::config_requests::bounded;
 
@@ -272,6 +273,23 @@ impl Node {
                         Err(ClientError::Protocol("新会话身份与请求不一致".into()))
                     }
                 });
+            let summary = match summary {
+                Ok(summary) if verify_listing => bounded("核对独立审阅会话列表", client.sessions())
+                    .await
+                    .and_then(|listed| {
+                        listed
+                            .into_iter()
+                            .find(|item| {
+                                item.session_id == summary.session_id
+                                    && !item.archived
+                                    && item.project_id == summary.project_id
+                            })
+                            .ok_or_else(|| {
+                                ClientError::Protocol("会话列表尚未确认新的独立审阅会话".into())
+                            })
+                    }),
+                other => other,
+            };
             match summary {
                 Ok(summary) => Creation::Created(summary.into()),
                 Err(error) => Creation::ReadFailed { id, error },

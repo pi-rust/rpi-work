@@ -95,6 +95,7 @@ pub struct Shell {
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
+    review_after_bind: Option<usize>,
     creation_error: Option<(bool, String)>,
     creation_readback: Option<(usize, String)>,
     navigation_revision: u64,
@@ -180,6 +181,7 @@ impl Shell {
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
+            review_after_bind: None,
             creation_error: None,
             creation_readback: None,
             navigation_revision: 0,
@@ -286,16 +288,23 @@ impl Shell {
                 .is_some_and(|(unknown, _)| *unknown)
     }
 
-    fn create_session(&mut self, cx: &mut Context<Self>) {
+    fn create_session(&mut self, detached_review: bool, cx: &mut Context<Self>) {
         if !self.can_create_session() {
             return;
         }
         let (Some(node), Some(project)) = (self.node.as_ref(), self.project) else {
             return;
         };
+        if detached_review && self.creation_readback.is_some() {
+            return;
+        }
         let retry = self.creation_readback.take();
         let (project, id) = retry.map_or((project, None), |(project, id)| (project, Some(id)));
-        let work = node.create_session(self.snapshot.projects[project].id.clone(), id);
+        let work = node.create_session(
+            self.snapshot.projects[project].id.clone(),
+            id,
+            detached_review,
+        );
         let revision = self.navigation_revision;
         self.creation_error = None;
         self.creating_session = Some(cx.spawn(async move |this, cx| {
@@ -304,12 +313,19 @@ impl Shell {
                 shell.creating_session = None;
                 match result {
                     Ok(Creation::Created(session)) => {
-                        let index = match shell
+                        let existing = shell
                             .snapshot
                             .sessions
                             .iter()
-                            .position(|item| item.id == session.id)
-                        {
+                            .position(|item| item.id == session.id);
+                        if detached_review && (existing.is_some() || session.archived) {
+                            shell
+                                .files
+                                .set_review_notice("节点未确认一个新的可用审阅会话。");
+                            cx.notify();
+                            return;
+                        }
+                        let index = match existing {
                             Some(index) => {
                                 shell.snapshot.sessions[index] = session;
                                 index
@@ -321,19 +337,38 @@ impl Shell {
                         };
                         if shell.project == Some(project) && shell.navigation_revision == revision {
                             shell.select_session(index, cx);
+                            if detached_review {
+                                shell.review_after_bind = Some(index);
+                                shell.files.set_review_notice("正在绑定独立审阅会话…");
+                            }
                         }
                     }
                     Ok(Creation::ReadFailed { id, error }) => {
                         shell.creation_readback = Some((project, id));
                         shell.creation_error =
                             Some((false, format!("节点已创建会话，读取详情失败：{error}")));
+                        if detached_review && shell.navigation_revision == revision {
+                            shell
+                                .files
+                                .set_review_notice("独立审阅未提交。可从左栏核对已创建的会话。");
+                        }
                     }
                     Ok(Creation::WriteFailed(error)) if rejected(&error) => {
                         shell.creation_error = Some((false, format!("新建对话失败：{error}")));
+                        if detached_review && shell.navigation_revision == revision {
+                            shell
+                                .files
+                                .set_review_notice(format!("创建独立审阅会话失败：{error}"));
+                        }
                     }
                     _ => {
                         shell.creation_error =
                             Some((true, "新建结果未知。重新连接后可查看节点会话列表。".into()));
+                        if detached_review && shell.navigation_revision == revision {
+                            shell
+                                .files
+                                .set_review_notice("独立审阅未提交。请核对节点会话列表。");
+                        }
                     }
                 }
                 cx.notify();
@@ -352,6 +387,7 @@ impl Shell {
             self.close_question();
             self.cancel_comment();
             self.close_session_management();
+            self.review_after_bind = None;
             self.files.cancel_review_check();
             self.navigation_revision += 1;
             if let Some(draft) = self.drafts.get_mut(&self.session) {
@@ -390,6 +426,11 @@ impl Shell {
                                     shell.frame = None;
                                     shell.composer_config.reset_observation();
                                     shell.load_error = Some(error.to_string());
+                                    if shell.review_after_bind.take().is_some() {
+                                        shell.files.set_review_notice(
+                                            "独立审阅会话绑定失败，审阅尚未提交。",
+                                        );
+                                    }
                                 }
                             }
                             cx.notify();
@@ -460,9 +501,21 @@ impl Shell {
                 eprintln!("session event: {}", frame.event);
             }
         }
-        let refresh_config = frame.event.is_empty() || frame.event == "access";
+        let final_access = frame.event.is_empty() || frame.event == "access";
+        let refresh_config = final_access;
         let clear_config = frame.access.is_none();
         self.frame = Some(frame);
+        if self.review_after_bind == Some(index) {
+            if self.session_controls().send {
+                self.review_after_bind = None;
+                self.files.clear_review_notice();
+                self.send_prompt(true, cx);
+            } else if final_access {
+                self.review_after_bind = None;
+                self.files
+                    .set_review_notice("独立会话未确认可发送，审阅尚未提交。");
+            }
+        }
         if refresh_config {
             self.observe_config(cx);
         } else if clear_config {
@@ -817,7 +870,7 @@ impl Shell {
                             .when(enabled, |button| {
                                 button.on_click(cx.listener(|shell, _, window, cx| {
                                     shell.focus_composer(window);
-                                    shell.create_session(cx);
+                                    shell.create_session(false, cx);
                                 }))
                             })
                             .when(!enabled, |button| button.opacity(0.6).cursor_default()),
