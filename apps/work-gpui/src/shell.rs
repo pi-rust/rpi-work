@@ -15,6 +15,8 @@ pub(crate) mod editor;
 mod message_queue;
 #[path = "navigation.rs"]
 mod navigation;
+#[path = "node_connection.rs"]
+mod node_connection;
 #[path = "project_files.rs"]
 pub(crate) mod project_files;
 #[path = "project_management.rs"]
@@ -167,6 +169,7 @@ pub struct Shell {
     preferences: settings::Preferences,
     settings: settings::Panel,
     collaboration: collaboration::Panel,
+    node_connection: node_connection::Form,
     search: editor::SearchInput,
     workbench_search: workbench_search::Panel,
     session_context: session_context::Panel,
@@ -271,6 +274,7 @@ impl Shell {
             preferences: settings::Preferences::load(),
             settings: settings::Panel::new(cx),
             collaboration: collaboration::Panel::default(),
+            node_connection: node_connection::Form::default(),
             search: editor::SearchInput::new(cx),
             workbench_search: workbench_search::Panel::new(cx),
             session_context: session_context::Panel::new(cx),

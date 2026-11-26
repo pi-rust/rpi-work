@@ -42,33 +42,40 @@ fn main() {
     Application::new()
         .with_assets(icons::Icons)
         .run(move |cx: &mut App| {
-            let bounds = Bounds::centered(None, size(px(1440.0), px(940.0)), cx);
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    window_min_size: Some(size(px(520.0), px(480.0))),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("RPI Work".into()),
-                        appears_transparent: cfg!(target_os = "macos"),
-                        traffic_light_position: Some(point(px(12.0), px(16.0))),
-                    }),
-                    ..Default::default()
-                },
-                |window, cx| {
-                    let view = cx.new(|cx| Shell::new(snapshot, node, window.appearance(), cx));
-                    let workbench = view.downgrade();
-                    window
-                        .observe_window_appearance(move |_, cx| {
-                            let _ = workbench.update(cx, |_, cx| cx.notify());
-                        })
-                        .detach();
-                    view.read(cx).focus_composer(window);
-                    view
-                },
-            )
-            .expect("open window");
+            open_workbench(snapshot, node, cx).expect("open window");
             cx.activate(true);
         });
+}
+
+fn open_workbench(
+    snapshot: data::Snapshot,
+    node: Option<data::Node>,
+    cx: &mut App,
+) -> gpui::Result<gpui::WindowHandle<Shell>> {
+    let bounds = Bounds::centered(None, size(px(1440.0), px(940.0)), cx);
+    cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_min_size: Some(size(px(520.0), px(480.0))),
+            titlebar: Some(TitlebarOptions {
+                title: Some("RPI Work".into()),
+                appears_transparent: cfg!(target_os = "macos"),
+                traffic_light_position: Some(point(px(12.0), px(16.0))),
+            }),
+            ..Default::default()
+        },
+        |window, cx| {
+            let view = cx.new(|cx| Shell::new(snapshot, node, window.appearance(), cx));
+            let workbench = view.downgrade();
+            window
+                .observe_window_appearance(move |_, cx| {
+                    let _ = workbench.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
+            view.read(cx).focus_composer(window);
+            view
+        },
+    )
 }
 
 enum Target {

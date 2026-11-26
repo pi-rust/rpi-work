@@ -152,7 +152,11 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.settings.open {
+        if self.node_connection.open {
+            if select {
+                self.submit_node_connection(window, cx);
+            }
+        } else if self.settings.open {
             self.activate_settings_search(select, window, cx);
         } else if self.workbench_search.open
             && self.search.buffer.is_committed()

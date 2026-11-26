@@ -346,6 +346,9 @@ impl Shell {
         if self.settings.section == Section::Archives {
             self.read_session_management_capabilities(cx);
         }
+        if self.settings.section == Section::Collaboration {
+            self.read_connection_history();
+        }
         if window.viewport_size().width <= px(700.0) {
             self.settings.browse_focus.focus(window);
         } else {
@@ -355,6 +358,7 @@ impl Shell {
     }
 
     fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reset_node_connection();
         self.settings.open = false;
         self.settings.browse = false;
         self.search.clear();
@@ -379,6 +383,9 @@ impl Shell {
         if destination.section == Section::Archives {
             self.read_session_management_capabilities(cx);
         }
+        if destination.section == Section::Collaboration {
+            self.read_connection_history();
+        }
         // Finish dispatching the result's key release before focusing a writable control.
         window.prevent_default();
         cx.on_next_frame(window, move |shell, window, _| {
@@ -391,6 +398,10 @@ impl Shell {
             }
         });
         cx.notify();
+    }
+
+    pub(super) fn focus_settings_title(&self, window: &mut Window) {
+        self.settings.target_focus.focus(window);
     }
 
     pub(super) fn activate_settings_search(
@@ -587,7 +598,7 @@ impl Shell {
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .pl_2(),
                         )
-                        .when(compact, |bar| {
+                        .when(compact && !self.node_connection.open, |bar| {
                             bar.child(
                                 self.button("settings-browse", "浏览分类")
                                     .h(px(44.0))
@@ -621,9 +632,10 @@ impl Shell {
                                 })),
                         ),
                 )
-                .when(!compact || self.settings.browse, |nav| {
-                    nav.child(self.settings_navigation(compact, height, window, cx))
-                });
+                .when(
+                    !self.node_connection.open && (!compact || self.settings.browse),
+                    |nav| nav.child(self.settings_navigation(compact, height, window, cx)),
+                );
         div()
             .id("settings-scrim")
             .absolute()
@@ -641,6 +653,9 @@ impl Shell {
                                 && !shell.search.buffer.is_committed() =>
                         {
                             return;
+                        }
+                        "escape" if shell.node_connection.open => {
+                            shell.cancel_node_connection(window, cx);
                         }
                         "escape" if !shell.search.buffer.text.is_empty() => {
                             shell.search.clear();

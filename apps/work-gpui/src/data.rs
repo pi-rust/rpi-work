@@ -83,6 +83,25 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    fn connected(
+        origin: String,
+        node_id: Option<String>,
+        projects: Vec<Project>,
+        sessions: Vec<SessionSummary>,
+    ) -> Self {
+        Self {
+            node: origin,
+            node_id,
+            mode: "已连接节点".into(),
+            projects: projects.into_iter().map(ProjectItem::from).collect(),
+            sessions: sessions.into_iter().map(SessionItem::from).collect(),
+            history: Vec::new(),
+            blocks: Vec::new(),
+            metrics: Metrics::default(),
+            context: Context::default(),
+        }
+    }
+
     /// Same content as the browser fixture: two projects, four sessions, one
     /// seeded run with a read + bash tool pair.
     pub fn fixture() -> Self {
@@ -193,11 +212,7 @@ pub struct Node {
 
 impl Node {
     pub fn connect(origin: &str, password: Option<&str>) -> Result<(Snapshot, Self), String> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .map_err(|error| format!("无法创建运行时：{error}"))?;
+        let runtime = Self::runtime()?;
         let client =
             WorkspaceClient::new(origin).map_err(|error| format!("节点地址无效：{error}"))?;
         let snapshot = runtime.block_on(async {
@@ -224,19 +239,57 @@ impl Node {
                 work_viewmodel::config_requests::bounded("读取节点身份", client.node_identity())
                     .await
                     .ok();
-            Ok::<_, String>(Snapshot {
-                node: origin.to_owned(),
+            Ok::<_, String>(Snapshot::connected(
+                origin.to_owned(),
                 node_id,
-                mode: "已连接节点".into(),
-                projects: projects.into_iter().map(ProjectItem::from).collect(),
-                sessions: sessions.into_iter().map(SessionItem::from).collect(),
-                history: Vec::new(),
-                blocks: Vec::new(),
-                metrics: Metrics::default(),
-                context: Context::default(),
-            })
+                projects,
+                sessions,
+            ))
         })?;
         Ok((snapshot, Self { client, runtime }))
+    }
+
+    fn runtime() -> Result<tokio::runtime::Runtime, String> {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .map_err(|error| format!("无法创建运行时：{error}"))
+    }
+
+    pub(super) fn open(
+        origin: String,
+        expected: Option<String>,
+        credential: Option<String>,
+    ) -> Result<Option<(Snapshot, Self)>, String> {
+        use work_viewmodel::connection::{ConnectionOutcome, open, with_timeout};
+
+        let runtime = Self::runtime()?;
+        let client = WorkspaceClient::new(&origin).map_err(|_| "节点地址无效。")?;
+        let opened = runtime.block_on(async {
+            if let Some(expected) = expected.as_deref() {
+                let observed = with_timeout(client.node_identity()).await?.ok();
+                if observed.as_deref() != Some(expected) {
+                    return Err("发现的节点身份已变化，请刷新附近节点。".into());
+                }
+            }
+            open(client.clone(), credential).await
+        })?;
+        match opened {
+            ConnectionOutcome::PasswordRequired(_) => Ok(None),
+            ConnectionOutcome::Ready(workspace) => {
+                if expected.is_some() && expected != workspace.node_id {
+                    return Err("发现的节点身份已变化，请刷新附近节点。".into());
+                }
+                let snapshot = Snapshot::connected(
+                    origin,
+                    workspace.node_id,
+                    workspace.projects,
+                    workspace.sessions,
+                );
+                Ok(Some((snapshot, Self { client, runtime })))
+            }
+        }
     }
 
     pub(super) fn discover_nearby(

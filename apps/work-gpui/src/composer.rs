@@ -324,6 +324,11 @@ impl Shell {
     fn input_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        if self.node_connection_busy() {
+            cx.stop_propagation();
+            return;
+        }
+        let secret = self.node_connection.password;
         if self.composer_is_marked() {
             return;
         }
@@ -364,6 +369,7 @@ impl Shell {
                     buffer.select(0, false);
                     buffer.select(buffer.text.len(), true);
                 }
+                "c" | "x" if secret => {}
                 "c" | "x" => {
                     if !selected.is_empty() {
                         cx.write_to_clipboard(ClipboardItem::new_string(
@@ -461,7 +467,11 @@ impl EntityInputHandler for Shell {
         let text = self.buffer().map_or("", |buffer| buffer.text.as_str());
         let range = from_utf16(text, utf16);
         *actual_range = Some(to_utf16(text, range.clone()));
-        Some(text[range].into())
+        Some(if self.node_connection.password {
+            "*".repeat(text[range].encode_utf16().count())
+        } else {
+            text[range].into()
+        })
     }
 
     fn selected_text_range(
@@ -499,6 +509,9 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.node_connection_busy() {
+            return;
+        }
         if self.search_input_open() {
             self.buffer_mut()
                 .replace(utf16, &value.replace(['\r', '\n'], " "));
@@ -516,8 +529,10 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.buffer_mut().compose(utf16, value, selected);
-        cx.notify();
+        if !self.node_connection_busy() {
+            self.buffer_mut().compose(utf16, value, selected);
+            cx.notify();
+        }
     }
 
     fn bounds_for_range(
@@ -674,7 +689,11 @@ impl Element for InputElement {
         }
         let text: SharedString = if buffer.text.is_empty() {
             if self.search_field {
-                if shell.settings.open {
+                if shell.node_connection.password {
+                    "输入此节点的密码"
+                } else if shell.node_connection.open {
+                    "https://电脑地址:13030"
+                } else if shell.settings.open {
                     "搜索设置"
                 } else {
                     "搜索会话、项目或操作"
@@ -695,6 +714,9 @@ impl Element for InputElement {
                     "要求后续更改".into()
                 }
             }
+        } else if self.search_field && shell.node_connection.password {
+            // Keep the original byte offsets for selection and IME geometry.
+            "*".repeat(buffer.text.len()).into()
         } else {
             buffer.text.clone().into()
         };
