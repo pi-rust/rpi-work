@@ -131,6 +131,7 @@ enum Section {
     General,
     Appearance,
     Notifications,
+    Configuration,
     Shortcuts,
     Archives,
     Plugins,
@@ -150,6 +151,7 @@ impl Section {
                 (Self::General, "settings-general", "settings"),
                 (Self::Appearance, "settings-appearance", "appearance"),
                 (Self::Notifications, "settings-notifications", "bell"),
+                (Self::Configuration, "settings-configuration", "code-xml"),
                 (Self::Shortcuts, "settings-shortcuts", "keyboard"),
             ],
         ),
@@ -178,6 +180,7 @@ impl Section {
             Self::General => "常规",
             Self::Appearance => "外观",
             Self::Notifications => "通知",
+            Self::Configuration => "配置",
             Self::Shortcuts => "键盘快捷键",
             Self::Archives => "已归档的聊天",
             Self::Plugins => "插件",
@@ -433,6 +436,9 @@ impl Shell {
         if !self.settings.section.resource_kinds().is_empty() {
             self.read_resource_catalog(cx);
         }
+        if self.settings.section == Section::Configuration {
+            self.read_provider_catalog(cx);
+        }
         if window.viewport_size().width <= px(700.0) {
             self.settings.browse_focus.focus(window);
         } else {
@@ -445,6 +451,7 @@ impl Shell {
         self.reset_node_connection();
         self.reset_node_share();
         self.reset_resource_catalog();
+        self.provider_settings = Default::default();
         if let Some(destination) = self.settings.resource_return.take()
             && self.settings.section == Section::Resources
         {
@@ -482,6 +489,11 @@ impl Shell {
             self.read_resource_catalog(cx);
         } else {
             self.reset_resource_catalog();
+        }
+        if destination.section == Section::Configuration {
+            self.read_provider_catalog(cx);
+        } else {
+            self.provider_settings = Default::default();
         }
         // Finish dispatching the result's key release before focusing a writable control.
         window.prevent_default();
@@ -668,6 +680,10 @@ impl Shell {
             Section::Appearance => self.appearance_settings(cx),
             Section::Notifications => self.notification_settings(cx),
             Section::Shortcuts => self.shortcut_settings(),
+            Section::Configuration => vec![SettingsRow(
+                None,
+                self.provider_settings(cx).into_any_element(),
+            )],
             Section::Review => vec![
                 self.settings_heading("结果", false),
                 self.review_delivery_setting(cx),

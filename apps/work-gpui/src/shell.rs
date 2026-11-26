@@ -23,6 +23,8 @@ mod node_share;
 pub(crate) mod project_files;
 #[path = "project_management.rs"]
 pub(crate) mod project_management;
+#[path = "provider_settings.rs"]
+mod provider_settings;
 #[path = "question.rs"]
 mod question;
 #[path = "resource_settings.rs"]
@@ -176,6 +178,7 @@ pub struct Shell {
     node_connection: node_connection::Form,
     node_share: node_share::Share,
     resource_settings: resource_settings::Panel,
+    provider_settings: provider_settings::Panel,
     search: editor::SearchInput,
     workbench_search: workbench_search::Panel,
     session_context: session_context::Panel,
@@ -283,6 +286,7 @@ impl Shell {
             node_connection: node_connection::Form::default(),
             node_share: node_share::Share::default(),
             resource_settings: resource_settings::Panel::default(),
+            provider_settings: provider_settings::Panel::default(),
             search: editor::SearchInput::new(cx),
             workbench_search: workbench_search::Panel::new(cx),
             session_context: session_context::Panel::new(cx),

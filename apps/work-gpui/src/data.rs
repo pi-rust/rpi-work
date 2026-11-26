@@ -317,6 +317,16 @@ impl Node {
         })
     }
 
+    pub(super) fn read_provider_catalog(
+        &self,
+    ) -> JoinHandle<Result<work_core::api::ProviderCatalog, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded("读取模型供应商", client.provider_catalog())
+                .await
+        })
+    }
+
     pub(super) fn read_native_catalog(
         &self,
         project: String,
