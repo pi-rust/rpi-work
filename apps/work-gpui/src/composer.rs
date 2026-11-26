@@ -137,6 +137,9 @@ fn to_utf16(text: &str, range: Range<usize>) -> Range<usize> {
 
 impl Shell {
     fn buffer(&self) -> Option<&Buffer> {
+        if self.project_form.open {
+            return Some(self.project_form.buffer());
+        }
         if let Some(comment) = &self.comment {
             return Some(&comment.input);
         }
@@ -144,6 +147,9 @@ impl Shell {
     }
 
     fn buffer_mut(&mut self) -> &mut Buffer {
+        if self.project_form.open {
+            return self.project_form.buffer_mut();
+        }
         if let Some(comment) = &mut self.comment {
             return &mut comment.input;
         }
@@ -209,6 +215,17 @@ impl Shell {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
         if self.buffer().is_some_and(|input| input.marked.is_some()) {
+            return;
+        }
+        if self.project_form.open && matches!(key, "tab" | "enter") {
+            if !event.is_held {
+                if key == "tab" {
+                    self.next_project_field(cx);
+                } else {
+                    self.submit_project_form(cx);
+                }
+            }
+            cx.stop_propagation();
             return;
         }
         let shortcut = if cfg!(target_os = "macos") {
@@ -505,7 +522,9 @@ impl Element for InputElement {
             run.color = shell.palette.text;
         }
         let text: SharedString = if buffer.text.is_empty() {
-            if shell.comment.is_some() {
+            if shell.project_form.open {
+                shell.project_form.placeholder().into()
+            } else if shell.comment.is_some() {
                 "输入行内反馈".into()
             } else {
                 "要求后续更改".into()
@@ -545,6 +564,7 @@ impl Element for InputElement {
         let line_height = window.line_height();
         let mut style = Style::default();
         style.size.width = relative(1.0).into();
+        let project_field = shell.project_form.open;
         let id = window.request_measured_layout(style, {
             let text = text.clone();
             let runs = runs.clone();
@@ -555,7 +575,12 @@ impl Element for InputElement {
                 });
                 let lines = shape(window, text.clone(), font_size, &runs, width);
                 let height = text_height(&lines, line_height);
-                size(width.unwrap_or(px(0.0)), height.clamp(px(47.0), px(126.0)))
+                let height = if project_field {
+                    height.clamp(px(24.0), px(66.0))
+                } else {
+                    height.clamp(px(47.0), px(126.0))
+                };
+                size(width.unwrap_or(px(0.0)), height)
             }
         });
         (id, (text, runs, font_size, line_height))

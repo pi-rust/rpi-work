@@ -9,6 +9,8 @@ pub(crate) mod composer_config;
 pub(crate) mod editor;
 #[path = "project_files.rs"]
 pub(crate) mod project_files;
+#[path = "project_management.rs"]
+pub(crate) mod project_management;
 #[path = "review.rs"]
 mod review;
 #[path = "rich_text.rs"]
@@ -81,6 +83,7 @@ pub struct Shell {
     history_position: usize,
     files: project_files::Panel,
     comment: Option<review::Comment>,
+    project_form: project_management::Form,
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
@@ -161,6 +164,7 @@ impl Shell {
             history_position: 0,
             files: project_files::Panel::default(),
             comment: None,
+            project_form: project_management::Form::default(),
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
@@ -758,9 +762,23 @@ impl Shell {
                     .overflow_y_scroll()
                     .pt(px(16.0))
                     .child(
-                        self.text("最近", 12.0, palette.muted)
-                            .px(px(10.0))
-                            .pb(px(3.0)),
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .pl(px(10.0))
+                            .child(self.text(
+                                if self.node.is_some() {
+                                    "项目"
+                                } else {
+                                    "最近"
+                                },
+                                12.0,
+                                palette.muted,
+                            ))
+                            .when(self.node.is_some(), |heading| {
+                                heading.child(self.add_project_button(cx))
+                            }),
                     )
                     .children(projects)
                     .children(
@@ -1437,12 +1455,14 @@ impl Shell {
                             .when_some(draft, |composer, draft| {
                                 composer.child(self.feedback_chips(&draft.feedback, cx))
                             })
-                            .when(self.comment.is_none(), |composer| {
-                                composer.child(self.input_element(cx))
-                            })
-                            .when(self.comment.is_some(), |composer| {
-                                composer.child(div().h(px(47.0)))
-                            })
+                            .when(
+                                self.comment.is_none() && !self.project_form.open,
+                                |composer| composer.child(self.input_element(cx)),
+                            )
+                            .when(
+                                self.comment.is_some() || self.project_form.open,
+                                |composer| composer.child(div().h(px(47.0))),
+                            )
                             .when_some(status, |composer, status| {
                                 composer.child(
                                     self.text(status.to_owned(), 12.0, palette.muted)
@@ -1570,13 +1590,20 @@ impl Render for Shell {
             .clamp(320.0, (remaining - 350.0).max(320.0));
         let docked = self.overview_open && !overlay;
         let full = docked && self.inspector_full;
-        if full || self.comment.is_some() || overlay && self.overlay.is_some() {
+        if full
+            || self.comment.is_some()
+            || self.project_form.open
+            || overlay && self.overlay.is_some()
+        {
             self.composer_config.close_menu();
         }
         let browser_visible = docked || overlay && self.overlay == Some(Overlay::Inspector);
         self.browser.hide_inactive(
             self.files.tab.browser_id().filter(|_| {
-                browser_visible && self.comment.is_none() && !self.composer_config.menu_open()
+                browser_visible
+                    && self.comment.is_none()
+                    && !self.project_form.open
+                    && !self.composer_config.menu_open()
             }),
             window,
             cx,
@@ -1590,7 +1617,9 @@ impl Render for Shell {
             .relative()
             .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape"
-                    && (shell.cancel_comment() || shell.composer_config.close_menu())
+                    && (shell.dismiss_project_form()
+                        || shell.cancel_comment()
+                        || shell.composer_config.close_menu())
                 {
                     cx.stop_propagation();
                     cx.notify();
@@ -1697,6 +1726,9 @@ impl Render for Shell {
             )
             .when_some(self.comment.as_ref(), |body, comment| {
                 body.child(gpui::deferred(self.comment_dialog(comment, cx)).with_priority(100))
+            })
+            .when(self.project_form.open, |body| {
+                body.child(gpui::deferred(self.render_project_form(cx)).with_priority(100))
             })
     }
 }

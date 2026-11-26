@@ -3,7 +3,9 @@
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinHandle};
-use work_client::{ClientError, SessionAccess, SessionConnection, WorkspaceClient};
+use work_client::{
+    ClientError, Project, ProjectFolders, SessionAccess, SessionConnection, WorkspaceClient,
+};
 use work_core::api::realtime::{OperationRef, OperationStatus};
 use work_core::api::{HostResponse, PendingDialog, SessionSummary};
 use work_core::{ApplyResult, MessageBlock, RunProjection, ToolStatus};
@@ -12,6 +14,15 @@ use work_viewmodel::observability::metrics::{Context, Metrics};
 pub struct ProjectItem {
     pub id: String,
     pub name: String,
+}
+
+impl From<Project> for ProjectItem {
+    fn from(project: Project) -> Self {
+        Self {
+            id: project.id,
+            name: project.name,
+        }
+    }
 }
 
 pub struct SessionItem {
@@ -178,13 +189,7 @@ impl Node {
             Ok::<_, String>(Snapshot {
                 node: origin.to_owned(),
                 mode: "已连接节点".into(),
-                projects: projects
-                    .into_iter()
-                    .map(|project| ProjectItem {
-                        id: project.id,
-                        name: project.name,
-                    })
-                    .collect(),
+                projects: projects.into_iter().map(ProjectItem::from).collect(),
                 sessions: sessions.into_iter().map(SessionItem::from).collect(),
                 history: Vec::new(),
                 blocks: Vec::new(),
@@ -281,6 +286,23 @@ impl Node {
         self.runtime.spawn(async move {
             crate::shell::composer_config::update(&client, &id, &choice, evidence).await
         })
+    }
+
+    pub fn project_folders(&self, path: String) -> JoinHandle<Result<ProjectFolders, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded("读取节点目录", client.project_folders(&path))
+                .await
+        })
+    }
+
+    pub fn register_project(
+        &self,
+        request: crate::shell::project_management::Registration,
+    ) -> JoinHandle<crate::shell::project_management::ResultState> {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { request.run(&client).await })
     }
 
     pub fn read_project(
