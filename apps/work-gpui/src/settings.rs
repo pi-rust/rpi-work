@@ -8,11 +8,7 @@ use gpui::{
 };
 use serde_json::{Value, json};
 
-use super::{
-    Shell,
-    editor::{Buffer, Layout},
-    message_queue::Delivery,
-};
+use super::{Shell, message_queue::Delivery};
 use crate::{icons::icon, theme::Palette};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -277,10 +273,6 @@ pub(super) struct Panel {
     close_focus: FocusHandle,
     browse: bool,
     browse_focus: FocusHandle,
-    pub(super) search: Buffer,
-    pub(super) search_enter: bool,
-    pub(super) search_layout: Option<Layout>,
-    pub(super) search_focus: FocusHandle,
     first_result: FocusHandle,
     target: Option<Field>,
     target_focus: FocusHandle,
@@ -297,10 +289,6 @@ impl Panel {
             close_focus: cx.focus_handle(),
             browse: false,
             browse_focus: cx.focus_handle(),
-            search: Buffer::default(),
-            search_enter: false,
-            search_layout: None,
-            search_focus: cx.focus_handle(),
             first_result: cx.focus_handle(),
             target: None,
             target_focus: cx.focus_handle(),
@@ -308,12 +296,6 @@ impl Panel {
             content_scroll: ScrollHandle::new(),
             save_failed: false,
         }
-    }
-
-    fn clear_search(&mut self) {
-        self.search = Buffer::default();
-        self.search_enter = false;
-        self.search_layout = None;
     }
 }
 
@@ -364,7 +346,7 @@ impl Shell {
         if window.viewport_size().width <= px(700.0) {
             self.settings.browse_focus.focus(window);
         } else {
-            self.settings.search_focus.focus(window);
+            self.search.focus.focus(window);
         }
         cx.notify();
     }
@@ -372,7 +354,7 @@ impl Shell {
     fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.settings.open = false;
         self.settings.browse = false;
-        self.settings.clear_search();
+        self.search.clear();
         self.input_dragging = false;
         self.focus_composer(window);
         cx.notify();
@@ -389,8 +371,8 @@ impl Shell {
         panel.target = destination.field;
         panel.reveal = true;
         panel.browse = false;
-        panel.clear_search();
         panel.content_scroll.set_offset(point(px(0.0), px(0.0)));
+        self.search.clear();
         if destination.section == Section::Archives {
             self.read_session_management_capabilities(cx);
         }
@@ -414,8 +396,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let query = self.settings.search.text.trim();
-        if query.is_empty() || !self.settings.search.is_committed() {
+        let query = self.search.buffer.text.trim();
+        if query.is_empty() || !self.search.buffer.is_committed() {
             return;
         }
         let first = search_destinations(query).next();
@@ -437,7 +419,7 @@ impl Shell {
     ) -> Div {
         let palette = self.palette;
         let section = self.settings.section;
-        let query = self.settings.search.text.trim();
+        let query = self.search.buffer.text.trim();
         let mut list = div()
             .id("settings-navigation-list")
             .min_h_0()
@@ -510,17 +492,15 @@ impl Shell {
                     .rounded(px(8.0))
                     .border_1()
                     .border_color(palette.line)
-                    .when(self.settings.search_focus.is_focused(window), |field| {
+                    .when(self.search.focus.is_focused(window), |field| {
                         field.border_color(palette.strong_line)
                     })
                     .on_mouse_down(
                         gpui::MouseButton::Left,
-                        cx.listener(|shell, _, window, _| {
-                            shell.settings.search_focus.focus(window)
-                        }),
+                        cx.listener(|shell, _, window, _| shell.search.focus.focus(window)),
                     )
                     .child(icon("search", 15.0, palette.muted))
-                    .child(self.settings_input_element(cx)),
+                    .child(self.search_input_element(cx)),
             )
             .child(list)
     }
@@ -612,9 +592,9 @@ impl Shell {
                                     .on_click(cx.listener(|shell, _, window, cx| {
                                         shell.settings.browse = !shell.settings.browse;
                                         if shell.settings.browse {
-                                            shell.settings.search_focus.focus(window);
+                                            shell.search.focus.focus(window);
                                         } else {
-                                            shell.settings.clear_search();
+                                            shell.search.clear();
                                             shell.settings.browse_focus.focus(window);
                                         }
                                         cx.notify();
@@ -650,15 +630,15 @@ impl Shell {
                 cx.listener(|shell, event: &gpui::KeyDownEvent, window, cx| {
                     match event.keystroke.key.as_str() {
                         "escape"
-                            if shell.settings.search_focus.is_focused(window)
-                                && !shell.settings.search.is_committed() =>
+                            if shell.search.focus.is_focused(window)
+                                && !shell.search.buffer.is_committed() =>
                         {
                             return;
                         }
-                        "escape" if !shell.settings.search.text.is_empty() => {
-                            shell.settings.clear_search();
+                        "escape" if !shell.search.buffer.text.is_empty() => {
+                            shell.search.clear();
                             if window.viewport_size().width > px(700.0) || shell.settings.browse {
-                                shell.settings.search_focus.focus(window);
+                                shell.search.focus.focus(window);
                             } else {
                                 shell.settings.browse_focus.focus(window);
                             }

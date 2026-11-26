@@ -146,14 +146,38 @@ fn to_utf16(text: &str, range: Range<usize>) -> Range<usize> {
     start..start + text[range].encode_utf16().count()
 }
 
+pub(super) struct SearchInput {
+    pub(super) buffer: Buffer,
+    pub(super) focus: gpui::FocusHandle,
+    layout: Option<Layout>,
+    enter: bool,
+}
+
+impl SearchInput {
+    pub(super) fn new(cx: &Context<Shell>) -> Self {
+        Self {
+            buffer: Buffer::default(),
+            focus: cx.focus_handle(),
+            layout: None,
+            enter: false,
+        }
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.buffer = Buffer::default();
+        self.layout = None;
+        self.enter = false;
+    }
+}
+
 impl Shell {
     pub(super) fn composer_is_marked(&self) -> bool {
         self.buffer().is_some_and(|buffer| !buffer.is_committed())
     }
 
     fn buffer(&self) -> Option<&Buffer> {
-        if self.settings.open {
-            return Some(&self.settings.search);
+        if self.search_input_open() {
+            return Some(&self.search.buffer);
         }
         self.workbench_buffer()
     }
@@ -178,8 +202,8 @@ impl Shell {
     }
 
     fn buffer_mut(&mut self) -> &mut Buffer {
-        if self.settings.open {
-            return &mut self.settings.search;
+        if self.search_input_open() {
+            return &mut self.search.buffer;
         }
         let key = self.draft_key();
         if self.session_management.open() {
@@ -201,33 +225,29 @@ impl Shell {
         self.text_input(false, cx)
     }
 
-    pub(super) fn settings_input_element(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn search_input_element(&self, cx: &mut Context<Self>) -> impl IntoElement {
         self.text_input(true, cx)
     }
 
-    fn text_input(&self, settings_search: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        let focus = if settings_search {
-            &self.settings.search_focus
+    fn text_input(&self, search_field: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let focus = if search_field {
+            &self.search.focus
         } else {
             &self.focus
         };
         div()
-            .when(settings_search, |input| {
-                input.flex_1().min_w_0().tab_index(0)
-            })
-            .when(!settings_search, |input| input.flex_none())
+            .when(search_field, |input| input.flex_1().min_w_0().tab_index(0))
+            .when(!search_field, |input| input.flex_none())
             .px(px(4.0))
-            .text_size(px(if settings_search { 13.0 } else { 15.0 }))
+            .text_size(px(if search_field { 13.0 } else { 15.0 }))
             .line_height(px(22.0))
             .track_focus(focus)
             .cursor(CursorStyle::IBeam)
             .on_key_down(cx.listener(Self::input_key))
-            .when(settings_search, |input| {
+            .when(search_field, |input| {
                 input.on_key_up(cx.listener(|shell, event: &gpui::KeyUpEvent, window, cx| {
-                    if event.keystroke.key == "enter"
-                        && std::mem::take(&mut shell.settings.search_enter)
-                    {
-                        shell.activate_settings_search(true, window, cx);
+                    if event.keystroke.key == "enter" && std::mem::take(&mut shell.search.enter) {
+                        shell.activate_search(true, window, cx);
                         cx.stop_propagation();
                     }
                 }))
@@ -235,8 +255,8 @@ impl Shell {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |shell, event: &gpui::MouseDownEvent, window, cx| {
-                    if settings_search {
-                        shell.settings.search_focus.focus(window);
+                    if search_field {
+                        shell.search.focus.focus(window);
                     } else {
                         shell.focus_composer(window);
                     }
@@ -269,21 +289,21 @@ impl Shell {
             }))
             .child(InputElement {
                 shell: cx.entity(),
-                settings_search,
+                search_field,
             })
     }
 
     fn active_input_layout(&self) -> Option<&Layout> {
-        if self.settings.open {
-            self.settings.search_layout.as_ref()
+        if self.search_input_open() {
+            self.search.layout.as_ref()
         } else {
             self.input_layout.as_ref()
         }
     }
 
     fn active_input_layout_mut(&mut self) -> &mut Option<Layout> {
-        if self.settings.open {
-            &mut self.settings.search_layout
+        if self.search_input_open() {
+            &mut self.search.layout
         } else {
             &mut self.input_layout
         }
@@ -307,12 +327,12 @@ impl Shell {
         if self.composer_is_marked() {
             return;
         }
-        if self.settings.open && matches!(key, "enter" | "down") {
+        if self.search_input_open() && matches!(key, "enter" | "down") {
             if !event.is_held && !modifiers.modified() {
                 if key == "enter" {
-                    self.settings.search_enter = true;
+                    self.search.enter = true;
                 } else {
-                    self.activate_settings_search(false, window, cx);
+                    self.activate_search(false, window, cx);
                 }
             }
             cx.stop_propagation();
@@ -357,7 +377,7 @@ impl Shell {
                 "v" => {
                     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
                         let text = text.replace("\r\n", "\n").replace('\r', "\n");
-                        let text = if self.settings.open {
+                        let text = if self.search_input_open() {
                             text.replace('\n', " ")
                         } else {
                             text
@@ -479,7 +499,7 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.settings.open {
+        if self.search_input_open() {
             self.buffer_mut()
                 .replace(utf16, &value.replace(['\r', '\n'], " "));
         } else {
@@ -603,13 +623,13 @@ impl Layout {
 
 struct InputElement {
     shell: Entity<Shell>,
-    settings_search: bool,
+    search_field: bool,
 }
 
 impl InputElement {
     fn buffer<'a>(&self, shell: &'a Shell) -> Option<&'a Buffer> {
-        if self.settings_search {
-            Some(&shell.settings.search)
+        if self.search_field {
+            Some(&shell.search.buffer)
         } else {
             shell.workbench_buffer()
         }
@@ -653,8 +673,13 @@ impl Element for InputElement {
             run.color = shell.palette.text;
         }
         let text: SharedString = if buffer.text.is_empty() {
-            if self.settings_search {
-                "搜索设置".into()
+            if self.search_field {
+                if shell.settings.open {
+                    "搜索设置"
+                } else {
+                    "搜索会话、项目或操作"
+                }
+                .into()
             } else if shell.session_management.editing() {
                 "输入会话名称".into()
             } else if shell.project_form.open {
@@ -705,7 +730,7 @@ impl Element for InputElement {
         let line_height = window.line_height();
         let mut style = Style::default();
         style.size.width = relative(1.0).into();
-        let search = self.settings_search;
+        let search = self.search_field;
         let short_field = shell.project_form.open || shell.session_management.editing();
         let id = window.request_measured_layout(style, {
             let text = text.clone();
@@ -761,8 +786,8 @@ impl Element for InputElement {
             revision: buffer.revision,
             head: buffer.head,
         };
-        let previous = if self.settings_search {
-            shell.settings.search_layout.as_ref()
+        let previous = if self.search_field {
+            shell.search.layout.as_ref()
         } else {
             shell.input_layout.as_ref()
         };
@@ -794,8 +819,8 @@ impl Element for InputElement {
     ) {
         let Some(layout) = layout.take() else { return };
         let shell = self.shell.read(cx);
-        let focus = if self.settings_search {
-            shell.settings.search_focus.clone()
+        let focus = if self.search_field {
+            shell.search.focus.clone()
         } else {
             shell.focus.clone()
         };
@@ -843,8 +868,8 @@ impl Element for InputElement {
             }
         });
         self.shell.update(cx, |shell, _| {
-            if self.settings_search {
-                shell.settings.search_layout = Some(layout);
+            if self.search_field {
+                shell.search.layout = Some(layout);
             } else {
                 shell.input_layout = Some(layout);
             }

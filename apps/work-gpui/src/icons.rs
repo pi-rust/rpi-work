@@ -48,6 +48,7 @@ impl AssetSource for Icons {
             "bell" => {
                 r#"<path d="M10.268 21a2 2 0 0 0 3.464 0M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>"#
             }
+            "message-circle" => r#"<path d="M7.9 20a9 9 0 1 0-3.9-3.9L2 22Z"/>"#,
             "search" => r#"<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>"#,
             "appearance" => r#"<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/>"#,
             "chevron-right" => r#"<path d="m9 6 6 6-6 6"/>"#,

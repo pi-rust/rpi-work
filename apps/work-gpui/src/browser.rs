@@ -106,6 +106,27 @@ impl Shell {
         tabs
     }
 
+    pub(super) fn open_browser_from_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(id) = self
+                .files
+                .tab
+                .browser_id()
+                .or_else(|| self.browser.items.last().map(|(id, _)| *id))
+            {
+                self.show_project_tab(Tab::Browser(id), cx);
+            } else {
+                self.add_browser_tab(window, cx);
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = window;
+            self.show_project_tab(super::project_files::Tab::Overview, cx);
+        }
+    }
+
     #[cfg(target_os = "macos")]
     fn add_browser_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (sender, mut selection) = tokio::sync::mpsc::channel(4);
@@ -127,7 +148,7 @@ impl Shell {
                             shell.overlay == Some(super::Overlay::Inspector)
                         };
                         if visible
-                            && !shell.settings.open
+                            && !shell.search_input_open()
                             && !shell.composer_config.menu_open()
                             && shell.files.tab == Tab::Browser(id)
                             && shell.navigation_revision == selected.scope

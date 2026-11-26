@@ -33,6 +33,8 @@ pub(crate) mod session_fork;
 pub(crate) mod session_management;
 #[path = "settings.rs"]
 mod settings;
+#[path = "search.rs"]
+mod workbench_search;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -72,10 +74,12 @@ enum WorkbenchShortcut {
     Navigation,
     Browser,
     Settings,
+    Search,
 }
 
 impl WorkbenchShortcut {
-    const BINDINGS: [(Self, &str, bool, &str); 4] = [
+    const BINDINGS: [(Self, &str, bool, &str); 5] = [
+        (Self::Search, "K", false, "搜索与操作"),
         (Self::NewConversation, "N", false, "新对话"),
         (Self::Navigation, "B", false, "切换侧栏"),
         (Self::Browser, "B", true, "切换浏览器面板"),
@@ -158,6 +162,8 @@ pub struct Shell {
     palette: Palette,
     preferences: settings::Preferences,
     settings: settings::Panel,
+    search: editor::SearchInput,
+    workbench_search: workbench_search::Panel,
     finish_notice: Option<(&'static str, Task<()>)>,
     queue: message_queue::Panel,
     dark: bool,
@@ -258,6 +264,8 @@ impl Shell {
             palette: Palette::from_preset("codex", false, false),
             preferences: settings::Preferences::load(),
             settings: settings::Panel::new(cx),
+            search: editor::SearchInput::new(cx),
+            workbench_search: workbench_search::Panel::new(cx),
             finish_notice: None,
             queue: message_queue::Panel::default(),
             dark: false,
@@ -999,6 +1007,12 @@ impl Shell {
                             .relative()
                             .flex()
                             .items_center()
+                            .child(
+                                self.icon_button("workbench-search-button", "search", 25.0)
+                                    .on_click(cx.listener(|shell, _, window, cx| {
+                                        shell.open_workbench_search(window, cx)
+                                    })),
+                            )
                             .when(self.node.is_some(), |tools| {
                                 tools.child(self.session_filter_button(cx))
                             })
@@ -1189,16 +1203,8 @@ impl Shell {
         }
         let width = window.viewport_size().width;
         match shortcut {
-            WorkbenchShortcut::NewConversation => {
-                self.dismiss_drawer(window);
-                self.inspector_full = false;
-                if let Some(project) = self.project {
-                    self.open_project_welcome(project, window, cx);
-                } else {
-                    self.focus_composer(window);
-                    cx.notify();
-                }
-            }
+            WorkbenchShortcut::NewConversation => self.open_new_conversation(window, cx),
+            WorkbenchShortcut::Search => self.open_workbench_search(window, cx),
             WorkbenchShortcut::Navigation => {
                 self.toggle_navigation(width <= px(700.0), cx);
             }
@@ -1208,6 +1214,17 @@ impl Shell {
             WorkbenchShortcut::Settings => self.open_settings(window, cx),
         }
         true
+    }
+
+    fn open_new_conversation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.dismiss_drawer(window);
+        self.inspector_full = false;
+        if let Some(project) = self.project {
+            self.open_project_welcome(project, window, cx);
+        } else {
+            self.focus_composer(window);
+            cx.notify();
+        }
     }
 
     fn dismiss_drawer(&mut self, window: &mut Window) -> bool {
@@ -2089,7 +2106,7 @@ impl Render for Shell {
         let docked = self.overview_open && !overlay;
         let full = docked && self.inspector_full;
         if full
-            || self.settings.open
+            || self.search_input_open()
             || self.comment.is_some()
             || self.project_form.open
             || self.question.is_some()
@@ -2283,6 +2300,11 @@ impl Render for Shell {
                 body.child(
                     gpui::deferred(self.settings_dialog(width, height, window, cx))
                         .with_priority(110),
+                )
+            })
+            .when(self.workbench_search.open, |body| {
+                body.child(
+                    gpui::deferred(self.workbench_search_dialog(window, cx)).with_priority(110),
                 )
             })
             .when_some(self.finish_notice.as_ref(), |body, (message, _)| {

@@ -156,7 +156,7 @@ impl Shell {
     }
 
     pub(super) fn navigation_keyboard_enabled(&self) -> bool {
-        !self.settings.open
+        !self.search_input_open()
             && !self.project_form.open
             && !self.session_management.open()
             && self.question.is_none()
