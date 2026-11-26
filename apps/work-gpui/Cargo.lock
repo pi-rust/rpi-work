@@ -7097,9 +7097,11 @@ dependencies = [
 name = "work-gpui"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "cc",
  "gpui",
  "raw-window-handle",
+ "rpi-extcore",
  "serde_json",
  "tokio",
  "unicode-segmentation",

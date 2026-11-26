@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 use serde_json::Value;
-use work_core::api::events::content_text;
+use work_core::api::events::{content_text, has_image_content};
 use work_core::{ConnectionState, MessageBlock, RunPhase, SettlementOutcome, ToolStatus};
 
 use crate::session_controls::PendingRequests;
@@ -237,13 +237,15 @@ impl Builder {
                 let reading_key = durable.then(|| identity.clone());
                 (identity, reading_key)
             };
-            self.text(
-                identity,
-                reading_key,
-                fork_entry,
-                role,
-                content_text(content),
-            );
+            let mut text = content_text(content);
+            if role == "user" && has_image_content(content) {
+                text.truncate(text.trim_end().len());
+                if !text.is_empty() {
+                    text.push_str("\n\n");
+                }
+                text.push_str("[图片附件]");
+            }
+            self.text(identity, reading_key, fork_entry, role, text);
             self.mark_rating(first_part, fork_entry);
             return;
         }

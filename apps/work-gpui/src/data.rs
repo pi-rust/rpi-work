@@ -383,6 +383,16 @@ impl Node {
             .spawn(async move { client.prompt(&id, &text).await })
     }
 
+    pub fn prompt_content(
+        &self,
+        id: String,
+        content: Value,
+    ) -> JoinHandle<Result<HostResponse<Value>, ClientError>> {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { client.prompt_content(&id, &content).await })
+    }
+
     pub fn control(
         &self,
         id: String,

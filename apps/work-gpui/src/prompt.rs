@@ -1,8 +1,9 @@
+use rpi_extcore::prompt::PromptContent;
 use work_core::api::realtime::OperationRef;
 use work_core::{ConnectionState, RunPhase};
 use work_viewmodel::{diff_view::DraftFeedback, session_controls::PendingRequests};
 
-use crate::shell::editor::Buffer;
+use crate::shell::{attachments::Attachment, editor::Buffer};
 
 const MAX_FEEDBACK: usize = 32;
 const MAX_DRAFT: usize = 32_000;
@@ -23,6 +24,9 @@ pub struct Draft {
     pub input: Buffer,
     pub feedback: Vec<Feedback>,
     next_feedback: u64,
+    pub attachments: Vec<Attachment>,
+    pub attachment_notice: Option<String>,
+    next_attachment: u64,
     request: Option<Submission>,
     pub notice: Option<String>,
 }
@@ -31,6 +35,7 @@ struct Submission {
     stage: Stage,
     revision: Option<u64>,
     last_feedback: Option<u64>,
+    last_attachment: Option<u64>,
     saw_activity: bool,
     settled: bool,
 }
@@ -42,6 +47,30 @@ enum Stage {
 }
 
 impl Draft {
+    pub fn add_attachments(&mut self, mut files: Vec<Attachment>) {
+        if self.attachments.len() + files.len() >= rpi_extcore::prompt::MAX_CONTENT_BLOCKS {
+            self.attachment_notice = Some("每条消息最多添加 63 个附件。".into());
+            return;
+        }
+        // Ensure the whole selection fits the real ordered content contract before editing the draft.
+        let blocks = self
+            .attachments
+            .iter()
+            .chain(&files)
+            .map(|file| file.block.clone())
+            .collect();
+        if let Err(error) = PromptContent::new(blocks) {
+            self.attachment_notice = Some(error);
+            return;
+        }
+        for file in &mut files {
+            self.next_attachment += 1;
+            file.id = self.next_attachment;
+        }
+        self.attachments.append(&mut files);
+        self.attachment_notice = None;
+    }
+
     pub fn add_feedback(&mut self, item: DraftFeedback<'_>) -> bool {
         let separator = usize::from(!self.input.text.is_empty() || !self.feedback.is_empty()) * 2;
         if self.feedback.len() >= MAX_FEEDBACK
@@ -80,7 +109,7 @@ impl Draft {
 
     pub fn can_send(&self) -> bool {
         self.input.is_committed()
-            && (self.input.can_send() || !self.feedback.is_empty())
+            && (self.input.can_send() || !self.feedback.is_empty() || !self.attachments.is_empty())
             && !self.feedback_over_limit()
     }
 
@@ -94,11 +123,19 @@ impl Draft {
 
     pub fn begin(&mut self, include_draft: bool) {
         self.notice = None;
+        if include_draft {
+            self.attachment_notice = None;
+        }
         self.request = Some(Submission {
             stage: Stage::Sending,
             revision: include_draft.then_some(self.input.revision),
             last_feedback: self
                 .feedback
+                .last()
+                .filter(|_| include_draft)
+                .map(|item| item.id),
+            last_attachment: self
+                .attachments
                 .last()
                 .filter(|_| include_draft)
                 .map(|item| item.id),
@@ -116,6 +153,9 @@ impl Draft {
         }
         if let Some(last) = request.last_feedback {
             self.feedback.retain(|item| item.id > last);
+        }
+        if let Some(last) = request.last_attachment {
+            self.attachments.retain(|item| item.id > last);
         }
         self.notice = None;
         request.stage = Stage::Accepted;
@@ -218,6 +258,26 @@ mod tests {
         draft.accept();
         assert_eq!(draft.feedback.len(), 1);
         assert!(draft.message().ends_with("later"));
+    }
+
+    #[test]
+    fn acknowledgement_retains_attachments_added_after_submission() {
+        use rpi_extcore::prompt::PromptBlock;
+        let item = |name: &str| Attachment {
+            id: 0,
+            name: name.into(),
+            block: PromptBlock::Text { text: name.into() },
+        };
+        let mut draft = Draft::default();
+        draft.add_attachments(vec![item("first")]);
+        assert!(draft.can_send());
+        draft.begin(true);
+        draft.add_attachments(vec![item("later")]);
+        draft.unknown(None);
+        assert_eq!(draft.attachments.len(), 2);
+        draft.accept();
+        assert_eq!(draft.attachments.len(), 1);
+        assert_eq!(draft.attachments[0].name, "later");
     }
 
     #[test]

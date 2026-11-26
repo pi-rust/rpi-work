@@ -1,6 +1,8 @@
 //! Native workbench layout. The shared view model owns transcript ordering, tool
 //! labels, code tokens and metrics.
 
+#[path = "attachments.rs"]
+pub(crate) mod attachments;
 #[path = "browser.rs"]
 mod browser;
 #[path = "composer_config.rs"]
@@ -103,6 +105,7 @@ pub struct Shell {
     transcript_scroll: ScrollHandle,
     expanded: HashSet<String>,
     drafts: HashMap<Option<usize>, Draft>,
+    selecting_attachments: HashSet<usize>,
     focus: FocusHandle,
     input_layout: Option<editor::Layout>,
     input_dragging: bool,
@@ -183,6 +186,7 @@ impl Shell {
             rows,
             expanded: HashSet::new(),
             drafts: HashMap::new(),
+            selecting_attachments: HashSet::new(),
             focus: cx.focus_handle(),
             input_layout: None,
             input_dragging: false,
@@ -518,6 +522,30 @@ impl Shell {
         } else {
             draft.message()
         };
+        let id = frame.session_id.clone();
+        let request = if !review && !draft.attachments.is_empty() {
+            if !frame
+                .access
+                .as_ref()
+                .is_some_and(|access| access.supports_prompt_content())
+            {
+                draft.attachment_notice = Some("当前会话尚未确认支持附件。".into());
+                cx.notify();
+                return;
+            }
+            let blocks = match attachments::content_blocks(message, &draft.attachments) {
+                Ok(blocks) => blocks,
+                Err(error) => {
+                    draft.attachment_notice = Some(error);
+                    cx.notify();
+                    return;
+                }
+            };
+            draft.attachment_notice = None;
+            node.prompt_content(id, blocks)
+        } else {
+            node.prompt(id, message)
+        };
         if self
             .actions
             .get(&index)
@@ -526,7 +554,6 @@ impl Shell {
             self.actions.remove(&index);
         }
         draft.begin(!review);
-        let request = node.prompt(frame.session_id.clone(), message);
         cx.spawn(async move |this, cx| {
             let result = request.await;
             this.update(cx, |shell, cx| {
@@ -1466,7 +1493,10 @@ impl Shell {
             && self.session == self.transcript_session;
         let metrics = &self.snapshot.metrics;
         let controls = self.session_controls();
-        let can_send = controls.send && draft.is_some_and(Draft::can_send);
+        let can_send = controls.send
+            && draft.is_some_and(|draft| {
+                draft.can_send() && (draft.attachments.is_empty() || self.supports_attachments())
+            });
         let checking = self
             .session
             .is_some_and(|index| self.checking_receipts.contains(&index));
@@ -1480,6 +1510,7 @@ impl Shell {
                     .filter(|draft| draft.feedback_over_limit())
                     .map(|_| "消息和行内反馈合计超过长度上限")
             })
+            .or_else(|| draft.and_then(|draft| draft.attachment_notice.as_deref()))
             .or_else(|| self.config_notice());
         let status = if checking {
             Some("正在核对发送回执…")
@@ -1526,7 +1557,9 @@ impl Shell {
                             .pt(px(12.0))
                             .pb(px(9.0))
                             .when_some(draft, |composer, draft| {
-                                composer.child(self.feedback_chips(&draft.feedback, cx))
+                                composer
+                                    .child(self.attachment_chips(&draft.attachments, cx))
+                                    .child(self.feedback_chips(&draft.feedback, cx))
                             })
                             .when(
                                 self.comment.is_none()
@@ -1556,7 +1589,14 @@ impl Shell {
                                     .justify_between()
                                     .h(px(28.0))
                                     .pl(px(4.0))
-                                    .child(self.config_toolbar(&controls, cx))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(self.add_attachments_button(cx))
+                                            .child(self.config_toolbar(&controls, cx)),
+                                    )
                                     .when(can_check, |toolbar| {
                                         toolbar.child(
                                             self.button("check-receipt", "核对回执").on_click(

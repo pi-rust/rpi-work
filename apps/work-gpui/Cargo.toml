@@ -22,6 +22,8 @@ raw-window-handle = "0.6"
 gpui = "0.2.2"
 
 [dependencies]
+base64 = "0.22"
+rpi-extcore = { version = "=0.2.16", git = "https://github.com/pi-rust/rpi-extension", rev = "b26b7d2ac216fece915229d19145ac7ef8675426" }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 unicode-segmentation = "1"
