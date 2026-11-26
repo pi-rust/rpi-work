@@ -146,6 +146,10 @@ pub(super) struct Panel {
 }
 
 impl Panel {
+    pub(super) fn pending_count(&self) -> Option<u64> {
+        (!self.read_failed).then_some(self.snapshot.as_ref()?.count)
+    }
+
     pub(super) fn select(&mut self, index: Option<usize>, default: Delivery) {
         if let Some(index) = index {
             self.modes.entry(index).or_insert(default);

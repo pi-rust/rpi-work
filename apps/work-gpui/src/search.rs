@@ -31,6 +31,7 @@ enum Target {
     Browser,
     Files,
     Settings,
+    Context,
 }
 
 struct ResultRow<'a> {
@@ -129,9 +130,12 @@ impl Shell {
                 (Target::Browser, "打开浏览器", "globe"),
                 (Target::Files, "打开代码工作区", "code-xml"),
                 (Target::Settings, "打开设置", "settings"),
+                (Target::Context, "查看上下文", "list-checks"),
             ]
             .into_iter()
-            .filter(|(_, title, _)| matches(title, ""))
+            .filter(|(target, title, _)| {
+                (!matches!(target, Target::Context) || self.session.is_some()) && matches(title, "")
+            })
             .map(|(target, title, glyph)| ResultRow {
                 target,
                 title,
@@ -206,6 +210,15 @@ impl Shell {
                 }
             }
             Target::Settings => self.open_settings(window, cx),
+            Target::Context => {
+                // Let this key release finish before focusing the dialog's Close button.
+                let revision = self.navigation_revision;
+                cx.on_next_frame(window, move |shell, window, cx| {
+                    if shell.navigation_revision == revision {
+                        shell.open_session_context(window, cx);
+                    }
+                });
+            }
         }
     }
 

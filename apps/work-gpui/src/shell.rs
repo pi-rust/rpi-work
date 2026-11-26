@@ -25,6 +25,8 @@ mod review;
 mod rich_text;
 #[path = "session_action.rs"]
 pub(crate) mod session_action;
+#[path = "session_context.rs"]
+mod session_context;
 #[path = "session_filter.rs"]
 mod session_filter;
 #[path = "session_fork.rs"]
@@ -164,6 +166,7 @@ pub struct Shell {
     settings: settings::Panel,
     search: editor::SearchInput,
     workbench_search: workbench_search::Panel,
+    session_context: session_context::Panel,
     finish_notice: Option<(&'static str, Task<()>)>,
     queue: message_queue::Panel,
     dark: bool,
@@ -266,6 +269,7 @@ impl Shell {
             settings: settings::Panel::new(cx),
             search: editor::SearchInput::new(cx),
             workbench_search: workbench_search::Panel::new(cx),
+            session_context: session_context::Panel::new(cx),
             finish_notice: None,
             queue: message_queue::Panel::default(),
             dark: false,
@@ -524,6 +528,7 @@ impl Shell {
             return;
         }
         if changed {
+            self.session_context.reset();
             self.session_fork.invalidate_follow();
             self.close_question();
             self.cancel_comment();
@@ -2003,9 +2008,9 @@ impl Shell {
                             .when(
                                 metrics.input.is_some()
                                     || metrics.output.is_some()
-                                    || self.preferences.show_context && context.percent.is_some(),
+                                    || self.preferences.show_context && self.session.is_some(),
                                 |bar| {
-                                    let usage = div().flex().gap_2().min_w(px(0.0));
+                                    let usage = div().flex().items_center().gap_2().min_w(px(0.0));
                                     bar.child(
                                         usage
                                             .when(
@@ -2027,18 +2032,35 @@ impl Shell {
                                             )
                                             .when(
                                                 self.preferences.show_context
-                                                    && context.percent.is_some(),
+                                                    && self.session.is_some(),
                                                 |usage| {
-                                                    usage.child(
-                                                        self.text(
+                                                    let label = context.percent.map_or_else(
+                                                        || "上下文".into(),
+                                                        |value| {
                                                             format!(
                                                                 "上下文 {}",
-                                                                percent(context.percent)
+                                                                percent(Some(value))
+                                                            )
+                                                        },
+                                                    );
+                                                    usage.child(
+                                                        self.navigation_tooltip(
+                                                            self.button(
+                                                                "open-session-context",
+                                                                &label,
                                                             ),
-                                                            11.0,
-                                                            palette.muted,
+                                                            "查看上下文",
                                                         )
-                                                        .truncate(),
+                                                        .h(px(24.0))
+                                                        .tab_index(0)
+                                                        .focus(|button| button.bg(palette.hover))
+                                                        .on_click(cx.listener(
+                                                            |shell, _, window, cx| {
+                                                                shell.open_session_context(
+                                                                    window, cx,
+                                                                )
+                                                            },
+                                                        )),
                                                     )
                                                 },
                                             ),
@@ -2107,6 +2129,7 @@ impl Render for Shell {
         let full = docked && self.inspector_full;
         if full
             || self.search_input_open()
+            || self.session_context.open
             || self.comment.is_some()
             || self.project_form.open
             || self.question.is_some()
@@ -2119,7 +2142,8 @@ impl Render for Shell {
         self.browser.hide_inactive(
             self.files.tab.browser_id().filter(|_| {
                 browser_visible
-                    && !self.settings.open
+                    && !self.search_input_open()
+                    && !self.session_context.open
                     && self.comment.is_none()
                     && !self.project_form.open
                     && self.question.is_none()
@@ -2305,6 +2329,11 @@ impl Render for Shell {
             .when(self.workbench_search.open, |body| {
                 body.child(
                     gpui::deferred(self.workbench_search_dialog(window, cx)).with_priority(110),
+                )
+            })
+            .when(self.session_context.open, |body| {
+                body.child(
+                    gpui::deferred(self.session_context_dialog(window, cx)).with_priority(110),
                 )
             })
             .when_some(self.finish_notice.as_ref(), |body, (message, _)| {

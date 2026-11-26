@@ -149,6 +149,7 @@ impl Shell {
                         };
                         if visible
                             && !shell.search_input_open()
+                            && !shell.session_context.open
                             && !shell.composer_config.menu_open()
                             && shell.files.tab == Tab::Browser(id)
                             && shell.navigation_revision == selected.scope
@@ -167,7 +168,8 @@ impl Shell {
     pub(super) fn browser_contents(&self, id: u64) -> AnyElement {
         #[cfg(target_os = "macos")]
         if let Some((_, surface)) = self.browser.items.iter().find(|(key, _)| *key == id) {
-            if self.settings.open
+            if self.search_input_open()
+                || self.session_context.open
                 || self.composer_config.menu_open()
                 || self.comment.is_some()
                 || self.project_form.open

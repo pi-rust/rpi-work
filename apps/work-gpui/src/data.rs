@@ -456,6 +456,17 @@ impl Node {
             .spawn(async move { client.prompt_content(&id, &content).await })
     }
 
+    pub(super) fn read_runtime_state(
+        &self,
+        id: String,
+    ) -> JoinHandle<Result<work_client::RuntimeState, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded("读取会话上下文", client.runtime_state(&id))
+                .await
+        })
+    }
+
     pub fn read_queue(
         &self,
         id: String,

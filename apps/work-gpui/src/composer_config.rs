@@ -547,7 +547,7 @@ fn enabled(field: ConfigField, controls: &SessionControls) -> bool {
     }
 }
 
-fn thinking_label(level: &str) -> &str {
+pub(super) fn thinking_label(level: &str) -> &str {
     match level {
         "off" => "关闭",
         "minimal" => "极低",
