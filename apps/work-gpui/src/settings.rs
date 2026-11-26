@@ -136,10 +136,11 @@ enum Section {
     Plugins,
     Skills,
     Collaboration,
+    Review,
 }
 
 impl Section {
-    const NAVIGATION: [(Self, &str, &str); 8] = [
+    const NAVIGATION: [(Self, &str, &str); 9] = [
         (Self::General, "settings-general", "settings"),
         (Self::Appearance, "settings-appearance", "appearance"),
         (Self::Notifications, "settings-notifications", "bell"),
@@ -148,6 +149,7 @@ impl Section {
         (Self::Plugins, "settings-plugins", "code-xml"),
         (Self::Skills, "settings-skills", "list-checks"),
         (Self::Collaboration, "settings-collaboration", "globe"),
+        (Self::Review, "settings-review", "file-diff"),
     ];
 
     fn label(self) -> &'static str {
@@ -160,6 +162,7 @@ impl Section {
             Self::Plugins => "插件",
             Self::Skills => "技能",
             Self::Collaboration => "工作协同",
+            Self::Review => "代码审查",
         }
     }
 
@@ -220,9 +223,8 @@ impl Field {
 
     fn section(self) -> Section {
         match self {
-            Self::Context | Self::FollowUp | Self::ProjectGrouping | Self::ReviewDelivery => {
-                Section::General
-            }
+            Self::Context | Self::FollowUp | Self::ProjectGrouping => Section::General,
+            Self::ReviewDelivery => Section::Review,
             Self::NotifyFinish => Section::Notifications,
             Self::Color
             | Self::Theme
@@ -583,6 +585,10 @@ impl Shell {
             Section::Appearance => self.appearance_settings(cx),
             Section::Notifications => self.notification_settings(cx),
             Section::Shortcuts => self.shortcut_settings(),
+            Section::Review => vec![
+                self.settings_heading("结果", false),
+                self.review_delivery_setting(cx),
+            ],
             Section::Plugins | Section::Skills => vec![SettingsRow(
                 None,
                 self.resource_settings(section.resource_kind().unwrap(), cx)
@@ -831,23 +837,28 @@ impl Shell {
                     }),
                 ),
             ),
-            self.settings_row(
-                Field::ReviewDelivery,
-                div().flex().gap_1().children(
-                    [
-                        ("settings-review-inline", "当前会话", false),
-                        ("settings-review-detached", "独立会话", true),
-                    ]
-                    .map(|(id, label, detached)| {
-                        self.setting_choice(id, label, self.preferences.detached_review == detached)
-                            .on_click(cx.listener(move |shell, _, window, cx| {
-                                shell.preferences.detached_review = detached;
-                                shell.save_preferences(window, cx);
-                            }))
-                    }),
-                ),
-            ),
+            self.review_delivery_setting(cx),
         ]
+    }
+
+    fn review_delivery_setting(&self, cx: &mut Context<Self>) -> SettingsRow {
+        self.settings_row(
+            Field::ReviewDelivery,
+            div().flex().gap_1().children(
+                [
+                    ("settings-review-inline", "当前会话", false),
+                    ("settings-review-detached", "独立会话", true),
+                ]
+                .map(|(id, label, detached)| {
+                    self.setting_choice(id, label, self.preferences.detached_review == detached)
+                        .on_click(cx.listener(move |shell, _, _, cx| {
+                            shell.preferences.detached_review = detached;
+                            shell.save_device_preferences();
+                            cx.notify();
+                        }))
+                }),
+            ),
+        )
     }
 
     fn appearance_settings(&self, cx: &mut Context<Self>) -> Vec<SettingsRow> {
