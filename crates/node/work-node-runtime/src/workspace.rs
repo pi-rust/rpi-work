@@ -108,8 +108,8 @@ struct Inner {
     // Separate from Alias so existing catalogs and legacy migration stay compatible.
     project_cache: Mutex<HashMap<PathBuf, Project>>,
     control: tokio::sync::Mutex<Option<String>>,
-    // Read leases permit independent projects to run concurrently. Shutdown takes
-    // the exclusive lease so no in-flight operation can start a host afterward.
+    // Read leases permit independent projects to run concurrently. Shutdown and
+    // native resource mutations take exclusive leases.
     lifecycle: Arc<tokio::sync::RwLock<()>>,
     session_dir: Option<PathBuf>,
     agents: Arc<agents::Manager>,
@@ -785,7 +785,7 @@ impl LocalWorkspace {
             #[serde(rename = "sessionId")]
             session_id: String,
         }
-        let _lease = self.inner.lifecycle.read().await;
+        let lease = self.inner.lifecycle.clone().read_owned().await;
         let service = if let Some(id) = project_id {
             self.project_service(id)?
         } else {
@@ -804,17 +804,28 @@ impl LocalWorkspace {
         } else {
             None
         };
-        let result: Created = decode(
-            service::create_session(
-                &service,
-                service::CreateSessionRequest {
-                    project_id: project_id.map(str::to_owned),
-                    resources,
-                },
-            )
-            .await,
-        )?;
+        let request = service::CreateSessionRequest {
+            project_id: project_id.map(str::to_owned),
+            resources,
+        };
+        let result: Created = self.publish_session(service, request, lease).await?;
         Ok(result.session_id)
+    }
+    // The core admits an independent worker. Hold the workspace lease until
+    // it publishes the resource snapshot, even after disconnection.
+    async fn publish_session<T: for<'de> Deserialize<'de>>(
+        &self,
+        service: Arc<Service>,
+        request: service::CreateSessionRequest,
+        lease: tokio::sync::OwnedRwLockReadGuard<()>,
+    ) -> Result<T, WorkspaceError> {
+        let reply = tokio::spawn(async move {
+            let _lease = lease;
+            service::create_session(&service, request).await
+        })
+        .await
+        .map_err(|_| LocalError::Initialization("session creation worker failed".into()))?;
+        decode(reply)
     }
     pub async fn control_session(&self) -> Result<String, WorkspaceError> {
         let _lease = self.inner.lifecycle.read().await;
@@ -927,44 +938,46 @@ impl LocalWorkspace {
         entry_id: Option<&str>,
         title: Option<&str>,
     ) -> Result<SessionMutation, WorkspaceError> {
-        let _lease = self.inner.lifecycle.read().await;
+        let lease = self.inner.lifecycle.clone().read_owned().await;
         if self.inner.agents.contains(session_id)? {
             return Err(unsupported("fork_session", "acp"));
         }
         let service = self.session_service(session_id)?;
-        decode(
-            service::fork_session(
-                &service,
-                session_id.into(),
-                service::ForkRequest {
-                    entry_id: entry_id.map(str::to_owned),
-                    title: title.map(str::to_owned),
-                },
-            )
-            .await,
-        )
+        let session_id = session_id.to_owned();
+        let request = service::ForkRequest {
+            entry_id: entry_id.map(str::to_owned),
+            title: title.map(str::to_owned),
+        };
+        let reply = tokio::spawn(async move {
+            let _lease = lease;
+            service::fork_session(&service, session_id, request).await
+        })
+        .await
+        .map_err(|_| LocalError::Initialization("session fork worker failed".into()))?;
+        decode(reply)
     }
     pub async fn clone_session(
         &self,
         session_id: &str,
         title: Option<&str>,
     ) -> Result<SessionMutation, WorkspaceError> {
-        let _lease = self.inner.lifecycle.read().await;
+        let lease = self.inner.lifecycle.clone().read_owned().await;
         if self.inner.agents.contains(session_id)? {
             return Err(unsupported("clone_session", "acp"));
         }
         let service = self.session_service(session_id)?;
-        decode(
-            service::clone_session(
-                &service,
-                session_id.into(),
-                service::ForkRequest {
-                    entry_id: None,
-                    title: title.map(str::to_owned),
-                },
-            )
-            .await,
-        )
+        let session_id = session_id.to_owned();
+        let request = service::ForkRequest {
+            entry_id: None,
+            title: title.map(str::to_owned),
+        };
+        let reply = tokio::spawn(async move {
+            let _lease = lease;
+            service::clone_session(&service, session_id, request).await
+        })
+        .await
+        .map_err(|_| LocalError::Initialization("session clone worker failed".into()))?;
+        decode(reply)
     }
     pub async fn delete_session(&self, session_id: &str) -> Result<(), WorkspaceError> {
         let _lease = self.inner.lifecycle.read().await;

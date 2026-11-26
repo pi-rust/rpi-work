@@ -243,6 +243,7 @@ mod tests {
     #[test]
     fn scope_counts_share_the_version_preserving_list_and_ignore_unknown_installation() {
         let catalog = NativeCatalog {
+            protects_saved_references: false,
             profile: json!({}),
             diagnostics: vec![],
             resources: vec![

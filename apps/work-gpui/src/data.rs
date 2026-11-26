@@ -213,7 +213,7 @@ impl Snapshot {
     }
 }
 
-pub(super) struct ResourceInstall {
+pub(super) struct ResourceManagement {
     pub receipt: Result<work_core::api::NativeReceipt, ClientError>,
     pub observed: Option<work_core::api::NativeCatalog>,
 }
@@ -374,19 +374,19 @@ impl Node {
         })
     }
 
-    pub(super) fn install_native_resource(
+    pub(super) fn manage_native_resource(
         &self,
         project: String,
         request: work_core::api::NativeManagement,
-    ) -> JoinHandle<ResourceInstall> {
+    ) -> JoinHandle<ResourceManagement> {
         use work_viewmodel::config_requests::bounded;
         let client = self.client.clone();
         self.runtime.spawn(async move {
-            let receipt = bounded("安装资源", client.native_manage(&project, request)).await;
+            let receipt = bounded("提交资源操作", client.native_manage(&project, request)).await;
             let observed = bounded("回读资源目录", client.native_catalog(&project))
                 .await
                 .ok();
-            ResourceInstall { receipt, observed }
+            ResourceManagement { receipt, observed }
         })
     }
 

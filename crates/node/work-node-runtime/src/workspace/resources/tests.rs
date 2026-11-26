@@ -137,3 +137,91 @@ fn concurrent_project_resource_writes_compete_for_one_revision() {
         next.target
     );
 }
+
+#[test]
+fn global_mutations_protect_other_projects_and_offline_session_intents() {
+    use super::{
+        LocalWorkspace, NativeApply, NativeKind, NativeResource, NativeScope, NativeSelection,
+        NativeTools, commit_project_resource_intent, resource_reference,
+    };
+
+    let root = tempdir();
+    let workspace = LocalWorkspace::new("unused".into(), root.path().join("node")).unwrap();
+    let beta = workspace.registry_path("beta");
+    std::fs::create_dir_all(beta.parent().unwrap()).unwrap();
+    let facts = json!({"recordedDigest":"original","path":root.path().join("global/skill")});
+    let mut skill = NativeResource {
+        reference: resource_reference(
+            "alpha",
+            NativeScope::Global,
+            NativeKind::Skill,
+            "example",
+            &facts,
+        )
+        .unwrap(),
+        scope: NativeScope::Global,
+        kind: NativeKind::Skill,
+        name: "example".into(),
+        facts,
+    };
+    let beta_reference =
+        resource_reference("beta", skill.scope, skill.kind, &skill.name, &skill.facts).unwrap();
+    assert_ne!(beta_reference, skill.reference);
+    let mut request = NativeApply {
+        expected_revision: 0,
+        operation_id: "select-skill".into(),
+        supersedes_operation_id: None,
+        target: NativeSelection {
+            main_package: "package".into(),
+            package_instructions: Vec::new(),
+            skills: vec![beta_reference],
+            extensions: Vec::new(),
+            tools: NativeTools::Default {},
+            supplementary_instructions: String::new(),
+        },
+    };
+    let configured = workspace.project_resource_path("beta");
+    commit_project_resource_intent(&configured, &request).unwrap();
+    assert!(
+        workspace
+            .check_resource_references("alpha", &skill)
+            .unwrap_err()
+            .to_string()
+            .contains("saved project")
+    );
+    skill.scope = NativeScope::Project;
+    assert!(workspace.check_resource_references("alpha", &skill).is_ok());
+    skill.scope = NativeScope::Global;
+    request.expected_revision = 1;
+    request.operation_id = "unselect-skill".into();
+    request.target.skills.clear();
+    commit_project_resource_intent(&configured, &request).unwrap();
+    assert!(workspace.check_resource_references("alpha", &skill).is_ok());
+
+    let target = json!({"version":1,"main_package":{"name":"example-package","scope":"project"},"skills":[root.path().join("global/skill/SKILL.md")],"tools":{"mode":"default"}});
+    let baseline = json!({"version":1,"tools":{"mode":"default"}});
+    let registry = |selection, revision, operations| {
+        json!({
+            "sessions":[{"sessionId":"offline","projectId":"beta"}],
+            "resources":{"offline":{"selection":selection,"revision":revision,"observation":null,"operations":operations}}
+        })
+    };
+    let pending = json!({
+        "request":{"expected_revision":0,"operation_id":"apply-skill","target":target},
+        "transition":{"version":1,"operation_id":"apply-skill","expected":{"revision":0,"fingerprint":null},"target":target},
+        "status":"pending","result_revision":null,"observation":null,"error":null
+    });
+    for snapshot in [
+        registry(baseline, 0, json!([pending])),
+        registry(target, 1, json!([])),
+    ] {
+        std::fs::write(&beta, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        assert!(
+            workspace
+                .check_resource_references("alpha", &skill)
+                .unwrap_err()
+                .to_string()
+                .contains("saved session")
+        );
+    }
+}

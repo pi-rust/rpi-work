@@ -780,6 +780,7 @@ impl Shell {
                         shell.inspect_resource(reference.clone(), cx);
                     })),
             )
+            .children(self.resource_change_buttons(resource, cx))
             .children(match inspection {
                 Inspection::Ready => None,
                 Inspection::Pending { .. } => {

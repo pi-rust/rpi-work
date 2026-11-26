@@ -1,7 +1,7 @@
 //! Authorization/resolution only. Lifecycle, selection journal and install engine are core/native.
 use super::{
-    Arc, LocalError, LocalWorkspace, Path, PathBuf, ReplyKind, Service, Value, WorkspaceError,
-    decode, json, service, unsupported, workspace,
+    Arc, LocalError, LocalWorkspace, Path, PathBuf, Registry, ReplyKind, Service, Value,
+    WorkspaceError, json, service, unsupported, workspace,
 };
 use fs2::FileExt;
 use rpi_extcore::resources::{
@@ -22,6 +22,57 @@ use work_node_api::api::{
 pub(super) fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
+fn resource_reference(
+    project: &str,
+    scope: NativeScope,
+    kind: NativeKind,
+    name: &str,
+    facts: &Value,
+) -> Result<String, WorkspaceError> {
+    let identity = json!([
+        project,
+        scope,
+        kind,
+        name,
+        facts["recordedDigest"],
+        facts["path"]
+    ]);
+    Ok(digest(
+        &serde_json::to_vec(&identity).map_err(LocalError::from)?,
+    ))
+}
+
+fn selection_references(selection: &ResourceSelection, resource: &NativeResource) -> bool {
+    let paths = match resource.kind {
+        NativeKind::Package => {
+            return selection.main_package.as_ref().is_some_and(|package| {
+                package.name.eq_ignore_ascii_case(&resource.name)
+                    && package
+                        .scope
+                        .is_none_or(|saved| saved == scope(resource.scope))
+            });
+        }
+        NativeKind::Skill => &selection.skills,
+        NativeKind::Extension => &selection.extensions,
+    };
+    let Some(path) = resource.facts["path"].as_str().map(Path::new) else {
+        return false;
+    };
+    let matches = |selected: &Path, installed: &Path| {
+        selected == installed
+            || (resource.kind == NativeKind::Skill && selected.starts_with(installed))
+    };
+    let canonical = path.canonicalize().ok();
+    paths.iter().map(Path::new).any(|selected| {
+        matches(selected, path)
+            || canonical.as_ref().is_some_and(|installed| {
+                selected
+                    .canonicalize()
+                    .is_ok_and(|selected| matches(&selected, installed))
+            })
+    })
+}
+
 pub(super) fn invalid(message: &str) -> WorkspaceError {
     LocalError::InvalidInput(message.into()).into()
 }
@@ -249,17 +300,7 @@ impl LocalWorkspace {
                     .as_str()
                     .ok_or_else(|| invalid("invalid installed name"))?
                     .to_owned();
-                let reference = digest(
-                    &serde_json::to_vec(&json!([
-                        project,
-                        s,
-                        k,
-                        name,
-                        facts["recordedDigest"],
-                        facts["path"]
-                    ]))
-                    .map_err(LocalError::from)?,
-                );
+                let reference = resource_reference(&project, s, k, &name, facts)?;
                 resources.push(NativeResource {
                     reference,
                     scope: s,
@@ -270,6 +311,7 @@ impl LocalWorkspace {
             }
         }
         Ok(NativeCatalog {
+            protects_saved_references: true,
             profile,
             resources,
             diagnostics,
@@ -342,7 +384,29 @@ impl LocalWorkspace {
         project: &str,
         request: NativeManagement,
     ) -> Result<NativeReceipt, WorkspaceError> {
-        let _lease = self.inner.lifecycle.read().await;
+        if matches!(request, NativeManagement::Inspect { .. }) {
+            let _lease = self.inner.lifecycle.read().await;
+            return self.manage_resource(project, request).await;
+        }
+        let lease = self.inner.lifecycle.clone().write_owned().await;
+        let owner = self.clone();
+        let project = project.to_owned();
+        // Keep the lease until the native worker settles, even if the caller disconnects.
+        tokio::spawn(async move {
+            let _lease = lease;
+            owner.manage_resource(&project, request).await
+        })
+        .await
+        .map_err(|_| {
+            LocalError::Initialization("native resource management worker failed".into())
+        })?
+    }
+
+    async fn manage_resource(
+        &self,
+        project: &str,
+        request: NativeManagement,
+    ) -> Result<NativeReceipt, WorkspaceError> {
         let service = self.project_service(project)?;
         let catalog = self.catalog_for(&service).await?;
         let (s, operation) = match request {
@@ -356,6 +420,7 @@ impl LocalWorkspace {
                         name: r.name.clone(),
                     }
                 } else {
+                    self.check_resource_references(project, r)?;
                     LocalResourceOperation::Remove {
                         kind: kind(r.kind),
                         name: r.name.clone(),
@@ -377,6 +442,13 @@ impl LocalWorkspace {
                     ));
                 }
                 let source = self.authorized_source(&service, &source)?;
+                if let Some(existing) = catalog.resources.iter().find(|resource| {
+                    resource.scope == s
+                        && resource.kind == k
+                        && resource.name.eq_ignore_ascii_case(&name)
+                }) {
+                    self.check_resource_references(project, existing)?;
+                }
                 (
                     s,
                     LocalResourceOperation::Install {
@@ -404,6 +476,7 @@ impl LocalWorkspace {
                 }
                 let r = Self::resolve(&catalog, reference, None)?;
                 let source = self.authorized_source(&service, source)?;
+                self.check_resource_references(project, r)?;
                 let op = if matches!(request, NativeManagement::Update { .. }) {
                     LocalResourceOperation::Update {
                         kind: kind(r.kind),
@@ -422,10 +495,20 @@ impl LocalWorkspace {
                 (r.scope, op)
             }
         };
+        self.execute_resource_management(&service, project, s, operation)
+            .await
+    }
+    async fn execute_resource_management(
+        &self,
+        service: &Service,
+        project: &str,
+        scope_id: NativeScope,
+        operation: LocalResourceOperation,
+    ) -> Result<NativeReceipt, WorkspaceError> {
         let result = service
             .manage_resources(LocalResourceRequest {
                 project_id: project.into(),
-                scope: scope(s),
+                scope: scope(scope_id),
                 operation,
             })
             .await
@@ -436,6 +519,80 @@ impl LocalWorkspace {
             diagnostics: result.diagnostics,
         })
     }
+    fn check_resource_references(
+        &self,
+        project: &str,
+        resource: &NativeResource,
+    ) -> Result<(), WorkspaceError> {
+        if resource.scope == NativeScope::Project {
+            return self.check_project_resource_references(project, resource);
+        }
+
+        // Each project with a saved configuration has a service registry directory.
+        // Include archived sessions and projects whose root is currently unavailable.
+        let projects = self.inner.data.join("rpc/projects");
+        plain_directory(&projects, false)?;
+        for entry in std::fs::read_dir(projects).map_err(LocalError::from)? {
+            let entry = entry.map_err(LocalError::from)?;
+            let entry_type = entry.file_type().map_err(LocalError::from)?;
+            if entry_type.is_symlink() {
+                return Err(invalid("project registry directory symlink rejected"));
+            }
+            if !entry_type.is_dir() {
+                continue;
+            }
+            let name = entry.file_name();
+            let id = name
+                .to_str()
+                .ok_or_else(|| invalid("invalid project registry identity"))?;
+            self.check_project_resource_references(id, resource)?;
+        }
+        Ok(())
+    }
+
+    fn check_project_resource_references(
+        &self,
+        project: &str,
+        resource: &NativeResource,
+    ) -> Result<(), WorkspaceError> {
+        if let Some(intent) = self.read_project_resource_intent(project)? {
+            let reference = resource_reference(
+                project,
+                resource.scope,
+                resource.kind,
+                &resource.name,
+                &resource.facts,
+            )?;
+            if intent.target.main_package == reference
+                || intent.target.skills.contains(&reference)
+                || intent.target.extensions.contains(&reference)
+            {
+                return Err(conflict(
+                    "resource is referenced by a saved project configuration",
+                ));
+            }
+        }
+        let registry =
+            Registry::load(self.registry_path(project)).map_err(LocalError::Initialization)?;
+        for entry in registry.entries() {
+            if let Some(saved) = registry.resource_configuration(&entry.session_id) {
+                if (saved.revision != 0 && selection_references(&saved.selection, resource))
+                    || saved.operations.iter().any(|operation| {
+                        matches!(
+                            operation.status,
+                            ResourceOperationStatus::Pending | ResourceOperationStatus::Blocked
+                        ) && selection_references(&operation.request.target, resource)
+                    })
+                {
+                    return Err(conflict(
+                        "resource is referenced by a saved session configuration",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) async fn resolve_selection(
         &self,
         service: &Service,
@@ -592,7 +749,23 @@ impl LocalWorkspace {
         id: &str,
         request: NativeApply,
     ) -> Result<NativeOperation, WorkspaceError> {
-        let _lease = self.inner.lifecycle.read().await;
+        let lease = self.inner.lifecycle.clone().read_owned().await;
+        let owner = self.clone();
+        let id = id.to_owned();
+        tokio::spawn(async move {
+            let _lease = lease;
+            owner.apply_session_resources(&id, request).await
+        })
+        .await
+        .map_err(|_| {
+            LocalError::Initialization("session resource configuration worker failed".into())
+        })?
+    }
+    async fn apply_session_resources(
+        &self,
+        id: &str,
+        request: NativeApply,
+    ) -> Result<NativeOperation, WorkspaceError> {
         let service = self.native_service(id)?;
         let intent_path = self.resource_intent_path(id, &request.operation_id);
         let intent = match read_intent_bytes(&intent_path) {
@@ -602,6 +775,22 @@ impl LocalWorkspace {
                 if intent.request != request {
                     return Err(conflict(
                         "operation ID is already bound to different application payload",
+                    ));
+                }
+                // The application can persist intent before core admits it. Resolve a
+                // still-unadmitted retry against the current catalog before binding it.
+                if service
+                    .resource_operation(id, &request.operation_id)
+                    .await
+                    .map_err(resource_error)?
+                    .is_none()
+                    && self
+                        .resolve_selection(&service, request.target.clone())
+                        .await?
+                        != intent.native.target
+                {
+                    return Err(conflict(
+                        "saved resource intent no longer resolves to the original selection",
                     ));
                 }
                 intent
@@ -634,7 +823,7 @@ impl LocalWorkspace {
             Err(e) => return Err(LocalError::from(e).into()),
         };
         // The cached resolution is immutable and admitted only for the IDENTICAL
-        // original application request. Retries need not resolve deleted sources.
+        // original application request. Core-owned operations retain their original binding.
         let result = service
             .apply_resources(id.into(), intent.native)
             .await
@@ -728,7 +917,7 @@ impl LocalWorkspace {
         project: &str,
         request: NativeCreate,
     ) -> Result<String, WorkspaceError> {
-        let _lease = self.inner.lifecycle.read().await;
+        let lease = self.inner.lifecycle.clone().read_owned().await;
         let service = self.project_service(project)?;
         let selection = match request.selection {
             Some(target) => self.resolve_selection(&service, target).await?,
@@ -737,16 +926,11 @@ impl LocalWorkspace {
                 None => self.shipped_selection(&service, request.developer).await?,
             },
         };
-        let result: Value = decode(
-            service::create_session(
-                &service,
-                service::CreateSessionRequest {
-                    project_id: Some(project.into()),
-                    resources: Some(selection),
-                },
-            )
-            .await,
-        )?;
+        let request = service::CreateSessionRequest {
+            project_id: Some(project.into()),
+            resources: Some(selection),
+        };
+        let result: Value = self.publish_session(service, request, lease).await?;
         result["sessionId"]
             .as_str()
             .map(str::to_owned)

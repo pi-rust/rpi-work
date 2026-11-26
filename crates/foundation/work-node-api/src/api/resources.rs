@@ -91,6 +91,9 @@ pub struct NativeResource {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeCatalog {
+    /// The node checks persisted project and session selections before replacing or removing resources.
+    #[serde(default)]
+    pub protects_saved_references: bool,
     pub profile: Value,
     pub resources: Vec<NativeResource>,
     pub diagnostics: Vec<String>,
