@@ -146,7 +146,7 @@ impl Shell {
                                 .child(self.text("已选用", 12.0, palette.muted)),
                         )
                         .when_some(address.as_ref(), |card, address| {
-                            card.child(self.node_address(address))
+                            card.child(div().flex().child(self.node_address(address).flex_1()))
                         })
                         .when_some(
                             identity.filter(|id| !id.chars().any(char::is_control)),
