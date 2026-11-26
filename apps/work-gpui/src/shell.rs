@@ -1099,16 +1099,31 @@ impl Shell {
                 sidebar.child(self.archives_button(cx))
             })
             .when(self.overlay == Some(Overlay::Navigation), |sidebar| {
-                sidebar.child(
-                    self.button("mobile-settings", "设置")
-                        .gap_2()
-                        .justify_start()
-                        .child(icon("settings", 16.0, palette.muted))
-                        .on_click(cx.listener(|shell, _, window, cx| {
-                            shell.overlay = None;
-                            shell.open_settings(window, cx);
-                        })),
-                )
+                sidebar
+                    .child(
+                        self.button("mobile-resources", "")
+                            .h(px(44.0))
+                            .gap_2()
+                            .justify_start()
+                            .tab_index(0)
+                            .tab_stop(!self.settings.open && self.navigation_keyboard_enabled())
+                            .focus(|button| button.bg(palette.subtle))
+                            .child(icon("blocks", 16.0, palette.muted))
+                            .child(self.text("技能与插件", 13.0, palette.text))
+                            .on_click(cx.listener(|shell, _, window, cx| {
+                                shell.open_resource_settings(window, cx);
+                            })),
+                    )
+                    .child(
+                        self.button("mobile-settings", "设置")
+                            .gap_2()
+                            .justify_start()
+                            .child(icon("settings", 16.0, palette.muted))
+                            .on_click(cx.listener(|shell, _, window, cx| {
+                                shell.overlay = None;
+                                shell.open_settings(window, cx);
+                            })),
+                    )
             })
             .when(self.node.is_none(), |sidebar| {
                 sidebar.child(
@@ -1304,6 +1319,19 @@ impl Shell {
                 self.icon_button("rail-navigation", "folder", 34.0)
                     .h(px(34.0))
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_navigation(false, cx))),
+            )
+            .child(
+                self.navigation_tooltip(
+                    self.icon_button("rail-resources", "blocks", 34.0)
+                        .h(px(34.0))
+                        .tab_index(0)
+                        .tab_stop(!self.settings.open && self.navigation_keyboard_enabled())
+                        .focus(|button| button.bg(palette.subtle))
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.open_resource_settings(window, cx);
+                        })),
+                    "技能与插件",
+                ),
             )
             .child(div().w(px(22.0)).h(px(1.0)).my(px(5.0)).bg(palette.line))
             .child(dock_button(

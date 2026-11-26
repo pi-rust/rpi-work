@@ -137,6 +137,7 @@ enum Section {
     Skills,
     Collaboration,
     Review,
+    Resources,
 }
 
 type SectionLink = (Section, &'static str, &'static str);
@@ -183,14 +184,16 @@ impl Section {
             Self::Skills => "技能",
             Self::Collaboration => "工作协同",
             Self::Review => "代码审查",
+            Self::Resources => "技能与插件",
         }
     }
 
-    fn resource_kind(self) -> Option<NativeKind> {
+    fn resource_kinds(self) -> &'static [NativeKind] {
         match self {
-            Self::Plugins => Some(NativeKind::Extension),
-            Self::Skills => Some(NativeKind::Skill),
-            _ => None,
+            Self::Plugins => &[NativeKind::Extension],
+            Self::Skills => &[NativeKind::Skill],
+            Self::Resources => &[NativeKind::Skill, NativeKind::Extension],
+            _ => &[],
         }
     }
 }
@@ -311,6 +314,7 @@ struct SettingsRow(Option<Field>, AnyElement);
 pub(super) struct Panel {
     pub(super) open: bool,
     section: Section,
+    resource_return: Option<Destination>,
     close_focus: FocusHandle,
     browse: bool,
     browse_focus: FocusHandle,
@@ -329,6 +333,7 @@ impl Panel {
         Self {
             open: false,
             section: Section::General,
+            resource_return: None,
             close_focus: cx.focus_handle(),
             browse: false,
             browse_focus: cx.focus_handle(),
@@ -377,6 +382,19 @@ impl Shell {
     }
 
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_settings_at(None, window, cx);
+    }
+
+    pub(super) fn open_resource_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_settings_at(Some(Section::Resources), window, cx);
+    }
+
+    fn open_settings_at(
+        &mut self,
+        section: Option<Section>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.settings.open || !self.navigation_keyboard_enabled() {
             return;
         }
@@ -390,13 +408,29 @@ impl Shell {
         self.input_dragging = false;
         self.browser.restore_composer_focus();
         self.settings.open = true;
+        if let Some(section) = section {
+            self.overlay = None;
+            self.settings.resource_return = Some(Destination {
+                section: self.settings.section,
+                field: self.settings.target,
+            });
+            self.select_settings_destination(
+                Destination {
+                    section,
+                    field: None,
+                },
+                window,
+                cx,
+            );
+            return;
+        }
         if self.settings.section == Section::Archives {
             self.read_session_management_capabilities(cx);
         }
         if self.settings.section == Section::Collaboration {
             self.read_connection_history();
         }
-        if self.settings.section.resource_kind().is_some() {
+        if !self.settings.section.resource_kinds().is_empty() {
             self.read_resource_catalog(cx);
         }
         if window.viewport_size().width <= px(700.0) {
@@ -411,6 +445,12 @@ impl Shell {
         self.reset_node_connection();
         self.reset_node_share();
         self.reset_resource_catalog();
+        if let Some(destination) = self.settings.resource_return.take()
+            && self.settings.section == Section::Resources
+        {
+            self.settings.section = destination.section;
+            self.settings.target = destination.field;
+        }
         self.settings.open = false;
         self.settings.browse = false;
         self.search.clear();
@@ -438,7 +478,7 @@ impl Shell {
         if destination.section == Section::Collaboration {
             self.read_connection_history();
         }
-        if destination.section.resource_kind().is_some() {
+        if !destination.section.resource_kinds().is_empty() {
             self.read_resource_catalog(cx);
         } else {
             self.reset_resource_catalog();
@@ -632,9 +672,9 @@ impl Shell {
                 self.settings_heading("结果", false),
                 self.review_delivery_setting(cx),
             ],
-            Section::Plugins | Section::Skills => vec![SettingsRow(
+            Section::Plugins | Section::Skills | Section::Resources => vec![SettingsRow(
                 None,
-                self.resource_settings(section.resource_kind().unwrap(), cx)
+                self.resource_settings(section.resource_kinds(), cx)
                     .into_any_element(),
             )],
             Section::Collaboration => vec![SettingsRow(
