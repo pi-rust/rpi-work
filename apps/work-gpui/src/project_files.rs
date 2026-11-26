@@ -1,5 +1,6 @@
 //! Read-only project directory, source and change views.
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
@@ -7,6 +8,8 @@ use gpui::{
     Task, div, prelude::*, px,
 };
 use work_client::{ClientError, Diff, FileContent, FileListing, GitStatus, WorkspaceClient};
+use work_core::api::ChangedFile;
+use work_viewmodel::diff_view::LineCounts;
 use work_viewmodel::{diff_view, file_view};
 
 use super::Shell;
@@ -106,6 +109,54 @@ pub(crate) enum Contents {
     Diff(Diff),
 }
 
+pub(crate) async fn read_line_counts(
+    client: &WorkspaceClient,
+    project: &str,
+    files: Vec<ChangedFile>,
+    output: tokio::sync::mpsc::Sender<(String, LineCounts)>,
+) {
+    let mut remaining = files.into_iter();
+    let mut pending = tokio::task::JoinSet::new();
+    loop {
+        // Keep the preview responsive without sending a request for every file at once.
+        for file in remaining.by_ref().take(3 - pending.len()) {
+            let client = client.clone();
+            let project = project.to_owned();
+            pending.spawn(async move {
+                let mut counts = LineCounts::default();
+                for staged in [true, false]
+                    .into_iter()
+                    .filter(|scope| if *scope { file.staged } else { file.unstaged })
+                {
+                    let route = Route::Diff {
+                        path: file.path.clone(),
+                        staged,
+                    };
+                    let Ok(Contents::Diff(diff)) = work_viewmodel::config_requests::bounded(
+                        "读取 Git 增删统计",
+                        route.read(&client, &project),
+                    )
+                    .await
+                    else {
+                        return None;
+                    };
+                    counts = counts + diff_view::present(&diff.patch, &diff.path).line_counts()?;
+                }
+                (file.staged || file.unstaged).then_some((file.path, counts))
+            });
+        }
+        match pending.join_next().await {
+            Some(Ok(Some(counts))) => {
+                if output.send(counts).await.is_err() {
+                    break;
+                }
+            }
+            Some(_) => {}
+            None => break,
+        }
+    }
+}
+
 struct Pending {
     _display: Task<()>,
     request: tokio::task::AbortHandle,
@@ -126,11 +177,26 @@ pub(super) struct Panel {
     pending: Option<Pending>,
     result: Option<Result<Contents, String>>,
     changes: Option<GitStatus>,
+    line_counts: HashMap<String, LineCounts>,
+    counts_pending: Option<Pending>,
     review_check: Option<Pending>,
     review_error: Option<String>,
 }
 
 impl Panel {
+    pub(super) fn line_totals(&self) -> Option<LineCounts> {
+        let files = &self.changes.as_ref()?.files;
+        if files.is_empty() || files.len() != self.line_counts.len() {
+            return None;
+        }
+        Some(
+            self.line_counts
+                .values()
+                .copied()
+                .fold(LineCounts::default(), |sum, counts| sum + counts),
+        )
+    }
+
     pub(super) fn is_overview(&self) -> bool {
         self.tab == Tab::Overview
     }
@@ -150,7 +216,55 @@ impl Shell {
         self.files.cancel_review_check();
         self.files.history.clear();
         self.files.changes = None;
+        self.files.line_counts.clear();
+        self.files.counts_pending = None;
         self.read_project(self.files.tab.root(), cx);
+    }
+
+    fn observe_line_counts(&mut self, cx: &mut Context<Self>) {
+        self.files.line_counts.clear();
+        self.files.counts_pending = None;
+        let (Some(node), Some(project), Some(changes)) = (
+            self.node.as_ref(),
+            self.project,
+            self.files.changes.as_ref(),
+        ) else {
+            return;
+        };
+        if !changes.is_repository || changes.files.is_empty() {
+            return;
+        }
+        let (mut updates, request) = node.project_line_counts(
+            self.snapshot.projects[project].id.clone(),
+            changes.files.clone(),
+        );
+        let display = cx.spawn(async move |this, cx| {
+            while let Some((path, counts)) = updates.recv().await {
+                if this
+                    .update(cx, |shell, cx| {
+                        shell.files.line_counts.insert(path, counts);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        self.files.counts_pending = Some(Pending {
+            _display: display,
+            request,
+        });
+    }
+
+    pub(super) fn git_line_counts(&self, counts: LineCounts) -> Div {
+        div()
+            .flex()
+            .flex_none()
+            .gap(px(6.0))
+            .font_family("Menlo")
+            .child(self.text(format!("+{}", counts.added), 11.0, self.palette.success))
+            .child(self.text(format!("−{}", counts.removed), 11.0, self.palette.danger))
     }
 
     fn open_project_path(&mut self, route: Route, cx: &mut Context<Self>) {
@@ -206,6 +320,7 @@ impl Shell {
                         } else {
                             cx.notify();
                         }
+                        shell.observe_line_counts(cx);
                     } else {
                         shell.files.result = Some(result);
                         cx.notify();
@@ -410,6 +525,7 @@ impl Shell {
                     Ok(Ok(Contents::Changes(status))) => {
                         shell.read_project(None, cx);
                         shell.files.changes = Some(status);
+                        shell.observe_line_counts(cx);
                     }
                     _ => shell.files.review_error = Some("无法读取工作树，请重试。".into()),
                 }
@@ -477,12 +593,19 @@ impl Shell {
                     ),
             )
             .child(
-                self.text(
-                    format!("{} 个文件已修改", status.files.len()),
-                    11.0,
-                    palette.muted,
-                )
-                .flex_none(),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .flex_none()
+                    .child(self.text(
+                        format!("{} 个文件已修改", status.files.len()),
+                        11.0,
+                        palette.muted,
+                    ))
+                    .when_some(self.files.line_totals(), |summary, counts| {
+                        summary.child(self.git_line_counts(counts))
+                    }),
             );
         let header = div()
             .flex()
@@ -536,7 +659,10 @@ impl Shell {
                 .when(selected, |row| row.bg(palette.subtle))
                 .child(icon("file-diff", 14.0, palette.muted))
                 .child(self.text(path, 12.0, palette.text).font_family("Menlo").flex_1().min_w(px(0.0)).truncate())
-                .child(self.text(file.status.clone(), 11.0, palette.muted).flex_none())
+                .when_some(self.files.line_counts.get(&file.path), |row, counts| row.child(self.git_line_counts(*counts)))
+                .when(!self.files.line_counts.contains_key(&file.path) || staged, |row| {
+                    row.child(self.text(if staged { "已暂存".to_owned() } else { file.status.clone() }, 11.0, palette.muted).flex_none())
+                })
                 .on_click(cx.listener(move |this, _, _, cx| this.read_project(Some(target.clone()), cx))))
         });
         let preview = match (&self.files.route, &self.files.result) {

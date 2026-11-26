@@ -24,6 +24,43 @@ pub struct DiffView<'a> {
     pub feedback_revision: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LineCounts {
+    pub added: usize,
+    pub removed: usize,
+}
+
+impl std::ops::Add for LineCounts {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            added: self.added + other.added,
+            removed: self.removed + other.removed,
+        }
+    }
+}
+
+impl DiffView<'_> {
+    /// Count only complete, validated text hunks. Binary and rejected patches
+    /// have no line counts.
+    #[must_use]
+    pub fn line_counts(&self) -> Option<LineCounts> {
+        self.structured.then(|| {
+            self.rows
+                .iter()
+                .fold(LineCounts::default(), |mut counts, row| {
+                    match row.line.kind {
+                        "add" => counts.added += 1,
+                        "remove" => counts.removed += 1,
+                        _ => {}
+                    }
+                    counts
+                })
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Range {
     next: u32,
@@ -345,6 +382,26 @@ pub fn feedback_draft<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn counts_ignore_headers_and_require_complete_text_hunks() {
+        let patch = "--- a/main\n+++ b/main\n@@ -1 +1,2 @@\n---body\n+++body\n+next\n";
+        assert_eq!(
+            present(patch, "main").line_counts(),
+            Some(LineCounts {
+                added: 2,
+                removed: 1
+            })
+        );
+        assert_eq!(
+            present(patch.trim_end_matches("+next\n"), "main").line_counts(),
+            None
+        );
+        assert_eq!(
+            present("Binary files a/main and b/main differ\n", "main").line_counts(),
+            None
+        );
+    }
+
     #[test]
     fn feedback_only_quotes_the_exact_single_file_patch_and_line_side() {
         let patch = "--- a/file.rs\r\n+++ b/file.rs\r\n@@ -2 +3 @@\r\n-before\r\n+after\r\n";

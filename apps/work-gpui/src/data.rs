@@ -357,6 +357,22 @@ impl Node {
             .spawn(async move { route.read(&client, &id).await })
     }
 
+    pub(crate) fn project_line_counts(
+        &self,
+        project: String,
+        files: Vec<work_core::api::ChangedFile>,
+    ) -> (
+        mpsc::Receiver<(String, work_viewmodel::diff_view::LineCounts)>,
+        AbortHandle,
+    ) {
+        let client = self.client.clone();
+        let (output, receiver) = mpsc::channel(4);
+        let task = self.runtime.spawn(async move {
+            crate::shell::project_files::read_line_counts(&client, &project, files, output).await;
+        });
+        (receiver, task.abort_handle())
+    }
+
     pub fn prompt(
         &self,
         id: String,

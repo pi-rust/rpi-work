@@ -1115,6 +1115,12 @@ impl Shell {
                             .when(!compact, |button| {
                                 button.child(self.text(label, 12.0, palette.muted))
                             })
+                            .when_some(
+                                (tab == project_files::Tab::Changes && width >= 1200.0)
+                                    .then(|| self.files.line_totals())
+                                    .flatten(),
+                                |button, counts| button.child(self.git_line_counts(counts)),
+                            )
                             .when(active, |button| button.bg(palette.subtle))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.toggle_inspector(tab, overlay, cx)
