@@ -30,6 +30,18 @@ pub struct SessionItem {
     pub project_id: String,
     pub title: String,
     pub updated_at: u64,
+    pub archived: bool,
+    pub pinned: bool,
+}
+
+impl SessionItem {
+    pub fn display_title(&self) -> &str {
+        if self.title.is_empty() {
+            "未命名会话"
+        } else {
+            &self.title
+        }
+    }
 }
 
 impl From<SessionSummary> for SessionItem {
@@ -39,6 +51,8 @@ impl From<SessionSummary> for SessionItem {
             project_id: session.project_id.unwrap_or_default(),
             title: session.title.unwrap_or_default(),
             updated_at: session.updated_at,
+            archived: session.archived,
+            pinned: session.pinned,
         }
     }
 }
@@ -87,24 +101,32 @@ impl Snapshot {
                     project_id: "rpi-work".into(),
                     title: "为工作台添加深色模式".into(),
                     updated_at: 1_792_910_000_000,
+                    archived: false,
+                    pinned: false,
                 },
                 SessionItem {
                     id: "architecture".into(),
                     project_id: "rpi-work".into(),
                     title: "梳理 Agent 架构".into(),
                     updated_at: 1_792_900_000_000,
+                    archived: false,
+                    pinned: false,
                 },
                 SessionItem {
                     id: "mobile".into(),
                     project_id: "rpi-work".into(),
                     title: "检查手机端布局".into(),
                     updated_at: 1_792_890_000_000,
+                    archived: false,
+                    pinned: false,
                 },
                 SessionItem {
                     id: "rpc".into(),
                     project_id: "pi-rust".into(),
                     title: "验证 RPC 事件协议".into(),
                     updated_at: 1_792_880_000_000,
+                    archived: false,
+                    pinned: false,
                 },
             ],
             history: vec![json!({
@@ -255,6 +277,26 @@ impl Node {
                 Err(error) => Creation::ReadFailed { id, error },
             }
         })
+    }
+
+    pub(crate) fn read_capabilities(
+        &self,
+    ) -> JoinHandle<Result<work_core::api::Capabilities, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded("读取节点操作能力", client.capabilities())
+                .await
+        })
+    }
+
+    pub(crate) fn edit_session(
+        &self,
+        request: crate::shell::session_management::Request,
+        verify_only: bool,
+    ) -> JoinHandle<crate::shell::session_management::Outcome> {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { request.run(&client, verify_only).await })
     }
 
     pub fn observe_config(

@@ -32,6 +32,12 @@ impl AssetSource for Icons {
             "file-diff" => {
                 r#"<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/>"#
             }
+            "ellipsis" => {
+                r#"<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>"#
+            }
+            "pin" => {
+                r#"<path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5l-3 4v2h14v-2zM12 15v7"/>"#
+            }
             "plus" => r#"<path d="M12 5v14M5 12h14"/>"#,
             "chevron-down" => r#"<path d="m6 9 6 6 6-6"/>"#,
             "x" => r#"<path d="M18 6 6 18"/><path d="m6 6 12 12"/>"#,

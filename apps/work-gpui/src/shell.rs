@@ -19,6 +19,8 @@ mod review;
 mod rich_text;
 #[path = "session_action.rs"]
 pub(crate) mod session_action;
+#[path = "session_management.rs"]
+pub(crate) mod session_management;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -87,6 +89,7 @@ pub struct Shell {
     comment: Option<review::Comment>,
     project_form: project_management::Form,
     question: Option<question::Question>,
+    session_management: session_management::Panel,
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
@@ -121,6 +124,7 @@ impl Shell {
                 .sessions
                 .iter()
                 .enumerate()
+                .filter(|(_, session)| !session.archived)
                 .max_by_key(|(_, session)| session.updated_at)
                 .map(|(index, _)| index)
         };
@@ -169,6 +173,7 @@ impl Shell {
             comment: None,
             project_form: project_management::Form::default(),
             question: None,
+            session_management: session_management::Panel::default(),
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
@@ -205,7 +210,9 @@ impl Shell {
             .sessions
             .iter()
             .enumerate()
-            .filter(|(_, session)| session.project_id == self.snapshot.projects[index].id)
+            .filter(|(_, session)| {
+                !session.archived && session.project_id == self.snapshot.projects[index].id
+            })
             .max_by_key(|(_, session)| session.updated_at)
             .map(|(index, _)| index);
         self.navigate_session(session, cx);
@@ -242,12 +249,24 @@ impl Shell {
         self.change_session(session, cx);
     }
 
-    fn step_history(&mut self, forward: bool, cx: &mut Context<Self>) {
-        self.history_position = if forward {
-            (self.history_position + 1).min(self.session_history.len() - 1)
-        } else {
-            self.history_position.saturating_sub(1)
+    fn history_target(&self, forward: bool) -> Option<usize> {
+        let available = |&index: &usize| {
+            self.session_history[index]
+                .1
+                .is_none_or(|session| !self.snapshot.sessions[session].archived)
         };
+        if forward {
+            (self.history_position + 1..self.session_history.len()).find(available)
+        } else {
+            (0..self.history_position).rev().find(available)
+        }
+    }
+
+    fn step_history(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let Some(position) = self.history_target(forward) else {
+            return;
+        };
+        self.history_position = position;
         let (project, session) = self.session_history[self.history_position];
         self.set_project(project, cx);
         self.change_session(session, cx);
@@ -328,6 +347,7 @@ impl Shell {
         if changed {
             self.close_question();
             self.cancel_comment();
+            self.close_session_management();
             self.files.cancel_review_check();
             self.navigation_revision += 1;
             if let Some(draft) = self.drafts.get_mut(&self.session) {
@@ -452,7 +472,8 @@ impl Shell {
     fn session_controls(&self) -> SessionControls {
         let draft = self.drafts.get(&self.session);
         let mut pending = draft.map(Draft::pending).unwrap_or_default();
-        pending.submitting |= self.files.checking_review();
+        pending.submitting |=
+            self.files.checking_review() || self.session_management.blocks_session(self.session);
         if let Some(request) = self.session.and_then(|index| self.actions.get(&index)) {
             request.apply_pending(&mut pending);
         }
@@ -655,14 +676,27 @@ impl Shell {
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
         let mut sessions: HashMap<&str, Vec<(usize, &crate::data::SessionItem)>> = HashMap::new();
-        for (index, session) in self.snapshot.sessions.iter().enumerate() {
+        let mut pinned = Vec::new();
+        for (index, session) in self
+            .snapshot
+            .sessions
+            .iter()
+            .enumerate()
+            .filter(|(_, session)| !session.archived)
+        {
+            if session.pinned {
+                pinned.push((index, session));
+                continue;
+            }
             sessions
                 .entry(&session.project_id)
                 .or_default()
                 .push((index, session));
         }
         for group in sessions.values_mut() {
-            group.sort_by_key(|(_, session)| std::cmp::Reverse(session.updated_at));
+            group.sort_by_key(|(_, session)| {
+                std::cmp::Reverse((session.pinned, session.updated_at))
+            });
         }
         let projects = self
             .snapshot
@@ -794,6 +828,14 @@ impl Shell {
                             }),
                     )
                     .children(projects)
+                    .when(!pinned.is_empty(), |sidebar| {
+                        sidebar.child(self.text("置顶", 12.0, palette.muted).pl(px(10.0)).py_1())
+                    })
+                    .children(
+                        pinned
+                            .iter()
+                            .map(|&(index, session)| self.session_row(index, session, cx)),
+                    )
                     .children(
                         sessions
                             .iter()
@@ -808,6 +850,9 @@ impl Shell {
                             .map(|&(index, session)| self.session_row(index, session, cx)),
                     ),
             )
+            .when(self.node.is_some(), |sidebar| {
+                sidebar.child(self.archives_button(cx))
+            })
             .when(self.node.is_none(), |sidebar| {
                 sidebar.child(
                     self.text(self.snapshot.mode.clone(), 11.0, palette.muted)
@@ -825,11 +870,7 @@ impl Shell {
     ) -> gpui::Stateful<Div> {
         let palette = self.palette;
         let selected = self.session == Some(index);
-        let title = if session.title.is_empty() {
-            "未命名会话"
-        } else {
-            &session.title
-        };
+        let title = session.display_title();
         div()
             .id(("session", index))
             .flex()
@@ -853,8 +894,12 @@ impl Shell {
                         palette.muted
                     },
                 )
+                .flex_1()
                 .truncate(),
             )
+            .when(session.pinned, |row| {
+                row.child(icon("pin", 13.0, palette.muted))
+            })
             .on_click(cx.listener(move |this, _, _, cx| this.select_session(index, cx)))
     }
 
@@ -975,13 +1020,13 @@ impl Shell {
                                 false,
                                 "session-back",
                                 "history-back",
-                                self.history_position > 0,
+                                self.history_target(false).is_some(),
                             ),
                             (
                                 true,
                                 "session-forward",
                                 "history-forward",
-                                self.history_position + 1 < self.session_history.len(),
+                                self.history_target(true).is_some(),
                             ),
                         ]
                         .into_iter()
@@ -1011,12 +1056,21 @@ impl Shell {
                     .items_center()
                     .justify_center()
                     .min_w(px(0.0))
-                    .window_control_area(WindowControlArea::Drag)
+                    .gap_1()
+                    .child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .window_control_area(WindowControlArea::Drag),
+                    )
                     .child(
                         self.text(self.title().to_owned(), 14.0, palette.text)
                             .font_weight(FontWeight::MEDIUM)
                             .truncate(),
-                    ),
+                    )
+                    .when(self.node.is_some() && self.session.is_some(), |header| {
+                        header.child(self.session_actions_button(cx))
+                    }),
             )
             .child(
                 div().flex().items_center().gap(px(4.0)).children(
@@ -1471,13 +1525,15 @@ impl Shell {
                             .when(
                                 self.comment.is_none()
                                     && !self.project_form.open
-                                    && self.question.is_none(),
+                                    && self.question.is_none()
+                                    && !self.session_management.open(),
                                 |composer| composer.child(self.input_element(cx)),
                             )
                             .when(
                                 self.comment.is_some()
                                     || self.project_form.open
-                                    || self.question.is_some(),
+                                    || self.question.is_some()
+                                    || self.session_management.open(),
                                 |composer| composer.child(div().h(px(47.0))),
                             )
                             .when_some(status, |composer, status| {
@@ -1611,6 +1667,7 @@ impl Render for Shell {
             || self.comment.is_some()
             || self.project_form.open
             || self.question.is_some()
+            || self.session_management.open()
             || overlay && self.overlay.is_some()
         {
             self.composer_config.close_menu();
@@ -1622,6 +1679,7 @@ impl Render for Shell {
                     && self.comment.is_none()
                     && !self.project_form.open
                     && self.question.is_none()
+                    && !self.session_management.open()
                     && !self.composer_config.menu_open()
             }),
             window,
@@ -1637,6 +1695,7 @@ impl Render for Shell {
             .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape"
                     && (shell.dismiss_project_form()
+                        || shell.close_session_management()
                         || shell.close_question()
                         || shell.cancel_comment()
                         || shell.composer_config.close_menu())
@@ -1744,6 +1803,9 @@ impl Render for Shell {
                         cx.listener(|this, _, _, _| this.resizing_inspector = false),
                     ),
             )
+            .when_some(self.session_management_dialog(cx), |body, dialog| {
+                body.child(gpui::deferred(dialog).with_priority(100))
+            })
             .when_some(self.comment.as_ref(), |body, comment| {
                 body.child(gpui::deferred(self.comment_dialog(comment, cx)).with_priority(100))
             })
