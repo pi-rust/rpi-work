@@ -163,10 +163,11 @@ impl Shell {
         if let Some(comment) = &self.comment {
             return Some(&comment.input);
         }
-        self.drafts.get(&self.session).map(|draft| &draft.input)
+        self.drafts.get(&self.draft_key()).map(|draft| &draft.input)
     }
 
     fn buffer_mut(&mut self) -> &mut Buffer {
+        let key = self.draft_key();
         if self.session_management.open() {
             return &mut self.session_management.input;
         }
@@ -179,7 +180,7 @@ impl Shell {
         if let Some(comment) = &mut self.comment {
             return &mut comment.input;
         }
-        &mut self.drafts.entry(self.session).or_default().input
+        &mut self.drafts.entry(key).or_default().input
     }
 
     pub(super) fn input_element(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -568,7 +569,11 @@ impl Element for InputElement {
             } else if let Some(comment) = &shell.comment {
                 comment.placeholder().into()
             } else {
-                "要求后续更改".into()
+                if shell.session.is_none() {
+                    "描述要完成的任务".into()
+                } else {
+                    "要求后续更改".into()
+                }
             }
         } else {
             buffer.text.clone().into()

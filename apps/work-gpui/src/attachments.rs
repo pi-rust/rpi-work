@@ -106,7 +106,10 @@ impl Shell {
             };
             let _ = this.update(cx, |shell, cx| {
                 shell.selecting_attachments.remove(&index);
-                let draft = shell.drafts.entry(Some(index)).or_default();
+                let draft = shell
+                    .drafts
+                    .entry(super::DraftKey::Session(index))
+                    .or_default();
                 match result {
                     Ok(Some(items)) if !items.is_empty() => draft.add_attachments(items),
                     Ok(_) => {}
@@ -173,7 +176,7 @@ impl Shell {
                             .flex_none()
                             .h(px(22.0))
                             .on_click(cx.listener(move |shell, _, window, cx| {
-                                if let Some(draft) = shell.drafts.get_mut(&shell.session) {
+                                if let Some(draft) = shell.drafts.get_mut(&shell.draft_key()) {
                                     draft.attachments.retain(|item| item.id != id);
                                     draft.attachment_notice = None;
                                 }

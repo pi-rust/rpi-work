@@ -48,11 +48,15 @@ impl AssetSource for Icons {
             "settings" => {
                 r#"<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>"#
             }
+            "list-checks" => r#"<path d="m3 7 2 2 3-3M3 17l2 2 3-3M12 8h9m-9 10h9"/>"#,
             "git-branch" => {
                 r#"<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>"#
             }
             "copy" => {
                 r#"<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>"#
+            }
+            "laptop" => {
+                r#"<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m-2 0h20v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z"/>"#
             }
             "workspace" => {
                 r#"<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>"#

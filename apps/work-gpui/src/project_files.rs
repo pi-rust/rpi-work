@@ -536,7 +536,7 @@ impl Shell {
                             if detached {
                                 if shell.can_create_session() && shell.creation_readback.is_none() {
                                     shell.files.set_review_notice("正在创建独立审阅会话…");
-                                    shell.create_session(true, cx);
+                                    shell.create_session(super::SessionCreation::Review, cx);
                                 } else {
                                     shell
                                         .files
@@ -837,7 +837,7 @@ impl Shell {
             .then(|| Rc::new(diff.clone()));
         let feedback = self
             .drafts
-            .get(&self.session)
+            .get(&self.draft_key())
             .into_iter()
             .flat_map(|draft| &draft.feedback)
             .filter(|item| {

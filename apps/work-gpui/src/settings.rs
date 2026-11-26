@@ -26,6 +26,7 @@ pub(super) struct Preferences {
     pub(super) show_context: bool,
     pub(super) follow_up: Delivery,
     pub(super) detached_review: bool,
+    pub(super) navigation: super::navigation::Preferences,
 }
 
 impl Default for Preferences {
@@ -40,6 +41,7 @@ impl Default for Preferences {
             show_context: true,
             follow_up: Delivery::default(),
             detached_review: false,
+            navigation: super::navigation::Preferences::default(),
         }
     }
 }
@@ -79,6 +81,7 @@ impl Preferences {
             detached_review: value["detachedReview"]
                 .as_bool()
                 .unwrap_or(default.detached_review),
+            navigation: super::navigation::Preferences::load(&value["navigation"]),
         }
     }
 
@@ -96,6 +99,7 @@ impl Preferences {
             "showContext": self.show_context,
             "followUp": self.follow_up.wire(),
             "detachedReview": self.detached_review,
+            "navigation": self.navigation.value(),
         });
         fs::write(&temporary, value.to_string())?;
         if let Err(error) = fs::rename(&temporary, &path) {
@@ -166,12 +170,18 @@ impl Shell {
 
     pub(super) fn save_preferences(&mut self, window: &Window, cx: &mut Context<Self>) {
         self.apply_appearance(window.appearance(), true);
-        self.settings.save_failed = self.preferences.persist().is_err();
+        self.save_device_preferences();
         cx.notify();
     }
 
+    pub(super) fn save_device_preferences(&mut self) {
+        self.settings.save_failed = self.preferences.persist().is_err();
+    }
+
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(draft) = self.drafts.get_mut(&self.session) {
+        self.project_menu = None;
+        self.welcome_project_picker = false;
+        if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
             draft.input.finish_composition();
         }
         self.composer_config.close_menu();
@@ -389,6 +399,26 @@ impl Shell {
                 ),
             )
             .child(self.settings_heading("工作区").mt_4())
+            .child(
+                self.settings_row(
+                    "项目列表显示",
+                    div().flex().gap_1().children(
+                        [
+                            ("settings-projects-grouped", "按节点分组", false),
+                            ("settings-projects-flat", "平铺", true),
+                        ]
+                        .map(|(id, label, flat)| {
+                            self.setting_choice(id, label, self.preferences.navigation.flat == flat)
+                                .on_click(cx.listener(move |shell, _, _, cx| {
+                                    shell.preferences.navigation.flat = flat;
+                                    shell.project_menu = None;
+                                    shell.save_device_preferences();
+                                    cx.notify();
+                                }))
+                        }),
+                    ),
+                ),
+            )
             .child(
                 self.settings_row(
                     "审查结果呈现方式",

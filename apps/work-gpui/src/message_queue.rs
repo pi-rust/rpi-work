@@ -289,7 +289,7 @@ impl Shell {
             && self.queue_active()
             && self
                 .drafts
-                .get(&self.session)
+                .get(&self.draft_key())
                 .is_some_and(|draft| draft.attachments.is_empty() && draft.can_send())
     }
 
@@ -297,7 +297,7 @@ impl Shell {
         if !self.can_enqueue(&self.session_controls()) {
             return;
         }
-        let Some((index, draft)) = self.session.zip(self.drafts.get(&self.session)) else {
+        let Some((index, draft)) = self.session.zip(self.drafts.get(&self.draft_key())) else {
             return;
         };
         let delivery = self.queue_delivery(index);
@@ -400,7 +400,7 @@ impl Shell {
             Ok(Admission::Complete) => {
                 if let Action::Enqueue(submitted) = request.action {
                     self.drafts
-                        .entry(Some(index))
+                        .entry(super::DraftKey::Session(index))
                         .or_default()
                         .clear_submitted(submitted);
                     self.queue

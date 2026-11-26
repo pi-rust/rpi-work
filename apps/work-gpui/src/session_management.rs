@@ -133,7 +133,7 @@ impl Shell {
             return;
         }
         self.read_session_management_capabilities(cx);
-        if let Some(draft) = self.drafts.get_mut(&self.session) {
+        if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
             draft.input.finish_composition();
         }
         if let Dialog::Actions(index) = dialog {
@@ -260,7 +260,7 @@ impl Shell {
         let controls = self.session_controls();
         let pending = self
             .drafts
-            .get(&self.session)
+            .get(&self.draft_key())
             .map(crate::prompt::Draft::pending)
             .unwrap_or_default();
         controls.online

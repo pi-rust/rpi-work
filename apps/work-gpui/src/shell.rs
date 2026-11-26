@@ -11,6 +11,8 @@ pub(crate) mod composer_config;
 pub(crate) mod editor;
 #[path = "message_queue.rs"]
 mod message_queue;
+#[path = "navigation.rs"]
+mod navigation;
 #[path = "project_files.rs"]
 pub(crate) mod project_files;
 #[path = "project_management.rs"]
@@ -60,6 +62,29 @@ enum Overlay {
     Inspector,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum DraftKey {
+    Session(usize),
+    NewConversation(Option<usize>),
+}
+
+struct WelcomeSend {
+    revision: u64,
+    message: String,
+}
+
+impl WelcomeSend {
+    fn matches(&self, draft: &Draft) -> bool {
+        draft.can_send() && draft.input.revision == self.revision && draft.message() == self.message
+    }
+}
+
+enum SessionCreation {
+    New,
+    Send(WelcomeSend),
+    Review,
+}
+
 enum Row {
     User(String),
     Assistant {
@@ -96,12 +121,15 @@ pub struct Shell {
     files: project_files::Panel,
     comment: Option<review::Comment>,
     project_form: project_management::Form,
+    project_menu: Option<usize>,
+    welcome_project_picker: bool,
     question: Option<question::Question>,
     session_management: session_management::Panel,
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
     review_after_bind: Option<usize>,
+    send_after_bind: Option<(usize, WelcomeSend)>,
     creation_error: Option<(bool, String)>,
     creation_readback: Option<(usize, String)>,
     navigation_revision: u64,
@@ -111,7 +139,7 @@ pub struct Shell {
     transcript_session: Option<usize>,
     transcript_scroll: ScrollHandle,
     expanded: HashSet<String>,
-    drafts: HashMap<Option<usize>, Draft>,
+    drafts: HashMap<DraftKey, Draft>,
     selecting_attachments: HashSet<usize>,
     focus: FocusHandle,
     input_layout: Option<editor::Layout>,
@@ -189,12 +217,15 @@ impl Shell {
             files: project_files::Panel::default(),
             comment: None,
             project_form: project_management::Form::default(),
+            project_menu: None,
+            welcome_project_picker: false,
             question: None,
             session_management: session_management::Panel::default(),
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
             review_after_bind: None,
+            send_after_bind: None,
             creation_error: None,
             creation_readback: None,
             navigation_revision: 0,
@@ -223,23 +254,27 @@ impl Shell {
         self.focus.focus(window);
     }
 
+    fn draft_key(&self) -> DraftKey {
+        self.session
+            .map_or(DraftKey::NewConversation(self.project), DraftKey::Session)
+    }
+
     fn select_project(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.welcome_project_picker = false;
         self.set_project(Some(index), cx);
-        let session = self
-            .snapshot
-            .sessions
-            .iter()
-            .enumerate()
-            .filter(|(_, session)| {
-                !session.archived && session.project_id == self.snapshot.projects[index].id
-            })
-            .max_by_key(|(_, session)| session.updated_at)
-            .map(|(index, _)| index);
-        self.navigate_session(session, cx);
+        self.navigate_session(None, cx);
     }
 
     fn set_project(&mut self, project: Option<usize>, cx: &mut Context<Self>) {
         if self.project != project {
+            self.cancel_comment();
+            if self.session.is_none() {
+                if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
+                    draft.input.finish_composition();
+                }
+                self.input_layout = None;
+                self.input_dragging = false;
+            }
             self.project = project;
             self.navigation_revision += 1;
             self.reset_project_files(cx);
@@ -247,6 +282,8 @@ impl Shell {
     }
 
     fn select_session(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.project_menu = None;
+        self.welcome_project_picker = false;
         let project = self
             .snapshot
             .projects
@@ -302,7 +339,8 @@ impl Shell {
                 .is_some_and(|(unknown, _)| *unknown)
     }
 
-    fn create_session(&mut self, detached_review: bool, cx: &mut Context<Self>) {
+    fn create_session(&mut self, source: SessionCreation, cx: &mut Context<Self>) {
+        let detached_review = matches!(source, SessionCreation::Review);
         if !self.can_create_session() {
             return;
         }
@@ -320,6 +358,7 @@ impl Shell {
             detached_review,
         );
         let revision = self.navigation_revision;
+        let welcome = self.session.is_none();
         self.creation_error = None;
         self.creating_session = Some(cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -350,7 +389,24 @@ impl Shell {
                             }
                         };
                         if shell.project == Some(project) && shell.navigation_revision == revision {
+                            let welcome_key = DraftKey::NewConversation(Some(project));
+                            if welcome
+                                && !detached_review
+                                && existing.is_none()
+                                && !shell.snapshot.sessions[index].archived
+                            {
+                                if let Some(mut draft) = shell.drafts.remove(&welcome_key) {
+                                    draft.input.finish_composition();
+                                    shell.drafts.insert(DraftKey::Session(index), draft);
+                                }
+                            }
                             shell.select_session(index, cx);
+                            if existing.is_none()
+                                && !shell.snapshot.sessions[index].archived
+                                && let SessionCreation::Send(send) = source
+                            {
+                                shell.send_after_bind = Some((index, send));
+                            }
                             if detached_review {
                                 shell.review_after_bind = Some(index);
                                 shell.files.set_review_notice("正在绑定独立审阅会话…");
@@ -402,9 +458,11 @@ impl Shell {
             self.cancel_comment();
             self.close_session_management();
             self.review_after_bind = None;
+            self.send_after_bind = None;
+            self.welcome_project_picker = false;
             self.files.cancel_review_check();
             self.navigation_revision += 1;
-            if let Some(draft) = self.drafts.get_mut(&self.session) {
+            if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
                 draft.input.finish_composition();
             }
             self.input_layout = None;
@@ -441,6 +499,7 @@ impl Shell {
                                     shell.frame = None;
                                     shell.composer_config.reset_observation();
                                     shell.load_error = Some(error.to_string());
+                                    shell.send_after_bind = None;
                                     if shell.review_after_bind.take().is_some() {
                                         shell.files.set_review_notice(
                                             "独立审阅会话绑定失败，审阅尚未提交。",
@@ -479,7 +538,7 @@ impl Shell {
             self.actions.remove(&index);
         }
         self.queue.observe(index, &frame);
-        let draft = self.drafts.entry(Some(index)).or_default();
+        let draft = self.drafts.entry(DraftKey::Session(index)).or_default();
         draft.observe(
             &frame.event,
             &frame.projection.phase,
@@ -537,6 +596,23 @@ impl Shell {
                     .set_review_notice("独立会话未确认可发送，审阅尚未提交。");
             }
         }
+        if self
+            .send_after_bind
+            .as_ref()
+            .is_some_and(|(pending, _)| *pending == index)
+            && (final_access || self.session_controls().send)
+        {
+            let send = self.send_after_bind.take();
+            if self.session_controls().send
+                && send.is_some_and(|(_, send)| {
+                    self.drafts
+                        .get(&DraftKey::Session(index))
+                        .is_some_and(|draft| send.matches(draft))
+                })
+            {
+                self.send_prompt(false, cx);
+            }
+        }
         if refresh_config {
             self.observe_config(cx);
         } else if clear_config {
@@ -548,7 +624,7 @@ impl Shell {
     }
 
     fn session_controls(&self) -> SessionControls {
-        let draft = self.drafts.get(&self.session);
+        let draft = self.drafts.get(&self.draft_key());
         let mut pending = draft.map(Draft::pending).unwrap_or_default();
         pending.submitting |=
             self.files.checking_review() || self.session_management.blocks_session(self.session);
@@ -577,8 +653,30 @@ impl Shell {
         })
     }
 
+    fn welcome_can_send(&self) -> bool {
+        self.session.is_none()
+            && self.can_create_session()
+            && self
+                .creation_readback
+                .as_ref()
+                .is_none_or(|(project, _)| self.project == Some(*project))
+            && self
+                .drafts
+                .get(&self.draft_key())
+                .is_some_and(Draft::can_send)
+    }
+
     fn send(&mut self, cx: &mut Context<Self>) {
-        if self.can_enqueue(&self.session_controls()) {
+        if self.welcome_can_send() {
+            let draft = &self.drafts[&self.draft_key()];
+            self.create_session(
+                SessionCreation::Send(WelcomeSend {
+                    revision: draft.input.revision,
+                    message: draft.message(),
+                }),
+                cx,
+            );
+        } else if self.can_enqueue(&self.session_controls()) {
             self.enqueue(cx);
         } else {
             self.send_prompt(false, cx);
@@ -592,7 +690,7 @@ impl Shell {
         let Some(frame) = self.frame.as_ref().filter(|_| self.session_controls().send) else {
             return;
         };
-        let draft = self.drafts.entry(Some(index)).or_default();
+        let draft = self.drafts.entry(DraftKey::Session(index)).or_default();
         if !review && !draft.can_send() {
             return;
         }
@@ -637,7 +735,7 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             let result = request.await;
             this.update(cx, |shell, cx| {
-                let draft = shell.drafts.entry(Some(index)).or_default();
+                let draft = shell.drafts.entry(DraftKey::Session(index)).or_default();
                 match result {
                     Ok(Ok(reply)) => match command_admission(reply, Some("prompt"), false) {
                         Some(Ok(())) => draft.accept(),
@@ -679,7 +777,7 @@ impl Shell {
         }
         let Some(operation) = self
             .drafts
-            .get(&Some(index))
+            .get(&DraftKey::Session(index))
             .and_then(Draft::receipt)
             .cloned()
         else {
@@ -691,7 +789,7 @@ impl Shell {
             let result = task.await;
             this.update(cx, |shell, cx| {
                 shell.checking_receipts.remove(&index);
-                let draft = shell.drafts.entry(Some(index)).or_default();
+                let draft = shell.drafts.entry(DraftKey::Session(index)).or_default();
                 match result
                     .ok()
                     .and_then(Result::ok)
@@ -730,6 +828,10 @@ impl Shell {
             .and_then(|index| self.snapshot.sessions.get(index))
             .map(|session| session.title.as_str())
             .filter(|title| !title.is_empty())
+            .or_else(|| {
+                self.project
+                    .map(|index| self.snapshot.projects[index].name.as_str())
+            })
             .unwrap_or("工作台")
     }
 
@@ -764,68 +866,6 @@ impl Shell {
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
-        let mut sessions: HashMap<&str, Vec<(usize, &crate::data::SessionItem)>> = HashMap::new();
-        let mut pinned = Vec::new();
-        for (index, session) in self
-            .snapshot
-            .sessions
-            .iter()
-            .enumerate()
-            .filter(|(_, session)| !session.archived)
-        {
-            if session.pinned {
-                pinned.push((index, session));
-                continue;
-            }
-            sessions
-                .entry(&session.project_id)
-                .or_default()
-                .push((index, session));
-        }
-        for group in sessions.values_mut() {
-            group.sort_by_key(|(_, session)| {
-                std::cmp::Reverse((session.pinned, session.updated_at))
-            });
-        }
-        let projects = self
-            .snapshot
-            .projects
-            .iter()
-            .enumerate()
-            .map(|(index, project)| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .mb_2()
-                    .child(
-                        div()
-                            .id(("project", index))
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .h(px(30.0))
-                            .px(px(10.0))
-                            .rounded(px(10.0))
-                            .cursor_pointer()
-                            .hover(move |row| row.bg(palette.hover))
-                            .child(icon("folder", 15.0, palette.muted))
-                            .child(
-                                self.text(project.name.clone(), 14.0, palette.text)
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .truncate(),
-                            )
-                            .on_click(
-                                cx.listener(move |this, _, _, cx| this.select_project(index, cx)),
-                            ),
-                    )
-                    .children(
-                        sessions
-                            .get(project.id.as_str())
-                            .into_iter()
-                            .flatten()
-                            .map(|&(index, session)| self.session_row(index, session, cx)),
-                    )
-            });
         div()
             .flex()
             .flex_col()
@@ -879,13 +919,15 @@ impl Shell {
                             .when(enabled, |button| {
                                 button.on_click(cx.listener(|shell, _, window, cx| {
                                     shell.focus_composer(window);
-                                    shell.create_session(false, cx);
+                                    shell.create_session(SessionCreation::New, cx);
                                 }))
                             })
                             .when(!enabled, |button| button.opacity(0.6).cursor_default()),
                     )
-                    .when_some(self.creation_error.as_ref(), |sidebar, (_, error)| {
-                        sidebar.child(self.text(error.clone(), 12.0, palette.danger).p_2())
+                    .when(self.session.is_some(), |sidebar| {
+                        sidebar.when_some(self.creation_error.as_ref(), |sidebar, (_, error)| {
+                            sidebar.child(self.text(error.clone(), 12.0, palette.danger).p_2())
+                        })
                     })
             })
             .child(
@@ -897,47 +939,7 @@ impl Shell {
                     .min_h(px(0.0))
                     .overflow_y_scroll()
                     .pt(px(16.0))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .pl(px(10.0))
-                            .child(self.text(
-                                if self.node.is_some() {
-                                    "项目"
-                                } else {
-                                    "最近"
-                                },
-                                12.0,
-                                palette.muted,
-                            ))
-                            .when(self.node.is_some(), |heading| {
-                                heading.child(self.add_project_button(cx))
-                            }),
-                    )
-                    .children(projects)
-                    .when(!pinned.is_empty(), |sidebar| {
-                        sidebar.child(self.text("置顶", 12.0, palette.muted).pl(px(10.0)).py_1())
-                    })
-                    .children(
-                        pinned
-                            .iter()
-                            .map(|&(index, session)| self.session_row(index, session, cx)),
-                    )
-                    .children(
-                        sessions
-                            .iter()
-                            .filter(|(id, _)| {
-                                !self
-                                    .snapshot
-                                    .projects
-                                    .iter()
-                                    .any(|project| project.id == **id)
-                            })
-                            .flat_map(|(_, group)| group.iter())
-                            .map(|&(index, session)| self.session_row(index, session, cx)),
-                    ),
+                    .child(self.navigation_lists(cx)),
             )
             .when(self.node.is_some(), |sidebar| {
                 sidebar.child(self.archives_button(cx))
@@ -972,39 +974,58 @@ impl Shell {
         let palette = self.palette;
         let selected = self.session == Some(index);
         let title = session.display_title();
-        div()
-            .id(("session", index))
-            .flex()
-            .items_center()
-            .h(px(30.0))
-            .pl(px(33.0))
-            .pr(px(10.0))
-            .rounded(px(10.0))
-            .cursor_pointer()
-            .hover(move |style| style.bg(palette.hover))
-            .when(selected, |row| {
-                row.bg(palette.hover).font_weight(FontWeight::MEDIUM)
-            })
-            .child(
-                self.text(
-                    title.to_owned(),
-                    14.0,
-                    if selected {
-                        palette.text
-                    } else {
-                        palette.muted
-                    },
+        let label = self
+            .snapshot
+            .projects
+            .iter()
+            .find(|project| project.id == session.project_id)
+            .map_or_else(
+                || title.to_owned(),
+                |project| format!("{} · {title}", project.name),
+            );
+        self.navigation_tooltip(
+            div()
+                .id(("session", index))
+                .tab_index(0)
+                .tab_stop(self.navigation_keyboard_enabled())
+                .focus(|row| row.bg(palette.hover))
+                .flex()
+                .items_center()
+                .h(px(30.0))
+                .pl(px(11.0))
+                .pr(px(10.0))
+                .rounded(px(10.0))
+                .cursor_pointer()
+                .hover(move |style| style.bg(palette.hover))
+                .when(selected, |row| {
+                    row.bg(palette.hover).font_weight(FontWeight::MEDIUM)
+                })
+                .child(
+                    self.text(
+                        title.to_owned(),
+                        14.0,
+                        if selected {
+                            palette.text
+                        } else {
+                            palette.muted
+                        },
+                    )
+                    .flex_1()
+                    .truncate(),
                 )
-                .flex_1()
-                .truncate(),
-            )
-            .when(session.pinned, |row| {
-                row.child(icon("pin", 13.0, palette.muted))
-            })
-            .on_click(cx.listener(move |this, _, _, cx| this.select_session(index, cx)))
+                .when(session.pinned, |row| {
+                    row.child(icon("pin", 13.0, palette.muted))
+                }),
+            label,
+        )
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.select_session(index, cx);
+            shell.focus_composer(window);
+        }))
     }
 
     fn close_navigation(&mut self, cx: &mut Context<Self>) {
+        self.project_menu = None;
         if self.overlay == Some(Overlay::Navigation) {
             self.overlay = None;
         } else {
@@ -1364,6 +1385,11 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let palette = self.palette;
+        if self.session.is_none()
+            && let Some(project) = self.project
+        {
+            return self.project_welcome(project, cx).into_any_element();
+        }
         let font_size = self.preferences.font_size();
         let classic = self.preferences.classic;
         let prompt_width = (reading_width * 0.9).min((reading_width * 0.77).max(320.0));
@@ -1440,6 +1466,7 @@ impl Shell {
                         |column| column.child(self.text(empty_text, 14.0, palette.muted)),
                     ),
             )
+            .into_any_element()
     }
 
     fn tool_card(&self, index: usize, block: &ToolView, cx: &mut Context<Self>) -> AnyElement {
@@ -1564,7 +1591,7 @@ impl Shell {
 
     fn composer(&self, inset: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
-        let draft = self.drafts.get(&self.session);
+        let draft = self.drafts.get(&self.draft_key());
         let loaded_sample = self.node.is_none()
             && self.session.is_some()
             && self.session == self.transcript_session;
@@ -1585,10 +1612,13 @@ impl Shell {
             (&live_metrics, &live_context)
         };
         let controls = self.session_controls();
-        let can_send = controls.send
-            && draft.is_some_and(|draft| {
-                draft.can_send() && (draft.attachments.is_empty() || self.supports_attachments())
-            });
+        let welcome = self.node.is_some() && self.project.is_some() && self.session.is_none();
+        let can_send = self.welcome_can_send()
+            || controls.send
+                && draft.is_some_and(|draft| {
+                    draft.can_send()
+                        && (draft.attachments.is_empty() || self.supports_attachments())
+                });
         let checking = self
             .session
             .is_some_and(|index| self.checking_receipts.contains(&index));
@@ -1604,7 +1634,14 @@ impl Shell {
                     .map(|_| "消息和行内反馈合计超过长度上限")
             })
             .or_else(|| draft.and_then(|draft| draft.attachment_notice.as_deref()))
-            .or_else(|| self.config_notice())
+            .or_else(|| match welcome {
+                true if self.creating_session.is_some() => Some("正在创建并核对新会话…"),
+                true => self
+                    .creation_error
+                    .as_ref()
+                    .map(|(_, error)| error.as_str()),
+                false => self.config_notice(),
+            })
             .or_else(|| {
                 (self.queue_active() && draft.is_some_and(|draft| !draft.attachments.is_empty()))
                     .then_some("带附件的消息可在当前运行结算后发送。")
@@ -1615,6 +1652,8 @@ impl Shell {
             notice.or_else(|| {
                 if self.node.is_none() {
                     Some("示例 · 草稿保存在当前窗口")
+                } else if welcome {
+                    None
                 } else if controls.online
                     && self
                         .frame
@@ -1695,6 +1734,22 @@ impl Shell {
                                             .gap_1()
                                             .child(self.add_attachments_button(cx))
                                             .child(self.config_toolbar(&controls, cx)),
+                                    )
+                                    .when(
+                                        welcome
+                                            && self.creation_readback.is_some()
+                                            && self.can_create_session(),
+                                        |toolbar| {
+                                            toolbar.child(
+                                                self.button("welcome-check-session", "核对新会话")
+                                                    .on_click(cx.listener(|shell, _, _, cx| {
+                                                        shell.create_session(
+                                                            SessionCreation::New,
+                                                            cx,
+                                                        )
+                                                    })),
+                                            )
+                                        },
                                     )
                                     .when(can_check, |toolbar| {
                                         toolbar.child(
@@ -1872,18 +1927,37 @@ impl Render for Shell {
         div()
             .id("workbench")
             .relative()
-            .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape"
-                    && (shell.dismiss_project_form()
-                        || shell.close_session_management()
-                        || shell.close_question()
-                        || shell.cancel_comment()
-                        || shell.composer_config.close_menu())
-                {
-                    cx.stop_propagation();
-                    cx.notify();
-                }
-            }))
+            .on_key_down(
+                cx.listener(|shell, event: &gpui::KeyDownEvent, window, cx| {
+                    let key = &event.keystroke.key;
+                    let modifiers = event.keystroke.modifiers;
+                    if key == "tab"
+                        && shell.navigation_keyboard_enabled()
+                        && !modifiers.platform
+                        && !modifiers.alt
+                        && !modifiers.control
+                    {
+                        if modifiers.shift {
+                            window.focus_prev();
+                        } else {
+                            window.focus_next();
+                        }
+                        cx.stop_propagation();
+                    }
+                    if key == "escape"
+                        && (shell.dismiss_project_form()
+                            || shell.close_session_management()
+                            || shell.close_question()
+                            || shell.cancel_comment()
+                            || shell.composer_config.close_menu()
+                            || shell.project_menu.take().is_some()
+                            || std::mem::take(&mut shell.welcome_project_picker))
+                    {
+                        cx.stop_propagation();
+                        cx.notify();
+                    }
+                }),
+            )
             .flex()
             .flex_col()
             .size(relative(1.0))

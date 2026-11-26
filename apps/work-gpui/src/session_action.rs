@@ -295,7 +295,10 @@ impl Shell {
             };
         }
         if let Some(data) = reclaimed {
-            let draft = self.drafts.entry(Some(index)).or_default();
+            let draft = self
+                .drafts
+                .entry(super::DraftKey::Session(index))
+                .or_default();
             if draft.restore_queued(&data) {
                 draft.notice = Some("节点返还的后续消息已放回草稿。".into());
             } else if draft.attachment_notice.is_some() {

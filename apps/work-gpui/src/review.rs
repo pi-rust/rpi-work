@@ -78,7 +78,7 @@ impl Shell {
         {
             return;
         }
-        if let Some(draft) = self.drafts.get_mut(&self.session) {
+        if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
             draft.input.finish_composition();
         }
         self.input_layout = None;
@@ -104,6 +104,7 @@ impl Shell {
     }
 
     fn verify_comment(&mut self, cx: &mut Context<Self>) {
+        let key = self.draft_key();
         let Some((node, project)) = self.node.as_ref().zip(self.project) else {
             return;
         };
@@ -117,7 +118,7 @@ impl Shell {
         if matches!(comment.target, Target::Page) {
             if self
                 .drafts
-                .entry(self.session)
+                .entry(key)
                 .or_default()
                 .add_page_feedback(comment.location.clone(), &comment.input.text)
             {
@@ -146,6 +147,9 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             let result = request.await;
             let _ = this.update(cx, |shell, cx| {
+                if shell.draft_key() != key {
+                    return;
+                }
                 let Some(comment) = shell.comment.as_mut().filter(|comment| {
                     comment.verifying
                         && matches!(&comment.target,
@@ -166,12 +170,7 @@ impl Shell {
                         row,
                         &comment.input.text,
                     ) {
-                        if shell
-                            .drafts
-                            .entry(shell.session)
-                            .or_default()
-                            .add_feedback(item)
-                        {
+                        if shell.drafts.entry(key).or_default().add_feedback(item) {
                             shell.finish_comment(cx);
                             return;
                         }
@@ -325,7 +324,7 @@ impl Shell {
                             .flex_none()
                             .h(px(22.0))
                             .on_click(cx.listener(move |shell, _, window, cx| {
-                                if let Some(draft) = shell.drafts.get_mut(&shell.session) {
+                                if let Some(draft) = shell.drafts.get_mut(&shell.draft_key()) {
                                     draft.feedback.retain(|item| item.id != id);
                                 }
                                 shell.focus_composer(window);

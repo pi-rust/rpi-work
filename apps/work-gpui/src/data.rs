@@ -14,6 +14,7 @@ use work_viewmodel::observability::metrics::{Context, Metrics};
 pub struct ProjectItem {
     pub id: String,
     pub name: String,
+    pub path: String,
 }
 
 impl From<Project> for ProjectItem {
@@ -21,6 +22,7 @@ impl From<Project> for ProjectItem {
         Self {
             id: project.id,
             name: project.name,
+            path: project.path,
         }
     }
 }
@@ -66,6 +68,7 @@ pub enum Creation {
 /// Initial project and session list. Sample conversations are supplied only in sample mode.
 pub struct Snapshot {
     pub node: String,
+    pub node_id: Option<String>,
     pub mode: String,
     pub projects: Vec<ProjectItem>,
     pub sessions: Vec<SessionItem>,
@@ -84,15 +87,18 @@ impl Snapshot {
         let read_output = "pub fn theme() { /* test fixture */ }";
         Self {
             node: "fixture-node".into(),
+            node_id: None,
             mode: "示例 · 未连接".into(),
             projects: vec![
                 ProjectItem {
                     id: "rpi-work".into(),
                     name: "rpi-work".into(),
+                    path: String::new(),
                 },
                 ProjectItem {
                     id: "pi-rust".into(),
                     name: "pi-rust".into(),
+                    path: String::new(),
                 },
             ],
             sessions: vec![
@@ -208,8 +214,13 @@ impl Node {
                 .sessions()
                 .await
                 .map_err(|error| format!("会话读取失败：{error}"))?;
+            let node_id =
+                work_viewmodel::config_requests::bounded("读取节点身份", client.node_identity())
+                    .await
+                    .ok();
             Ok::<_, String>(Snapshot {
                 node: origin.to_owned(),
+                node_id,
                 mode: "已连接节点".into(),
                 projects: projects.into_iter().map(ProjectItem::from).collect(),
                 sessions: sessions.into_iter().map(SessionItem::from).collect(),
@@ -220,6 +231,10 @@ impl Node {
             })
         })?;
         Ok((snapshot, Self { client, runtime }))
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.client.is_local()
     }
 
     pub fn watch(

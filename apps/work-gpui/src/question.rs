@@ -182,7 +182,7 @@ impl Shell {
         {
             return;
         }
-        if let Some(draft) = self.drafts.get_mut(&self.session) {
+        if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
             draft.input.finish_composition();
         }
         self.question = Some(Question {

@@ -232,11 +232,12 @@ impl Shell {
                         shell.dismiss_project_form();
                         shell.project_form = Form::default();
                         if let Some(item) = shell.snapshot.projects.get_mut(index) {
-                            item.name = project.name;
+                            *item = project.into();
                         } else {
                             shell.snapshot.projects.push(project.into());
                         }
                         if follow && shell.navigation_revision == navigation {
+                            shell.reveal_project_navigation();
                             shell.select_project(index, cx);
                             if shell.overlay == Some(Overlay::Navigation) {
                                 shell.overlay = None;
@@ -267,8 +268,9 @@ impl Shell {
     pub(super) fn add_project_button(&self, cx: &Context<Self>) -> impl IntoElement {
         self.icon_button("add-project", "plus", 24.0)
             .on_click(cx.listener(|shell, _, window: &mut Window, cx| {
+                shell.project_menu = None;
                 shell.cancel_comment();
-                if let Some(draft) = shell.drafts.get_mut(&shell.session) {
+                if let Some(draft) = shell.drafts.get_mut(&shell.draft_key()) {
                     draft.input.finish_composition();
                 }
                 shell.project_form.open = true;
