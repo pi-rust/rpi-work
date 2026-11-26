@@ -36,6 +36,7 @@ mod settings;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::{
     AnyElement, Context, CursorStyle, Div, FocusHandle, FontWeight, Hsla, MouseButton,
@@ -44,7 +45,7 @@ use gpui::{
 };
 use serde_json::Value;
 use work_client::ClientError;
-use work_core::{MessageBlock, RunProjection};
+use work_core::{MessageBlock, RunPhase, RunProjection, SettlementOutcome};
 use work_viewmodel::conversation::transcript_view::{self, ActivityItem, Part, ToolView};
 use work_viewmodel::conversation::{code_tokens, markdown, tool_display};
 use work_viewmodel::observability::metrics::{percent, tokens};
@@ -115,6 +116,7 @@ pub struct Shell {
     palette: Palette,
     preferences: settings::Preferences,
     settings: settings::Panel,
+    finish_notice: Option<(&'static str, Task<()>)>,
     queue: message_queue::Panel,
     dark: bool,
     navigation_open: bool,
@@ -214,6 +216,7 @@ impl Shell {
             palette: Palette::from_preset("codex", false, false),
             preferences: settings::Preferences::load(),
             settings: settings::Panel::new(cx),
+            finish_notice: None,
             queue: message_queue::Panel::default(),
             dark: false,
             navigation_open: true,
@@ -543,7 +546,37 @@ impl Shell {
         cx.notify();
     }
 
+    fn show_finish_notice(&mut self, outcome: &SettlementOutcome, cx: &mut Context<Self>) {
+        let message = match outcome {
+            SettlementOutcome::Completed => "任务已完成",
+            SettlementOutcome::Failed => "任务执行失败",
+            SettlementOutcome::Interrupted => "任务已停止",
+            SettlementOutcome::Suspended => "任务已暂停",
+            SettlementOutcome::Declined => "任务已拒绝",
+            SettlementOutcome::Compacted | SettlementOutcome::Unknown(_) => return,
+        };
+        let timer = cx.background_executor().timer(Duration::from_secs(3));
+        let expiry = cx.spawn(async move |shell, cx| {
+            timer.await;
+            let _ = shell.update(cx, |shell, cx| {
+                shell.finish_notice = None;
+                cx.notify();
+            });
+        });
+        self.finish_notice = Some((message, expiry));
+    }
+
     fn apply_frame(&mut self, index: usize, frame: SessionFrame, cx: &mut Context<Self>) {
+        if self.preferences.notify_finish
+            && frame.event == "agent_settled"
+            && !self
+                .frame
+                .as_ref()
+                .is_some_and(|previous| matches!(previous.projection.phase, RunPhase::Settled(_)))
+            && let RunPhase::Settled(outcome) = &frame.projection.phase
+        {
+            self.show_finish_notice(outcome, cx);
+        }
         if frame.projection.connection != work_core::ConnectionState::Online {
             self.session_fork.invalidate_follow();
         }
@@ -2147,6 +2180,30 @@ impl Render for Shell {
                 body.child(
                     gpui::deferred(self.settings_dialog(width, height, window, cx))
                         .with_priority(110),
+                )
+            })
+            .when_some(self.finish_notice.as_ref(), |body, (message, _)| {
+                body.child(
+                    gpui::deferred(
+                        div()
+                            .absolute()
+                            .bottom(px(25.0))
+                            .left(px(14.0))
+                            .right(px(14.0))
+                            .flex()
+                            .justify_center()
+                            .child(
+                                self.text(*message, 13.0, self.palette.text)
+                                    .border_1()
+                                    .border_color(self.palette.strong_line)
+                                    .bg(self.palette.bg)
+                                    .rounded(px(8.0))
+                                    .shadow_md()
+                                    .px(px(14.0))
+                                    .py(px(9.0)),
+                            ),
+                    )
+                    .with_priority(120),
                 )
             })
     }

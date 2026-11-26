@@ -33,6 +33,7 @@ pub(super) struct Preferences {
     pub(super) show_context: bool,
     pub(super) follow_up: Delivery,
     pub(super) detached_review: bool,
+    pub(super) notify_finish: bool,
     pub(super) navigation: super::navigation::Preferences,
 }
 
@@ -48,6 +49,7 @@ impl Default for Preferences {
             show_context: true,
             follow_up: Delivery::default(),
             detached_review: false,
+            notify_finish: false,
             navigation: super::navigation::Preferences::default(),
         }
     }
@@ -88,6 +90,7 @@ impl Preferences {
             detached_review: value["detachedReview"]
                 .as_bool()
                 .unwrap_or(default.detached_review),
+            notify_finish: value["notifyFinish"].as_bool().unwrap_or_default(),
             navigation: super::navigation::Preferences::load(&value["navigation"]),
         }
     }
@@ -106,6 +109,7 @@ impl Preferences {
             "showContext": self.show_context,
             "followUp": self.follow_up.wire(),
             "detachedReview": self.detached_review,
+            "notifyFinish": self.notify_finish,
             "navigation": self.navigation.value(),
         });
         fs::write(&temporary, value.to_string())?;
@@ -129,13 +133,17 @@ impl Preferences {
 enum Section {
     General,
     Appearance,
+    Notifications,
 }
 
 impl Section {
+    const ALL: [Self; 3] = [Self::General, Self::Appearance, Self::Notifications];
+
     fn label(self) -> &'static str {
         match self {
             Self::General => "常规",
             Self::Appearance => "外观",
+            Self::Notifications => "通知",
         }
     }
 }
@@ -152,10 +160,11 @@ enum Field {
     FontSize,
     Density,
     CodeNumbers,
+    NotifyFinish,
 }
 
 impl Field {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Context,
         Self::FollowUp,
         Self::ProjectGrouping,
@@ -166,6 +175,7 @@ impl Field {
         Self::FontSize,
         Self::Density,
         Self::CodeNumbers,
+        Self::NotifyFinish,
     ];
 
     fn label(self) -> &'static str {
@@ -180,6 +190,7 @@ impl Field {
             Self::FontSize => "消息字号",
             Self::Density => "阅读密度",
             Self::CodeNumbers => "代码行号",
+            Self::NotifyFinish => "任务完成提示",
         }
     }
 
@@ -188,7 +199,13 @@ impl Field {
             Self::Context | Self::FollowUp | Self::ProjectGrouping | Self::ReviewDelivery => {
                 Section::General
             }
-            _ => Section::Appearance,
+            Self::NotifyFinish => Section::Notifications,
+            Self::Color
+            | Self::Theme
+            | Self::Layout
+            | Self::FontSize
+            | Self::Density
+            | Self::CodeNumbers => Section::Appearance,
         }
     }
 
@@ -204,6 +221,7 @@ impl Field {
             Self::FontSize => ("settings-font-size", 0usize).into(),
             Self::Density => ("settings-density", 0usize).into(),
             Self::CodeNumbers => ("settings-code-numbers", 0usize).into(),
+            Self::NotifyFinish => "settings-notify-finish".into(),
         }
     }
 }
@@ -215,30 +233,26 @@ struct Destination {
 }
 
 fn search_destinations(query: &str) -> impl Iterator<Item = Destination> {
-    [Section::General, Section::Appearance]
-        .into_iter()
-        .flat_map(move |section| {
-            let pane_match = section.label().contains(query);
-            pane_match
-                .then_some(Destination {
-                    section,
-                    field: None,
-                })
-                .into_iter()
-                .chain(
-                    Field::ALL
-                        .into_iter()
-                        .filter(move |field| {
-                            !pane_match
-                                && field.section() == section
-                                && field.label().contains(query)
-                        })
-                        .map(move |field| Destination {
-                            section,
-                            field: Some(field),
-                        }),
-                )
-        })
+    Section::ALL.into_iter().flat_map(move |section| {
+        let pane_match = section.label().contains(query);
+        pane_match
+            .then_some(Destination {
+                section,
+                field: None,
+            })
+            .into_iter()
+            .chain(
+                Field::ALL
+                    .into_iter()
+                    .filter(move |field| {
+                        !pane_match && field.section() == section && field.label().contains(query)
+                    })
+                    .map(move |field| Destination {
+                        section,
+                        field: Some(field),
+                    }),
+            )
+    })
 }
 
 struct SettingsRow(Option<Field>, AnyElement);
@@ -415,6 +429,7 @@ impl Shell {
                 [
                     (Section::General, "settings-general", "settings"),
                     (Section::Appearance, "settings-appearance", "appearance"),
+                    (Section::Notifications, "settings-notifications", "bell"),
                 ]
                 .map(|(tab, id, shape)| {
                     self.setting_navigation_button(id)
@@ -533,6 +548,7 @@ impl Shell {
         let rows = match section {
             Section::General => self.general_settings(cx),
             Section::Appearance => self.appearance_settings(cx),
+            Section::Notifications => self.notification_settings(cx),
         };
         if std::mem::take(&mut self.settings.reveal)
             && let Some(target) = self.settings.target
@@ -866,6 +882,55 @@ impl Shell {
         rows
     }
 
+    fn notification_settings(&self, cx: &mut Context<Self>) -> Vec<SettingsRow> {
+        let enabled = self.preferences.notify_finish;
+        let palette = self.palette;
+        vec![
+            self.settings_heading("桌面应用", false),
+            self.settings_row(
+                Field::NotifyFinish,
+                self.setting_choice("settings-notify-finish", "", false)
+                    .border_color(gpui::transparent_black())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .w(px(34.0))
+                            .h(px(20.0))
+                            .px(px(2.0))
+                            .rounded_full()
+                            .border_1()
+                            .border_color(if enabled {
+                                palette.text
+                            } else {
+                                palette.strong_line
+                            })
+                            .bg(if enabled { palette.text } else { palette.hover })
+                            .when(enabled, |track| track.justify_end())
+                            .child(
+                                div()
+                                    .size(px(14.0))
+                                    .rounded_full()
+                                    .border_1()
+                                    .border_color(if enabled {
+                                        palette.bg
+                                    } else {
+                                        palette.strong_line
+                                    })
+                                    .bg(palette.bg),
+                            ),
+                    )
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.preferences.notify_finish = !shell.preferences.notify_finish;
+                        if !shell.preferences.notify_finish {
+                            shell.finish_notice = None;
+                        }
+                        shell.save_preferences(window, cx);
+                    })),
+            ),
+        ]
+    }
+
     fn settings_heading(&self, label: &'static str, after_group: bool) -> SettingsRow {
         SettingsRow(
             None,
@@ -889,9 +954,20 @@ impl Shell {
                 .border_t_1()
                 .border_color(self.palette.line)
                 .child(
-                    self.text(field.label(), 14.0, self.palette.text)
+                    div()
                         .flex_1()
-                        .min_w(px(0.0)),
+                        .min_w(px(0.0))
+                        .child(self.text(field.label(), 14.0, self.palette.text))
+                        .when(field == Field::NotifyFinish, |label| {
+                            label.child(
+                                self.text(
+                                    "在工作台内显示完成、失败或停止的提示。",
+                                    12.0,
+                                    self.palette.muted,
+                                )
+                                .mt_1(),
+                            )
+                        }),
                 )
                 .child(div().flex_none().child(control))
                 .into_any_element(),
