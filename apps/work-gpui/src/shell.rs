@@ -9,6 +9,8 @@ mod browser;
 pub(crate) mod composer_config;
 #[path = "composer.rs"]
 pub(crate) mod editor;
+#[path = "message_queue.rs"]
+mod message_queue;
 #[path = "project_files.rs"]
 pub(crate) mod project_files;
 #[path = "project_management.rs"]
@@ -81,6 +83,7 @@ pub struct Shell {
     palette: Palette,
     preferences: settings::Preferences,
     settings: settings::Panel,
+    queue: message_queue::Panel,
     dark: bool,
     navigation_open: bool,
     overview_open: bool,
@@ -173,6 +176,7 @@ impl Shell {
             palette: Palette::from_preset("codex", false, false),
             preferences: settings::Preferences::load(),
             settings: settings::Panel::new(cx),
+            queue: message_queue::Panel::default(),
             dark: false,
             navigation_open: true,
             overview_open: true,
@@ -413,6 +417,7 @@ impl Shell {
             }
         }
         self.session = session;
+        self.queue.select(session, self.preferences.follow_up);
         self.composer_config.reset_observation();
         self.frame = None;
         self.observation = None;
@@ -468,11 +473,12 @@ impl Shell {
         }
         if self
             .actions
-            .get(&index)
-            .is_some_and(|request| request.observed(&frame))
+            .get_mut(&index)
+            .is_some_and(|request| request.observe(&frame))
         {
             self.actions.remove(&index);
         }
+        self.queue.observe(index, &frame);
         let draft = self.drafts.entry(Some(index)).or_default();
         draft.observe(
             &frame.event,
@@ -512,9 +518,14 @@ impl Shell {
             }
         }
         let final_access = frame.event.is_empty() || frame.event == "access";
+        let refresh_queue =
+            final_access || matches!(frame.event.as_str(), "agent_start" | "turn_end");
         let refresh_config = final_access;
         let clear_config = frame.access.is_none();
         self.frame = Some(frame);
+        if refresh_queue {
+            self.refresh_queue(cx);
+        }
         if self.review_after_bind == Some(index) {
             if self.session_controls().send {
                 self.review_after_bind = None;
@@ -546,6 +557,7 @@ impl Shell {
         }
         if let Some(index) = self.session {
             self.composer_config.pending(index, &mut pending);
+            self.queue.pending(index, &mut pending);
         }
         let config = self.composer_config.observed.as_ref();
         controls(&SessionObservation {
@@ -566,7 +578,11 @@ impl Shell {
     }
 
     fn send(&mut self, cx: &mut Context<Self>) {
-        self.send_prompt(false, cx);
+        if self.can_enqueue(&self.session_controls()) {
+            self.enqueue(cx);
+        } else {
+            self.send_prompt(false, cx);
+        }
     }
 
     fn send_prompt(&mut self, review: bool, cx: &mut Context<Self>) {
@@ -616,6 +632,7 @@ impl Shell {
         {
             self.actions.remove(&index);
         }
+        self.queue.clear_notice(index);
         draft.begin(!review);
         cx.spawn(async move |this, cx| {
             let result = request.await;
@@ -1580,13 +1597,18 @@ impl Shell {
         let notice = action
             .map(session_action::Request::status)
             .or_else(|| draft.and_then(|draft| draft.notice.as_deref()))
+            .or_else(|| self.session.and_then(|index| self.queue.notice(index)))
             .or_else(|| {
                 draft
                     .filter(|draft| draft.feedback_over_limit())
                     .map(|_| "消息和行内反馈合计超过长度上限")
             })
             .or_else(|| draft.and_then(|draft| draft.attachment_notice.as_deref()))
-            .or_else(|| self.config_notice());
+            .or_else(|| self.config_notice())
+            .or_else(|| {
+                (self.queue_active() && draft.is_some_and(|draft| !draft.attachments.is_empty()))
+                    .then_some("带附件的消息可在当前运行结算后发送。")
+            });
         let status = if checking {
             Some("正在核对发送回执…")
         } else {
@@ -1619,6 +1641,7 @@ impl Shell {
                     .max_w(px(READING_WIDTH))
                     .mx_auto()
                     .child(self.approvals(&controls, cx))
+                    .child(self.queue_panel(&controls, cx))
                     .child(
                         div()
                             .id("composer")
@@ -1662,7 +1685,8 @@ impl Shell {
                                     .flex()
                                     .items_center()
                                     .justify_between()
-                                    .h(px(28.0))
+                                    .flex_wrap()
+                                    .min_h(px(28.0))
                                     .pl(px(4.0))
                                     .child(
                                         div()
@@ -1693,6 +1717,7 @@ impl Shell {
                                             )
                                         },
                                     )
+                                    .child(self.queue_toolbar(&controls, cx))
                                     .child(self.run_button(can_send, &controls, cx)),
                             ),
                     )

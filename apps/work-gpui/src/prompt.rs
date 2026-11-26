@@ -1,4 +1,5 @@
-use rpi_extcore::prompt::PromptContent;
+use rpi_extcore::prompt::{PromptBlock, PromptContent};
+use serde_json::Value;
 use work_core::api::realtime::OperationRef;
 use work_core::{ConnectionState, RunPhase};
 use work_viewmodel::{diff_view::DraftFeedback, session_controls::PendingRequests};
@@ -35,11 +36,15 @@ pub struct Draft {
     pub notice: Option<String>,
 }
 
-struct Submission {
-    stage: Stage,
-    revision: Option<u64>,
+pub(crate) struct SubmittedDraft {
+    revision: u64,
     last_feedback: Option<u64>,
     last_attachment: Option<u64>,
+}
+
+struct Submission {
+    stage: Stage,
+    draft: Option<SubmittedDraft>,
     saw_activity: bool,
     settled: bool,
 }
@@ -73,6 +78,47 @@ impl Draft {
         }
         self.attachments.append(&mut files);
         self.attachment_notice = None;
+    }
+
+    pub(crate) fn restore_queued(&mut self, data: &Value) -> bool {
+        let mut text = Vec::new();
+        let mut attachments = Vec::new();
+        let mut incomplete = false;
+        for message in ["steer", "followUp"]
+            .iter()
+            .filter_map(|key| data[*key].as_array())
+            .flatten()
+        {
+            if let Some(value) = message["text"].as_str().filter(|value| !value.is_empty()) {
+                text.push(value);
+            }
+            for image in message["images"].as_array().into_iter().flatten() {
+                let (Some(data), Some(media_type)) =
+                    (image["data"].as_str(), image["mediaType"].as_str())
+                else {
+                    incomplete = true;
+                    continue;
+                };
+                attachments.push(Attachment {
+                    id: 0,
+                    name: format!("恢复的图片 {}", attachments.len() + 1),
+                    block: PromptBlock::Image {
+                        data: data.into(),
+                        mime_type: media_type.into(),
+                    },
+                });
+            }
+        }
+        let previous_attachments = self.attachments.len();
+        self.input.append_paragraphs(&text.join("\n\n"));
+        if !attachments.is_empty() {
+            self.add_attachments(attachments);
+            incomplete |= self.attachment_notice.is_some();
+        }
+        if incomplete {
+            self.attachment_notice = Some("部分返还的队列图片超出草稿附件限制或格式无效。".into());
+        }
+        !incomplete && (!text.is_empty() || self.attachments.len() > previous_attachments)
     }
 
     pub fn add_feedback(&mut self, item: DraftFeedback<'_>) -> bool {
@@ -155,40 +201,45 @@ impl Draft {
         }
         self.request = Some(Submission {
             stage: Stage::Sending,
-            revision: include_draft.then_some(self.input.revision),
-            last_feedback: self
-                .feedback
-                .last()
-                .filter(|_| include_draft)
-                .map(|item| item.id),
-            last_attachment: self
-                .attachments
-                .last()
-                .filter(|_| include_draft)
-                .map(|item| item.id),
+            draft: include_draft.then(|| self.submitted()),
             saw_activity: false,
             settled: false,
         });
+    }
+
+    pub(crate) fn submitted(&self) -> SubmittedDraft {
+        SubmittedDraft {
+            revision: self.input.revision,
+            last_feedback: self.feedback.last().map(|item| item.id),
+            last_attachment: self.attachments.last().map(|item| item.id),
+        }
+    }
+
+    pub(crate) fn clear_submitted(&mut self, draft: SubmittedDraft) {
+        if self.input.revision == draft.revision {
+            self.input.clear_after_send();
+        }
+        if let Some(last) = draft.last_feedback {
+            self.feedback.retain(|item| item.id > last);
+        }
+        if let Some(last) = draft.last_attachment {
+            self.attachments.retain(|item| item.id > last);
+        }
     }
 
     pub fn accept(&mut self) {
         let Some(request) = &mut self.request else {
             return;
         };
-        if Some(self.input.revision) == request.revision {
-            self.input.clear_after_send();
-        }
-        if let Some(last) = request.last_feedback {
-            self.feedback.retain(|item| item.id > last);
-        }
-        if let Some(last) = request.last_attachment {
-            self.attachments.retain(|item| item.id > last);
-        }
-        self.notice = None;
+        let submitted = request.draft.take();
         request.stage = Stage::Accepted;
         if request.settled {
             self.request = None;
         }
+        if let Some(submitted) = submitted {
+            self.clear_submitted(submitted);
+        }
+        self.notice = None;
     }
 
     pub fn reject(&mut self, reason: String) {

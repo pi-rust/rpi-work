@@ -73,6 +73,17 @@ impl Buffer {
         self.finish_composition();
     }
 
+    pub fn append_paragraphs(&mut self, paragraphs: &str) {
+        if paragraphs.is_empty() {
+            return;
+        }
+        if !self.text.is_empty() {
+            self.text.push_str("\n\n");
+        }
+        self.text.push_str(paragraphs);
+        self.revision = self.revision.wrapping_add(1);
+    }
+
     fn compose(
         &mut self,
         utf16: Option<Range<usize>>,

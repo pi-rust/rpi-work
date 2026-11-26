@@ -4,12 +4,12 @@ use gpui::{Context, IntoElement, div, prelude::*, px};
 use serde_json::Value;
 use work_client::ClientError;
 use work_core::api::{
-    PendingDialog,
+    HostResponse, PendingDialog,
     realtime::{OperationOutcome, OperationRef, OperationStatus},
 };
 use work_core::{ConnectionState, RunPhase};
 use work_viewmodel::session_controls::{PendingRequests, SessionControls};
-use work_viewmodel::session_receipts::interpret_receipt;
+use work_viewmodel::session_receipts::{command_admission, interpret_receipt};
 
 use super::{READING_WIDTH, Shell, question::Question, rejected};
 use crate::data::SessionFrame;
@@ -49,6 +49,7 @@ pub(super) struct Request {
     action: Action,
     stage: Stage,
     checking: bool,
+    settled: bool,
 }
 
 impl Request {
@@ -77,6 +78,24 @@ impl Request {
                 .dialogs
                 .iter()
                 .any(|item| item.request_id == *request_id),
+        }
+    }
+
+    pub(super) fn observe(&mut self, frame: &SessionFrame) -> bool {
+        if !self.observed(frame) {
+            return false;
+        }
+        if matches!(self.action, Action::Reply { .. }) {
+            return true;
+        }
+        self.settled = true;
+        match self.stage {
+            Stage::Accepted => true,
+            Stage::Unknown(None) => {
+                self.stage = Stage::Rejected("运行已停止，队列返还结果未知。".into());
+                false
+            }
+            _ => false,
         }
     }
 
@@ -113,15 +132,27 @@ pub(crate) fn dialog_admission(reply: &Value) -> Option<Result<(), String>> {
         })
 }
 
-fn control_receipt(status: OperationStatus, abort: bool) -> Option<Result<(), String>> {
-    if !abort
-        && let OperationStatus::KnownResult {
+pub(crate) type ControlAdmission = Option<Result<Option<Value>, String>>;
+
+pub(crate) fn abort_admission(reply: HostResponse<Value>) -> ControlAdmission {
+    let data = reply.data.clone();
+    command_admission(reply, Some("abort"), false).map(|result| result.map(|()| data))
+}
+
+fn control_receipt(status: OperationStatus, abort: bool) -> ControlAdmission {
+    match status {
+        OperationStatus::KnownResult {
             outcome: OperationOutcome::Succeeded { value },
-        } = &status
-    {
-        return dialog_admission(value);
+        } => {
+            if abort {
+                abort_admission(serde_json::from_value(value).ok()?)
+            } else {
+                dialog_admission(&value).map(|result| result.map(|()| None))
+            }
+        }
+        _ => interpret_receipt(status, abort.then_some("abort"), !abort)
+            .map(|result| result.map(|()| None)),
     }
-    interpret_receipt(status, abort.then_some("abort"), !abort)
 }
 
 fn options(dialog: &PendingDialog) -> impl Iterator<Item = (&str, &str, Option<&str>)> {
@@ -208,17 +239,18 @@ impl Shell {
                 action,
                 stage: Stage::Sending,
                 checking: false,
+                settled: false,
             },
         );
         cx.spawn(async move |this, cx| {
-            let stage = match task.await {
-                Ok(Ok(Some(Ok(())))) => Stage::Accepted,
-                Ok(Ok(Some(Err(reason)))) => Stage::Rejected(reason),
+            let (stage, reclaimed) = match task.await {
+                Ok(Ok(Some(Ok(data)))) => (Stage::Accepted, data),
+                Ok(Ok(Some(Err(reason)))) => (Stage::Rejected(reason), None),
                 Ok(Err(ClientError::OperationOutcomeUnknown { operation })) => {
-                    Stage::Unknown(Some(operation))
+                    (Stage::Unknown(Some(operation)), None)
                 }
-                Ok(Err(error)) if rejected(&error) => Stage::Rejected(error.to_string()),
-                _ => Stage::Unknown(None),
+                Ok(Err(error)) if rejected(&error) => (Stage::Rejected(error.to_string()), None),
+                _ => (Stage::Unknown(None), None),
             };
             this.update(cx, |shell, cx| {
                 if std::env::var_os("RPI_GPUI_TRACE").is_some() {
@@ -229,18 +261,47 @@ impl Shell {
                     };
                     eprintln!("session control acknowledgement: {status}");
                 }
-                if let Some(request) = shell
-                    .actions
-                    .get_mut(&index)
-                    .filter(|request| request.ticket == ticket)
-                {
-                    request.stage = stage;
-                    cx.notify();
-                }
+                shell.apply_control_result(index, ticket, stage, reclaimed, cx);
             })
             .ok();
         })
         .detach();
+        cx.notify();
+    }
+
+    fn apply_control_result(
+        &mut self,
+        index: usize,
+        ticket: u64,
+        stage: Stage,
+        reclaimed: Option<Value>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(request) = self
+            .actions
+            .get_mut(&index)
+            .filter(|request| request.ticket == ticket)
+        else {
+            return;
+        };
+        request.checking = false;
+        if request.settled && matches!(stage, Stage::Accepted) {
+            self.actions.remove(&index);
+        } else {
+            request.stage = if request.settled && matches!(stage, Stage::Unknown(None)) {
+                Stage::Rejected("运行已停止，队列返还结果未知。".into())
+            } else {
+                stage
+            };
+        }
+        if let Some(data) = reclaimed {
+            let draft = self.drafts.entry(Some(index)).or_default();
+            if draft.restore_queued(&data) {
+                draft.notice = Some("节点返还的后续消息已放回草稿。".into());
+            } else if draft.attachment_notice.is_some() {
+                draft.notice = None;
+            }
+        }
         cx.notify();
     }
 
@@ -271,19 +332,22 @@ impl Shell {
                 .ok()
                 .and_then(Result::ok)
                 .and_then(|status| control_receipt(status, abort));
-            this.update(cx, |shell, cx| {
-                if let Some(request) = shell
-                    .actions
-                    .get_mut(&index)
-                    .filter(|request| request.ticket == ticket)
-                {
-                    request.checking = false;
-                    match result {
-                        Some(Ok(())) => request.stage = Stage::Accepted,
-                        Some(Err(reason)) => request.stage = Stage::Rejected(reason),
-                        None => {}
+            this.update(cx, |shell, cx| match result {
+                Some(Ok(reclaimed)) => {
+                    shell.apply_control_result(index, ticket, Stage::Accepted, reclaimed, cx)
+                }
+                Some(Err(reason)) => {
+                    shell.apply_control_result(index, ticket, Stage::Rejected(reason), None, cx)
+                }
+                None => {
+                    if let Some(request) = shell
+                        .actions
+                        .get_mut(&index)
+                        .filter(|request| request.ticket == ticket)
+                    {
+                        request.checking = false;
+                        cx.notify();
                     }
-                    cx.notify();
                 }
             })
             .ok();
@@ -503,11 +567,17 @@ mod tests {
             ticket: 1,
             stage: Stage::Accepted,
             checking: false,
+            settled: false,
         };
         frame.projection.phase = RunPhase::Settled(SettlementOutcome::Interrupted);
         assert!(!request.observed(&frame));
         frame.event = "agent_settled".into();
         assert!(request.observed(&frame));
+        request.stage = Stage::Sending;
+        assert!(!request.observe(&frame));
+        assert!(request.settled);
+        request.stage = Stage::Accepted;
+        assert!(request.observe(&frame));
         frame
             .dialogs
             .push(serde_json::from_value(json!({"requestId": "pending", "ui": {}})).unwrap());

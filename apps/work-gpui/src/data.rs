@@ -411,26 +411,42 @@ impl Node {
             .spawn(async move { client.prompt_content(&id, &content).await })
     }
 
+    pub fn read_queue(
+        &self,
+        id: String,
+    ) -> JoinHandle<Result<work_client::QueueSnapshot, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded("读取消息队列", client.queue(&id, false)).await
+        })
+    }
+
+    pub fn queue_command(
+        &self,
+        id: String,
+        command: Value,
+    ) -> JoinHandle<Result<HostResponse<Value>, ClientError>> {
+        let client = self.client.clone();
+        self.runtime
+            .spawn(async move { client.command(&id, command).await })
+    }
+
     pub fn control(
         &self,
         id: String,
         action: crate::shell::session_action::Action,
-    ) -> JoinHandle<Result<Option<Result<(), String>>, ClientError>> {
-        use crate::shell::session_action::Action;
-        use work_viewmodel::session_receipts::command_admission;
+    ) -> JoinHandle<Result<crate::shell::session_action::ControlAdmission, ClientError>> {
+        use crate::shell::session_action::{Action, abort_admission, dialog_admission};
 
         let client = self.client.clone();
         self.runtime.spawn(async move {
             match action {
-                Action::Abort => client
-                    .abort(&id)
-                    .await
-                    .map(|reply| command_admission(reply, Some("abort"), false)),
+                Action::Abort => client.abort(&id).await.map(abort_admission),
                 Action::Reply { request_id, answer } => {
                     let reply = client
                         .dialog_response(&id, &request_id, answer.payload())
                         .await?;
-                    Ok(crate::shell::session_action::dialog_admission(&reply))
+                    Ok(dialog_admission(&reply).map(|result| result.map(|()| None)))
                 }
             }
         })

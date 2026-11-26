@@ -5,7 +5,7 @@ use std::{fs, io, path::PathBuf};
 use gpui::{Context, Div, FocusHandle, FontWeight, Window, WindowAppearance, div, prelude::*, px};
 use serde_json::{Value, json};
 
-use super::Shell;
+use super::{Shell, message_queue::Delivery};
 use crate::{icons::icon, theme::Palette};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -24,6 +24,7 @@ pub(super) struct Preferences {
     pub(super) compact: bool,
     pub(super) code_numbers: bool,
     pub(super) show_context: bool,
+    pub(super) follow_up: Delivery,
     pub(super) detached_review: bool,
 }
 
@@ -37,6 +38,7 @@ impl Default for Preferences {
             compact: false,
             code_numbers: true,
             show_context: true,
+            follow_up: Delivery::default(),
             detached_review: false,
         }
     }
@@ -73,6 +75,7 @@ impl Preferences {
             show_context: value["showContext"]
                 .as_bool()
                 .unwrap_or(default.show_context),
+            follow_up: Delivery::from_wire(value["followUp"].as_str().unwrap_or_default()),
             detached_review: value["detachedReview"]
                 .as_bool()
                 .unwrap_or(default.detached_review),
@@ -91,6 +94,7 @@ impl Preferences {
             "compact": self.compact,
             "codeNumbers": self.code_numbers,
             "showContext": self.show_context,
+            "followUp": self.follow_up.wire(),
             "detachedReview": self.detached_review,
         });
         fs::write(&temporary, value.to_string())?;
@@ -364,6 +368,24 @@ impl Shell {
                         shell.preferences.show_context = !shell.preferences.show_context;
                         shell.save_preferences(window, cx);
                     })),
+                ),
+            )
+            .child(
+                self.settings_row(
+                    "后续消息处理方式",
+                    div().flex().gap_1().children(
+                        [
+                            ("settings-follow-up", "加入队列", Delivery::FollowUp),
+                            ("settings-steer", "引导当前任务", Delivery::Steer),
+                        ]
+                        .map(|(id, label, delivery)| {
+                            self.setting_choice(id, label, self.preferences.follow_up == delivery)
+                                .on_click(cx.listener(move |shell, _, window, cx| {
+                                    shell.preferences.follow_up = delivery;
+                                    shell.save_preferences(window, cx);
+                                }))
+                        }),
+                    ),
                 ),
             )
             .child(self.settings_heading("工作区").mt_4())
