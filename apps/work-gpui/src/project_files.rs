@@ -181,7 +181,6 @@ pub(super) struct Panel {
     counts_pending: Option<Pending>,
     review_check: Option<Pending>,
     review_error: Option<String>,
-    detached_review: bool,
 }
 
 impl Panel {
@@ -510,7 +509,7 @@ impl Shell {
     fn can_run_review(&self) -> bool {
         self.session_controls().send
             && self.review_after_bind.is_none()
-            && (!self.files.detached_review
+            && (!self.preferences.detached_review
                 || (self.can_create_session() && self.creation_readback.is_none()))
     }
 
@@ -521,7 +520,7 @@ impl Shell {
         if !self.can_run_review() {
             return;
         }
-        let detached = self.files.detached_review;
+        let detached = self.preferences.detached_review;
         self.files.review_error = None;
         let work = node.read_project(self.snapshot.projects[project].id.clone(), Route::Changes);
         let request = work.abort_handle();
@@ -657,7 +656,7 @@ impl Shell {
                             .child(
                                 self.button(
                                     "review-delivery",
-                                    if self.files.detached_review {
+                                    if self.preferences.detached_review {
                                         "独立会话"
                                     } else {
                                         "当前会话"
@@ -669,10 +668,10 @@ impl Shell {
                                         && self.creating_session.is_none()
                                         && self.review_after_bind.is_none(),
                                     |button| {
-                                        button.on_click(cx.listener(|this, _, _, cx| {
-                                            this.files.detached_review =
-                                                !this.files.detached_review;
-                                            cx.notify();
+                                        button.on_click(cx.listener(|this, _, window, cx| {
+                                            this.preferences.detached_review =
+                                                !this.preferences.detached_review;
+                                            this.save_preferences(window, cx);
                                         }))
                                     },
                                 ),

@@ -15,14 +15,17 @@ impl Shell {
     pub(super) fn rich_answer(&self, key: &str, view: &MarkdownView) -> impl IntoElement {
         let render = Markdown {
             palette: self.palette,
+            font_size: self.preferences.font_size(),
+            code_numbers: self.preferences.code_numbers,
+            spacing: if self.preferences.compact { 12.0 } else { 16.0 },
         };
         div()
             .id(SharedString::from(key.to_owned()))
             .min_w(px(0.0))
             .text_color(self.palette.text)
-            .text_size(px(16.0))
-            .line_height(px(26.4))
-            .child(render.blocks(&view.nodes, 16.0))
+            .text_size(px(render.font_size))
+            .line_height(px(self.preferences.line_height()))
+            .child(render.blocks(&view.nodes, render.spacing))
             .when(view.plain, |answer| {
                 answer.child(self.text("内容较复杂，已按原文显示。", 12.0, self.palette.muted))
             })
@@ -31,6 +34,9 @@ impl Shell {
 
 struct Markdown {
     palette: Palette,
+    font_size: f32,
+    code_numbers: bool,
+    spacing: f32,
 }
 
 impl Markdown {
@@ -69,13 +75,13 @@ impl Markdown {
             _ => return None,
         };
         let block = match tag {
-            Tag::Div => self.blocks(children, 16.0),
+            Tag::Div => self.blocks(children, self.spacing),
             Tag::P => div().child(self.inline(0, children)),
             Tag::H1 | Tag::H2 | Tag::H3 | Tag::H4 | Tag::H5 | Tag::H6 => {
                 let size = match tag {
-                    Tag::H1 => 20.0,
-                    Tag::H2 => 17.0,
-                    _ => 16.0,
+                    Tag::H1 => self.font_size + 4.0,
+                    Tag::H2 => self.font_size + 1.0,
+                    _ => self.font_size,
                 };
                 div()
                     .text_size(px(size))
@@ -206,7 +212,7 @@ impl Markdown {
         } else {
             display.split('\n').count()
         };
-        let numbers = (lines > 0 && lines <= 10_000).then(|| {
+        let numbers = (self.code_numbers && lines > 0 && lines <= 10_000).then(|| {
             (1..=lines)
                 .map(|line| line.to_string())
                 .collect::<Vec<_>>()

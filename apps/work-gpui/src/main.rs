@@ -55,7 +55,13 @@ fn main() {
                     ..Default::default()
                 },
                 |window, cx| {
-                    let view = cx.new(|cx| Shell::new(snapshot, node, cx));
+                    let view = cx.new(|cx| Shell::new(snapshot, node, window.appearance(), cx));
+                    let workbench = view.downgrade();
+                    window
+                        .observe_window_appearance(move |_, cx| {
+                            let _ = workbench.update(cx, |_, cx| cx.notify());
+                        })
+                        .detach();
                     view.read(cx).focus_composer(window);
                     view
                 },

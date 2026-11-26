@@ -23,6 +23,8 @@ mod rich_text;
 pub(crate) mod session_action;
 #[path = "session_management.rs"]
 pub(crate) mod session_management;
+#[path = "settings.rs"]
+mod settings;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -77,7 +79,8 @@ pub struct Shell {
     load_error: Option<String>,
     observation: Option<&'static str>,
     palette: Palette,
-    theme_id: String,
+    preferences: settings::Preferences,
+    settings: settings::Panel,
     dark: bool,
     navigation_open: bool,
     overview_open: bool,
@@ -116,7 +119,12 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new(snapshot: Snapshot, node: Option<Node>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        snapshot: Snapshot,
+        node: Option<Node>,
+        appearance: gpui::WindowAppearance,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let fixture = node.is_none();
         let session = if fixture {
             snapshot
@@ -163,7 +171,8 @@ impl Shell {
             load_error: None,
             observation: None,
             palette: Palette::from_preset("codex", false, false),
-            theme_id: "codex".into(),
+            preferences: settings::Preferences::load(),
+            settings: settings::Panel::new(cx),
             dark: false,
             navigation_open: true,
             overview_open: true,
@@ -195,6 +204,7 @@ impl Shell {
             order,
             traced: false,
         };
+        shell.apply_appearance(appearance, true);
         if !fixture {
             if session.is_some() {
                 shell.change_session(session, cx);
@@ -682,24 +692,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// Cycle to the next preset from the shared contract.
-    fn next_theme(&mut self, cx: &mut Context<Self>) {
-        let presets = Palette::presets();
-        let index = presets
-            .iter()
-            .position(|(id, _)| *id == self.theme_id)
-            .unwrap_or(0);
-        self.theme_id = presets[(index + 1) % presets.len()].0.clone();
-        self.palette = Palette::from_preset(&self.theme_id, self.dark, false);
-        cx.notify();
-    }
-
-    fn toggle_dark(&mut self, cx: &mut Context<Self>) {
-        self.dark = !self.dark;
-        self.palette = Palette::from_preset(&self.theme_id, self.dark, false);
-        cx.notify();
-    }
-
     fn toggle_tool(&mut self, id: &str, cx: &mut Context<Self>) {
         if !self.expanded.remove(id) {
             self.expanded.insert(id.to_string());
@@ -724,7 +716,7 @@ impl Shell {
             .unwrap_or("工作台")
     }
 
-    fn button(&self, id: &'static str, label: &str) -> gpui::Stateful<Div> {
+    fn button(&self, id: impl Into<gpui::ElementId>, label: &str) -> gpui::Stateful<Div> {
         let palette = self.palette;
         div()
             .id(id)
@@ -933,6 +925,18 @@ impl Shell {
             .when(self.node.is_some(), |sidebar| {
                 sidebar.child(self.archives_button(cx))
             })
+            .when(self.overlay == Some(Overlay::Navigation), |sidebar| {
+                sidebar.child(
+                    self.button("mobile-settings", "设置")
+                        .gap_2()
+                        .justify_start()
+                        .child(icon("settings", 16.0, palette.muted))
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.overlay = None;
+                            shell.open_settings(window, cx);
+                        })),
+                )
+            })
             .when(self.node.is_none(), |sidebar| {
                 sidebar.child(
                     self.text(self.snapshot.mode.clone(), 11.0, palette.muted)
@@ -1059,15 +1063,9 @@ impl Shell {
             ))
             .child(div().flex_1())
             .child(
-                self.icon_button("appearance", "settings", 34.0)
+                self.icon_button("settings", "settings", 34.0)
                     .h(px(34.0))
-                    .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
-                        if event.modifiers().shift {
-                            this.next_theme(cx);
-                        } else {
-                            this.toggle_dark(cx);
-                        }
-                    })),
+                    .on_click(cx.listener(|this, _, window, cx| this.open_settings(window, cx))),
             )
     }
 
@@ -1349,6 +1347,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let palette = self.palette;
+        let font_size = self.preferences.font_size();
+        let classic = self.preferences.classic;
         let prompt_width = (reading_width * 0.9).min((reading_width * 0.77).max(320.0));
         let show_rows = self.session.is_some() && self.session == self.transcript_session;
         let empty_text = match (self.watcher.is_some() && self.frame.is_none(), self.session) {
@@ -1365,15 +1365,22 @@ impl Shell {
                     Row::User(text) => div()
                         .flex()
                         .flex_col()
-                        .items_end()
+                        .when(!classic, |row| row.items_end())
                         .child(
-                            self.text(text.clone(), 16.0, palette.text)
-                                .line_height(px(24.8))
-                                .max_w(px(prompt_width))
-                                .px(px(15.0))
-                                .py(px(10.0))
-                                .rounded(px(19.0))
-                                .bg(palette.subtle),
+                            self.text(text.clone(), font_size, palette.text)
+                                .line_height(px(if self.preferences.compact {
+                                    font_size * 1.4
+                                } else {
+                                    font_size * 1.55
+                                }))
+                                .when(!classic, |text| {
+                                    text.max_w(px(prompt_width))
+                                        .px(px(15.0))
+                                        .py(px(10.0))
+                                        .rounded(px(19.0))
+                                        .bg(palette.subtle)
+                                })
+                                .when(classic, |text| text.font_weight(FontWeight::MEDIUM)),
                         )
                         .into_any_element(),
                     Row::Assistant { key, view, .. } => {
@@ -1394,7 +1401,7 @@ impl Shell {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(22.0))
+                    .gap(px(if self.preferences.compact { 14.0 } else { 22.0 }))
                     .w(px(reading_width))
                     .mx_auto()
                     .children(rows)
@@ -1544,7 +1551,22 @@ impl Shell {
         let loaded_sample = self.node.is_none()
             && self.session.is_some()
             && self.session == self.transcript_session;
-        let metrics = &self.snapshot.metrics;
+        let runtime = self
+            .composer_config
+            .observed
+            .as_ref()
+            .map(|observed| &observed.runtime);
+        let live_metrics = work_viewmodel::observability::metrics::Metrics::session(
+            runtime.and_then(|runtime| runtime.stats.as_ref()),
+        );
+        let live_context = work_viewmodel::observability::metrics::Context::reported(
+            runtime.and_then(|runtime| runtime.context.as_ref()),
+        );
+        let (metrics, context) = if loaded_sample {
+            (&self.snapshot.metrics, &self.snapshot.context)
+        } else {
+            (&live_metrics, &live_context)
+        };
         let controls = self.session_controls();
         let can_send = controls.send
             && draft.is_some_and(|draft| {
@@ -1689,21 +1711,51 @@ impl Shell {
                             .when_some(self.observation, |bar, observation| {
                                 bar.child(self.text(observation, 11.0, palette.muted))
                             })
-                            .when(loaded_sample, |bar| {
-                                bar.child(
-                                    self.text(
-                                        format!(
-                                            "↑ {}   ↓ {}   上下文 {}",
-                                            tokens(metrics.input),
-                                            tokens(metrics.output),
-                                            percent(self.snapshot.context.percent)
-                                        ),
-                                        11.0,
-                                        palette.muted,
+                            .when(
+                                metrics.input.is_some()
+                                    || metrics.output.is_some()
+                                    || self.preferences.show_context && context.percent.is_some(),
+                                |bar| {
+                                    let usage = div().flex().gap_2().min_w(px(0.0));
+                                    bar.child(
+                                        usage
+                                            .when(
+                                                metrics.input.is_some() || metrics.output.is_some(),
+                                                |usage| {
+                                                    usage.child(
+                                                        self.text(
+                                                            format!(
+                                                                "↑ {}   ↓ {}",
+                                                                tokens(metrics.input),
+                                                                tokens(metrics.output)
+                                                            ),
+                                                            11.0,
+                                                            palette.muted,
+                                                        )
+                                                        .truncate(),
+                                                    )
+                                                },
+                                            )
+                                            .when(
+                                                self.preferences.show_context
+                                                    && context.percent.is_some(),
+                                                |usage| {
+                                                    usage.child(
+                                                        self.text(
+                                                            format!(
+                                                                "上下文 {}",
+                                                                percent(context.percent)
+                                                            ),
+                                                            11.0,
+                                                            palette.muted,
+                                                        )
+                                                        .truncate(),
+                                                    )
+                                                },
+                                            ),
                                     )
-                                    .truncate(),
-                                )
-                            }),
+                                },
+                            ),
                     ),
             )
     }
@@ -1746,7 +1798,9 @@ impl Render for Shell {
                 }
             }
         }
+        self.apply_appearance(window.appearance(), false);
         let width = f32::from(window.viewport_size().width);
+        let height = f32::from(window.viewport_size().height);
         let compact = width <= 700.0;
         let overlay = width <= 900.0;
         let rail = if compact { 0.0 } else { 52.0 };
@@ -1763,6 +1817,7 @@ impl Render for Shell {
         let docked = self.overview_open && !overlay;
         let full = docked && self.inspector_full;
         if full
+            || self.settings.open
             || self.comment.is_some()
             || self.project_form.open
             || self.question.is_some()
@@ -1775,6 +1830,7 @@ impl Render for Shell {
         self.browser.hide_inactive(
             self.files.tab.browser_id().filter(|_| {
                 browser_visible
+                    && !self.settings.open
                     && self.comment.is_none()
                     && !self.project_form.open
                     && self.question.is_none()
@@ -1917,6 +1973,11 @@ impl Render for Shell {
                     .and_then(|question| self.question_dialog(question, cx)),
                 |body, dialog| body.child(gpui::deferred(dialog).with_priority(100)),
             )
+            .when(self.settings.open, |body| {
+                body.child(
+                    gpui::deferred(self.settings_dialog(width, height, cx)).with_priority(110),
+                )
+            })
     }
 }
 

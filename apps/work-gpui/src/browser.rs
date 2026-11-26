@@ -127,6 +127,7 @@ impl Shell {
                             shell.overlay == Some(super::Overlay::Inspector)
                         };
                         if visible
+                            && !shell.settings.open
                             && !shell.composer_config.menu_open()
                             && shell.files.tab == Tab::Browser(id)
                             && shell.navigation_revision == selected.scope
@@ -145,7 +146,8 @@ impl Shell {
     pub(super) fn browser_contents(&self, id: u64) -> AnyElement {
         #[cfg(target_os = "macos")]
         if let Some((_, surface)) = self.browser.items.iter().find(|(key, _)| *key == id) {
-            if self.composer_config.menu_open()
+            if self.settings.open
+                || self.composer_config.menu_open()
                 || self.comment.is_some()
                 || self.project_form.open
                 || self.question.is_some()
