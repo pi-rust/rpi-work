@@ -18,6 +18,37 @@ impl WorkspaceClient {
         }
     }
 
+    pub async fn native_project_resources(
+        &self,
+        project: &str,
+    ) -> Result<work_core::api::NativeProjectResources, ClientError> {
+        match self {
+            Self::Remote(client) => client.native_project_resources(project).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client
+                .node_owner()
+                .native_project_resources(project)
+                .await
+                .map_err(Into::into),
+        }
+    }
+
+    pub async fn native_apply_project(
+        &self,
+        project: &str,
+        request: work_core::api::NativeApply,
+    ) -> Result<work_core::api::NativeOperation, ClientError> {
+        match self {
+            Self::Remote(client) => client.native_apply_project(project, request).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client
+                .node_owner()
+                .native_apply_project(project, request)
+                .await
+                .map_err(Into::into),
+        }
+    }
+
     pub async fn native_manage(
         &self,
         project: &str,

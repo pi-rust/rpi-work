@@ -218,6 +218,11 @@ pub(super) struct ResourceInstall {
     pub observed: Option<work_core::api::NativeCatalog>,
 }
 
+pub(super) struct ProjectResourceWrite {
+    pub receipt: Result<work_core::api::NativeOperation, ClientError>,
+    pub observed: Option<work_core::api::NativeProjectResources>,
+}
+
 pub struct Node {
     client: WorkspaceClient,
     runtime: tokio::runtime::Runtime,
@@ -382,6 +387,45 @@ impl Node {
                 .await
                 .ok();
             ResourceInstall { receipt, observed }
+        })
+    }
+
+    pub(super) fn read_project_resources(
+        &self,
+        project: String,
+    ) -> JoinHandle<Option<work_core::api::NativeProjectResources>> {
+        use work_viewmodel::config_requests::bounded;
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            bounded(
+                "读取项目资源配置",
+                client.native_project_resources(&project),
+            )
+            .await
+            .ok()
+        })
+    }
+
+    pub(super) fn write_project_resources(
+        &self,
+        project: String,
+        request: work_core::api::NativeApply,
+    ) -> JoinHandle<ProjectResourceWrite> {
+        use work_viewmodel::config_requests::bounded;
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            let receipt = bounded(
+                "保存项目资源配置",
+                client.native_apply_project(&project, request),
+            )
+            .await;
+            let observed = bounded(
+                "回读项目资源配置",
+                client.native_project_resources(&project),
+            )
+            .await
+            .ok();
+            ProjectResourceWrite { receipt, observed }
         })
     }
 

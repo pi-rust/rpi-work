@@ -206,7 +206,13 @@ impl Shell {
         let Some(project) = self.resource_project() else {
             return;
         };
-        if self.resource_page.and_then(ResourceTab::kind) != Some(kind)
+        let active_kind = if self.resource_settings.configuration_form.is_some() {
+            Some(NativeKind::Package)
+        } else {
+            self.resource_page.and_then(ResourceTab::kind)
+        };
+        if active_kind != Some(kind)
+            || self.resource_settings.install_form.is_some()
             || !self.can_install_resource()
             || !self.search.buffer.is_committed()
         {
@@ -242,9 +248,17 @@ impl Shell {
         self.resource_settings
             .scroll
             .set_offset(point(px(0.0), px(0.0)));
-        self.search.focus.focus(window);
+        if let Some(form) = &self.resource_settings.configuration_form {
+            form.focus_back(window);
+        } else {
+            self.search.focus.focus(window);
+        }
         cx.notify();
         true
+    }
+
+    pub(super) fn resource_install_in_progress(&self) -> bool {
+        self.resource_settings.install.pending.is_some()
     }
 
     fn can_install_resource(&self) -> bool {
@@ -387,7 +401,7 @@ impl Shell {
         })
     }
 
-    pub(super) fn resource_install_notice(&self, tab: ResourceTab) -> Option<Div> {
+    pub(super) fn resource_install_notice(&self, kind: Option<NativeKind>) -> Option<Div> {
         let project = self.resource_project()?;
         let activity = &self.resource_settings.install;
         let message = if activity
@@ -398,7 +412,7 @@ impl Shell {
             "正在安装并读取节点目录…"
         } else {
             let (target, outcome) = activity.notice.as_ref()?;
-            if !target.visible_from(&project) || Some(target.kind) != tab.kind() {
+            if !target.visible_from(&project) || Some(target.kind) != kind {
                 return None;
             }
             outcome.message()
