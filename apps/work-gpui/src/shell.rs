@@ -5,6 +5,8 @@
 pub(crate) mod attachments;
 #[path = "browser.rs"]
 mod browser;
+#[path = "collaboration.rs"]
+mod collaboration;
 #[path = "composer_config.rs"]
 pub(crate) mod composer_config;
 #[path = "composer.rs"]
@@ -164,6 +166,7 @@ pub struct Shell {
     palette: Palette,
     preferences: settings::Preferences,
     settings: settings::Panel,
+    collaboration: collaboration::Panel,
     search: editor::SearchInput,
     workbench_search: workbench_search::Panel,
     session_context: session_context::Panel,
@@ -267,6 +270,7 @@ impl Shell {
             palette: Palette::from_preset("codex", false, false),
             preferences: settings::Preferences::load(),
             settings: settings::Panel::new(cx),
+            collaboration: collaboration::Panel::default(),
             search: editor::SearchInput::new(cx),
             workbench_search: workbench_search::Panel::new(cx),
             session_context: session_context::Panel::new(cx),

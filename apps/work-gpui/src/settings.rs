@@ -132,15 +132,17 @@ enum Section {
     Notifications,
     Shortcuts,
     Archives,
+    Collaboration,
 }
 
 impl Section {
-    const NAVIGATION: [(Self, &str, &str); 5] = [
+    const NAVIGATION: [(Self, &str, &str); 6] = [
         (Self::General, "settings-general", "settings"),
         (Self::Appearance, "settings-appearance", "appearance"),
         (Self::Notifications, "settings-notifications", "bell"),
         (Self::Shortcuts, "settings-shortcuts", "keyboard"),
         (Self::Archives, "settings-archives", "archive-box"),
+        (Self::Collaboration, "settings-collaboration", "globe"),
     ];
 
     fn label(self) -> &'static str {
@@ -150,6 +152,7 @@ impl Section {
             Self::Notifications => "通知",
             Self::Shortcuts => "键盘快捷键",
             Self::Archives => "已归档的聊天",
+            Self::Collaboration => "工作协同",
         }
     }
 }
@@ -543,6 +546,10 @@ impl Shell {
             Section::Appearance => self.appearance_settings(cx),
             Section::Notifications => self.notification_settings(cx),
             Section::Shortcuts => self.shortcut_settings(),
+            Section::Collaboration => vec![SettingsRow(
+                None,
+                self.collaboration_settings(cx).into_any_element(),
+            )],
             Section::Archives => vec![SettingsRow(
                 None,
                 self.archive_settings(&self.settings.target_focus, cx)

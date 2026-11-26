@@ -239,6 +239,15 @@ impl Node {
         Ok((snapshot, Self { client, runtime }))
     }
 
+    pub(super) fn discover_nearby(
+        &self,
+    ) -> JoinHandle<Result<Vec<work_client::DiscoveredNode>, ClientError>> {
+        self.runtime.spawn(work_viewmodel::config_requests::bounded(
+            "发现附近节点",
+            work_client::discover_nodes(),
+        ))
+    }
+
     pub fn is_local(&self) -> bool {
         self.client.is_local()
     }
