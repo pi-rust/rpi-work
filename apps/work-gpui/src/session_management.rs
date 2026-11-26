@@ -136,6 +136,7 @@ impl Shell {
         if self.project_form.open || self.question.is_some() || self.comment.is_some() {
             return;
         }
+        self.close_resource_page();
         self.read_session_management_capabilities(cx);
         if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
             draft.input.finish_composition();

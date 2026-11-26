@@ -43,13 +43,14 @@ struct ResultRow<'a> {
 
 impl Shell {
     pub(super) fn search_input_open(&self) -> bool {
-        self.settings.open || self.workbench_search.open
+        self.settings.open || self.workbench_search.open || self.resource_page_open()
     }
 
     pub(super) fn open_workbench_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.navigation_keyboard_enabled() || self.composer_is_marked() {
             return;
         }
+        self.close_resource_page();
         self.project_menu = None;
         self.close_session_filter_menu();
         self.composer_config.close_menu();

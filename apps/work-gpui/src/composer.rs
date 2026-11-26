@@ -699,6 +699,8 @@ impl Element for InputElement {
                     "https://电脑地址:13030"
                 } else if shell.settings.open {
                     "搜索设置"
+                } else if shell.resource_page_open() {
+                    "搜索资源"
                 } else {
                     "搜索会话、项目或操作"
                 }

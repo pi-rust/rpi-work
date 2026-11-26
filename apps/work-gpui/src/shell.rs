@@ -177,6 +177,8 @@ pub struct Shell {
     collaboration: collaboration::Panel,
     node_connection: node_connection::Form,
     node_share: node_share::Share,
+    resource_page: Option<resource_settings::ResourceTab>,
+    resource_inspect_focus: FocusHandle,
     resource_settings: resource_settings::Panel,
     provider_settings: provider_settings::Panel,
     search: editor::SearchInput,
@@ -285,6 +287,8 @@ impl Shell {
             collaboration: collaboration::Panel::default(),
             node_connection: node_connection::Form::default(),
             node_share: node_share::Share::default(),
+            resource_page: None,
+            resource_inspect_focus: cx.focus_handle().tab_stop(true),
             resource_settings: resource_settings::Panel::default(),
             provider_settings: provider_settings::Panel::default(),
             search: editor::SearchInput::new(cx),
@@ -390,6 +394,7 @@ impl Shell {
     }
 
     fn navigate_session(&mut self, session: Option<usize>, cx: &mut Context<Self>) {
+        self.close_resource_page();
         let target = (self.project, session);
         if self.session_history[self.history_position] != target {
             self.session_history.truncate(self.history_position + 1);
@@ -412,10 +417,11 @@ impl Shell {
         }
     }
 
-    fn step_history(&mut self, forward: bool, cx: &mut Context<Self>) {
+    fn step_history(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(position) = self.history_target(forward) else {
             return;
         };
+        self.return_from_resources(window, cx);
         self.history_position = position;
         let (project, session) = self.session_history[self.history_position];
         self.set_project(project, cx);
@@ -1076,6 +1082,7 @@ impl Shell {
                             )
                             .when(enabled, |button| {
                                 button.on_click(cx.listener(|shell, _, window, cx| {
+                                    shell.close_resource_page();
                                     shell.focus_composer(window);
                                     shell.create_session(SessionCreation::New, cx);
                                 }))
@@ -1115,7 +1122,7 @@ impl Shell {
                             .child(icon("blocks", 16.0, palette.muted))
                             .child(self.text("技能与插件", 13.0, palette.text))
                             .on_click(cx.listener(|shell, _, window, cx| {
-                                shell.open_resource_settings(window, cx);
+                                shell.open_resource_page(window, cx);
                             })),
                     )
                     .child(
@@ -1250,7 +1257,7 @@ impl Shell {
                 self.toggle_navigation(width <= px(700.0), cx);
             }
             WorkbenchShortcut::Browser => {
-                self.toggle_inspector(self.browser_panel_tab(), width <= px(900.0), cx);
+                self.toggle_inspector(self.browser_panel_tab(), width <= px(900.0), window, cx);
             }
             WorkbenchShortcut::Settings => self.open_settings(window, cx),
         }
@@ -1258,6 +1265,7 @@ impl Shell {
     }
 
     fn open_new_conversation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.return_from_resources(window, cx);
         self.dismiss_drawer(window);
         self.inspector_full = false;
         if let Some(project) = self.project {
@@ -1277,18 +1285,29 @@ impl Shell {
         };
         if visible {
             self.overlay = None;
-            self.focus_composer(window);
+            if self.resource_page_open() {
+                self.search.focus.focus(window);
+            } else {
+                self.focus_composer(window);
+            }
         }
         visible
     }
 
-    fn toggle_inspector(&mut self, tab: project_files::Tab, narrow: bool, cx: &mut Context<Self>) {
+    fn toggle_inspector(
+        &mut self,
+        tab: project_files::Tab,
+        narrow: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let returning = self.return_from_resources(window, cx);
         let same = self.files.tab == tab;
         if narrow {
             self.overlay =
                 (!(same && self.overlay == Some(Overlay::Inspector))).then_some(Overlay::Inspector);
         } else {
-            self.overview_open = !same || !self.overview_open;
+            self.overview_open = returning || !same || !self.overview_open;
         }
         self.show_project_tab(tab, cx);
         cx.notify();
@@ -1300,8 +1319,8 @@ impl Shell {
             self.icon_button(id, shape, 34.0)
                 .h(px(34.0))
                 .rounded(px(9.0))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.toggle_inspector(tab, inspector_overlay, cx)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.toggle_inspector(tab, inspector_overlay, window, cx)
                 }))
         };
         div()
@@ -1316,8 +1335,14 @@ impl Shell {
             .child(
                 self.icon_button("rail-conversation", "terminal", 34.0)
                     .h(px(34.0))
-                    .bg(palette.hover)
-                    .on_click(cx.listener(|this, _, window, _| this.focus_composer(window))),
+                    .when(!self.resource_page_open(), |button| {
+                        button.bg(palette.hover)
+                    })
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        if !shell.return_from_resources(window, cx) {
+                            shell.focus_composer(window);
+                        }
+                    })),
             )
             .child(
                 self.icon_button("rail-navigation", "folder", 34.0)
@@ -1328,11 +1353,12 @@ impl Shell {
                 self.navigation_tooltip(
                     self.icon_button("rail-resources", "blocks", 34.0)
                         .h(px(34.0))
+                        .when(self.resource_page_open(), |button| button.bg(palette.hover))
                         .tab_index(0)
                         .tab_stop(!self.settings.open && self.navigation_keyboard_enabled())
                         .focus(|button| button.bg(palette.subtle))
                         .on_click(cx.listener(|shell, _, window, cx| {
-                            shell.open_resource_settings(window, cx);
+                            shell.open_resource_page(window, cx);
                         })),
                     "技能与插件",
                 ),
@@ -1402,8 +1428,8 @@ impl Shell {
                             self.icon_button(id, shape, 24.0)
                                 .when(!enabled, |button| button.opacity(0.35).cursor_default())
                                 .when(enabled, |button| {
-                                    button.on_click(cx.listener(move |this, _, _, cx| {
-                                        this.step_history(forward, cx)
+                                    button.on_click(cx.listener(move |this, _, window, cx| {
+                                        this.step_history(forward, window, cx)
                                     }))
                                 })
                         }),
@@ -1431,68 +1457,89 @@ impl Shell {
                             .window_control_area(WindowControlArea::Drag),
                     )
                     .child(
-                        self.text(self.title().to_owned(), 14.0, palette.text)
-                            .font_weight(FontWeight::MEDIUM)
-                            .truncate(),
-                    )
-                    .when(self.node.is_some() && self.session.is_some(), |header| {
-                        header.child(self.session_actions_button(cx))
-                    }),
-            )
-            .child(
-                div().flex().items_center().gap(px(4.0)).children(
-                    [
-                        (
-                            project_files::Tab::Overview,
-                            "header-overview",
-                            "globe",
-                            "浏览器",
-                        ),
-                        (
-                            project_files::Tab::Files,
-                            "header-files",
-                            "code-xml",
-                            "代码",
-                        ),
-                        (
-                            project_files::Tab::Changes,
-                            "header-changes",
-                            "file-diff",
-                            "变更",
-                        ),
-                    ]
-                    .into_iter()
-                    .map(|(tab, id, shape, label)| {
-                        let tab = if tab == project_files::Tab::Overview {
-                            self.browser_panel_tab()
-                        } else {
-                            tab
-                        };
-                        let active = self.files.tab == tab
-                            && if overlay {
-                                self.overlay == Some(Overlay::Inspector)
+                        self.text(
+                            if self.resource_page_open() {
+                                "技能与插件".to_owned()
                             } else {
-                                self.overview_open
-                            };
-                        self.button(id, "")
-                            .gap(px(6.0))
-                            .child(icon(shape, 15.0, palette.muted))
-                            .when(!compact, |button| {
-                                button.child(self.text(label, 12.0, palette.muted))
-                            })
-                            .when_some(
-                                (tab == project_files::Tab::Changes && width >= 1200.0)
-                                    .then(|| self.files.line_totals())
-                                    .flatten(),
-                                |button, counts| button.child(self.git_line_counts(counts)),
-                            )
-                            .when(active, |button| button.bg(palette.subtle))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.toggle_inspector(tab, overlay, cx)
-                            }))
-                    }),
-                ),
+                                self.title().to_owned()
+                            },
+                            14.0,
+                            palette.text,
+                        )
+                        .font_weight(FontWeight::MEDIUM)
+                        .truncate(),
+                    )
+                    .when(
+                        !self.resource_page_open() && self.node.is_some() && self.session.is_some(),
+                        |header| header.child(self.session_actions_button(cx)),
+                    ),
             )
+            .when(self.resource_page_open(), |header| {
+                header.child(
+                    self.button("resource-return", "返回对话")
+                        .tab_index(0)
+                        .focus(|button| button.bg(palette.hover))
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.return_from_resources(window, cx);
+                        })),
+                )
+            })
+            .when(!self.resource_page_open(), |header| {
+                header.child(
+                    div().flex().items_center().gap(px(4.0)).children(
+                        [
+                            (
+                                project_files::Tab::Overview,
+                                "header-overview",
+                                "globe",
+                                "浏览器",
+                            ),
+                            (
+                                project_files::Tab::Files,
+                                "header-files",
+                                "code-xml",
+                                "代码",
+                            ),
+                            (
+                                project_files::Tab::Changes,
+                                "header-changes",
+                                "file-diff",
+                                "变更",
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(tab, id, shape, label)| {
+                            let tab = if tab == project_files::Tab::Overview {
+                                self.browser_panel_tab()
+                            } else {
+                                tab
+                            };
+                            let active = self.files.tab == tab
+                                && if overlay {
+                                    self.overlay == Some(Overlay::Inspector)
+                                } else {
+                                    self.overview_open
+                                };
+                            self.button(id, "")
+                                .gap(px(6.0))
+                                .child(icon(shape, 15.0, palette.muted))
+                                .when(!compact, |button| {
+                                    button.child(self.text(label, 12.0, palette.muted))
+                                })
+                                .when_some(
+                                    (tab == project_files::Tab::Changes && width >= 1200.0)
+                                        .then(|| self.files.line_totals())
+                                        .flatten(),
+                                    |button, counts| button.child(self.git_line_counts(counts)),
+                                )
+                                .when(active, |button| button.bg(palette.subtle))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.toggle_inspector(tab, overlay, window, cx)
+                                }))
+                        }),
+                    ),
+                )
+            })
     }
 
     fn inspector_divider(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2174,7 +2221,7 @@ impl Render for Shell {
             .inspector_width
             .unwrap_or((width * 0.38).round())
             .clamp(320.0, (remaining - 350.0).max(320.0));
-        let docked = self.overview_open && !overlay;
+        let docked = self.overview_open && !overlay && !self.resource_page_open();
         let full = docked && self.inspector_full;
         if full
             || self.search_input_open()
@@ -2232,6 +2279,7 @@ impl Render for Shell {
                         } else {
                             window.focus_next();
                         }
+                        shell.reveal_resource_focus(window);
                         cx.stop_propagation();
                     }
                     if key == "escape"
@@ -2245,7 +2293,8 @@ impl Render for Shell {
                             || shell.dismiss_session_filter_menu(window)
                             || shell.project_menu.take().is_some()
                             || std::mem::take(&mut shell.welcome_project_picker)
-                            || shell.dismiss_drawer(window))
+                            || shell.dismiss_drawer(window)
+                            || shell.return_from_resources(window, cx))
                     {
                         cx.stop_propagation();
                         cx.notify();
@@ -2266,7 +2315,10 @@ impl Render for Shell {
                     .min_h(px(0.0))
                     .when(!compact, |body| body.child(self.rail(overlay, cx)))
                     .when(navigation > 0.0, |body| body.child(self.sidebar(cx)))
-                    .when(!full, |body| {
+                    .when_some(self.resource_page, |body, tab| {
+                        body.child(self.resource_page(tab, remaining, window, cx))
+                    })
+                    .when(!full && !self.resource_page_open(), |body| {
                         body.child(
                             div()
                                 .flex()

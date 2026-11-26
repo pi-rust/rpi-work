@@ -268,6 +268,7 @@ impl Shell {
     pub(super) fn add_project_button(&self, cx: &Context<Self>) -> impl IntoElement {
         self.icon_button("add-project", "plus", 24.0)
             .on_click(cx.listener(|shell, _, window: &mut Window, cx| {
+                shell.close_resource_page();
                 shell.project_menu = None;
                 shell.cancel_comment();
                 if let Some(draft) = shell.drafts.get_mut(&shell.draft_key()) {

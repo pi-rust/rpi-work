@@ -38,6 +38,7 @@ impl Shell {
         {
             return;
         }
+        self.close_resource_page();
         self.project_menu = None;
         self.close_session_filter_menu();
         self.composer_config.close_menu();
