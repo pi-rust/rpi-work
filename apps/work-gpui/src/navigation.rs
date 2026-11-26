@@ -582,7 +582,12 @@ impl Shell {
             ))
     }
 
-    fn open_project_welcome(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_project_welcome(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.project_menu = None;
         self.select_project(index, cx);
         if self.overlay == Some(super::Overlay::Navigation) {

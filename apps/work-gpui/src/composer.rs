@@ -147,6 +147,10 @@ fn to_utf16(text: &str, range: Range<usize>) -> Range<usize> {
 }
 
 impl Shell {
+    pub(super) fn composer_is_marked(&self) -> bool {
+        self.buffer().is_some_and(|buffer| !buffer.is_committed())
+    }
+
     fn buffer(&self) -> Option<&Buffer> {
         if self.settings.open {
             return Some(&self.settings.search);
@@ -300,7 +304,7 @@ impl Shell {
     fn input_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
-        if self.buffer().is_some_and(|input| input.marked.is_some()) {
+        if self.composer_is_marked() {
             return;
         }
         if self.settings.open && matches!(key, "enter" | "down") {

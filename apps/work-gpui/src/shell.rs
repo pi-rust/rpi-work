@@ -66,6 +66,34 @@ const PRIMARY_MODIFIER_LABEL: &str = if cfg!(target_os = "macos") {
     "Ctrl"
 };
 
+#[derive(Clone, Copy)]
+enum WorkbenchShortcut {
+    NewConversation,
+    Navigation,
+    Browser,
+    Settings,
+}
+
+impl WorkbenchShortcut {
+    const BINDINGS: [(Self, &str, bool, &str); 4] = [
+        (Self::NewConversation, "N", false, "新对话"),
+        (Self::Navigation, "B", false, "切换侧栏"),
+        (Self::Browser, "B", true, "切换浏览器面板"),
+        (Self::Settings, ",", false, "打开设置"),
+    ];
+
+    fn from_keystroke(stroke: &gpui::Keystroke) -> Option<Self> {
+        if !primary_modifier(stroke.modifiers) || stroke.modifiers.alt || stroke.modifiers.function
+        {
+            return None;
+        }
+        Self::BINDINGS.iter().find_map(|&(action, key, shift, _)| {
+            (stroke.key.eq_ignore_ascii_case(key) && stroke.modifiers.shift == shift)
+                .then_some(action)
+        })
+    }
+}
+
 fn primary_modifier(modifiers: gpui::Modifiers) -> bool {
     if cfg!(target_os = "macos") {
         modifiers.platform && !modifiers.control
@@ -1136,6 +1164,66 @@ impl Shell {
         cx.notify();
     }
 
+    fn browser_panel_tab(&self) -> project_files::Tab {
+        if self.files.tab.browser_id().is_some() {
+            self.files.tab
+        } else {
+            project_files::Tab::Overview
+        }
+    }
+
+    fn handle_workbench_shortcut(
+        &mut self,
+        event: &gpui::KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(shortcut) = WorkbenchShortcut::from_keystroke(&event.keystroke) else {
+            return false;
+        };
+        if !self.navigation_keyboard_enabled() || self.composer_is_marked() {
+            return false;
+        }
+        if event.is_held {
+            return true;
+        }
+        let width = window.viewport_size().width;
+        match shortcut {
+            WorkbenchShortcut::NewConversation => {
+                self.dismiss_drawer(window);
+                self.inspector_full = false;
+                if let Some(project) = self.project {
+                    self.open_project_welcome(project, window, cx);
+                } else {
+                    self.focus_composer(window);
+                    cx.notify();
+                }
+            }
+            WorkbenchShortcut::Navigation => {
+                self.toggle_navigation(width <= px(700.0), cx);
+            }
+            WorkbenchShortcut::Browser => {
+                self.toggle_inspector(self.browser_panel_tab(), width <= px(900.0), cx);
+            }
+            WorkbenchShortcut::Settings => self.open_settings(window, cx),
+        }
+        true
+    }
+
+    fn dismiss_drawer(&mut self, window: &mut Window) -> bool {
+        let width = window.viewport_size().width;
+        let visible = match self.overlay {
+            Some(Overlay::Navigation) => width <= px(700.0),
+            Some(Overlay::Inspector) => width <= px(900.0),
+            None => false,
+        };
+        if visible {
+            self.overlay = None;
+            self.focus_composer(window);
+        }
+        visible
+    }
+
     fn toggle_inspector(&mut self, tab: project_files::Tab, narrow: bool, cx: &mut Context<Self>) {
         let same = self.files.tab == tab;
         if narrow {
@@ -1304,10 +1392,8 @@ impl Shell {
                     ]
                     .into_iter()
                     .map(|(tab, id, shape, label)| {
-                        let tab = if tab == project_files::Tab::Overview
-                            && self.files.tab.browser_id().is_some()
-                        {
-                            self.files.tab
+                        let tab = if tab == project_files::Tab::Overview {
+                            self.browser_panel_tab()
                         } else {
                             tab
                         };
@@ -1413,8 +1499,9 @@ impl Shell {
                             .when(!overlay, |row| {
                                 row.child(
                                     self.icon_button("inspector-full", "panel-right", 26.0)
-                                        .on_click(cx.listener(|this, _, _, cx| {
+                                        .on_click(cx.listener(|this, _, window, cx| {
                                             this.inspector_full = !this.inspector_full;
+                                            this.focus_composer(window);
                                             cx.notify();
                                         })),
                                 )
@@ -2031,18 +2118,18 @@ impl Render for Shell {
         let palette = self.palette;
         div()
             .id("workbench")
+            .when(full && self.navigation_keyboard_enabled(), |body| {
+                body.track_focus(&self.focus)
+            })
             .relative()
             .on_key_down(
                 cx.listener(|shell, event: &gpui::KeyDownEvent, window, cx| {
                     let key = &event.keystroke.key;
                     let modifiers = event.keystroke.modifiers;
-                    if key == ","
-                        && primary_modifier(modifiers)
-                        && !modifiers.alt
-                        && !modifiers.shift
-                    {
-                        shell.open_settings(window, cx);
+                    if shell.handle_workbench_shortcut(event, window, cx) {
+                        window.prevent_default();
                         cx.stop_propagation();
+                        return;
                     }
                     if key == "tab"
                         && shell.navigation_keyboard_enabled()
@@ -2058,6 +2145,8 @@ impl Render for Shell {
                         cx.stop_propagation();
                     }
                     if key == "escape"
+                        && !modifiers.modified()
+                        && !shell.composer_is_marked()
                         && (shell.dismiss_project_form()
                             || shell.close_session_management()
                             || shell.close_question()
@@ -2065,7 +2154,8 @@ impl Render for Shell {
                             || shell.composer_config.close_menu()
                             || shell.dismiss_session_filter_menu(window)
                             || shell.project_menu.take().is_some()
-                            || std::mem::take(&mut shell.welcome_project_picker))
+                            || std::mem::take(&mut shell.welcome_project_picker)
+                            || shell.dismiss_drawer(window))
                     {
                         cx.stop_propagation();
                         cx.notify();

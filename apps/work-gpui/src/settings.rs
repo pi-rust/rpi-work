@@ -906,10 +906,8 @@ impl Shell {
 
     fn shortcut_settings(&self) -> Vec<SettingsRow> {
         let palette = self.palette;
-        let primary = super::PRIMARY_MODIFIER_LABEL;
-        let shortcuts: [(&str, &[&str]); 8] = [
-            ("打开设置", &[primary, ","]),
-            ("关闭设置与对话框", &["Esc"]),
+        let shortcuts: [(&str, &[&str]); 7] = [
+            ("关闭对话框或抽屉", &["Esc"]),
             ("移至下一个控件", &["Tab"]),
             ("移至上一个控件", &["Shift", "Tab"]),
             ("发送消息", &["Enter"]),
@@ -917,8 +915,26 @@ impl Shell {
             ("定位首个设置搜索结果", &["Enter"]),
             ("聚焦设置搜索结果", &["↓"]),
         ];
-        shortcuts
+        super::WorkbenchShortcut::BINDINGS
             .into_iter()
+            .map(|(_, key, shift, label)| {
+                let keys = [
+                    super::PRIMARY_MODIFIER_LABEL,
+                    if shift { "Shift" } else { "" },
+                    key,
+                ];
+                (
+                    label,
+                    keys.into_iter()
+                        .filter(|key| !key.is_empty())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .chain(
+                shortcuts
+                    .into_iter()
+                    .map(|(label, keys)| (label, keys.to_vec())),
+            )
             .map(|(label, keys)| {
                 SettingsRow(
                     None,
