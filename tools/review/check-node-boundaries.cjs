@@ -23,5 +23,6 @@ assert(host.includes('from_node_owner'), 'Work must compose the existing local o
 assert(!/Process::start|--http|NODE_EXTENSION/.test(host), 'Work host must not supervise an HTTP plugin');
 assert(!fs.existsSync(path.join(root,'vendor/component-packages.json')), 'Remove obsolete node vendor snapshots');
 const runtimeManifest = fs.readFileSync(path.join(root,'crates/node/work-node-runtime/Cargo.toml'),'utf8');
-assert(runtimeManifest.includes('git = "https://github.com/pi-rust/rpi-package"'), 'Preserve the verified native RPC backend source');
+assert(/^rpi-extcore\s*=\s*\{[^}\n]*\bgit\s*=\s*"https:\/\/github\.com\/pi-rust\/rpi-extension"[^}\n]*\brev\s*=\s*"[0-9a-f]{40}"[^}\n]*\}/m.test(runtimeManifest),
+  'Pin the native RPC backend to a revision of pi-rust/rpi-extension');
 console.log('PASS Work ownership boundaries: private local packages, shared owner, no plugin host requirement');
