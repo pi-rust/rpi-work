@@ -298,6 +298,10 @@ impl Shell {
             })
     }
 
+    fn search_is_masked(&self) -> bool {
+        self.node_connection.password || self.provider_settings.masking_credential()
+    }
+
     fn active_input_layout(&self) -> Option<&Layout> {
         if self.search_input_open() {
             self.search.layout.as_ref()
@@ -333,7 +337,7 @@ impl Shell {
             cx.stop_propagation();
             return;
         }
-        let secret = self.node_connection.password;
+        let secret = self.search_is_masked();
         if self.composer_is_marked() {
             return;
         }
@@ -386,11 +390,15 @@ impl Shell {
                 }
                 "v" => {
                     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                        let text = text.replace("\r\n", "\n").replace('\r', "\n");
-                        let text = if self.search_input_open() {
-                            text.replace('\n', " ")
-                        } else {
+                        let text = if self.provider_settings.masking_credential() {
                             text
+                        } else {
+                            let text = text.replace("\r\n", "\n").replace('\r', "\n");
+                            if self.search_input_open() {
+                                text.replace('\n', " ")
+                            } else {
+                                text
+                            }
                         };
                         self.buffer_mut().replace(None, &text);
                     }
@@ -471,7 +479,7 @@ impl EntityInputHandler for Shell {
         let text = self.buffer().map_or("", |buffer| buffer.text.as_str());
         let range = from_utf16(text, utf16);
         *actual_range = Some(to_utf16(text, range.clone()));
-        Some(if self.node_connection.password {
+        Some(if self.search_is_masked() {
             "*".repeat(text[range].encode_utf16().count())
         } else {
             text[range].into()
@@ -516,7 +524,7 @@ impl EntityInputHandler for Shell {
         if self.node_connection_busy() || self.node_share_busy() {
             return;
         }
-        if self.search_input_open() {
+        if self.search_input_open() && !self.provider_settings.masking_credential() {
             self.buffer_mut()
                 .replace(utf16, &value.replace(['\r', '\n'], " "));
         } else {
@@ -693,7 +701,9 @@ impl Element for InputElement {
         }
         let text: SharedString = if buffer.text.is_empty() {
             if self.search_field {
-                if shell.node_connection.password {
+                if shell.provider_settings.masking_credential() {
+                    "输入 API 密钥"
+                } else if shell.node_connection.password {
                     "输入此节点的密码"
                 } else if shell.node_connection.open || shell.node_share.open {
                     "https://电脑地址:13030"
@@ -720,7 +730,7 @@ impl Element for InputElement {
                     "要求后续更改".into()
                 }
             }
-        } else if self.search_field && shell.node_connection.password {
+        } else if self.search_field && shell.search_is_masked() {
             // Keep the original byte offsets for selection and IME geometry.
             "*".repeat(buffer.text.len()).into()
         } else {

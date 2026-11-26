@@ -7,7 +7,10 @@ use work_client::{
     ClientError, Project, ProjectFolders, SessionAccess, SessionConnection, WorkspaceClient,
 };
 use work_core::api::realtime::{OperationRef, OperationStatus};
-use work_core::api::{HostResponse, PendingDialog, SessionActivity, SessionSummary};
+use work_core::api::{
+    HostResponse, PendingDialog, ProviderCatalog, ProviderMutation, ProviderReceipt,
+    SessionActivity, SessionSummary,
+};
 use work_core::{ApplyResult, MessageBlock, RunProjection, ToolStatus};
 use work_viewmodel::observability::metrics::{Context, Metrics};
 
@@ -59,6 +62,11 @@ impl From<SessionSummary> for SessionItem {
             activity: session.activity,
         }
     }
+}
+
+pub(crate) struct ProviderWrite {
+    pub receipt: Option<ProviderReceipt>,
+    pub observed: Option<ProviderCatalog>,
 }
 
 pub enum Creation {
@@ -324,6 +332,21 @@ impl Node {
         self.runtime.spawn(async move {
             work_viewmodel::config_requests::bounded("读取模型供应商", client.provider_catalog())
                 .await
+        })
+    }
+
+    pub(super) fn mutate_provider(&self, request: ProviderMutation) -> JoinHandle<ProviderWrite> {
+        use work_viewmodel::config_requests::bounded;
+
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            let receipt = bounded("保存模型供应商配置", client.provider_mutate(request))
+                .await
+                .ok();
+            let observed = bounded("回读模型供应商配置", client.provider_catalog())
+                .await
+                .ok();
+            ProviderWrite { receipt, observed }
         })
     }
 

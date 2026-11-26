@@ -418,7 +418,7 @@ impl Shell {
         self.reset_node_connection();
         self.reset_node_share();
         self.reset_resource_catalog();
-        self.provider_settings = Default::default();
+        self.provider_settings.leave();
         self.settings.open = false;
         self.settings.browse = false;
         self.search.clear();
@@ -457,7 +457,7 @@ impl Shell {
         if destination.section == Section::Configuration {
             self.read_provider_catalog(cx);
         } else {
-            self.provider_settings = Default::default();
+            self.provider_settings.leave();
         }
         // Finish dispatching the result's key release before focusing a writable control.
         window.prevent_default();
@@ -471,6 +471,13 @@ impl Shell {
             }
         });
         cx.notify();
+    }
+
+    pub(super) fn show_settings_form(&mut self) {
+        self.settings.browse = false;
+        self.settings
+            .content_scroll
+            .set_offset(point(px(0.0), px(0.0)));
     }
 
     pub(super) fn focus_settings_title(&self, window: &mut Window) {
@@ -628,7 +635,9 @@ impl Shell {
         let palette = self.palette;
         let compact = width <= 700.0;
         let section = self.settings.section;
-        let collaboration_form = self.node_connection.open || self.node_share.open;
+        let form_open = self.node_connection.open
+            || self.node_share.open
+            || self.provider_settings.editing_credential();
         let dialog_width = if compact {
             width
         } else {
@@ -698,7 +707,7 @@ impl Shell {
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .pl_2(),
                         )
-                        .when(compact && !collaboration_form, |bar| {
+                        .when(compact && !form_open, |bar| {
                             bar.child(
                                 self.button("settings-browse", "浏览分类")
                                     .h(px(44.0))
@@ -732,10 +741,9 @@ impl Shell {
                                 })),
                         ),
                 )
-                .when(
-                    !collaboration_form && (!compact || self.settings.browse),
-                    |nav| nav.child(self.settings_navigation(compact, height, window, cx)),
-                );
+                .when(!form_open && (!compact || self.settings.browse), |nav| {
+                    nav.child(self.settings_navigation(compact, height, window, cx))
+                });
         div()
             .id("settings-scrim")
             .absolute()
@@ -759,6 +767,9 @@ impl Shell {
                         }
                         "escape" if shell.node_share.open => {
                             shell.close_node_share(window, cx);
+                        }
+                        "escape" if shell.provider_settings.editing_credential() => {
+                            shell.cancel_provider_edit(window, cx);
                         }
                         "escape" if !shell.search.buffer.text.is_empty() => {
                             shell.search.clear();
