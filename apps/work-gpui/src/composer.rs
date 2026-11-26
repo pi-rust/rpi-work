@@ -137,6 +137,9 @@ fn to_utf16(text: &str, range: Range<usize>) -> Range<usize> {
 
 impl Shell {
     fn buffer(&self) -> Option<&Buffer> {
+        if let Some(question) = &self.question {
+            return Some(&question.input);
+        }
         if self.project_form.open {
             return Some(self.project_form.buffer());
         }
@@ -147,6 +150,9 @@ impl Shell {
     }
 
     fn buffer_mut(&mut self) -> &mut Buffer {
+        if let Some(question) = &mut self.question {
+            return &mut question.input;
+        }
         if self.project_form.open {
             return self.project_form.buffer_mut();
         }
@@ -259,7 +265,11 @@ impl Shell {
                 _ => return,
             }
         } else if !modifiers.platform && !modifiers.alt && !modifiers.control {
-            if key == "enter" && !modifiers.shift && self.comment.is_none() {
+            if key == "enter"
+                && !modifiers.shift
+                && self.comment.is_none()
+                && self.question.is_none()
+            {
                 if !event.is_held {
                     self.send(cx);
                 }
@@ -524,6 +534,8 @@ impl Element for InputElement {
         let text: SharedString = if buffer.text.is_empty() {
             if shell.project_form.open {
                 shell.project_form.placeholder().into()
+            } else if shell.question.is_some() {
+                "输入回答".into()
             } else if shell.comment.is_some() {
                 "输入行内反馈".into()
             } else {

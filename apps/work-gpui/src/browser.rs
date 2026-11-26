@@ -114,7 +114,8 @@ impl Shell {
     pub(super) fn browser_contents(&self, id: u64) -> AnyElement {
         #[cfg(target_os = "macos")]
         if let Some((_, surface)) = self.browser.items.iter().find(|(key, _)| *key == id) {
-            if self.composer_config.menu_open() || self.project_form.open {
+            if self.composer_config.menu_open() || self.project_form.open || self.question.is_some()
+            {
                 return gpui::div().flex_1().into_any_element();
             }
             let dark = self.dark;

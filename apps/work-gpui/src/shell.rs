@@ -11,6 +11,8 @@ pub(crate) mod editor;
 pub(crate) mod project_files;
 #[path = "project_management.rs"]
 pub(crate) mod project_management;
+#[path = "question.rs"]
+mod question;
 #[path = "review.rs"]
 mod review;
 #[path = "rich_text.rs"]
@@ -84,6 +86,7 @@ pub struct Shell {
     files: project_files::Panel,
     comment: Option<review::Comment>,
     project_form: project_management::Form,
+    question: Option<question::Question>,
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
@@ -165,6 +168,7 @@ impl Shell {
             files: project_files::Panel::default(),
             comment: None,
             project_form: project_management::Form::default(),
+            question: None,
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
@@ -322,6 +326,7 @@ impl Shell {
             return;
         }
         if changed {
+            self.close_question();
             self.cancel_comment();
             self.files.cancel_review_check();
             self.navigation_revision += 1;
@@ -378,6 +383,14 @@ impl Shell {
     }
 
     fn apply_frame(&mut self, index: usize, frame: SessionFrame, cx: &mut Context<Self>) {
+        if frame.projection.connection == work_core::ConnectionState::Online
+            && self
+                .question
+                .as_ref()
+                .is_some_and(|question| !question.current(index, &frame.dialogs))
+        {
+            self.close_question();
+        }
         if self
             .actions
             .get(&index)
@@ -1456,11 +1469,15 @@ impl Shell {
                                 composer.child(self.feedback_chips(&draft.feedback, cx))
                             })
                             .when(
-                                self.comment.is_none() && !self.project_form.open,
+                                self.comment.is_none()
+                                    && !self.project_form.open
+                                    && self.question.is_none(),
                                 |composer| composer.child(self.input_element(cx)),
                             )
                             .when(
-                                self.comment.is_some() || self.project_form.open,
+                                self.comment.is_some()
+                                    || self.project_form.open
+                                    || self.question.is_some(),
                                 |composer| composer.child(div().h(px(47.0))),
                             )
                             .when_some(status, |composer, status| {
@@ -1593,6 +1610,7 @@ impl Render for Shell {
         if full
             || self.comment.is_some()
             || self.project_form.open
+            || self.question.is_some()
             || overlay && self.overlay.is_some()
         {
             self.composer_config.close_menu();
@@ -1603,6 +1621,7 @@ impl Render for Shell {
                 browser_visible
                     && self.comment.is_none()
                     && !self.project_form.open
+                    && self.question.is_none()
                     && !self.composer_config.menu_open()
             }),
             window,
@@ -1618,6 +1637,7 @@ impl Render for Shell {
             .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape"
                     && (shell.dismiss_project_form()
+                        || shell.close_question()
                         || shell.cancel_comment()
                         || shell.composer_config.close_menu())
                 {
@@ -1730,6 +1750,12 @@ impl Render for Shell {
             .when(self.project_form.open, |body| {
                 body.child(gpui::deferred(self.render_project_form(cx)).with_priority(100))
             })
+            .when_some(
+                self.question
+                    .as_ref()
+                    .and_then(|question| self.question_dialog(question, cx)),
+                |body, dialog| body.child(gpui::deferred(dialog).with_priority(100)),
+            )
     }
 }
 

@@ -11,13 +11,30 @@ use work_core::{ConnectionState, RunPhase};
 use work_viewmodel::session_controls::{PendingRequests, SessionControls};
 use work_viewmodel::session_receipts::interpret_receipt;
 
-use super::{READING_WIDTH, Shell, rejected};
+use super::{READING_WIDTH, Shell, question::Question, rejected};
 use crate::data::SessionFrame;
 
 #[derive(Clone)]
 pub(crate) enum Action {
     Abort,
-    Reply { request_id: String, value: String },
+    Reply { request_id: String, answer: Answer },
+}
+
+#[derive(Clone)]
+pub(crate) enum Answer {
+    Selection(Vec<String>),
+    Text(String),
+}
+
+impl Answer {
+    pub(crate) fn payload(self) -> Value {
+        match self {
+            Self::Selection(values) => serde_json::json!({"kind": "selector", "values": values}),
+            Self::Text(text) => {
+                serde_json::json!({"kind": "input", "text": text, "value": text, "values": [text]})
+            }
+        }
+    }
 }
 
 enum Stage {
@@ -131,7 +148,7 @@ fn options(dialog: &PendingDialog) -> impl Iterator<Item = (&str, &str, Option<&
 }
 
 impl Shell {
-    fn action_available(&self) -> bool {
+    pub(super) fn action_available(&self) -> bool {
         self.session
             .and_then(|index| self.actions.get(&index))
             .is_none_or(|request| !request.locked())
@@ -148,7 +165,7 @@ impl Shell {
             })
     }
 
-    fn start_control(
+    pub(super) fn start_control(
         &mut self,
         expected_session: Option<usize>,
         action: Action,
@@ -163,12 +180,18 @@ impl Shell {
         let controls = self.session_controls();
         let permitted = match &action {
             Action::Abort => self.can_abort(&controls),
-            Action::Reply { request_id, value } => {
+            Action::Reply { request_id, answer } => {
                 controls.reply
                     && self.action_available()
                     && frame.dialogs.iter().any(|dialog| {
                         dialog.request_id == *request_id
-                            && options(dialog).any(|(_, option, _)| option == value)
+                            && (Question::permits(dialog, answer)
+                                || match answer {
+                                    Answer::Selection(values) if values.len() == 1 => {
+                                        options(dialog).any(|(_, option, _)| option == values[0])
+                                    }
+                                    _ => false,
+                                })
                     })
             }
         };
@@ -343,6 +366,7 @@ impl Shell {
                             .or(ui.message.as_deref())
                             .unwrap_or("等待会话回复");
                         let mut options = options(dialog).peekable();
+                        let question = Question::supported(dialog);
                         div()
                             .id(gpui::SharedString::from(format!(
                                 "approval-{}",
@@ -366,7 +390,18 @@ impl Shell {
                                     card.child(self.text(detail.clone(), 12.0, palette.muted))
                                 },
                             )
-                            .when(options.peek().is_none(), |card| {
+                            .when(question, |card| {
+                                let dialog = dialog.clone();
+                                card.child(self.button("answer-question", "编辑回答").when(
+                                    reply,
+                                    |button| {
+                                        button.on_click(cx.listener(move |shell, _, window, cx| {
+                                            shell.open_question(dialog.clone(), window, cx);
+                                        }))
+                                    },
+                                ))
+                            })
+                            .when(!question && options.peek().is_none(), |card| {
                                 card.child(self.text(
                                     "此请求暂无可直接提交的单选项",
                                     12.0,
@@ -382,7 +417,7 @@ impl Shell {
                                         |(index, (title, value, description))| {
                                             let action = Action::Reply {
                                                 request_id: dialog.request_id.clone(),
-                                                value: value.into(),
+                                                answer: Answer::Selection(vec![value.into()]),
                                             };
                                             div()
                                                 .id(("approval-option", index))
@@ -478,7 +513,7 @@ mod tests {
             .push(serde_json::from_value(json!({"requestId": "pending", "ui": {}})).unwrap());
         request.action = Action::Reply {
             request_id: "pending".into(),
-            value: "deny".into(),
+            answer: Answer::Selection(vec!["deny".into()]),
         };
         assert!(!request.observed(&frame));
         frame.dialogs.clear();

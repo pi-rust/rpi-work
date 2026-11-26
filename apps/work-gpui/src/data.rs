@@ -340,13 +340,9 @@ impl Node {
                     .abort(&id)
                     .await
                     .map(|reply| command_admission(reply, Some("abort"), false)),
-                Action::Reply { request_id, value } => {
+                Action::Reply { request_id, answer } => {
                     let reply = client
-                        .dialog_response(
-                            &id,
-                            &request_id,
-                            json!({"kind": "selector", "values": [value]}),
-                        )
+                        .dialog_response(&id, &request_id, answer.payload())
                         .await?;
                     Ok(crate::shell::session_action::dialog_admission(&reply))
                 }
