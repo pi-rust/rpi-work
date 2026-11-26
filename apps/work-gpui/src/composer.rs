@@ -50,7 +50,18 @@ impl Buffer {
     }
 
     pub fn can_send(&self) -> bool {
-        self.marked.is_none() && !self.text.trim().is_empty()
+        self.is_committed() && !self.text.trim().is_empty()
+    }
+
+    pub fn is_committed(&self) -> bool {
+        self.marked.is_none()
+    }
+
+    pub fn clear_after_send(&mut self) {
+        *self = Self {
+            revision: self.revision.wrapping_add(1),
+            ..Default::default()
+        };
     }
 
     pub fn finish_composition(&mut self) {
@@ -126,10 +137,16 @@ fn to_utf16(text: &str, range: Range<usize>) -> Range<usize> {
 
 impl Shell {
     fn buffer(&self) -> Option<&Buffer> {
+        if let Some(comment) = &self.comment {
+            return Some(&comment.input);
+        }
         self.drafts.get(&self.session).map(|draft| &draft.input)
     }
 
     fn buffer_mut(&mut self) -> &mut Buffer {
+        if let Some(comment) = &mut self.comment {
+            return &mut comment.input;
+        }
         &mut self.drafts.entry(self.session).or_default().input
     }
 
@@ -225,7 +242,7 @@ impl Shell {
                 _ => return,
             }
         } else if !modifiers.platform && !modifiers.alt && !modifiers.control {
-            if key == "enter" && !modifiers.shift {
+            if key == "enter" && !modifiers.shift && self.comment.is_none() {
                 if !event.is_held {
                     self.send(cx);
                 }
@@ -488,7 +505,11 @@ impl Element for InputElement {
             run.color = shell.palette.text;
         }
         let text: SharedString = if buffer.text.is_empty() {
-            "要求后续更改".into()
+            if shell.comment.is_some() {
+                "输入行内反馈".into()
+            } else {
+                "要求后续更改".into()
+            }
         } else {
             buffer.text.clone().into()
         };
@@ -689,7 +710,7 @@ mod tests {
     fn marking_existing_text_protects_it_from_a_late_acknowledgement() {
         let mut draft = crate::prompt::Draft::default();
         draft.input.replace(None, "中文");
-        draft.begin();
+        draft.begin(true);
         draft.input.compose(Some(0..2), "中文", None);
         draft.accept();
         assert_eq!(draft.input.text, "中文");

@@ -9,6 +9,8 @@ pub(crate) mod composer_config;
 pub(crate) mod editor;
 #[path = "project_files.rs"]
 pub(crate) mod project_files;
+#[path = "review.rs"]
+mod review;
 #[path = "rich_text.rs"]
 mod rich_text;
 #[path = "session_action.rs"]
@@ -78,6 +80,7 @@ pub struct Shell {
     session_history: Vec<(Option<usize>, Option<usize>)>,
     history_position: usize,
     files: project_files::Panel,
+    comment: Option<review::Comment>,
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     creating_session: Option<Task<()>>,
@@ -157,6 +160,7 @@ impl Shell {
             session_history: vec![(project, session)],
             history_position: 0,
             files: project_files::Panel::default(),
+            comment: None,
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             creating_session: None,
@@ -314,6 +318,8 @@ impl Shell {
             return;
         }
         if changed {
+            self.cancel_comment();
+            self.files.cancel_review_check();
             self.navigation_revision += 1;
             if let Some(draft) = self.drafts.get_mut(&self.session) {
                 draft.input.finish_composition();
@@ -429,6 +435,7 @@ impl Shell {
     fn session_controls(&self) -> SessionControls {
         let draft = self.drafts.get(&self.session);
         let mut pending = draft.map(Draft::pending).unwrap_or_default();
+        pending.submitting |= self.files.checking_review();
         if let Some(request) = self.session.and_then(|index| self.actions.get(&index)) {
             request.apply_pending(&mut pending);
         }
@@ -454,6 +461,10 @@ impl Shell {
     }
 
     fn send(&mut self, cx: &mut Context<Self>) {
+        self.send_prompt(false, cx);
+    }
+
+    fn send_prompt(&mut self, review: bool, cx: &mut Context<Self>) {
         let Some((node, index)) = self.node.as_ref().zip(self.session) else {
             return;
         };
@@ -461,9 +472,14 @@ impl Shell {
             return;
         };
         let draft = self.drafts.entry(Some(index)).or_default();
-        if !draft.input.can_send() {
+        if !review && !draft.can_send() {
             return;
         }
+        let message = if review {
+            work_viewmodel::diff_view::WORKTREE_REVIEW_PROMPT.into()
+        } else {
+            draft.message()
+        };
         if self
             .actions
             .get(&index)
@@ -471,8 +487,8 @@ impl Shell {
         {
             self.actions.remove(&index);
         }
-        draft.begin();
-        let request = node.prompt(frame.session_id.clone(), draft.input.text.clone());
+        draft.begin(!review);
+        let request = node.prompt(frame.session_id.clone(), message);
         cx.spawn(async move |this, cx| {
             let result = request.await;
             this.update(cx, |shell, cx| {
@@ -1359,7 +1375,7 @@ impl Shell {
             && self.session == self.transcript_session;
         let metrics = &self.snapshot.metrics;
         let controls = self.session_controls();
-        let can_send = controls.send && draft.is_some_and(|draft| draft.input.can_send());
+        let can_send = controls.send && draft.is_some_and(Draft::can_send);
         let checking = self
             .session
             .is_some_and(|index| self.checking_receipts.contains(&index));
@@ -1368,6 +1384,11 @@ impl Shell {
         let notice = action
             .map(session_action::Request::status)
             .or_else(|| draft.and_then(|draft| draft.notice.as_deref()))
+            .or_else(|| {
+                draft
+                    .filter(|draft| draft.feedback_over_limit())
+                    .map(|_| "消息和行内反馈合计超过长度上限")
+            })
             .or_else(|| self.config_notice());
         let status = if checking {
             Some("正在核对发送回执…")
@@ -1413,7 +1434,15 @@ impl Shell {
                             .px(px(10.0))
                             .pt(px(12.0))
                             .pb(px(9.0))
-                            .child(self.input_element(cx))
+                            .when_some(draft, |composer, draft| {
+                                composer.child(self.feedback_chips(&draft.feedback, cx))
+                            })
+                            .when(self.comment.is_none(), |composer| {
+                                composer.child(self.input_element(cx))
+                            })
+                            .when(self.comment.is_some(), |composer| {
+                                composer.child(div().h(px(47.0)))
+                            })
                             .when_some(status, |composer, status| {
                                 composer.child(
                                     self.text(status.to_owned(), 12.0, palette.muted)
@@ -1541,15 +1570,14 @@ impl Render for Shell {
             .clamp(320.0, (remaining - 350.0).max(320.0));
         let docked = self.overview_open && !overlay;
         let full = docked && self.inspector_full;
-        if full || overlay && self.overlay.is_some() {
+        if full || self.comment.is_some() || overlay && self.overlay.is_some() {
             self.composer_config.close_menu();
         }
         let browser_visible = docked || overlay && self.overlay == Some(Overlay::Inspector);
         self.browser.hide_inactive(
-            self.files
-                .tab
-                .browser_id()
-                .filter(|_| browser_visible && !self.composer_config.menu_open()),
+            self.files.tab.browser_id().filter(|_| {
+                browser_visible && self.comment.is_none() && !self.composer_config.menu_open()
+            }),
             window,
             cx,
         );
@@ -1559,8 +1587,11 @@ impl Render for Shell {
         let palette = self.palette;
         div()
             .id("workbench")
+            .relative()
             .on_key_down(cx.listener(|shell, event: &gpui::KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape" && shell.composer_config.close_menu() {
+                if event.keystroke.key == "escape"
+                    && (shell.cancel_comment() || shell.composer_config.close_menu())
+                {
                     cx.stop_propagation();
                     cx.notify();
                 }
@@ -1664,6 +1695,9 @@ impl Render for Shell {
                         cx.listener(|this, _, _, _| this.resizing_inspector = false),
                     ),
             )
+            .when_some(self.comment.as_ref(), |body, comment| {
+                body.child(gpui::deferred(self.comment_dialog(comment, cx)).with_priority(100))
+            })
     }
 }
 

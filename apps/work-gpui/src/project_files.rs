@@ -1,5 +1,7 @@
 //! Read-only project directory, source and change views.
 
+use std::rc::Rc;
+
 use gpui::{
     AnyElement, ClipboardItem, Context, Div, HighlightStyle, IntoElement, SharedString, StyledText,
     Task, div, prelude::*, px,
@@ -124,16 +126,28 @@ pub(super) struct Panel {
     pending: Option<Pending>,
     result: Option<Result<Contents, String>>,
     changes: Option<GitStatus>,
+    review_check: Option<Pending>,
+    review_error: Option<String>,
 }
 
 impl Panel {
     pub(super) fn is_overview(&self) -> bool {
         self.tab == Tab::Overview
     }
+
+    pub(super) fn cancel_review_check(&mut self) {
+        self.review_check = None;
+        self.review_error = None;
+    }
+
+    pub(super) fn checking_review(&self) -> bool {
+        self.review_check.is_some()
+    }
 }
 
 impl Shell {
     pub(super) fn reset_project_files(&mut self, cx: &mut Context<Self>) {
+        self.files.cancel_review_check();
         self.files.history.clear();
         self.files.changes = None;
         self.read_project(self.files.tab.root(), cx);
@@ -145,6 +159,7 @@ impl Shell {
     }
 
     fn read_project(&mut self, route: Option<Route>, cx: &mut Context<Self>) {
+        self.cancel_comment();
         self.files.pending = None;
         self.files.result = None;
         self.files.route = route.clone();
@@ -368,6 +383,46 @@ impl Shell {
             )
     }
 
+    fn run_review(&mut self, cx: &mut Context<Self>) {
+        let Some((node, project)) = self.node.as_ref().zip(self.project) else {
+            return;
+        };
+        if !self.session_controls().send {
+            return;
+        }
+        self.files.review_error = None;
+        let work = node.read_project(self.snapshot.projects[project].id.clone(), Route::Changes);
+        let request = work.abort_handle();
+        let display = cx.spawn(async move |this, cx| {
+            let result = work.await;
+            let _ = this.update(cx, |shell, cx| {
+                shell.files.review_check = None;
+                match result {
+                    Ok(Ok(Contents::Changes(status)))
+                        if status.is_repository && !status.files.is_empty() =>
+                    {
+                        if shell.session_controls().send {
+                            shell.send_prompt(true, cx);
+                        } else {
+                            shell.files.review_error = Some("会话状态已变化，审阅未提交。".into());
+                        }
+                    }
+                    Ok(Ok(Contents::Changes(status))) => {
+                        shell.read_project(None, cx);
+                        shell.files.changes = Some(status);
+                    }
+                    _ => shell.files.review_error = Some("无法读取工作树，请重试。".into()),
+                }
+                cx.notify();
+            });
+        });
+        self.files.review_check = Some(Pending {
+            _display: display,
+            request,
+        });
+        cx.notify();
+    }
+
     fn review_panel(&self, cx: &Context<Self>) -> AnyElement {
         let palette = self.palette;
         let Some(status) = self.files.changes.as_ref() else {
@@ -437,11 +492,34 @@ impl Shell {
             .mb(px(4.0))
             .child(self.text("变更文件", 12.0, palette.text))
             .child(
-                self.button("refresh-changes", "刷新")
-                    .h(px(24.0))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.reset_project_files(cx);
-                    })),
+                div()
+                    .flex()
+                    .gap_1()
+                    .child(self.button("refresh-changes", "刷新").h(px(24.0)).on_click(
+                        cx.listener(|this, _, _, cx| {
+                            this.reset_project_files(cx);
+                        }),
+                    ))
+                    .when(!status.files.is_empty(), |header| {
+                        let enabled = self.session_controls().send;
+                        header.child(
+                            self.button(
+                                "run-review",
+                                if self.files.checking_review() {
+                                    "正在核对工作树…"
+                                } else {
+                                    "运行审阅"
+                                },
+                            )
+                            .h(px(24.0))
+                            .when(enabled, |button| {
+                                button.on_click(cx.listener(|this, _, _, cx| {
+                                    this.run_review(cx);
+                                }))
+                            })
+                            .when(!enabled, |button| button.opacity(0.6)),
+                        )
+                    }),
             );
         let files = status.files.iter().enumerate().filter_map(|(index, file)| {
             let unstaged = file.unstaged;
@@ -531,7 +609,7 @@ impl Shell {
                     .child(caption)
                     .child(match result {
                         Some(Err(error)) => self.project_note(error, true),
-                        Some(Ok(Contents::Diff(diff))) => self.diff_preview(diff),
+                        Some(Ok(Contents::Diff(diff))) => self.diff_preview(diff, *staged, cx),
                         _ => self.project_note("正在读取差异…", false),
                     })
                     .into_any_element()
@@ -560,6 +638,9 @@ impl Shell {
                     .pb(px(24.0))
                     .child(summary)
                     .child(header)
+                    .when_some(self.files.review_error.as_deref(), |body, error| {
+                        body.child(self.project_note(error, true))
+                    })
                     .when(status.files.is_empty(), |body| {
                         body.child(self.project_note("工作树没有改动。", false))
                     })
@@ -569,14 +650,27 @@ impl Shell {
             .into_any_element()
     }
 
-    fn diff_preview(&self, diff: &Diff) -> AnyElement {
+    fn diff_preview(&self, diff: &Diff, staged: bool, cx: &Context<Self>) -> AnyElement {
         if diff.patch.is_empty() {
             return self.project_note("此范围没有文本差异。", false);
         }
         let palette = self.palette;
         let view = diff_view::present(&diff.patch, &diff.path);
+        let observed = (self.frame.is_some() && view.feedback_revision.is_some())
+            .then(|| Rc::new(diff.clone()));
+        let feedback = self
+            .drafts
+            .get(&self.session)
+            .into_iter()
+            .flat_map(|draft| &draft.feedback)
+            .filter(|item| {
+                Some(&item.revision) == view.feedback_revision.as_ref()
+                    && item.path == diff.path
+                    && item.staged == staged
+            })
+            .collect::<Vec<_>>();
         let gutter = (view.gutter_digits as f32 * 7.0 + 8.0).max(23.0);
-        let rows = view.rows.iter().filter_map(|row| {
+        let rows = view.rows.iter().enumerate().filter_map(|(index, row)| {
             let first = row.line.tokens.first().map_or("", |token| token.text);
             if view.structured && row.line.kind == "meta" && !first.starts_with("@@") {
                 return None;
@@ -602,27 +696,70 @@ impl Shell {
                 "remove" => (palette.diff_remove_bg, palette.danger),
                 _ => (palette.bg, palette.text),
             };
-            Some(
-                div()
-                    .flex()
-                    .min_h(px(22.5))
-                    .line_height(px(22.5))
-                    .bg(background)
-                    .text_color(color)
-                    .when(view.structured, |line| {
-                        line.children([row.old_number, row.new_number].map(|number| {
-                            div()
-                                .flex()
-                                .justify_end()
+            let anchor = row
+                .new_number
+                .map(|number| ("新", number))
+                .or_else(|| row.old_number.map(|number| ("旧", number)));
+            let line = div()
+                .flex()
+                .items_center()
+                .min_h(px(22.5))
+                .line_height(px(22.5))
+                .bg(background)
+                .text_color(color)
+                .when(view.structured, |line| {
+                    line.children([row.old_number, row.new_number].map(|number| {
+                        div()
+                            .flex()
+                            .justify_end()
+                            .flex_none()
+                            .w(px(gutter))
+                            .pr(px(5.0))
+                            .text_size(px(10.0))
+                            .text_color(palette.muted)
+                            .child(number.map(|number| number.to_string()).unwrap_or_default())
+                    }))
+                })
+                .child(div().flex_none().pl(px(2.0)).pr(px(7.0)).child(body))
+                .when_some(
+                    anchor.zip(observed.as_ref()),
+                    |line, ((side, number), observed)| {
+                        let observed = Rc::clone(observed);
+                        let scope = if staged { "已暂存" } else { "工作区" };
+                        let location = format!("{} · {side}行 {number} · {scope}", diff.path);
+                        line.child(
+                            self.icon_button("line-feedback", "plus", 11.0)
+                                .id(("line-feedback", index))
+                                .ml_auto()
+                                .mr_1()
                                 .flex_none()
-                                .w(px(gutter))
-                                .pr(px(5.0))
-                                .text_size(px(10.0))
-                                .text_color(palette.muted)
-                                .child(number.map(|number| number.to_string()).unwrap_or_default())
-                        }))
-                    })
-                    .child(div().flex_none().pl(px(2.0)).pr(px(7.0)).child(body)),
+                                .h(px(22.0))
+                                .on_click(cx.listener(move |shell, _, window, cx| {
+                                    shell.open_comment(
+                                        Rc::clone(&observed),
+                                        staged,
+                                        index,
+                                        location.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                })),
+                        )
+                    },
+                );
+            Some(
+                div().flex().flex_col().child(line).children(
+                    feedback
+                        .iter()
+                        .filter(|item| item.index == index)
+                        .map(|item| {
+                            self.text(item.comment.clone(), 11.0, palette.text)
+                                .whitespace_normal()
+                                .bg(palette.subtle)
+                                .px_2()
+                                .py_1()
+                        }),
+                ),
             )
         });
         div()
