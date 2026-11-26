@@ -472,6 +472,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.settings.section != destination.section {
+            self.clear_resource_detail();
+        }
         let panel = &mut self.settings;
         panel.section = destination.section;
         panel.target = destination.field;

@@ -341,6 +341,22 @@ impl Node {
         })
     }
 
+    pub(super) fn inspect_native_resource(
+        &self,
+        project: String,
+        reference: String,
+    ) -> JoinHandle<Result<work_core::api::NativeReceipt, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            let request = work_core::api::NativeManagement::Inspect { reference };
+            work_viewmodel::config_requests::bounded(
+                "检查已安装资源",
+                client.native_manage(&project, request),
+            )
+            .await
+        })
+    }
+
     pub fn is_local(&self) -> bool {
         self.client.is_local()
     }

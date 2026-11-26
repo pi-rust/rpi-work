@@ -17,6 +17,22 @@ impl WorkspaceClient {
                 .map_err(Into::into),
         }
     }
+
+    pub async fn native_manage(
+        &self,
+        project: &str,
+        request: work_core::api::NativeManagement,
+    ) -> Result<work_core::api::NativeReceipt, ClientError> {
+        match self {
+            Self::Remote(client) => client.native_manage(project, request).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client
+                .node_owner()
+                .native_manage(project, request)
+                .await
+                .map_err(Into::into),
+        }
+    }
 }
 
 impl WorkClient {
