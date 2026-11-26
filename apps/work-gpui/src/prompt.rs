@@ -27,6 +27,7 @@ pub struct DiffAnchor {
 #[derive(Default)]
 pub struct Draft {
     pub input: Buffer,
+    skill_instruction: Option<String>,
     pub feedback: Vec<Feedback>,
     next_feedback: u64,
     pub attachments: Vec<Attachment>,
@@ -56,6 +57,18 @@ enum Stage {
 }
 
 impl Draft {
+    pub(crate) fn prefill_skill(&mut self, instruction: &str) {
+        let prefix = self
+            .skill_instruction
+            .as_deref()
+            .filter(|previous| self.input.text.starts_with(previous));
+        if prefix != Some(instruction) {
+            let previous_len = prefix.unwrap_or_default().encode_utf16().count();
+            self.input.replace(Some(0..previous_len), instruction);
+            self.skill_instruction = Some(instruction.to_owned());
+        }
+    }
+
     pub fn add_attachments(&mut self, mut files: Vec<Attachment>) {
         if self.attachments.len() + files.len() >= rpi_extcore::prompt::MAX_CONTENT_BLOCKS {
             self.attachment_notice = Some("每条消息最多添加 63 个附件。".into());
@@ -316,6 +329,23 @@ mod tests {
         draft.observe("agent_settled", &COMPLETED, &ONLINE);
         assert!(!draft.pending().awaiting_reply);
         assert!(draft.input.text.is_empty());
+    }
+
+    #[test]
+    fn skill_prefill_replaces_only_its_unedited_prefix() {
+        let mut draft = Draft::default();
+        let task = "现有草稿 👋";
+        let first = "技能甲 👩‍💻\n\n";
+        let second = "技能乙\n\n";
+        draft.input.replace(None, task);
+        draft.prefill_skill(first);
+        draft.prefill_skill(first);
+        assert_eq!(draft.message(), format!("{first}{task}"));
+        draft.prefill_skill(second);
+        assert_eq!(draft.message(), format!("{second}{task}"));
+        draft.input.replace(Some(0..1), "自定义");
+        draft.prefill_skill(first);
+        assert_eq!(draft.message(), format!("{first}自定义能乙\n\n{task}"));
     }
 
     #[test]

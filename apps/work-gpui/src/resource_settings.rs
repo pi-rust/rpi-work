@@ -4,7 +4,7 @@ use gpui::{Context, Div, FontWeight, ScrollHandle, Task, Window, div, point, pre
 use work_core::api::{NativeCatalog, NativeKind, NativeResource};
 use work_viewmodel::resources::catalog::{display_name, installation_origin, installed_resources};
 
-use super::Shell;
+use super::{DraftKey, Shell};
 use crate::icons::icon;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -107,12 +107,31 @@ impl Shell {
         closed
     }
 
+    fn use_skill_in_new_conversation(
+        &mut self,
+        instruction: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(project) = self.project else { return };
+        if self.resource_page != Some(ResourceTab::Skills) || !self.navigation_keyboard_enabled() {
+            return;
+        }
+        self.drafts
+            .entry(DraftKey::NewConversation(Some(project)))
+            .or_default()
+            .prefill_skill(instruction);
+        self.open_new_conversation(window, cx);
+    }
+
     pub(super) fn reveal_resource_focus(&self, window: &Window) {
         if !self.resource_page_open() {
             return;
         }
         let scroll = &self.resource_settings.scroll;
-        if self.resource_inspect_focus.is_focused(window) {
+        if self.resource_inspect_focus.is_focused(window)
+            || self.resource_use_skill_focus.is_focused(window)
+        {
             scroll.scroll_to_bottom();
         } else if self.search.focus.is_focused(window) {
             scroll.set_offset(point(px(0.0), px(0.0)));
@@ -428,8 +447,35 @@ impl Shell {
                         self.text(resource_caption(selected, catalog), 13.0, palette.muted)
                             .mt_1(),
                     )
-                    .child(self.resource_detail(selected, inspection, cx)),
+                    .child(self.resource_detail(selected, inspection, cx))
+                    .when_some(skill_instruction(selected), |detail, instruction| {
+                        detail.child(self.use_skill_button(instruction, cx))
+                    }),
             )
+    }
+
+    fn use_skill_button(&self, instruction: String, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
+        let palette = self.palette;
+        div()
+            .id("use-skill")
+            .track_focus(&self.resource_use_skill_focus)
+            .flex()
+            .flex_none()
+            .items_center()
+            .h(px(44.0))
+            .mt_2()
+            .px_3()
+            .rounded(px(6.0))
+            .cursor_pointer()
+            .bg(palette.text)
+            .border_1()
+            .border_color(palette.text)
+            .hover(|button| button.bg(palette.text.opacity(0.88)))
+            .focus(|button| button.border_color(palette.bg))
+            .child(self.text("用于新对话", 13.0, palette.bg))
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.use_skill_in_new_conversation(&instruction, window, cx);
+            }))
     }
 
     fn resource_page_row(
@@ -694,6 +740,51 @@ impl Shell {
     }
 }
 
+fn skill_instruction(resource: &NativeResource) -> Option<String> {
+    if resource.kind != NativeKind::Skill || resource.facts["installed"] != true {
+        return None;
+    }
+    // The selectable path can identify the entry file or its installed directory.
+    let [selected] = resource.facts["selectable"]["skills"]
+        .as_array()?
+        .as_slice()
+    else {
+        return None;
+    };
+    let selected = selected.as_str()?;
+    // Use the node's path syntax even when the client runs on another OS.
+    let windows = selected.starts_with("\\\\")
+        || selected
+            .as_bytes()
+            .get(1..3)
+            .is_some_and(|root| matches!(root, b":\\" | b":/"));
+    let separator = if windows && selected.contains('\\') {
+        '\\'
+    } else {
+        '/'
+    };
+    if (!windows && !selected.starts_with('/')) || selected.chars().any(char::is_control) {
+        return None;
+    }
+    let selected = selected.trim_end_matches(separator);
+    let entry_observed = resource.facts["observed"]["files"]
+        .as_array()
+        .is_some_and(|files| files.iter().any(|file| file["path"] == "SKILL.md"));
+    let path = if selected.rsplit(separator).next() == Some("SKILL.md")
+        && resource.facts["path"].as_str() != Some(selected)
+    {
+        selected.to_owned()
+    } else if entry_observed {
+        format!("{selected}{separator}SKILL.md")
+    } else {
+        return None;
+    };
+    let path = serde_json::Value::String(path);
+    Some(format!(
+        "请先读取节点上的技能文件 {path}，按其中的说明处理以下任务。\n\n"
+    ))
+}
+
 fn resource_matches(resource: &NativeResource, query: &str) -> bool {
     query.is_empty()
         || resource.name.to_lowercase().contains(query)
@@ -711,4 +802,48 @@ fn resource_caption(resource: &NativeResource, catalog: &NativeCatalog) -> Strin
             || origin.to_owned(),
             |version| format!("{origin} · {version}"),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use work_core::api::NativeScope;
+
+    #[test]
+    fn skill_prefill_uses_the_node_entry_and_skips_unverified_directories() {
+        let mut resource = NativeResource {
+            reference: "skill-reference".into(),
+            scope: NativeScope::Global,
+            kind: NativeKind::Skill,
+            name: "sample-review".into(),
+            facts: json!({
+                "installed": true,
+                "path": "/node/skills/sample review",
+                "selectable": {"skills": ["/node/skills/sample review"]},
+                "observed": {"files": [{"path": "SKILL.md"}]}
+            }),
+        };
+        assert!(
+            skill_instruction(&resource)
+                .unwrap()
+                .contains(r#""/node/skills/sample review/SKILL.md""#)
+        );
+        resource.facts["selectable"]["skills"][0] = json!(r#"D:\skills\sample-review\SKILL.md"#);
+        assert!(
+            skill_instruction(&resource)
+                .unwrap()
+                .contains(r#""D:\\skills\\sample-review\\SKILL.md""#)
+        );
+        resource.facts["selectable"]["skills"][0] = json!("/node/skills/sample-review");
+        resource.facts["observed"] = serde_json::Value::Null;
+        assert!(skill_instruction(&resource).is_none());
+        resource.facts["selectable"]["skills"][0] = json!("relative/SKILL.md");
+        assert!(skill_instruction(&resource).is_none());
+        resource.facts["selectable"]["skills"] = json!([
+            "/node/skills/first/SKILL.md",
+            "/node/skills/second/SKILL.md"
+        ]);
+        assert!(skill_instruction(&resource).is_none());
+    }
 }
