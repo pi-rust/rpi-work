@@ -25,6 +25,8 @@ pub(crate) mod project_files;
 pub(crate) mod project_management;
 #[path = "question.rs"]
 mod question;
+#[path = "resource_settings.rs"]
+mod resource_settings;
 #[path = "review.rs"]
 mod review;
 #[path = "rich_text.rs"]
@@ -173,6 +175,7 @@ pub struct Shell {
     collaboration: collaboration::Panel,
     node_connection: node_connection::Form,
     node_share: node_share::Share,
+    resource_settings: resource_settings::Panel,
     search: editor::SearchInput,
     workbench_search: workbench_search::Panel,
     session_context: session_context::Panel,
@@ -279,6 +282,7 @@ impl Shell {
             collaboration: collaboration::Panel::default(),
             node_connection: node_connection::Form::default(),
             node_share: node_share::Share::default(),
+            resource_settings: resource_settings::Panel::default(),
             search: editor::SearchInput::new(cx),
             workbench_search: workbench_search::Panel::new(cx),
             session_context: session_context::Panel::new(cx),
@@ -359,6 +363,7 @@ impl Shell {
             }
             self.close_session_filter_menu();
             self.project = project;
+            self.reset_resource_catalog();
             self.navigation_revision += 1;
             self.reset_project_files(cx);
         }

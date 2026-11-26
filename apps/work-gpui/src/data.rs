@@ -317,6 +317,20 @@ impl Node {
         })
     }
 
+    pub(super) fn read_native_catalog(
+        &self,
+        project: String,
+    ) -> JoinHandle<Result<work_core::api::NativeCatalog, ClientError>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            work_viewmodel::config_requests::bounded(
+                "读取资源目录",
+                client.native_catalog(&project),
+            )
+            .await
+        })
+    }
+
     pub fn is_local(&self) -> bool {
         self.client.is_local()
     }

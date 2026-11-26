@@ -7,6 +7,7 @@ use gpui::{
     WindowAppearance, div, point, prelude::*, px,
 };
 use serde_json::{Value, json};
+use work_core::api::NativeKind;
 
 use super::{Shell, message_queue::Delivery};
 use crate::{icons::icon, theme::Palette};
@@ -132,16 +133,20 @@ enum Section {
     Notifications,
     Shortcuts,
     Archives,
+    Plugins,
+    Skills,
     Collaboration,
 }
 
 impl Section {
-    const NAVIGATION: [(Self, &str, &str); 6] = [
+    const NAVIGATION: [(Self, &str, &str); 8] = [
         (Self::General, "settings-general", "settings"),
         (Self::Appearance, "settings-appearance", "appearance"),
         (Self::Notifications, "settings-notifications", "bell"),
         (Self::Shortcuts, "settings-shortcuts", "keyboard"),
         (Self::Archives, "settings-archives", "archive-box"),
+        (Self::Plugins, "settings-plugins", "code-xml"),
+        (Self::Skills, "settings-skills", "list-checks"),
         (Self::Collaboration, "settings-collaboration", "globe"),
     ];
 
@@ -152,7 +157,17 @@ impl Section {
             Self::Notifications => "通知",
             Self::Shortcuts => "键盘快捷键",
             Self::Archives => "已归档的聊天",
+            Self::Plugins => "插件",
+            Self::Skills => "技能",
             Self::Collaboration => "工作协同",
+        }
+    }
+
+    fn resource_kind(self) -> Option<NativeKind> {
+        match self {
+            Self::Plugins => Some(NativeKind::Extension),
+            Self::Skills => Some(NativeKind::Skill),
+            _ => None,
         }
     }
 }
@@ -349,6 +364,9 @@ impl Shell {
         if self.settings.section == Section::Collaboration {
             self.read_connection_history();
         }
+        if self.settings.section.resource_kind().is_some() {
+            self.read_resource_catalog(cx);
+        }
         if window.viewport_size().width <= px(700.0) {
             self.settings.browse_focus.focus(window);
         } else {
@@ -360,6 +378,7 @@ impl Shell {
     fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.reset_node_connection();
         self.reset_node_share();
+        self.reset_resource_catalog();
         self.settings.open = false;
         self.settings.browse = false;
         self.search.clear();
@@ -386,6 +405,11 @@ impl Shell {
         }
         if destination.section == Section::Collaboration {
             self.read_connection_history();
+        }
+        if destination.section.resource_kind().is_some() {
+            self.read_resource_catalog(cx);
+        } else {
+            self.reset_resource_catalog();
         }
         // Finish dispatching the result's key release before focusing a writable control.
         window.prevent_default();
@@ -559,6 +583,11 @@ impl Shell {
             Section::Appearance => self.appearance_settings(cx),
             Section::Notifications => self.notification_settings(cx),
             Section::Shortcuts => self.shortcut_settings(),
+            Section::Plugins | Section::Skills => vec![SettingsRow(
+                None,
+                self.resource_settings(section.resource_kind().unwrap(), cx)
+                    .into_any_element(),
+            )],
             Section::Collaboration => vec![SettingsRow(
                 None,
                 self.collaboration_settings(compact, cx).into_any_element(),

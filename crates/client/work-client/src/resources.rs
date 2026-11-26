@@ -1,6 +1,24 @@
 //! Native resource/authoring wire adapter; authority remains at the node.
-use crate::{ClientError, WorkClient};
+use crate::{ClientError, WorkClient, WorkspaceClient};
 use serde_json::{Value, json};
+
+impl WorkspaceClient {
+    pub async fn native_catalog(
+        &self,
+        project: &str,
+    ) -> Result<work_core::api::NativeCatalog, ClientError> {
+        match self {
+            Self::Remote(client) => client.native_catalog(project).await,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            Self::Local(client) => client
+                .node_owner()
+                .native_catalog(project)
+                .await
+                .map_err(Into::into),
+        }
+    }
+}
+
 impl WorkClient {
     pub async fn package_catalog(
         &self,
