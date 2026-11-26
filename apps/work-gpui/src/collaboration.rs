@@ -35,10 +35,17 @@ impl Shell {
         cx.notify();
     }
 
-    pub(super) fn collaboration_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn collaboration_settings(
+        &self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let palette = self.palette;
         if self.node_connection.open {
             return self.node_connection_form(cx);
+        }
+        if self.node_share.open {
+            return self.node_share_form(compact, cx);
         }
         let node = self.node.as_ref();
         let address = normalize_address(&self.snapshot.node, false).ok();
@@ -139,15 +146,7 @@ impl Shell {
                                 .child(self.text("已选用", 12.0, palette.muted)),
                         )
                         .when_some(address.as_ref(), |card, address| {
-                            card.child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap_2()
-                                    .child(self.node_address(address).flex_1())
-                                    .child(self.copy_node_address(address, cx)),
-                            )
+                            card.child(self.node_address(address))
                         })
                         .when_some(
                             identity.filter(|id| !id.chars().any(char::is_control)),
@@ -157,8 +156,36 @@ impl Shell {
                                         .min_w_0(),
                                 )
                             },
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_2()
+                                .when_some(address.as_ref(), |row, address| {
+                                    row.child(self.copy_node_address(address, cx))
+                                })
+                                .when(cfg!(target_os = "macos") && identity.is_some(), |row| {
+                                    row.child(
+                                        self.button("show-address-qr", "地址二维码")
+                                            .border_1()
+                                            .border_color(palette.line)
+                                            .tab_index(0)
+                                            .focus(|button| button.bg(palette.hover))
+                                            .on_click(cx.listener(|shell, _, window, cx| {
+                                                shell.show_node_share(window, cx)
+                                            })),
+                                    )
+                                }),
                         ),
                 )
+            })
+            .when(node.is_some_and(|node| !node.is_local()), |body| {
+                body.child(self.text(
+                    "请在节点所属电脑管理共享和签发一次性授权。",
+                    13.0,
+                    palette.muted,
+                ))
             })
             .child(
                 div()

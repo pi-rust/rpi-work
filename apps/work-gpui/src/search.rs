@@ -156,6 +156,10 @@ impl Shell {
             if select {
                 self.submit_node_connection(window, cx);
             }
+        } else if self.node_share.open {
+            if select {
+                self.generate_node_qr(window, cx);
+            }
         } else if self.settings.open {
             self.activate_settings_search(select, window, cx);
         } else if self.workbench_search.open

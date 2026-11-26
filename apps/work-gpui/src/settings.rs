@@ -359,6 +359,7 @@ impl Shell {
 
     fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.reset_node_connection();
+        self.reset_node_share();
         self.settings.open = false;
         self.settings.browse = false;
         self.search.clear();
@@ -542,6 +543,7 @@ impl Shell {
         let palette = self.palette;
         let compact = width <= 700.0;
         let section = self.settings.section;
+        let collaboration_form = self.node_connection.open || self.node_share.open;
         let dialog_width = if compact {
             width
         } else {
@@ -559,7 +561,7 @@ impl Shell {
             Section::Shortcuts => self.shortcut_settings(),
             Section::Collaboration => vec![SettingsRow(
                 None,
-                self.collaboration_settings(cx).into_any_element(),
+                self.collaboration_settings(compact, cx).into_any_element(),
             )],
             Section::Archives => vec![SettingsRow(
                 None,
@@ -598,7 +600,7 @@ impl Shell {
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .pl_2(),
                         )
-                        .when(compact && !self.node_connection.open, |bar| {
+                        .when(compact && !collaboration_form, |bar| {
                             bar.child(
                                 self.button("settings-browse", "浏览分类")
                                     .h(px(44.0))
@@ -633,7 +635,7 @@ impl Shell {
                         ),
                 )
                 .when(
-                    !self.node_connection.open && (!compact || self.settings.browse),
+                    !collaboration_form && (!compact || self.settings.browse),
                     |nav| nav.child(self.settings_navigation(compact, height, window, cx)),
                 );
         div()
@@ -656,6 +658,9 @@ impl Shell {
                         }
                         "escape" if shell.node_connection.open => {
                             shell.cancel_node_connection(window, cx);
+                        }
+                        "escape" if shell.node_share.open => {
+                            shell.close_node_share(window, cx);
                         }
                         "escape" if !shell.search.buffer.text.is_empty() => {
                             shell.search.clear();
@@ -718,7 +723,11 @@ impl Shell {
                                             .tab_stop(false)
                                     })
                                     .child(self.text(
-                                        section.label(),
+                                        if self.node_share.open {
+                                            "节点地址二维码"
+                                        } else {
+                                            section.label()
+                                        },
                                         if compact { 24.0 } else { 28.0 },
                                         palette.text,
                                     ))

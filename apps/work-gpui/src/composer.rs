@@ -34,6 +34,11 @@ impl Buffer {
         }
     }
 
+    pub(super) fn select_all(&mut self) {
+        self.anchor = 0;
+        self.head = self.text.len();
+    }
+
     fn adjacent(&self, forward: bool) -> usize {
         if forward {
             self.text
@@ -324,7 +329,7 @@ impl Shell {
     fn input_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
-        if self.node_connection_busy() {
+        if self.node_connection_busy() || self.node_share_busy() {
             cx.stop_propagation();
             return;
         }
@@ -366,8 +371,7 @@ impl Shell {
             let selected = buffer.selection();
             match key {
                 "a" => {
-                    buffer.select(0, false);
-                    buffer.select(buffer.text.len(), true);
+                    buffer.select_all();
                 }
                 "c" | "x" if secret => {}
                 "c" | "x" => {
@@ -509,7 +513,7 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.node_connection_busy() {
+        if self.node_connection_busy() || self.node_share_busy() {
             return;
         }
         if self.search_input_open() {
@@ -529,7 +533,7 @@ impl EntityInputHandler for Shell {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.node_connection_busy() {
+        if !self.node_connection_busy() && !self.node_share_busy() {
             self.buffer_mut().compose(utf16, value, selected);
             cx.notify();
         }
@@ -691,7 +695,7 @@ impl Element for InputElement {
             if self.search_field {
                 if shell.node_connection.password {
                     "输入此节点的密码"
-                } else if shell.node_connection.open {
+                } else if shell.node_connection.open || shell.node_share.open {
                     "https://电脑地址:13030"
                 } else if shell.settings.open {
                     "搜索设置"

@@ -301,6 +301,22 @@ impl Node {
         ))
     }
 
+    pub(super) fn verify_share_address(
+        &self,
+        address: String,
+        expected: String,
+    ) -> JoinHandle<bool> {
+        self.runtime.spawn(async move {
+            let Ok(client) = WorkspaceClient::new(&address) else {
+                return false;
+            };
+            matches!(
+                work_viewmodel::connection::with_timeout(client.node_identity()).await,
+                Ok(Ok(identity)) if identity == expected,
+            )
+        })
+    }
+
     pub fn is_local(&self) -> bool {
         self.client.is_local()
     }
