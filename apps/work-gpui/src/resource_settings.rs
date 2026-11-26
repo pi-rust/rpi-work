@@ -7,6 +7,9 @@ use work_viewmodel::resources::catalog::{display_name, installation_origin, inst
 use super::{DraftKey, Shell};
 use crate::icons::icon;
 
+#[path = "resource_install.rs"]
+mod install;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ResourceTab {
     Skills,
@@ -46,6 +49,8 @@ pub(super) struct Panel {
     catalog: Option<Result<NativeCatalog, ()>>,
     detail: Option<Detail>,
     scroll: ScrollHandle,
+    install_form: Option<install::Form>,
+    install: install::Activity,
 }
 
 struct Detail {
@@ -99,6 +104,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.cancel_resource_install(window, cx) {
+            return true;
+        }
         let closed = self.close_resource_page();
         if closed {
             self.focus_composer(window);
@@ -133,7 +141,9 @@ impl Shell {
             || self.resource_use_skill_focus.is_focused(window)
         {
             scroll.scroll_to_bottom();
-        } else if self.search.focus.is_focused(window) {
+        } else if self.search.focus.is_focused(window)
+            && self.resource_settings.install_form.is_none()
+        {
             scroll.set_offset(point(px(0.0), px(0.0)));
         }
     }
@@ -152,7 +162,7 @@ impl Shell {
             let result = read.await.ok().and_then(Result::ok).ok_or(());
             let _ = this.update(cx, |shell, cx| {
                 shell.resource_settings.pending = None;
-                shell.resource_settings.catalog = Some(result);
+                shell.accept_resource_catalog(result);
                 cx.notify();
             });
         }));
@@ -160,7 +170,10 @@ impl Shell {
     }
 
     pub(super) fn reset_resource_catalog(&mut self) {
-        self.resource_settings = Panel::default();
+        self.resource_settings = Panel {
+            install: std::mem::take(&mut self.resource_settings.install),
+            ..Panel::default()
+        };
     }
 
     pub(super) fn clear_resource_detail(&mut self) {
@@ -215,12 +228,9 @@ impl Shell {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let palette = self.palette;
         let compact = window.viewport_size().width <= px(700.0);
+        let install_form = self.resource_settings.install_form.as_ref();
         let stacked = compact || width < 650.0;
-        let project = self
-            .project
-            .and_then(|index| self.snapshot.projects.get(index));
         div()
             .id("resource-page")
             .flex_1()
@@ -234,6 +244,27 @@ impl Shell {
                 (width * 0.05).clamp(20.0, 64.0)
             }))
             .py(px(if compact { 24.0 } else { 35.0 }))
+            .child(if let Some(form) = install_form {
+                self.resource_install_form(form, cx)
+            } else {
+                self.resource_page_body(tab, width, stacked, window, cx)
+            })
+    }
+
+    fn resource_page_body(
+        &self,
+        tab: ResourceTab,
+        width: f32,
+        stacked: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let palette = self.palette;
+        let compact = window.viewport_size().width <= px(700.0);
+        let project = self
+            .project
+            .and_then(|index| self.snapshot.projects.get(index));
+        div()
             .child(
                 div()
                     .flex()
@@ -258,9 +289,24 @@ impl Shell {
                     )
                     .when(
                         project.is_some() && self.node.is_some() && tab.kind().is_some(),
-                        |heading| heading.child(self.resource_refresh(cx)),
+                        |heading| {
+                            heading.child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .justify_end()
+                                    .gap_2()
+                                    .children(
+                                        tab.kind().and_then(|kind| {
+                                            self.resource_install_button(kind, cx)
+                                        }),
+                                    )
+                                    .child(self.resource_refresh(cx)),
+                            )
+                        },
                     ),
             )
+            .children(self.resource_install_notice(tab))
             .child(self.resource_toolbar(tab, stacked, window, cx))
             .child(if let Some(kind) = tab.kind() {
                 self.resource_page_content(tab, kind, width, stacked, cx)

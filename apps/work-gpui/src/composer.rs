@@ -711,6 +711,8 @@ impl Element for InputElement {
                     "https://电脑地址:13030"
                 } else if shell.settings.open {
                     "搜索设置"
+                } else if let Some(label) = shell.resource_install_field_label() {
+                    label
                 } else if shell.resource_page_open() {
                     "搜索资源"
                 } else {

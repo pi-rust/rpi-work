@@ -167,6 +167,10 @@ impl Shell {
             }
         } else if self.settings.open {
             self.activate_settings_search(select, window, cx);
+        } else if self.resource_install_field_label().is_some() {
+            if select {
+                self.finish_resource_install_field(window, cx);
+            }
         } else if self.workbench_search.open
             && self.search.buffer.is_committed()
             && let Some(target) = self

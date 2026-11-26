@@ -213,6 +213,11 @@ impl Snapshot {
     }
 }
 
+pub(super) struct ResourceInstall {
+    pub receipt: Result<work_core::api::NativeReceipt, ClientError>,
+    pub observed: Option<work_core::api::NativeCatalog>,
+}
+
 pub struct Node {
     client: WorkspaceClient,
     runtime: tokio::runtime::Runtime,
@@ -361,6 +366,22 @@ impl Node {
                 client.native_catalog(&project),
             )
             .await
+        })
+    }
+
+    pub(super) fn install_native_resource(
+        &self,
+        project: String,
+        request: work_core::api::NativeManagement,
+    ) -> JoinHandle<ResourceInstall> {
+        use work_viewmodel::config_requests::bounded;
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            let receipt = bounded("安装资源", client.native_manage(&project, request)).await;
+            let observed = bounded("回读资源目录", client.native_catalog(&project))
+                .await
+                .ok();
+            ResourceInstall { receipt, observed }
         })
     }
 
