@@ -3,6 +3,7 @@ use super::{
     Arc, LocalError, LocalWorkspace, Path, PathBuf, ReplyKind, Service, Value, WorkspaceError,
     decode, json, service, unsupported, workspace,
 };
+use fs2::FileExt;
 use rpi_extcore::resources::{
     ApplyResourcesRequest, MainPackage, NativeBinding, ResourceError, ResourceErrorKind,
     ResourceHistoryCursor, ResourceHistoryRequest, ResourceObservation, ResourceOperation,
@@ -91,7 +92,11 @@ pub(super) fn plain_directory(path: &Path, create: bool) -> Result<(), Workspace
         let meta = match std::fs::symlink_metadata(directory) {
             Ok(meta) => meta,
             Err(e) if create && e.kind() == std::io::ErrorKind::NotFound => {
-                std::fs::create_dir(directory).map_err(LocalError::from)?;
+                match std::fs::create_dir(directory) {
+                    Ok(()) => (),
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+                    Err(error) => return Err(LocalError::from(error).into()),
+                }
                 std::fs::symlink_metadata(directory).map_err(LocalError::from)?
             }
             Err(e) => return Err(LocalError::from(e).into()),
@@ -704,37 +709,8 @@ impl LocalWorkspace {
             .resolve_selection(&service, request.target.clone())
             .await?;
         let catalog = self.catalog_for(&service).await?;
-        let current = self.read_project_resource_intent(project)?;
-        let revision = current.as_ref().map_or(0, |value| value.revision);
-        if current.as_ref().is_some_and(|value| {
-            value.operation_id == request.operation_id && value.target == request.target
-        }) {
-            return Ok(NativeOperation {
-                retry: None,
-                operation_id: request.operation_id,
-                expected_revision: request.expected_revision,
-                target: self.project_selection(&catalog, &target),
-                supersedes_operation_id: request.supersedes_operation_id,
-                status: NativeOperationStatus::Applied,
-                result_revision: Some(revision),
-                error: None,
-                generation: None,
-            });
-        }
-        if request.expected_revision != revision {
-            return Err(conflict(
-                "project resource revision changed; refresh and retry",
-            ));
-        }
-        let result_revision = revision.saturating_add(1);
-        self.write_project_resource_intent(
-            project,
-            &ProjectResourceIntent {
-                revision: result_revision,
-                operation_id: request.operation_id.clone(),
-                target: request.target.clone(),
-            },
-        )?;
+        let result_revision =
+            commit_project_resource_intent(&self.project_resource_path(project), &request)?;
         Ok(NativeOperation {
             retry: None,
             operation_id: request.operation_id,
@@ -1027,46 +1003,7 @@ impl LocalWorkspace {
         &self,
         project: &str,
     ) -> Result<Option<ProjectResourceIntent>, WorkspaceError> {
-        let path = self.project_resource_path(project);
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(LocalError::from(error).into()),
-        };
-        if bytes.len() > 128 * 1024 {
-            return Err(invalid("project resource configuration exceeds 128 KiB"));
-        }
-        serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(LocalError::from)
-            .map_err(Into::into)
-    }
-    fn write_project_resource_intent(
-        &self,
-        project: &str,
-        intent: &ProjectResourceIntent,
-    ) -> Result<(), WorkspaceError> {
-        let path = self.project_resource_path(project);
-        let parent = path
-            .parent()
-            .ok_or_else(|| invalid("missing project resource configuration parent"))?;
-        plain_directory(parent, true)?;
-        let bytes = serde_json::to_vec(intent).map_err(LocalError::from)?;
-        if bytes.len() > 128 * 1024 {
-            return Err(invalid("project resource configuration exceeds 128 KiB"));
-        }
-        let temporary = parent.join(format!(".{}.tmp", digest(intent.operation_id.as_bytes())));
-        std::fs::write(&temporary, &bytes).map_err(LocalError::from)?;
-        match std::fs::rename(&temporary, &path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                // Windows does not replace an existing destination with rename.
-                std::fs::remove_file(&path).map_err(LocalError::from)?;
-                std::fs::rename(&temporary, &path).map_err(LocalError::from)?;
-            }
-            Err(error) => return Err(LocalError::from(error).into()),
-        }
-        Ok(())
+        read_project_resource_intent(&self.project_resource_path(project))
     }
     fn resource_intent_path(&self, id: &str, operation: &str) -> PathBuf {
         self.inner
@@ -1117,6 +1054,103 @@ struct ProjectResourceIntent {
     revision: u64,
     operation_id: String,
     target: NativeSelection,
+}
+
+fn read_project_resource_intent(
+    path: &Path,
+) -> Result<Option<ProjectResourceIntent>, WorkspaceError> {
+    match read_intent_bytes(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(LocalError::from)
+            .map_err(Into::into),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(LocalError::from(error).into()),
+    }
+}
+
+fn commit_project_resource_intent(
+    path: &Path,
+    request: &NativeApply,
+) -> Result<u64, WorkspaceError> {
+    use std::io::Write;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| invalid("missing project resource configuration parent"))?;
+    plain_directory(parent, true)?;
+    let lock_path = path.with_extension("lock");
+    if std::fs::symlink_metadata(&lock_path)
+        .is_ok_and(|meta| !meta.is_file() || meta.file_type().is_symlink())
+    {
+        return Err(invalid("invalid project resource configuration lock"));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options.open(&lock_path).map_err(LocalError::from)?;
+    FileExt::try_lock_exclusive(&lock).map_err(|error| {
+        if error.kind() == fs2::lock_contended_error().kind() {
+            conflict("project resource configuration is busy; refresh before retrying")
+        } else {
+            LocalError::from(error).into()
+        }
+    })?;
+    let current = read_project_resource_intent(path)?;
+    if let Some(current) = current
+        .as_ref()
+        .filter(|current| current.operation_id == request.operation_id)
+    {
+        return if current.target == request.target {
+            Ok(current.revision)
+        } else {
+            Err(conflict(
+                "project resource operation ID already used for a different selection",
+            ))
+        };
+    }
+    let revision = current.as_ref().map_or(0, |value| value.revision);
+    if request.expected_revision != revision {
+        return Err(conflict(
+            "project resource revision changed; refresh and retry",
+        ));
+    }
+    let revision = revision
+        .checked_add(1)
+        .ok_or_else(|| conflict("project resource revision exhausted"))?;
+    let intent = ProjectResourceIntent {
+        revision,
+        operation_id: request.operation_id.clone(),
+        target: request.target.clone(),
+    };
+    let bytes = serde_json::to_vec(&intent).map_err(LocalError::from)?;
+    if bytes.len() > 128 * 1024 {
+        return Err(invalid("project resource configuration exceeds 128 KiB"));
+    }
+    let mut nonce = [0; 16];
+    getrandom::fill(&mut nonce).map_err(|_| {
+        LocalError::Initialization("project resource staging entropy unavailable".into())
+    })?;
+    let temporary = parent.join(format!(".{}.tmp", digest(&nonce)));
+    let mut stage = options
+        .create_new(true)
+        .open(&temporary)
+        .map_err(LocalError::from)?;
+    let result = (|| {
+        stage.write_all(&bytes)?;
+        stage.sync_all()?;
+        drop(stage);
+        std::fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result.map_err(LocalError::from)?;
+    Ok(revision)
 }
 
 #[derive(Serialize, Deserialize)]

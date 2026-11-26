@@ -76,3 +76,64 @@ fn tempdir() -> tempfile::TempDir {
         .tempdir_in(std::env::temp_dir().canonicalize().unwrap())
         .unwrap()
 }
+
+#[test]
+fn concurrent_project_resource_writes_compete_for_one_revision() {
+    use super::{
+        NativeApply, NativeSelection, NativeTools, commit_project_resource_intent,
+        read_project_resource_intent,
+    };
+    use std::sync::Barrier;
+
+    let directory = tempdir();
+    let path = directory
+        .path()
+        .join("project-resource-config/project.json");
+    let request = |operation: &str, revision, package: &str| NativeApply {
+        expected_revision: revision,
+        operation_id: operation.into(),
+        supersedes_operation_id: None,
+        target: NativeSelection {
+            main_package: package.into(),
+            package_instructions: Vec::new(),
+            skills: Vec::new(),
+            extensions: Vec::new(),
+            tools: NativeTools::Default {},
+            supplementary_instructions: String::new(),
+        },
+    };
+    let first = request("first", 0, "package-a");
+    let second = request("second", 0, "package-b");
+    let barrier = Barrier::new(2);
+    let [one, two] = std::thread::scope(|scope| {
+        let (barrier, path) = (&barrier, &path);
+        let start = |request| {
+            scope.spawn(move || {
+                barrier.wait();
+                commit_project_resource_intent(path, request)
+            })
+        };
+        let a = start(&first);
+        let b = start(&second);
+        [a.join().unwrap(), b.join().unwrap()]
+    });
+    let (winner, loser) = match (one, two) {
+        (Ok(1), Err(_)) => (&first, &second),
+        (Err(_), Ok(1)) => (&second, &first),
+        outcomes => panic!("expected exactly one write, got {outcomes:?}"),
+    };
+    let saved = read_project_resource_intent(&path).unwrap().unwrap();
+    assert_eq!(saved.revision, 1);
+    assert_eq!(saved.operation_id, winner.operation_id);
+    assert_eq!(saved.target, winner.target);
+    assert_eq!(commit_project_resource_intent(&path, winner).unwrap(), 1);
+    assert!(commit_project_resource_intent(&path, loser).is_err());
+    let same_id = request(&winner.operation_id, 1, &loser.target.main_package);
+    assert!(commit_project_resource_intent(&path, &same_id).is_err());
+    let next = request("next", 1, &loser.target.main_package);
+    assert_eq!(commit_project_resource_intent(&path, &next).unwrap(), 2);
+    assert_eq!(
+        read_project_resource_intent(&path).unwrap().unwrap().target,
+        next.target
+    );
+}
