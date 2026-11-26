@@ -63,6 +63,51 @@ fn address_qr(_: &str) -> Option<Qr> {
     None
 }
 
+#[cfg(target_os = "macos")]
+pub(super) fn scan_node_address(path: std::path::PathBuf) -> Result<String, String> {
+    use std::io::Read;
+
+    unsafe extern "C" {
+        fn work_scan_qr(bytes: *const u8, length: usize, text: *mut u8, capacity: usize) -> usize;
+    }
+    const MAX_IMAGE: u64 = 20 * 1024 * 1024;
+    if !std::fs::metadata(&path).is_ok_and(|info| info.is_file()) {
+        return Err("请选择一张图片。".into());
+    }
+    let mut image = Vec::new();
+    let file = std::fs::File::open(path).map_err(|_| "无法打开图片。")?;
+    file.take(MAX_IMAGE + 1)
+        .read_to_end(&mut image)
+        .map_err(|_| "无法读取图片。")?;
+    if image.len() as u64 > MAX_IMAGE {
+        return Err("图片不能超过 20 MB。".into());
+    }
+    let mut text = [0; 8192];
+    // Vision reads the image synchronously and copies at most `capacity` bytes.
+    let count = unsafe { work_scan_qr(image.as_ptr(), image.len(), text.as_mut_ptr(), text.len()) };
+    let raw = text
+        .get(..count)
+        .filter(|text| !text.is_empty())
+        .and_then(|text| std::str::from_utf8(text).ok())
+        .ok_or("请选择含有一个清晰二维码的图片。")?;
+    let decoded = work_viewmodel::qr::open(raw)?;
+    if !decoded.starts_with('{') {
+        return normalize_address(&decoded, true);
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(&decoded).map_err(|_| "无法解析节点地址二维码。")?;
+    if value.as_object().map(|object| object.len()) != Some(3)
+        || value["v"].as_u64() != Some(1)
+        || value["type"].as_str() != Some("rpi-work-node-address")
+    {
+        return Err("请选择 RPI Work 节点地址二维码。".into());
+    }
+    normalize_address(
+        value["address"].as_str().ok_or("二维码缺少节点地址。")?,
+        true,
+    )
+}
+
 impl Qr {
     fn element(&self, compact: bool) -> impl IntoElement {
         let code = self.clone();

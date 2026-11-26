@@ -196,16 +196,30 @@ impl Shell {
                         self.text("连接其他节点", 14.0, palette.text)
                             .font_weight(FontWeight::SEMIBOLD),
                     )
-                    .child(
-                        self.button("manual-node-address", "输入地址")
-                            .border_1()
-                            .border_color(palette.line)
-                            .tab_index(0)
-                            .focus(|button| button.bg(palette.hover))
-                            .on_click(cx.listener(|shell, _, window, cx| {
-                                shell.show_node_connection(None, window, cx)
-                            })),
-                    ),
+                    .child({
+                        let actions = div().flex().flex_wrap().justify_end().gap_2().child(
+                            self.button("manual-node-address", "输入地址")
+                                .border_1()
+                                .border_color(palette.line)
+                                .tab_index(0)
+                                .focus(|button| button.bg(palette.hover))
+                                .on_click(cx.listener(|shell, _, window, cx| {
+                                    shell.show_node_connection(None, window, cx)
+                                })),
+                        );
+                        #[cfg(target_os = "macos")]
+                        let actions = actions.child(
+                            self.button("scan-node-address", "扫码连接")
+                                .border_1()
+                                .border_color(palette.line)
+                                .tab_index(0)
+                                .focus(|button| button.bg(palette.hover))
+                                .on_click(cx.listener(|shell, _, window, cx| {
+                                    shell.choose_node_qr(window, cx)
+                                })),
+                        );
+                        actions
+                    }),
             )
             .when_some(self.node_connection_notice(), |body, notice| {
                 body.child(self.text(notice.to_owned(), 13.0, palette.muted))

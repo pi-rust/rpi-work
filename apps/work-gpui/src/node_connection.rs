@@ -14,6 +14,7 @@ pub(super) struct Form {
     pub(super) password: bool,
     target: Option<(String, Option<String>)>,
     pending: Option<Task<()>>,
+    scanning: bool,
     notice: Option<String>,
     pub(super) history: NodeHistory,
 }
@@ -50,11 +51,64 @@ impl Shell {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    pub(super) fn choose_node_qr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.node_connection_busy() {
+            return;
+        }
+        self.show_node_connection(None, window, cx);
+        self.node_connection.scanning = true;
+        let selection = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("选择节点地址二维码图片".into()),
+        });
+        let background = cx.background_executor().clone();
+        self.node_connection.pending = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = match selection.await {
+                Ok(Ok(Some(paths))) => match paths.into_iter().next() {
+                    Some(path) => {
+                        background
+                            .spawn(
+                                async move { super::node_share::scan_node_address(path).map(Some) },
+                            )
+                            .await
+                    }
+                    None => Ok(None),
+                },
+                Ok(Ok(None)) => Ok(None),
+                _ => Err("无法选择二维码图片。".into()),
+            };
+            let _ = cx.update(|window, cx| {
+                let _ = this.update(cx, |shell, cx| {
+                    shell.node_connection.pending = None;
+                    shell.node_connection.scanning = false;
+                    match result {
+                        Ok(Some(address)) => {
+                            shell.search.clear();
+                            shell.search.buffer.replace(None, &address);
+                        }
+                        Ok(None) => {
+                            shell.cancel_node_connection(window, cx);
+                            return;
+                        }
+                        Err(error) => shell.node_connection.notice = Some(error),
+                    }
+                    shell.search.focus.focus(window);
+                    cx.notify();
+                });
+            });
+        }));
+        cx.notify();
+    }
+
     pub(super) fn reset_node_connection(&mut self) {
         self.node_connection.open = false;
         self.node_connection.password = false;
         self.node_connection.target = None;
         self.node_connection.pending = None;
+        self.node_connection.scanning = false;
         self.node_connection.notice = None;
     }
 
@@ -194,7 +248,9 @@ impl Shell {
                     .child(self.search_input_element(cx)),
             )
             .when(busy, |body| {
-                let status = if form.password {
+                let status = if form.scanning {
+                    "正在识别二维码…"
+                } else if form.password {
                     "正在登录并加载项目…"
                 } else {
                     "正在连接…"
