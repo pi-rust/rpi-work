@@ -60,6 +60,20 @@ use crate::icons::icon;
 use crate::prompt::Draft;
 use crate::theme::Palette;
 
+const PRIMARY_MODIFIER_LABEL: &str = if cfg!(target_os = "macos") {
+    "⌘"
+} else {
+    "Ctrl"
+};
+
+fn primary_modifier(modifiers: gpui::Modifiers) -> bool {
+    if cfg!(target_os = "macos") {
+        modifiers.platform && !modifiers.control
+    } else {
+        modifiers.control && !modifiers.platform
+    }
+}
+
 const READING_WIDTH: f32 = 768.0;
 const READING_INSET: f32 = 24.0;
 
@@ -2022,12 +2036,11 @@ impl Render for Shell {
                 cx.listener(|shell, event: &gpui::KeyDownEvent, window, cx| {
                     let key = &event.keystroke.key;
                     let modifiers = event.keystroke.modifiers;
-                    let settings_modifier = if cfg!(target_os = "macos") {
-                        modifiers.platform && !modifiers.control
-                    } else {
-                        modifiers.control && !modifiers.platform
-                    };
-                    if key == "," && settings_modifier && !modifiers.alt && !modifiers.shift {
+                    if key == ","
+                        && primary_modifier(modifiers)
+                        && !modifiers.alt
+                        && !modifiers.shift
+                    {
                         shell.open_settings(window, cx);
                         cx.stop_propagation();
                     }

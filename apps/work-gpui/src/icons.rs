@@ -39,6 +39,12 @@ impl AssetSource for Icons {
                 r#"<path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5l-3 4v2h14v-2zM12 15v7"/>"#
             }
             "plus" => r#"<path d="M12 5v14M5 12h14"/>"#,
+            "archive-box" => {
+                r#"<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v12h16V8M10 12h4"/>"#
+            }
+            "keyboard" => {
+                r#"<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 16h8"/>"#
+            }
             "bell" => {
                 r#"<path d="M10.268 21a2 2 0 0 0 3.464 0M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>"#
             }

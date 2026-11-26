@@ -1,6 +1,6 @@
 //! Session metadata edits verified against the node's session record.
 
-use gpui::{Context, Div, Task, Window, div, prelude::*, px};
+use gpui::{Context, Div, FocusHandle, Task, Window, div, prelude::*, px};
 use work_client::WorkspaceClient;
 use work_core::api::Capabilities;
 use work_viewmodel::config_requests::bounded;
@@ -500,40 +500,7 @@ impl Shell {
                             ),
                     );
             }
-            Dialog::Archives => {
-                let mut archived = self
-                    .snapshot
-                    .sessions
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, session)| session.archived)
-                    .peekable();
-                content = content
-                    .when(archived.peek().is_none(), |panel| {
-                        panel.child(self.text("没有已归档的会话。", 13.0, palette.muted))
-                    })
-                    .children(archived.map(|(index, session)| {
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                self.text(session.display_title().to_owned(), 14.0, palette.text)
-                                    .flex_1()
-                                    .truncate(),
-                            )
-                            .child(
-                                self.button("restore-session", "恢复")
-                                    .id(("restore-session", index))
-                                    .when(!metadata, |button| button.opacity(0.45).cursor_default())
-                                    .when(metadata, |button| {
-                                        button.on_click(cx.listener(move |shell, _, _, cx| {
-                                            shell.edit_session(index, Edit::Archive(false), cx);
-                                        }))
-                                    }),
-                            )
-                    }));
-            }
+            Dialog::Archives => content = content.child(self.archived_sessions(None, cx)),
         }
         Some(
             div()
@@ -545,34 +512,137 @@ impl Shell {
                 .items_center()
                 .justify_center()
                 .px_4()
-                .child(
-                    content
-                        .when(panel.reading_capabilities.is_some(), |dialog| {
-                            dialog.child(self.text("正在读取节点操作能力…", 12.0, palette.muted))
-                        })
-                        .when_some(panel.capability_error.as_ref(), |dialog, error| {
-                            dialog.child(self.text(error.clone(), 12.0, palette.danger))
-                        })
-                        .when(panel.pending.is_some(), |dialog| {
-                            dialog.child(self.text("正在核对节点会话资料…", 12.0, palette.muted))
-                        })
-                        .when_some(panel.error.as_ref(), |dialog, error| {
-                            dialog.child(self.text(error.clone(), 12.0, palette.danger))
-                        })
-                        .when_some(
-                            panel.request.as_ref().filter(|_| panel.pending.is_none()),
-                            |dialog, request| {
-                                let request = request.clone();
-                                dialog.child(
-                                    self.button("verify-session-edit", "核对会话资料").on_click(
-                                        cx.listener(move |shell, _, _, cx| {
-                                            shell.submit_session_edit(request.clone(), true, cx)
-                                        }),
-                                    ),
-                                )
-                            },
-                        ),
-                ),
+                .child(content.child(self.session_management_feedback(None, cx))),
         )
+    }
+
+    pub(super) fn archive_settings(&self, focus: &FocusHandle, cx: &Context<Self>) -> Div {
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(self.archived_sessions(Some(focus), cx))
+            .child(self.session_management_feedback(Some(focus), cx))
+    }
+
+    fn archived_sessions(&self, focus: Option<&FocusHandle>, cx: &Context<Self>) -> Div {
+        let panel = &self.session_management;
+        let metadata = panel.supports("session_metadata")
+            && panel.request.is_none()
+            && self.creating_session.is_none()
+            && !self.session_fork.in_flight();
+        let palette = self.palette;
+        let mut archived = self
+            .snapshot
+            .sessions
+            .iter()
+            .enumerate()
+            .filter(|(_, session)| session.archived)
+            .peekable();
+        div()
+            .flex()
+            .flex_col()
+            .when(archived.peek().is_none(), |list| {
+                list.child(self.text("没有已归档的聊天。", 13.0, palette.muted))
+            })
+            .children(archived.map(|(index, session)| {
+                let project = self
+                    .snapshot
+                    .projects
+                    .iter()
+                    .find(|project| project.id == session.project_id);
+                let focus = focus.cloned();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .min_h(px(60.0))
+                    .border_t_1()
+                    .border_color(palette.line)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(
+                                self.text(session.display_title().to_owned(), 14.0, palette.text)
+                                    .truncate(),
+                            )
+                            .when_some(project, |label, project| {
+                                label.child(
+                                    self.text(project.name.clone(), 12.0, palette.muted)
+                                        .truncate(),
+                                )
+                            }),
+                    )
+                    .child(
+                        self.button(("restore-session", index), "恢复")
+                            .when(focus.is_some(), |button| button.h(px(44.0)))
+                            .when(!metadata, |button| button.opacity(0.45).cursor_default())
+                            .when(metadata, |button| {
+                                button
+                                    .when(focus.is_some(), |button| button.tab_index(0))
+                                    .focus(|button| button.bg(palette.hover))
+                                    .on_click(cx.listener(move |shell, _, window, cx| {
+                                        if let Some(focus) = &focus {
+                                            focus.focus(window);
+                                        }
+                                        shell.edit_session(index, Edit::Archive(false), cx);
+                                    }))
+                            }),
+                    )
+            }))
+    }
+
+    fn session_management_feedback(&self, focus: Option<&FocusHandle>, cx: &Context<Self>) -> Div {
+        let panel = &self.session_management;
+        let palette = self.palette;
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .when(panel.reading_capabilities.is_some(), |status| {
+                status.child(self.text("正在读取节点操作能力…", 12.0, palette.muted))
+            })
+            .when_some(panel.capability_error.as_ref(), |status, error| {
+                status.child(self.text(error.clone(), 12.0, palette.danger))
+            })
+            .when(
+                focus.is_some()
+                    && panel.capabilities.is_some()
+                    && !panel.supports("session_metadata"),
+                |status| {
+                    status.child(self.text(
+                        "当前节点未提供恢复归档会话的能力。",
+                        12.0,
+                        palette.muted,
+                    ))
+                },
+            )
+            .when(panel.pending.is_some(), |status| {
+                status.child(self.text("正在核对节点会话资料…", 12.0, palette.muted))
+            })
+            .when_some(panel.error.as_ref(), |status, error| {
+                status.child(self.text(error.clone(), 12.0, palette.danger))
+            })
+            .when_some(
+                panel.request.as_ref().filter(|_| panel.pending.is_none()),
+                |status, request| {
+                    let request = request.clone();
+                    let focus = focus.cloned();
+                    status.child(
+                        div().flex().child(
+                            self.button("verify-session-edit", "核对会话资料")
+                                .when(focus.is_some(), |button| button.tab_index(0))
+                                .focus(|button| button.bg(palette.hover))
+                                .on_click(cx.listener(move |shell, _, window, cx| {
+                                    if let Some(focus) = &focus {
+                                        focus.focus(window);
+                                    }
+                                    shell.submit_session_edit(request.clone(), true, cx);
+                                })),
+                        ),
+                    )
+                },
+            )
     }
 }

@@ -332,12 +332,7 @@ impl Shell {
             cx.stop_propagation();
             return;
         }
-        let shortcut = if cfg!(target_os = "macos") {
-            modifiers.platform && !modifiers.control
-        } else {
-            modifiers.control && !modifiers.platform
-        };
-        if shortcut && !modifiers.alt && !modifiers.shift {
+        if super::primary_modifier(modifiers) && !modifiers.alt && !modifiers.shift {
             let buffer = self.buffer_mut();
             let selected = buffer.selection();
             match key {

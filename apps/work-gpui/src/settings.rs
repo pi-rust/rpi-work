@@ -134,16 +134,26 @@ enum Section {
     General,
     Appearance,
     Notifications,
+    Shortcuts,
+    Archives,
 }
 
 impl Section {
-    const ALL: [Self; 3] = [Self::General, Self::Appearance, Self::Notifications];
+    const NAVIGATION: [(Self, &str, &str); 5] = [
+        (Self::General, "settings-general", "settings"),
+        (Self::Appearance, "settings-appearance", "appearance"),
+        (Self::Notifications, "settings-notifications", "bell"),
+        (Self::Shortcuts, "settings-shortcuts", "keyboard"),
+        (Self::Archives, "settings-archives", "archive-box"),
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Self::General => "常规",
             Self::Appearance => "外观",
             Self::Notifications => "通知",
+            Self::Shortcuts => "键盘快捷键",
+            Self::Archives => "已归档的聊天",
         }
     }
 }
@@ -233,26 +243,30 @@ struct Destination {
 }
 
 fn search_destinations(query: &str) -> impl Iterator<Item = Destination> {
-    Section::ALL.into_iter().flat_map(move |section| {
-        let pane_match = section.label().contains(query);
-        pane_match
-            .then_some(Destination {
-                section,
-                field: None,
-            })
-            .into_iter()
-            .chain(
-                Field::ALL
-                    .into_iter()
-                    .filter(move |field| {
-                        !pane_match && field.section() == section && field.label().contains(query)
-                    })
-                    .map(move |field| Destination {
-                        section,
-                        field: Some(field),
-                    }),
-            )
-    })
+    Section::NAVIGATION
+        .into_iter()
+        .flat_map(move |(section, _, _)| {
+            let pane_match = section.label().contains(query);
+            pane_match
+                .then_some(Destination {
+                    section,
+                    field: None,
+                })
+                .into_iter()
+                .chain(
+                    Field::ALL
+                        .into_iter()
+                        .filter(move |field| {
+                            !pane_match
+                                && field.section() == section
+                                && field.label().contains(query)
+                        })
+                        .map(move |field| Destination {
+                            section,
+                            field: Some(field),
+                        }),
+                )
+        })
 }
 
 struct SettingsRow(Option<Field>, AnyElement);
@@ -344,6 +358,9 @@ impl Shell {
         self.input_dragging = false;
         self.browser.restore_composer_focus();
         self.settings.open = true;
+        if self.settings.section == Section::Archives {
+            self.read_session_management_capabilities(cx);
+        }
         if window.viewport_size().width <= px(700.0) {
             self.settings.browse_focus.focus(window);
         } else {
@@ -374,6 +391,9 @@ impl Shell {
         panel.browse = false;
         panel.clear_search();
         panel.content_scroll.set_offset(point(px(0.0), px(0.0)));
+        if destination.section == Section::Archives {
+            self.read_session_management_capabilities(cx);
+        }
         // Finish dispatching the result's key release before focusing a writable control.
         window.prevent_default();
         cx.on_next_frame(window, move |shell, window, _| {
@@ -425,29 +445,22 @@ impl Shell {
             .flex()
             .flex_col();
         if query.is_empty() {
-            list = list.children(
-                [
-                    (Section::General, "settings-general", "settings"),
-                    (Section::Appearance, "settings-appearance", "appearance"),
-                    (Section::Notifications, "settings-notifications", "bell"),
-                ]
-                .map(|(tab, id, shape)| {
-                    self.setting_navigation_button(id)
-                        .when(section == tab, |button| button.bg(palette.hover))
-                        .child(icon(shape, 16.0, palette.muted))
-                        .child(self.text(tab.label(), 13.0, palette.text))
-                        .on_click(cx.listener(move |shell, _, window, cx| {
-                            shell.select_settings_destination(
-                                Destination {
-                                    section: tab,
-                                    field: None,
-                                },
-                                window,
-                                cx,
-                            );
-                        }))
-                }),
-            );
+            list = list.children(Section::NAVIGATION.map(|(tab, id, shape)| {
+                self.setting_navigation_button(id)
+                    .when(section == tab, |button| button.bg(palette.hover))
+                    .child(icon(shape, 16.0, palette.muted))
+                    .child(self.text(tab.label(), 13.0, palette.text))
+                    .on_click(cx.listener(move |shell, _, window, cx| {
+                        shell.select_settings_destination(
+                            Destination {
+                                section: tab,
+                                field: None,
+                            },
+                            window,
+                            cx,
+                        );
+                    }))
+            }));
         } else {
             let mut results = search_destinations(query).peekable();
             if results.peek().is_none() {
@@ -549,6 +562,12 @@ impl Shell {
             Section::General => self.general_settings(cx),
             Section::Appearance => self.appearance_settings(cx),
             Section::Notifications => self.notification_settings(cx),
+            Section::Shortcuts => self.shortcut_settings(),
+            Section::Archives => vec![SettingsRow(
+                None,
+                self.archive_settings(&self.settings.target_focus, cx)
+                    .into_any_element(),
+            )],
         };
         if std::mem::take(&mut self.settings.reveal)
             && let Some(target) = self.settings.target
@@ -691,7 +710,10 @@ impl Shell {
                                 div()
                                     .id("settings-title")
                                     .when(self.settings.target.is_none(), |title| {
-                                        title.track_focus(&self.settings.target_focus)
+                                        title
+                                            .track_focus(&self.settings.target_focus)
+                                            .tab_index(0)
+                                            .tab_stop(false)
                                     })
                                     .child(self.text(
                                         section.label(),
@@ -880,6 +902,55 @@ impl Shell {
             }),
         );
         rows
+    }
+
+    fn shortcut_settings(&self) -> Vec<SettingsRow> {
+        let palette = self.palette;
+        let primary = super::PRIMARY_MODIFIER_LABEL;
+        let shortcuts: [(&str, &[&str]); 8] = [
+            ("打开设置", &[primary, ","]),
+            ("关闭设置与对话框", &["Esc"]),
+            ("移至下一个控件", &["Tab"]),
+            ("移至上一个控件", &["Shift", "Tab"]),
+            ("发送消息", &["Enter"]),
+            ("消息换行", &["Shift", "Enter"]),
+            ("定位首个设置搜索结果", &["Enter"]),
+            ("聚焦设置搜索结果", &["↓"]),
+        ];
+        shortcuts
+            .into_iter()
+            .map(|(label, keys)| {
+                SettingsRow(
+                    None,
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_3()
+                        .min_h(px(46.0))
+                        .border_t_1()
+                        .border_color(palette.line)
+                        .child(self.text(label, 13.0, palette.text))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_none()
+                                .gap_1()
+                                .children(keys.iter().map(|key| {
+                                    self.text(*key, 12.0, palette.text)
+                                        .min_w(px(23.0))
+                                        .px_1()
+                                        .text_center()
+                                        .rounded(px(4.0))
+                                        .bg(palette.subtle)
+                                        .border_1()
+                                        .border_color(palette.line)
+                                })),
+                        )
+                        .into_any_element(),
+                )
+            })
+            .collect()
     }
 
     fn notification_settings(&self, cx: &mut Context<Self>) -> Vec<SettingsRow> {
