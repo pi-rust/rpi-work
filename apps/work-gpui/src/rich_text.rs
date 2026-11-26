@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, ClipboardItem, Div, FontStyle, FontWeight, HighlightStyle, InteractiveText,
+    AnyElement, ClickEvent, ClipboardItem, Div, FontStyle, FontWeight, HighlightStyle, MouseButton,
     SharedString, StrikethroughStyle, StyledText, UnderlineStyle, div, prelude::*, px,
 };
 use work_viewmodel::conversation::markdown::{CodeToken, Element as Tag, MarkdownView, Node};
@@ -306,9 +306,32 @@ impl Markdown {
         if inline.links.is_empty() {
             return text.into_any_element();
         }
-        let (ranges, urls): (Vec<_>, Vec<_>) = inline.links.into_iter().unzip();
-        InteractiveText::new(("inline", id), text)
-            .on_click(ranges, move |index, _, cx| cx.open_url(&urls[index]))
+        let layout = text.layout().clone();
+        div()
+            .id(("inline", id))
+            .min_w(px(0.0))
+            .child(text)
+            .on_click(move |event, _, cx| {
+                let ClickEvent::Mouse(click) = event else {
+                    return;
+                };
+                if click.down.button != MouseButton::Left || click.up.button != MouseButton::Left {
+                    return;
+                }
+                let (Ok(down), Ok(up)) = (
+                    layout.index_for_position(click.down.position),
+                    layout.index_for_position(click.up.position),
+                ) else {
+                    return;
+                };
+                if let Some((_, url)) = inline
+                    .links
+                    .iter()
+                    .find(|(range, _)| range.contains(&down) && range.contains(&up))
+                {
+                    cx.open_url(url);
+                }
+            })
             .into_any_element()
     }
 }
