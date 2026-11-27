@@ -21,6 +21,10 @@
   --chart-tools: #dfcb99;
   --chrome-bg: #fbfbfb;
   --code: #f4f4f4;
+  --code-comment: #666666;
+  --code-constant: #285f90;
+  --code-keyword: #202020;
+  --code-string: #2d694d;
   --control-height: 40px;
   --danger: #a03c35;
   --danger-bg: #fff0ed;
@@ -193,6 +197,10 @@
   --chart-tools: #79633b;
   --chrome-bg: #1b1b1b;
   --code: #303030;
+  --code-comment: #b0b0b0;
+  --code-constant: #a6d0f5;
+  --code-keyword: #f0f0f0;
+  --code-string: #a1d8b6;
   --control-height: 40px;
   --danger: #f1aaa2;
   --danger-bg: #462b2d;
@@ -366,6 +374,10 @@
   --chart-tools: #79633b;
   --chrome-bg: #1b1b1b;
   --code: #303030;
+  --code-comment: #b0b0b0;
+  --code-constant: #a6d0f5;
+  --code-keyword: #f0f0f0;
+  --code-string: #a1d8b6;
   --control-height: 40px;
   --danger: #f1aaa2;
   --danger-bg: #462b2d;
