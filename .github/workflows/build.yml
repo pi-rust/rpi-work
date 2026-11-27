@@ -22,37 +22,90 @@ env:
 
 jobs:
   gpui:
-    name: GPUI desktop / macOS arm64
-    runs-on: macos-15
+    name: GPUI desktop / ${{ matrix.package }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            package: macos-arm64
+            machine: arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            package: macos-x64
+            machine: x86_64
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            package: linux-x64
+            machine: Advanced Micro Devices X86-64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            package: linux-arm64
+            machine: AArch64
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            package: windows-x64
+            machine: '0x8664'
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            package: windows-arm64
+            machine: '0xaa64'
     defaults:
       run:
-        shell: bash
         working-directory: apps/work-gpui
+    env:
+      GPUI_TARGET: ${{ matrix.target }}
+      GPUI_PACKAGE: rpi-work-${{ matrix.package }}
+      GPUI_MACHINE: ${{ matrix.machine }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Install GPUI Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential pkg-config libssl-dev libfontconfig1-dev libfreetype6-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev
+      - name: Locate the Windows SDK shader compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+          $fxc = Get-ChildItem -Path "$sdk/10.*/arm64/fxc.exe", "$sdk/10.*/x64/fxc.exe" -File |
+            Where-Object { $_.Directory.Name -eq 'x64' -or $env:RUNNER_ARCH -eq 'ARM64' } |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+            Select-Object -First 1
+          if (-not $fxc) { throw 'Windows SDK fxc.exe is required to build GPUI shaders' }
+          "GPUI_FXC_PATH=$($fxc.FullName)" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/work-gpui -> target
-          shared-key: gpui-macos-arm64
+          shared-key: gpui-${{ matrix.target }}
           cache-on-failure: true
       - run: cargo fmt -- --check
-      - run: cargo test --locked
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Build GPUI release
-        run: cargo build --locked --release
+      - run: cargo test --locked --target ${{ matrix.target }}
+      - run: cargo clippy --locked --target ${{ matrix.target }} --all-targets -- -D warnings
+      - name: Build GPUI release from source
+        run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Package and verify the macOS application
+        if: runner.os == 'macOS'
+        shell: bash
         working-directory: ${{ github.workspace }}
         run: |
           dist=target/ci-dist
           app="$RUNNER_TEMP/RPI Work.app"
-          archive=rpi-work-macos-arm64.zip
-          bash ./apps/work-gpui/bundle-macos.sh apps/work-gpui/target/release/work-gpui "$app"
+          archive="$GPUI_PACKAGE.zip"
+          bash ./apps/work-gpui/bundle-macos.sh "apps/work-gpui/target/$GPUI_TARGET/release/work-gpui" "$app"
           mkdir -p "$dist"
           ditto -c -k --sequesterRsrc --keepParent "$app" "$dist/$archive"
           cd "$dist"
@@ -60,15 +113,52 @@ jobs:
           extracted=$(mktemp -d "$RUNNER_TEMP/work-gpui-verify.XXXXXXXX")
           ditto -x -k "$archive" "$extracted"
           codesign --verify --strict "$extracted/RPI Work.app"
-          test "$(lipo -archs "$extracted/RPI Work.app/Contents/MacOS/work-gpui")" = arm64
+          test "$(lipo -archs "$extracted/RPI Work.app/Contents/MacOS/work-gpui")" = "$GPUI_MACHINE"
           shasum -a 256 "$archive" > "$archive.sha256"
           shasum -a 256 -c "$archive.sha256"
+      - name: Package and verify the Linux executable
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          export LC_ALL=C
+          dist=target/ci-dist
+          archive="$GPUI_PACKAGE.tar.gz"
+          mkdir -p "$dist"
+          tar -czf "$dist/$archive" -C "apps/work-gpui/target/$GPUI_TARGET/release" work-gpui
+          extracted=$(mktemp -d "$RUNNER_TEMP/work-gpui-verify.XXXXXXXX")
+          tar -xzf "$dist/$archive" -C "$extracted"
+          test -x "$extracted/work-gpui"
+          machine=$(readelf -h "$extracted/work-gpui" | awk -F ': *' '$1 ~ /Machine$/ { print $2 }')
+          test "$machine" = "$GPUI_MACHINE"
+          cd "$dist"
+          sha256sum "$archive" > "$archive.sha256"
+          sha256sum -c "$archive.sha256"
+      - name: Package and verify the Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $dist = 'target/ci-dist'
+          $archive = "$env:GPUI_PACKAGE.zip"
+          $exe = "apps/work-gpui/target/$env:GPUI_TARGET/release/work-gpui.exe"
+          New-Item -ItemType Directory -Path $dist -Force | Out-Null
+          Compress-Archive -LiteralPath $exe -DestinationPath "$dist/$archive"
+          $extracted = Join-Path $env:RUNNER_TEMP 'work-gpui-verify'
+          Expand-Archive -LiteralPath "$dist/$archive" -DestinationPath $extracted
+          $bytes = Get-Content -LiteralPath "$extracted/work-gpui.exe" -AsByteStream -Raw
+          $header = [BitConverter]::ToInt32($bytes, 60)
+          $signature = [BitConverter]::ToUInt32($bytes, $header)
+          $machine = [BitConverter]::ToUInt16($bytes, ($header + 4))
+          if ($signature -ne 0x4550 -or $machine -ne [int]$env:GPUI_MACHINE) {
+            throw ('Unexpected PE signature or architecture: 0x{0:x}' -f $machine)
+          }
+          $hash = (Get-FileHash -LiteralPath "$dist/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $archive" | Set-Content -LiteralPath "$dist/$archive.sha256" -Encoding ascii
       - uses: actions/upload-artifact@v7
         with:
-          name: rpi-work-macos-arm64
-          path: |
-            target/ci-dist/rpi-work-macos-arm64.zip
-            target/ci-dist/rpi-work-macos-arm64.zip.sha256
+          name: ${{ env.GPUI_PACKAGE }}
+          path: target/ci-dist/${{ env.GPUI_PACKAGE }}.*
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

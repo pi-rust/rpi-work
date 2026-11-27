@@ -91,7 +91,7 @@ macOS 工作台的「地址二维码」可分享由接收设备访问的 HTTP(S)
 
 ## 构建与平台
 
-GPUI 0.2.2 与旧 Dioxus 的 `cocoa` 版本要求冲突，本应用使用独立 Cargo workspace。macOS 通过 `runtime_shaders` 在运行时编译着色器，可使用 Command Line Tools。Linux 和 Windows 的 GPUI 构建尚待验证。GPUI 0.2.2 的平台后端面向桌面。
+GPUI 0.2.2 与旧 Dioxus 的 `cocoa` 版本要求冲突，本应用使用独立 Cargo workspace。macOS 通过 `runtime_shaders` 在运行时编译着色器，可使用 Command Line Tools。Linux 在 Ubuntu 24.04 上构建，运行时需要支持 Vulkan 的图形驱动。Windows release 使用 Windows SDK 的 `fxc.exe` 编译着色器。各平台和架构的下载入口见 [GitHub 桌面编译](../../docs/guides/ci-builds.md)。
 
 ```bash
 cargo fmt --manifest-path apps/work-gpui/Cargo.toml -- --check

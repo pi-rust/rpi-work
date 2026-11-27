@@ -1,10 +1,17 @@
 # GitHub 桌面编译
 
-**GPUI desktop and Rust checks** 在推送到 `main` 或 `master`、提交 PR 或手动运行时触发。`macos-15` runner 使用 `apps/work-gpui/Cargo.lock`，运行格式检查、单测和严格 Clippy，然后为 `aarch64-apple-darwin` 编译 release。共享 Rust 检查在 Linux 上并行运行。 [工作流配置](../../.github/workflows/build.yml)
+**GPUI desktop and Rust checks** 在推送到 `main` 或 `master`、提交 PR 或手动运行时触发。每个桌面 runner 使用 `apps/work-gpui/Cargo.lock` 构建当前提交，先执行格式检查、单测和严格 Clippy，再编译并打包 GPUI release。共享 Rust 检查在 Linux 上并行运行。 [工作流配置](../../.github/workflows/build.yml)
 
-打包步骤复用本地 GPUI 脚本生成 `RPI Work.app`，为应用添加临时签名。上传前检查 ZIP 完整性，解包核对应用签名及 arm64 架构，并校验 SHA-256。 [打包脚本](../../apps/work-gpui/bundle-macos.sh)
+| 平台 | Rust target | Runner | 制品 |
+| --- | --- | --- | --- |
+| macOS Apple Silicon | `aarch64-apple-darwin` | `macos-15` | `rpi-work-macos-arm64` |
+| macOS Intel | `x86_64-apple-darwin` | `macos-15-intel` | `rpi-work-macos-x64` |
+| Linux x64 | `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | `rpi-work-linux-x64` |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | `rpi-work-linux-arm64` |
+| Windows x64 | `x86_64-pc-windows-msvc` | `windows-2022` | `rpi-work-windows-x64` |
+| Windows ARM64 | `aarch64-pc-windows-msvc` | `windows-11-arm` | `rpi-work-windows-arm64` |
 
-在成功运行的 **Artifacts** 中下载 `rpi-work-macos-arm64`。制品保留 14 天，内含 `rpi-work-macos-arm64.zip` 及对应 SHA-256 文件。在 macOS 上解开内层 ZIP 即可获得 `RPI Work.app`。 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [本机编译说明](../../apps/work-gpui/README.md#构建与平台)
+在运行页面的 **Artifacts** 下载对应制品。制品保留 14 天，包含平台压缩包和 SHA-256 文件。macOS ZIP 包含临时签名的 `RPI Work.app`，Linux tar.gz 包含 `work-gpui`，Windows ZIP 包含 `work-gpui.exe`。打包时解包核对可执行文件的架构。 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [本机编译说明](../../apps/work-gpui/README.md#构建与平台)
 
 旧版 Dioxus 的桌面、Android 和 Web 打包步骤以下列历史资料为准，可用仓库脚本本地复现。
 
