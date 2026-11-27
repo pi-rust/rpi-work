@@ -61,11 +61,11 @@ pub fn command_admission(
         } else {
             acceptance != Some(false)
         };
-    return Some(if accepted {
+    Some(if accepted {
         Ok(())
     } else {
         Err(reply.error.unwrap_or_else(|| "节点明确拒绝了原请求".into()))
-    });
+    })
 }
 
 fn operation_result(status: OperationStatus) -> Option<Result<Value, String>> {
