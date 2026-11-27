@@ -21,7 +21,12 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     printf 'Expected a numeric application version in Cargo.toml\n' >&2
     exit 1
 fi
-minimum=$(vtool -show-build "$binary" | awk '$1 == "minos" { print $2; exit }')
+minimum=$(vtool -show-build "$binary" | awk '
+    $1 == "cmd" { command = $2 }
+    command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
+    command == "LC_BUILD_VERSION" && $1 == "platform" { platform = $2 }
+    command == "LC_BUILD_VERSION" && platform == "MACOS" && $1 == "minos" { print $2; exit }
+')
 if [[ ! "$minimum" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
     printf 'The executable must be a macOS Mach-O with a deployment target\n' >&2
     exit 1
