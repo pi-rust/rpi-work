@@ -2516,6 +2516,7 @@ pub(super) fn App(#[props(default)] connection_setup: bool) -> Element {
                                 project_id: Some(project_id.clone()),
                                 title: None,
                                 status: "idle".into(),
+                                activity: None,
                                 created_at: 0,
                                 updated_at: 0,
                                 last_seq: 0,
