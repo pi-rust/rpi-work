@@ -3,6 +3,7 @@ name: GPUI desktop and Rust checks
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -199,3 +200,61 @@ jobs:
       - name: Verify desktop runtime setup and recovery
         run: cargo test --locked -p work-host --features test-fixtures --test setup_flow
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  release:
+    name: Publish GPUI desktop release
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs: [gpui, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify release version
+        shell: bash
+        run: |
+          version=$(awk -F '"' '/^version = / { print $2; exit }' apps/work-gpui/Cargo.toml)
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$GITHUB_REF_NAME" == "v$version" ]] || {
+            printf 'Release tag %s must match GPUI version v%s\n' "$GITHUB_REF_NAME" "$version" >&2
+            exit 1
+          }
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: rpi-work-*
+          path: target/release-assets
+          merge-multiple: true
+      - name: Verify packages and publish Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          cd target/release-assets
+          assets=()
+          for archive in rpi-work-macos-{x64,arm64}.zip rpi-work-linux-{x64,arm64}.tar.gz rpi-work-windows-{x64,arm64}.zip; do
+            expected=$(sha256sum "$archive")
+            actual=$(tr -d '\r' < "$archive.sha256")
+            [[ "$expected" == "$actual" ]] || {
+              printf 'Checksum mismatch for %s\n' "$archive" >&2
+              exit 1
+            }
+            assets+=("$archive" "$archive.sha256")
+          done
+
+          if draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft); then
+            [[ "$draft" == 'true' ]] || {
+              printf 'Release %s is already published\n' "$tag" >&2
+              exit 1
+            }
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title "RPI Work $tag" --notes-file ../../apps/work-gpui/RELEASE.md
+          fi
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
+          published_assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          diff -u <(printf '%s\n' "${assets[@]}" | sort) <(printf '%s\n' "$published_assets" | sort)
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest

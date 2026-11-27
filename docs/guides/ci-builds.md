@@ -1,6 +1,6 @@
 # GitHub 桌面编译
 
-**GPUI desktop and Rust checks** 在推送到 `main` 或 `master`、提交 PR 或手动运行时触发。每个桌面 runner 使用 `apps/work-gpui/Cargo.lock` 构建当前提交，先执行格式检查、单测和严格 Clippy，再编译并打包 GPUI release。共享 Rust 检查在 Linux 上并行运行。 [工作流配置](../../.github/workflows/build.yml)
+**GPUI desktop and Rust checks** 在推送到 `main` 或 `master`、推送 `v*` 标签、提交 PR 或手动运行时触发。每个桌面 runner 使用 `apps/work-gpui/Cargo.lock` 构建当前提交，先执行格式检查、单测和严格 Clippy，再编译并打包 GPUI release。共享 Rust 检查在 Linux 上并行运行。 [工作流配置](../../.github/workflows/build.yml)
 
 | 平台 | Rust target | Runner | 制品 |
 | --- | --- | --- | --- |
@@ -12,6 +12,12 @@
 | Windows ARM64 | `aarch64-pc-windows-msvc` | `windows-11-arm` | `rpi-work-windows-arm64` |
 
 在运行页面的 **Artifacts** 下载对应制品。制品保留 14 天，包含平台压缩包和 SHA-256 文件。macOS ZIP 包含临时签名的 `RPI Work.app`，Linux tar.gz 包含 `work-gpui`，Windows ZIP 包含 `work-gpui.exe`。打包时解包核对可执行文件的架构。 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [本机编译说明](../../apps/work-gpui/README.md#构建与平台)
+
+## 发布 GPUI 桌面版
+
+1. 更新 `apps/work-gpui/Cargo.toml`、同目录的 `Cargo.lock` 和发布说明。 [发布说明](../../apps/work-gpui/RELEASE.md)
+2. 在提交上创建并推送匹配的 `v<版本>` 标签。仅标签运行会执行发布任务。
+3. 六个平台与共享 Rust 检查通过后，发布任务复验全部压缩包的 SHA-256，将六个包及校验文件上传到草稿 Release，再公开并标记为最新版本。 [GitHub Releases](https://github.com/pi-rust/rpi-work/releases/latest)
 
 旧版 Dioxus 的桌面、Android 和 Web 打包步骤以下列历史资料为准，可用仓库脚本本地复现。
 

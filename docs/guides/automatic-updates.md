@@ -1,6 +1,6 @@
 # 应用更新
 
-> 本文记录历史 Dioxus 安装包的更新链路。当前 GPUI 桌面包可从 GitHub Actions 下载。 [GPUI 构建与制品](ci-builds.md)
+> 本文记录历史 Dioxus 安装包的更新链路。GPUI 使用独立的桌面 Release，旧版客户端请手动下载对应平台的 GPUI 包。 [GPUI 构建与发布](ci-builds.md#发布-gpui-桌面版)
 
 设置 → 应用更新：默认启动时及每六小时检查GitHub最新稳定Release；可以关闭自动检查或手动检查。仅比较SemVer更高的版本，不自动降级。首次联网失败不会阻止使用会话，手动检查可重试。
 
