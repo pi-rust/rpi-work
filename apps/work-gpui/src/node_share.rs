@@ -1,6 +1,9 @@
 //! Address sharing uses the same QR envelope as the receiving clients.
 
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use gpui::{
     Bounds, Context, Div, Pixels, Task, Window, canvas, div, fill, point, prelude::*, px, size,
@@ -8,12 +11,16 @@ use gpui::{
 use work_viewmodel::connection::normalize_address;
 
 use super::Shell;
+#[cfg(any(target_os = "macos", test))]
+use crate::data::NodeAuthorization;
 
 #[derive(Default)]
 pub(super) struct Share {
     pub(super) open: bool,
     pending: Option<Task<()>>,
+    pub(super) authorization: bool,
     ready: Option<(String, Qr)>,
+    expiry: Option<Task<()>>,
     error: Option<String>,
 }
 
@@ -24,7 +31,7 @@ struct Qr {
 }
 
 #[cfg(target_os = "macos")]
-fn address_qr(address: &str) -> Option<Qr> {
+fn encode_qr(payload: &str) -> Option<Qr> {
     unsafe extern "C" {
         fn work_qr_modules(
             bytes: *const u8,
@@ -33,10 +40,7 @@ fn address_qr(address: &str) -> Option<Qr> {
             capacity: usize,
         ) -> usize;
     }
-    let payload = work_viewmodel::qr::seal(
-        &serde_json::json!({ "v": 1, "type": "rpi-work-node-address", "address": address })
-            .to_string(),
-    );
+    let payload = work_viewmodel::qr::seal(payload);
     const MAX_SIDE: usize = 185;
     let mut modules = vec![0; MAX_SIDE * MAX_SIDE];
     // The native encoder fills at most `capacity` bytes and borrows both buffers for this call.
@@ -59,12 +63,18 @@ fn address_qr(address: &str) -> Option<Qr> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn address_qr(_: &str) -> Option<Qr> {
+fn encode_qr(_: &str) -> Option<Qr> {
     None
 }
 
+#[cfg(any(target_os = "macos", test))]
+pub(super) enum NodeCode {
+    Address(String),
+    Authorization(String, NodeAuthorization),
+}
+
 #[cfg(target_os = "macos")]
-pub(super) fn scan_node_address(path: std::path::PathBuf) -> Result<String, String> {
+pub(super) fn scan_node_code(path: std::path::PathBuf) -> Result<NodeCode, String> {
     use std::io::Read;
 
     unsafe extern "C" {
@@ -90,22 +100,53 @@ pub(super) fn scan_node_address(path: std::path::PathBuf) -> Result<String, Stri
         .filter(|text| !text.is_empty())
         .and_then(|text| std::str::from_utf8(text).ok())
         .ok_or("请选择含有一个清晰二维码的图片。")?;
+    parse_node_code(raw, unix_seconds())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_node_code(raw: &str, now: u64) -> Result<NodeCode, String> {
     let decoded = work_viewmodel::qr::open(raw)?;
     if !decoded.starts_with('{') {
-        return normalize_address(&decoded, true);
+        return normalize_address(&decoded, true).map(NodeCode::Address);
     }
     let value: serde_json::Value =
-        serde_json::from_str(&decoded).map_err(|_| "无法解析节点地址二维码。")?;
-    if value.as_object().map(|object| object.len()) != Some(3)
-        || value["v"].as_u64() != Some(1)
-        || value["type"].as_str() != Some("rpi-work-node-address")
-    {
-        return Err("请选择 RPI Work 节点地址二维码。".into());
-    }
-    normalize_address(
+        serde_json::from_str(&decoded).map_err(|_| "无法解析节点二维码。")?;
+    let address = normalize_address(
         value["address"].as_str().ok_or("二维码缺少节点地址。")?,
         true,
-    )
+    )?;
+    let fields = value.as_object().map(|object| object.len());
+    match (value["v"].as_u64(), value["type"].as_str(), fields) {
+        (Some(1), Some("rpi-work-node-address"), Some(3)) => Ok(NodeCode::Address(address)),
+        (Some(1), Some("rpi-work-node-auth"), Some(6)) => {
+            let ticket = value["ticket"]
+                .as_str()
+                .filter(|ticket| {
+                    ticket.len() == 64
+                        && ticket
+                            .bytes()
+                            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+                })
+                .ok_or("二维码中的授权凭据无效。")?;
+            let node_id = value["nodeId"]
+                .as_str()
+                .filter(|id| !id.trim().is_empty() && !id.chars().any(char::is_control))
+                .ok_or("二维码中的节点标识无效。")?;
+            let expires_at = value["expiresAt"]
+                .as_u64()
+                .filter(|expiry| *expiry > now && *expiry <= now.saturating_add(180))
+                .ok_or("二维码已过期或时间无效，请重新扫码。")?;
+            Ok(NodeCode::Authorization(
+                address,
+                NodeAuthorization {
+                    ticket: ticket.into(),
+                    node_id: node_id.into(),
+                    expires_at,
+                },
+            ))
+        }
+        _ => Err("请选择 RPI Work 节点地址或授权二维码。".into()),
+    }
 }
 
 impl Qr {
@@ -140,14 +181,48 @@ impl Qr {
     }
 }
 
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+fn authorization_payload(
+    address: &str,
+    expected: &str,
+    grant: work_client::QrAuthorization,
+    now: u64,
+) -> Result<String, String> {
+    if grant.node_id != expected {
+        return Err("授权的节点与分享地址不匹配。".into());
+    }
+    if grant.ticket.is_empty()
+        || grant.expires_at <= now
+        || grant.expires_at > now.saturating_add(120)
+    {
+        return Err("授权已过期或有效期无效。".into());
+    }
+    Ok(serde_json::json!({
+        "v": 1, "type": "rpi-work-node-auth", "address": address,
+        "ticket": grant.ticket, "expiresAt": grant.expires_at, "nodeId": grant.node_id,
+    })
+    .to_string())
+}
+
 impl Shell {
-    pub(super) fn show_node_share(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn show_node_share(
+        &mut self,
+        authorization: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.node_share = Share {
             open: true,
+            authorization,
             ..Share::default()
         };
         self.search.clear();
-        let address = normalize_address(&self.snapshot.node, false).unwrap_or_default();
+        let address = self.collaboration_address().unwrap_or_default();
         self.search.buffer.replace(None, &address);
         self.search.buffer.select_all();
         self.search.focus.focus(window);
@@ -177,7 +252,9 @@ impl Shell {
         {
             return;
         }
-        let (Some(node), Some(expected)) = (&self.node, self.snapshot.node_id.clone()) else {
+        let (Some(node), Some(expected)) =
+            (&self.node, self.collaboration_identity().map(str::to_owned))
+        else {
             return;
         };
         let address = match normalize_address(&self.search.buffer.text, true) {
@@ -190,21 +267,47 @@ impl Shell {
         };
         self.node_share.error = None;
         window.prevent_default();
-        let check = node.verify_share_address(address.clone(), expected);
+        let authorization = self.node_share.authorization;
+        if authorization && !node.is_local() {
+            return;
+        }
+        let verification =
+            node.prepare_node_share(address.clone(), expected.clone(), authorization);
         self.node_share.pending = Some(cx.spawn_in(window, async move |this, cx| {
-            let verified = check.await.unwrap_or(false);
+            let result = verification.await.unwrap_or_else(|_| Err("无法验证分享地址。".into()))
+                .and_then(|grant| {
+                    let (payload, expiry) = if let Some(grant) = grant {
+                        let expiry = grant.expires_at;
+                        (authorization_payload(&address, &expected, grant, unix_seconds())?, Some(expiry))
+                    } else {
+                        (serde_json::json!({ "v": 1, "type": "rpi-work-node-address", "address": &address }).to_string(), None)
+                    };
+                    encode_qr(&payload).map(|code| (code, expiry)).ok_or_else(|| "无法生成节点二维码。".into())
+                });
             let _ = cx.update(|window, cx| {
                 let _ = this.update(cx, |shell, cx| {
                     shell.node_share.pending = None;
-                    if !verified {
-                        shell.node_share.error =
-                            Some("无法在此地址验证当前节点。请检查地址与节点监听设置。".into());
-                    } else if let Some(code) = address_qr(&address) {
-                        shell.node_share.ready = Some((address, code));
-                        shell.search.clear();
-                        shell.focus_settings_title(window);
-                    } else {
-                        shell.node_share.error = Some("无法生成地址二维码。".into());
+                    match result {
+                        Ok((code, expiry)) => {
+                            shell.node_share.ready = Some((address, code));
+                            shell.search.clear();
+                            shell.focus_settings_title(window);
+                            if let Some(expires_at) = expiry {
+                                let delay = Duration::from_secs(expires_at.saturating_sub(unix_seconds()));
+                                let timer = cx.background_executor().timer(delay);
+                                shell.node_share.expiry = Some(cx.spawn(async move |this, cx| {
+                                    timer.await;
+                                    let _ = this.update(cx, |shell, cx| {
+                                        if let Some((address, _)) = shell.node_share.ready.take() {
+                                            shell.search.buffer.replace(None, &address);
+                                        }
+                                        shell.node_share.error = Some("授权已过期，请重新生成。".into());
+                                        cx.notify();
+                                    });
+                                }));
+                            }
+                        }
+                        Err(error) => shell.node_share.error = Some(error),
                     }
                     cx.notify();
                 });
@@ -216,6 +319,7 @@ impl Shell {
     pub(super) fn node_share_form(&self, compact: bool, cx: &mut Context<Self>) -> Div {
         let palette = self.palette;
         let busy = self.node_share_busy();
+        let authorization = self.node_share.authorization;
         let form = if let Some((address, code)) = &self.node_share.ready {
             div()
                 .flex()
@@ -224,7 +328,11 @@ impl Shell {
                 .child(self.text(address.clone(), 14.0, palette.text))
                 .child(code.element(compact))
                 .child(self.text(
-                    "用 RPI Work 扫码获取地址，按节点要求登录。",
+                    if authorization {
+                        "请让可信设备扫码。此授权只能使用一次，最多有效两分钟。"
+                    } else {
+                        "用 RPI Work 扫码获取地址，按节点要求登录。"
+                    },
                     13.0,
                     palette.muted,
                 ))
@@ -233,7 +341,15 @@ impl Shell {
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(self.text("对方可访问的节点地址", 14.0, palette.text))
+                .child(self.text(
+                    if authorization {
+                        "一次性授权 · 对方可访问的节点地址"
+                    } else {
+                        "对方可访问的节点地址"
+                    },
+                    14.0,
+                    palette.text,
+                ))
                 .child(
                     div()
                         .flex()
@@ -267,16 +383,60 @@ impl Shell {
                 )
                 .when(!busy && self.node_share.ready.is_none(), |actions| {
                     actions.child(
-                        self.button("generate-address-qr", "生成二维码")
-                            .border_1()
-                            .border_color(palette.line)
-                            .tab_index(0)
-                            .focus(|button| button.bg(palette.hover))
-                            .on_click(cx.listener(|shell, _, window, cx| {
-                                shell.generate_node_qr(window, cx)
-                            })),
+                        self.button(
+                            "generate-address-qr",
+                            if authorization {
+                                "签发授权"
+                            } else {
+                                "生成二维码"
+                            },
+                        )
+                        .border_1()
+                        .border_color(palette.line)
+                        .tab_index(0)
+                        .focus(|button| button.bg(palette.hover))
+                        .on_click(
+                            cx.listener(|shell, _, window, cx| shell.generate_node_qr(window, cx)),
+                        ),
                     )
                 }),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NodeCode, authorization_payload, parse_node_code};
+    use work_client::QrAuthorization;
+
+    #[test]
+    fn authorization_qr_requires_the_verified_node_and_a_short_expiry() {
+        let grant = |node: &str, expires_at| QrAuthorization {
+            ticket: "a".repeat(64),
+            expires_at,
+            node_id: node.into(),
+        };
+        let address = "https://work.example.invalid";
+        let payload = authorization_payload(address, "node-a", grant("node-a", 120), 60).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["type"], "rpi-work-node-auth");
+        assert_eq!(value["nodeId"], "node-a");
+        assert_eq!(value["address"], address);
+        let encoded = work_viewmodel::qr::seal(&payload);
+        let Ok(NodeCode::Authorization(scanned, code)) = parse_node_code(&encoded, 60) else {
+            panic!("expected an authorization QR");
+        };
+        assert_eq!(scanned, address);
+        assert_eq!(code.node_id, "node-a");
+        assert_eq!(code.expires_at, 120);
+        assert_eq!(code.ticket, "a".repeat(64));
+        assert!(parse_node_code(&encoded, 120).is_err());
+        assert!(matches!(
+            parse_node_code(address, 60),
+            Ok(NodeCode::Address(scanned)) if scanned == address
+        ));
+        assert!(authorization_payload(address, "node-a", grant("node-b", 120), 60).is_err());
+        assert!(authorization_payload(address, "node-a", grant("node-a", 60), 60).is_err());
+        assert!(authorization_payload(address, "node-a", grant("node-a", 181), 60).is_err());
     }
 }

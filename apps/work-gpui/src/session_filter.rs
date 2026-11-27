@@ -100,7 +100,8 @@ impl Shell {
         let palette = self.palette;
         let active = self.session_filter.filter != Filter::All || self.session_filter.menu_open;
         self.navigation_tooltip(
-            self.icon_button("filter-sessions", "list-checks", 28.0)
+            self.icon_button("filter-sessions", "list-checks", 25.0)
+                .h(px(25.0))
                 .when(active, |button| button.bg(palette.hover))
                 .track_focus(&self.session_filter.trigger)
                 .tab_index(0)

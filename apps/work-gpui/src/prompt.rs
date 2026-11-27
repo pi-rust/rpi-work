@@ -24,12 +24,20 @@ pub struct DiffAnchor {
     pub revision: String,
 }
 
+pub(crate) struct FileReference {
+    pub(crate) id: u64,
+    pub(crate) path: String,
+    message: String,
+}
+
 #[derive(Default)]
 pub struct Draft {
     pub input: Buffer,
     skill_instruction: Option<String>,
     pub feedback: Vec<Feedback>,
     next_feedback: u64,
+    pub(crate) references: Vec<FileReference>,
+    next_reference: u64,
     pub attachments: Vec<Attachment>,
     pub attachment_notice: Option<String>,
     next_attachment: u64,
@@ -40,6 +48,7 @@ pub struct Draft {
 pub(crate) struct SubmittedDraft {
     revision: u64,
     last_feedback: Option<u64>,
+    last_reference: Option<u64>,
     last_attachment: Option<u64>,
 }
 
@@ -161,7 +170,7 @@ impl Draft {
         comment: String,
         message: String,
     ) -> bool {
-        let separator = usize::from(!self.input.text.is_empty() || !self.feedback.is_empty()) * 2;
+        let separator = usize::from(self.message_parts().next().is_some()) * 2;
         if self.feedback.len() >= MAX_FEEDBACK
             || self.message_size() + separator + message.encode_utf16().count() > MAX_DRAFT
         {
@@ -178,33 +187,60 @@ impl Draft {
         true
     }
 
-    fn message_size(&self) -> usize {
-        let separators = self.feedback.len() + usize::from(!self.input.text.is_empty());
-        self.input.text.encode_utf16().count()
-            + self
-                .feedback
-                .iter()
-                .map(|item| item.message.encode_utf16().count())
-                .sum::<usize>()
-            + separators.saturating_sub(1) * 2
+    pub(crate) fn add_file_reference(&mut self, path: &str) -> bool {
+        if self.references.iter().any(|item| item.path == path) {
+            return true;
+        }
+        let message = format!(
+            "引用项目文件 · {}",
+            serde_json::Value::String(path.to_owned())
+        );
+        if self.references.len() >= MAX_FEEDBACK
+            || self.message_size() + 2 + message.encode_utf16().count() > MAX_DRAFT
+        {
+            self.attachment_notice = Some("项目文件引用或消息长度已达上限。".into());
+            return false;
+        }
+        self.next_reference += 1;
+        self.references.push(FileReference {
+            id: self.next_reference,
+            path: path.to_owned(),
+            message,
+        });
+        self.attachment_notice = None;
+        true
     }
 
-    pub fn feedback_over_limit(&self) -> bool {
-        !self.feedback.is_empty() && self.message_size() > MAX_DRAFT
+    fn message_parts(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.input.text.as_str())
+            .chain(self.references.iter().map(|item| item.message.as_str()))
+            .chain(self.feedback.iter().map(|item| item.message.as_str()))
+            .filter(|text| !text.is_empty())
+    }
+
+    fn message_size(&self) -> usize {
+        self.message_parts()
+            .map(|text| text.encode_utf16().count() + 2)
+            .sum::<usize>()
+            .saturating_sub(2)
+    }
+
+    pub fn message_over_limit(&self) -> bool {
+        (!self.feedback.is_empty() || !self.references.is_empty())
+            && self.message_size() > MAX_DRAFT
     }
 
     pub fn can_send(&self) -> bool {
         self.input.is_committed()
-            && (self.input.can_send() || !self.feedback.is_empty() || !self.attachments.is_empty())
-            && !self.feedback_over_limit()
+            && (self.input.can_send()
+                || !self.references.is_empty()
+                || !self.feedback.is_empty()
+                || !self.attachments.is_empty())
+            && !self.message_over_limit()
     }
 
     pub fn message(&self) -> String {
-        std::iter::once(self.input.text.as_str())
-            .chain(self.feedback.iter().map(|item| item.message.as_str()))
-            .filter(|text| !text.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n")
+        self.message_parts().collect::<Vec<_>>().join("\n\n")
     }
 
     pub fn begin(&mut self, include_draft: bool) {
@@ -224,6 +260,7 @@ impl Draft {
         SubmittedDraft {
             revision: self.input.revision,
             last_feedback: self.feedback.last().map(|item| item.id),
+            last_reference: self.references.last().map(|item| item.id),
             last_attachment: self.attachments.last().map(|item| item.id),
         }
     }
@@ -234,6 +271,9 @@ impl Draft {
         }
         if let Some(last) = draft.last_feedback {
             self.feedback.retain(|item| item.id > last);
+        }
+        if let Some(last) = draft.last_reference {
+            self.references.retain(|item| item.id > last);
         }
         if let Some(last) = draft.last_attachment {
             self.attachments.retain(|item| item.id > last);
@@ -366,6 +406,25 @@ mod tests {
         draft.accept();
         assert_eq!(draft.feedback.len(), 1);
         assert!(draft.message().ends_with("later"));
+    }
+
+    #[test]
+    fn acknowledgement_retains_references_added_after_submission() {
+        let mut draft = Draft::default();
+        draft.input.replace(None, "请检查");
+        assert!(draft.add_file_reference("src/my file.rs"));
+        assert!(draft.add_file_reference("src/my file.rs"));
+        assert_eq!(draft.references.len(), 1);
+        assert_eq!(
+            draft.message(),
+            "请检查\n\n引用项目文件 · \"src/my file.rs\""
+        );
+        draft.begin(true);
+        assert!(draft.add_file_reference("src/second.rs"));
+        draft.accept();
+        assert_eq!(draft.input.text, "");
+        assert_eq!(draft.references.len(), 1);
+        assert_eq!(draft.references[0].path, "src/second.rs");
     }
 
     #[test]

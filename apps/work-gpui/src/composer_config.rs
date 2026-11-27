@@ -417,7 +417,7 @@ impl Shell {
         div()
             .flex()
             .items_center()
-            .gap(px(3.0))
+            .gap(px(2.0))
             .child(self.config_control(ConfigField::Model, model, controls, cx))
             .child(self.config_control(ConfigField::Thinking, thinking, controls, cx))
             .when(
@@ -451,9 +451,10 @@ impl Shell {
             .flex_none()
             .child(
                 self.button(id, "")
-                    .gap(px(6.0))
+                    .px(px(6.0))
+                    .gap(px(5.0))
                     .child(
-                        self.text(label.to_owned(), 13.0, palette.text)
+                        self.text(label.to_owned(), 13.0, palette.muted)
                             .max_w(px(130.0))
                             .truncate(),
                     )

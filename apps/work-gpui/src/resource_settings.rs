@@ -234,7 +234,8 @@ impl Shell {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let compact = window.viewport_size().width <= px(700.0);
+        let viewport_width = f32::from(window.viewport_size().width);
+        let compact = viewport_width <= 700.0;
         let install_form = self.resource_settings.install_form.as_ref();
         let stacked = compact || width < 650.0;
         div()
@@ -247,7 +248,7 @@ impl Shell {
             .px(px(if compact {
                 17.0
             } else {
-                (width * 0.05).clamp(20.0, 64.0)
+                (viewport_width * 0.04).clamp(20.0, 64.0)
             }))
             .py(px(if compact { 24.0 } else { 35.0 }))
             .child(if let Some(form) = install_form {
@@ -255,14 +256,14 @@ impl Shell {
             } else if let Some(form) = &self.resource_settings.configuration_form {
                 self.resource_configuration_form(form, cx)
             } else {
-                self.resource_page_body(tab, width, stacked, window, cx)
+                self.resource_page_body(tab, viewport_width, stacked, window, cx)
             })
     }
 
     fn resource_page_body(
         &self,
         tab: ResourceTab,
-        width: f32,
+        viewport_width: f32,
         stacked: bool,
         window: &Window,
         cx: &mut Context<Self>,
@@ -278,8 +279,8 @@ impl Shell {
                     .flex()
                     .items_start()
                     .justify_between()
-                    .gap_3()
-                    .mb_5()
+                    .gap(px(if compact { 10.0 } else { 20.0 }))
+                    .mb(px(if compact { 22.0 } else { 29.0 }))
                     .child(
                         div()
                             .min_w_0()
@@ -298,19 +299,19 @@ impl Shell {
                     .when(
                         project.is_some() && self.node.is_some() && tab.kind().is_some(),
                         |heading| {
+                            let actions = [
+                                self.resource_configuration_button(cx),
+                                tab.kind()
+                                    .and_then(|kind| self.resource_install_button(kind, cx)),
+                                Some(self.resource_refresh(cx)),
+                            ];
                             heading.child(
-                                div()
-                                    .flex()
-                                    .flex_wrap()
-                                    .justify_end()
-                                    .gap_2()
-                                    .children(self.resource_configuration_button(cx))
-                                    .children(
-                                        tab.kind().and_then(|kind| {
-                                            self.resource_install_button(kind, cx)
-                                        }),
-                                    )
-                                    .child(self.resource_refresh(cx)),
+                                div().flex().flex_wrap().justify_end().gap_2().children(
+                                    actions
+                                        .into_iter()
+                                        .flatten()
+                                        .map(|button| button.h(px(34.0))),
+                                ),
                             )
                         },
                     ),
@@ -318,7 +319,7 @@ impl Shell {
             .children(self.resource_install_notice(tab.kind()))
             .child(self.resource_toolbar(tab, stacked, window, cx))
             .child(if let Some(kind) = tab.kind() {
-                self.resource_page_content(tab, kind, width, stacked, cx)
+                self.resource_page_content(tab, kind, viewport_width <= 1200.0, stacked, cx)
             } else {
                 div().child(self.text("当前节点未提供 MCP 服务目录。", 14.0, palette.muted))
             })
@@ -336,15 +337,15 @@ impl Shell {
         div()
             .flex()
             .gap_3()
-            .mb_5()
+            .mb(px(22.0))
             .when(stacked, |toolbar| toolbar.flex_col().items_start())
             .when(!stacked, |toolbar| toolbar.items_center().justify_between())
             .child(
                 div()
                     .flex()
                     .flex_none()
-                    .gap_1()
-                    .p_1()
+                    .gap(px(3.0))
+                    .p(px(3.0))
                     .rounded(px(8.0))
                     .bg(palette.subtle)
                     .children(tabs.map(|entry| {
@@ -398,7 +399,7 @@ impl Shell {
         &self,
         tab: ResourceTab,
         kind: NativeKind,
-        width: f32,
+        narrow: bool,
         stacked: bool,
         cx: &mut Context<Self>,
     ) -> Div {
@@ -414,7 +415,7 @@ impl Shell {
                 ));
             }
             Some(Ok(catalog)) => {
-                return self.resource_page_catalog(tab, kind, catalog, width, stacked, cx);
+                return self.resource_page_catalog(tab, kind, catalog, narrow, stacked, cx);
             }
         };
         div().child(self.text(message, 14.0, self.palette.muted))
@@ -425,7 +426,7 @@ impl Shell {
         tab: ResourceTab,
         kind: NativeKind,
         catalog: &NativeCatalog,
-        width: f32,
+        narrow: bool,
         stacked: bool,
         cx: &mut Context<Self>,
     ) -> Div {
@@ -454,11 +455,10 @@ impl Shell {
         let inspection = detail
             .filter(|detail| detail.reference == selected.reference)
             .map_or(&Inspection::Ready, |detail| &detail.inspection);
-        let narrow = width < 950.0;
         div()
             .flex()
             .items_start()
-            .when(stacked, |layout| layout.flex_col().gap_5())
+            .when(stacked, |layout| layout.flex_col().gap(px(22.0)))
             .when(!stacked, |layout| {
                 layout.gap(px(if narrow { 18.0 } else { 35.0 }))
             })
@@ -466,7 +466,7 @@ impl Shell {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
+                    .gap(px(6.0))
                     .min_w_0()
                     .when(stacked, |list| list.w_full())
                     .when(!stacked, |list| list.flex_1())
@@ -546,11 +546,11 @@ impl Shell {
         self.button(gpui::SharedString::from(reference.clone()), "")
             .h_auto()
             .w_full()
-            .min_h(px(68.0))
-            .py_3()
+            .min_h(px(73.0))
+            .py(px(17.0))
             .px_3()
             .rounded(px(9.0))
-            .gap_3()
+            .gap(px(13.0))
             .justify_start()
             .tab_index(0)
             .border_1()

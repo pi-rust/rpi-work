@@ -1,6 +1,6 @@
 //! Register existing directories on the connected node.
 
-use gpui::{Context, Div, Task, Window, div, prelude::*, px};
+use gpui::{Context, Div, PathPromptOptions, Task, Window, div, prelude::*, px};
 use work_client::{Project, ProjectFolders, WorkspaceClient};
 use work_viewmodel::config_requests::bounded;
 
@@ -168,6 +168,60 @@ impl Shell {
         cx.notify();
     }
 
+    fn choose_local_project_folder(&mut self, cx: &mut Context<Self>) {
+        let form = &self.project_form;
+        if !form.open
+            || !form.editable()
+            || form.browsing.is_some()
+            || !self.node.as_ref().is_some_and(|node| node.is_local())
+        {
+            return;
+        }
+        let path_revision = form.path.revision;
+        let selection = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("选择项目文件夹".into()),
+        });
+        self.project_form.browsing = Some(cx.spawn(async move |this, cx| {
+            let result = selection.await;
+            let _ = this.update(cx, |shell, cx| {
+                let form = &mut shell.project_form;
+                form.browsing = None;
+                if !form.open || form.path.revision != path_revision {
+                    cx.notify();
+                    return;
+                }
+                match result {
+                    Ok(Ok(Some(paths))) => {
+                        if let Some(path) = paths.first() {
+                            if let Some(text) = path.to_str() {
+                                form.path = Buffer::default();
+                                form.path.replace(None, text);
+                                if form.name.text.trim().is_empty()
+                                    && let Some(name) =
+                                        path.file_name().and_then(|name| name.to_str())
+                                {
+                                    form.name = Buffer::default();
+                                    form.name.replace(None, name);
+                                }
+                                form.error = None;
+                                shell.select_project_field(Field::Path, cx);
+                            } else {
+                                form.error = Some("所选目录的路径无法作为文本使用。".into());
+                            }
+                        }
+                    }
+                    Ok(Ok(None)) => {}
+                    _ => form.error = Some("无法打开项目文件夹选择器。".into()),
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
     fn browse_project_folders(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(node) = self.node.as_ref() else {
             return;
@@ -284,6 +338,7 @@ impl Shell {
     pub(super) fn render_project_form(&self, cx: &mut Context<Self>) -> Div {
         let palette = self.palette;
         let form = &self.project_form;
+        let local = self.node.as_ref().is_some_and(|node| node.is_local());
         let mut fields = Vec::new();
         for (field, label) in [(Field::Name, "名称"), (Field::Path, "项目路径")] {
             let buffer = form.field(field);
@@ -295,17 +350,21 @@ impl Shell {
             };
             let field_box = div()
                 .id(label)
+                .flex()
+                .flex_col()
                 .flex_1()
-                .min_w(px(0.0))
+                .justify_center()
+                .min_w_0()
+                .min_h(px(36.0))
                 .border_1()
                 .rounded(px(6.0))
                 .border_color(palette.strong_line)
+                .px(px(5.0))
+                .py(px(5.0))
                 .when(active, |field_box| field_box.child(self.input_element(cx)))
                 .when(!active, |field_box| {
                     field_box
                         .cursor(gpui::CursorStyle::IBeam)
-                        .px_2()
-                        .py_1()
                         .child(
                             self.text(
                                 value.to_owned(),
@@ -316,6 +375,8 @@ impl Shell {
                                     palette.text
                                 },
                             )
+                            .line_height(px(24.0))
+                            .px_1()
                             .truncate(),
                         )
                         .when(form.editable(), |field_box| {
@@ -332,15 +393,32 @@ impl Shell {
                     .gap_1()
                     .child(self.text(label, 13.0, palette.text))
                     .child(div().flex().items_center().gap_2().child(field_box).when(
-                        field == Field::Path && form.editable(),
+                        field == Field::Path,
                         |row| {
+                            let enabled = form.editable() && form.browsing.is_none();
                             let path = buffer.text.trim().to_owned();
                             row.child(
-                                self.button("browse-project-folders", "选择文件夹")
-                                    .flex_none()
-                                    .on_click(cx.listener(move |shell, _, _, cx| {
-                                        shell.browse_project_folders(path.clone(), cx)
-                                    })),
+                                self.dialog_button(
+                                    "browse-project-folders",
+                                    if local {
+                                        "选择文件夹"
+                                    } else {
+                                        "浏览节点目录"
+                                    },
+                                    enabled,
+                                    false,
+                                )
+                                .child(crate::icons::icon("folder", 14.0, palette.muted))
+                                .flex_row_reverse()
+                                .when(enabled, |button| {
+                                    button.on_click(cx.listener(move |shell, _, _, cx| {
+                                        if local {
+                                            shell.choose_local_project_folder(cx);
+                                        } else {
+                                            shell.browse_project_folders(path.clone(), cx);
+                                        }
+                                    }))
+                                }),
                             )
                         },
                     )),
@@ -387,9 +465,13 @@ impl Shell {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(self.text("添加项目", 16.0, palette.text))
                             .child(
-                                self.icon_button("close-add-project", "x", 24.0)
+                                self.text("添加项目", 15.0, palette.text)
+                                    .font_weight(gpui::FontWeight::SEMIBOLD),
+                            )
+                            .child(
+                                self.icon_button("close-add-project", "x", 30.0)
+                                    .h(px(30.0))
                                     .on_click(close),
                             ),
                     )
@@ -406,15 +488,40 @@ impl Shell {
                             .gap_1()
                             .child(self.text("所属节点", 13.0, palette.text))
                             .child(
-                                self.text(self.snapshot.node.clone(), 12.0, palette.muted)
-                                    .truncate()
-                                    .px_2()
-                                    .py_1(),
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .h(px(34.0))
+                                    .px(px(9.0))
+                                    .border_1()
+                                    .border_color(palette.line)
+                                    .rounded(px(6.0))
+                                    .bg(palette.subtle)
+                                    .child(
+                                        self.text(
+                                            if local {
+                                                "此电脑".into()
+                                            } else {
+                                                self.snapshot.node.clone()
+                                            },
+                                            13.0,
+                                            palette.muted,
+                                        )
+                                        .truncate(),
+                                    ),
                             ),
                     )
                     .children(fields)
                     .when(form.browsing.is_some(), |dialog| {
-                        dialog.child(self.text("正在读取节点目录…", 12.0, palette.muted))
+                        dialog.child(self.text(
+                            if local {
+                                "正在选择文件夹…"
+                            } else {
+                                "正在读取节点目录…"
+                            },
+                            12.0,
+                            palette.muted,
+                        ))
                     })
                     .when_some(form.folders.as_ref(), |dialog, folders| {
                         let path = folders.path.clone();
@@ -450,12 +557,16 @@ impl Shell {
                                     .children(folders.folders.iter().enumerate().map(
                                         |(index, folder)| {
                                             let path = folder.path.clone();
-                                            self.button("open-project-folder", &folder.name)
-                                                .id(("open-project-folder", index))
-                                                .justify_start()
-                                                .on_click(cx.listener(move |shell, _, _, cx| {
+                                            self.button(
+                                                ("open-project-folder", index),
+                                                &folder.name,
+                                            )
+                                            .justify_start()
+                                            .on_click(
+                                                cx.listener(move |shell, _, _, cx| {
                                                     shell.browse_project_folders(path.clone(), cx)
-                                                }))
+                                                }),
+                                            )
                                         },
                                     )),
                             )
@@ -476,22 +587,21 @@ impl Shell {
                             .justify_end()
                             .gap_2()
                             .child(
-                                self.button("cancel-add-project", "取消")
+                                self.dialog_button("cancel-add-project", "取消", true, false)
                                     .on_click(cx.listener(|shell, _, _, cx| {
                                         shell.dismiss_project_form();
                                         cx.notify();
                                     })),
                             )
-                            .child(self.button("submit-add-project", label).when(
-                                !form.registering && form.browsing.is_none(),
-                                |button| {
-                                    button.bg(palette.subtle).on_click(
-                                        cx.listener(|shell, _, _, cx| {
+                            .child({
+                                let enabled = !form.registering && form.browsing.is_none();
+                                self.dialog_button("submit-add-project", label, enabled, true)
+                                    .when(enabled, |button| {
+                                        button.on_click(cx.listener(|shell, _, _, cx| {
                                             shell.submit_project_form(cx)
-                                        }),
-                                    )
-                                },
-                            )),
+                                        }))
+                                    })
+                            }),
                     ),
             )
     }

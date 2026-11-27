@@ -106,9 +106,12 @@ impl Render for Tooltip {
 }
 
 impl Shell {
-    fn navigation_node_key(&self) -> String {
+    pub(super) fn navigation_node_key(&self) -> String {
         if self.node.is_none() {
             return "fixture".into();
+        }
+        if self.snapshot.node == "rpi-work://local" {
+            return "local".into();
         }
         if let Some(id) = &self.snapshot.node_id {
             return format!("node:{id}");
@@ -123,15 +126,17 @@ impl Shell {
         format!("endpoint:{:016x}", hash.finish())
     }
 
-    fn navigation_node_label(&self) -> String {
+    pub(super) fn navigation_node_label(&self) -> String {
         if self.node.is_none() {
-            "示例节点".into()
+            self.snapshot.mode.clone()
+        } else if self.snapshot.node == "rpi-work://local" {
+            "此电脑".into()
         } else {
             normalize_address(&self.snapshot.node, false).unwrap_or_else(|_| "已连接节点".into())
         }
     }
 
-    fn navigation_node_icon(&self) -> &'static str {
+    pub(super) fn navigation_node_icon(&self) -> &'static str {
         match &self.node {
             None => "workspace",
             Some(node) if node.is_local() => "laptop",
@@ -156,7 +161,8 @@ impl Shell {
     }
 
     pub(super) fn navigation_keyboard_enabled(&self) -> bool {
-        !self.settings.open
+        !self.runtime_dialog_open()
+            && !self.settings.open
             && !self.workbench_search.open
             && !self.session_context.open
             && !self.project_form.open

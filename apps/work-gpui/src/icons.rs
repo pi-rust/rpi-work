@@ -35,6 +35,9 @@ impl AssetSource for Icons {
             "file-diff" => {
                 r#"<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/>"#
             }
+            "file-text" => {
+                r#"<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/>"#
+            }
             "ellipsis" => {
                 r#"<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>"#
             }
@@ -68,6 +71,12 @@ impl AssetSource for Icons {
             }
             "copy" => {
                 r#"<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>"#
+            }
+            "thumbs-up" => {
+                r#"<path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8a2 2 0 0 1-1.92 1.44H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>"#
+            }
+            "thumbs-down" => {
+                r#"<g transform="translate(24 24) rotate(180)"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8a2 2 0 0 1-1.92 1.44H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></g>"#
             }
             "laptop" => {
                 r#"<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m-2 0h20v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z"/>"#

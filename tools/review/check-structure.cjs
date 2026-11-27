@@ -11,7 +11,7 @@ const files = directory => fs.readdirSync(directory, { withFileTypes: true }).fl
 });
 let imports = 0, links = 0, includes = 0, workflowScripts = 0;
 for (const file of files(path.join(root, '.github/workflows')).filter(file => /\.ya?ml$/.test(file))) {
-  for (const match of fs.readFileSync(file, 'utf8').matchAll(/\.\/((?:scripts|tools)\/[\w./-]+\.ps1)\b/g)) {
+  for (const match of fs.readFileSync(file, 'utf8').matchAll(/\.\/((?:scripts|tools|apps)\/[\w./-]+\.(?:ps1|sh))\b/g)) {
     const target = path.resolve(root, match[1]);
     assert(fs.existsSync(target) && fs.statSync(target).isFile(), `Missing workflow script in ${file}: ${match[1]}`);
     workflowScripts++;

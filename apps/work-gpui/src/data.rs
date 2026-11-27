@@ -110,6 +110,12 @@ impl Snapshot {
         }
     }
 
+    pub(super) fn disconnected() -> Self {
+        let mut snapshot = Self::connected(String::new(), None, Vec::new(), Vec::new());
+        snapshot.mode = "未连接".into();
+        snapshot
+    }
+
     /// Same content as the browser fixture: two projects, four sessions, one
     /// seeded run with a read + bash tool pair.
     pub fn fixture() -> Self {
@@ -223,6 +229,12 @@ pub(super) struct ProjectResourceWrite {
     pub observed: Option<work_core::api::NativeProjectResources>,
 }
 
+pub(crate) struct NodeAuthorization {
+    pub(crate) ticket: String,
+    pub(crate) node_id: String,
+    pub(crate) expires_at: u64,
+}
+
 pub struct Node {
     client: WorkspaceClient,
     runtime: tokio::runtime::Runtime,
@@ -267,6 +279,29 @@ impl Node {
         Ok((snapshot, Self { client, runtime }))
     }
 
+    pub(super) fn local() -> Result<(Snapshot, Self), String> {
+        let client = work_host::client().ok_or("本机工作区尚未就绪。")?;
+        let runtime = Self::runtime()?;
+        let mut snapshot = runtime
+            .block_on(async {
+                use work_viewmodel::config_requests::bounded;
+
+                let (projects, sessions) = tokio::join!(
+                    bounded("读取本机项目", client.projects()),
+                    bounded("读取本机会话", client.sessions()),
+                );
+                Ok::<_, ClientError>(Snapshot::connected(
+                    "rpi-work://local".into(),
+                    None,
+                    projects?,
+                    sessions?,
+                ))
+            })
+            .map_err(|error| error.to_string())?;
+        snapshot.mode = "此电脑".into();
+        Ok((snapshot, Self { client, runtime }))
+    }
+
     fn runtime() -> Result<tokio::runtime::Runtime, String> {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -279,13 +314,39 @@ impl Node {
         origin: String,
         expected: Option<String>,
         credential: Option<String>,
+        authorization: Option<NodeAuthorization>,
     ) -> Result<Option<(Snapshot, Self)>, String> {
         use work_viewmodel::connection::{ConnectionOutcome, open, with_timeout};
 
         let runtime = Self::runtime()?;
         let client = WorkspaceClient::new(&origin).map_err(|_| "节点地址无效。")?;
+        let using_authorization = authorization.is_some();
+        let expected = authorization
+            .as_ref()
+            .map(|code| code.node_id.clone())
+            .or(expected);
         let opened = runtime.block_on(async {
-            if let Some(expected) = expected.as_deref() {
+            if let Some(code) = authorization {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |elapsed| elapsed.as_secs());
+                if code.expires_at <= now {
+                    return Err("授权已过期，请重新扫码。".into());
+                }
+                let authorized = with_timeout(async {
+                    if client.qr_authorization_node().await?.as_deref() != Some(&code.node_id) {
+                        return Ok(false);
+                    }
+                    client
+                        .redeem_qr_authorization(&code.ticket)
+                        .await
+                        .map(|auth| auth.authenticated)
+                })
+                .await;
+                if !matches!(authorized, Ok(Ok(true))) {
+                    return Err("授权失败，请生成新的二维码后重试。".into());
+                }
+            } else if let Some(expected) = expected.as_deref() {
                 let observed = with_timeout(client.node_identity()).await?.ok();
                 if observed.as_deref() != Some(expected) {
                     return Err("发现的节点身份已变化，请刷新附近节点。".into());
@@ -294,6 +355,9 @@ impl Node {
             open(client.clone(), credential).await
         })?;
         match opened {
+            ConnectionOutcome::PasswordRequired(_) if using_authorization => {
+                Err("节点未确认授权，请生成新的二维码后重试。".into())
+            }
             ConnectionOutcome::PasswordRequired(_) => Ok(None),
             ConnectionOutcome::Ready(workspace) => {
                 if expected.is_some() && expected != workspace.node_id {
@@ -310,6 +374,28 @@ impl Node {
         }
     }
 
+    pub(super) fn local_sharing(
+        &self,
+        change: Option<(&'static str, bool)>,
+    ) -> JoinHandle<(work_host::http::Sharing, Option<String>)> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            let error = if let Some((capability, enabled)) = change {
+                work_viewmodel::config_requests::bounded(
+                    "更新本机协同权限",
+                    client
+                        .component_capability(capability, serde_json::json!({"enabled": enabled})),
+                )
+                .await
+                .err()
+                .map(|error| error.to_string())
+            } else {
+                None
+            };
+            (work_host::http::sharing().await, error)
+        })
+    }
+
     pub(super) fn discover_nearby(
         &self,
     ) -> JoinHandle<Result<Vec<work_client::DiscoveredNode>, ClientError>> {
@@ -319,19 +405,33 @@ impl Node {
         ))
     }
 
-    pub(super) fn verify_share_address(
+    pub(super) fn prepare_node_share(
         &self,
         address: String,
         expected: String,
-    ) -> JoinHandle<bool> {
+        authorization: bool,
+    ) -> JoinHandle<Result<Option<work_client::QrAuthorization>, String>> {
+        let local = self.is_local();
         self.runtime.spawn(async move {
-            let Ok(client) = WorkspaceClient::new(&address) else {
-                return false;
-            };
-            matches!(
+            if authorization {
+                if !local {
+                    return Err("请在所属电脑签发授权。".into());
+                }
+                let observed = work_host::http::authorization_endpoint_node(&address).await?;
+                if observed != expected {
+                    return Err("分享地址与当前节点不匹配。".into());
+                }
+                return work_host::http::issue_qr_authorization().await.map(Some);
+            }
+            let client = WorkspaceClient::new(&address).map_err(|error| error.to_string())?;
+            if matches!(
                 work_viewmodel::connection::with_timeout(client.node_identity()).await,
                 Ok(Ok(identity)) if identity == expected,
-            )
+            ) {
+                Ok(None)
+            } else {
+                Err("无法在此地址验证当前节点。请检查地址与节点监听设置。".into())
+            }
         })
     }
 

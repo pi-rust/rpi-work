@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, ClipboardItem, Context, Div, HighlightStyle, IntoElement, SharedString, StyledText,
-    Task, div, prelude::*, px,
+    AnyElement, ClipboardItem, Context, Div, HighlightStyle, IntoElement, ScrollHandle,
+    SharedString, StyledText, Task, div, prelude::*, px, relative,
 };
 use work_client::{ClientError, Diff, FileContent, FileListing, GitStatus, WorkspaceClient};
 use work_core::api::ChangedFile;
@@ -14,6 +14,9 @@ use work_viewmodel::{diff_view, file_view};
 
 use super::Shell;
 use crate::icons::icon;
+
+#[path = "file_tree.rs"]
+mod file_tree;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Tab {
@@ -36,11 +39,7 @@ impl Tab {
 
     fn root(self) -> Option<Route> {
         match self {
-            Self::Overview => None,
-            Self::Files => Some(Route::Directory {
-                path: String::new(),
-                cursor: None,
-            }),
+            Self::Overview | Self::Files => None,
             Self::Changes => Some(Route::Changes),
             #[cfg(target_os = "macos")]
             Self::Browser(_) => None,
@@ -90,14 +89,6 @@ impl Route {
                 }
                 Ok(Contents::Diff(diff))
             }
-        }
-    }
-
-    fn title(&self) -> &str {
-        match self {
-            Self::Directory { path, .. } if path.is_empty() => "项目根目录",
-            Self::Directory { path, .. } | Self::Source(path) | Self::Diff { path, .. } => path,
-            Self::Changes => "工作树变更",
         }
     }
 }
@@ -169,10 +160,17 @@ impl Drop for Pending {
 }
 
 #[derive(Default)]
+struct SourceTabs {
+    paths: Vec<String>,
+    active: Option<String>,
+}
+
+#[derive(Default)]
 pub(super) struct Panel {
     pub(super) tab: Tab,
     route: Option<Route>,
-    history: Vec<Route>,
+    tree: file_tree::Tree,
+    source_tabs: HashMap<String, SourceTabs>,
     sequence: u64,
     pending: Option<Pending>,
     result: Option<Result<Contents, String>>,
@@ -181,9 +179,14 @@ pub(super) struct Panel {
     counts_pending: Option<Pending>,
     review_check: Option<Pending>,
     review_error: Option<String>,
+    diff_scroll: ScrollHandle,
 }
 
 impl Panel {
+    pub(super) fn changes_empty(&self) -> Option<bool> {
+        self.changes.as_ref().map(|status| status.files.is_empty())
+    }
+
     pub(super) fn line_totals(&self) -> Option<LineCounts> {
         let files = &self.changes.as_ref()?.files;
         if files.is_empty() || files.len() != self.line_counts.len() {
@@ -222,11 +225,20 @@ impl Panel {
 impl Shell {
     pub(super) fn reset_project_files(&mut self, cx: &mut Context<Self>) {
         self.files.cancel_review_check();
-        self.files.history.clear();
         self.files.changes = None;
         self.files.line_counts.clear();
         self.files.counts_pending = None;
-        self.read_project(self.files.tab.root(), cx);
+        let route = if self.files.tab == Tab::Files {
+            self.prepare_file_tree(cx);
+            self.project
+                .and_then(|index| self.snapshot.projects.get(index))
+                .and_then(|project| self.files.source_tabs.get(&project.id))
+                .and_then(|tabs| tabs.active.clone())
+                .map(Route::Source)
+        } else {
+            self.files.tab.root()
+        };
+        self.read_project(route, cx);
     }
 
     fn observe_line_counts(&mut self, cx: &mut Context<Self>) {
@@ -275,15 +287,56 @@ impl Shell {
             .child(self.text(format!("−{}", counts.removed), 11.0, self.palette.danger))
     }
 
-    fn open_project_path(&mut self, route: Route, cx: &mut Context<Self>) {
-        self.files.history.extend(self.files.route.take());
-        self.read_project(Some(route), cx);
+    fn open_source(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(project) = self
+            .project
+            .and_then(|index| self.snapshot.projects.get(index))
+        else {
+            return;
+        };
+        if matches!(&self.files.route, Some(Route::Source(open)) if open == path) {
+            return;
+        }
+        let tabs = self
+            .files
+            .source_tabs
+            .entry(project.id.clone())
+            .or_default();
+        if !tabs.paths.iter().any(|open| open == path) {
+            tabs.paths.push(path.to_owned());
+        }
+        tabs.active = Some(path.to_owned());
+        self.read_project(Some(Route::Source(path.to_owned())), cx);
+    }
+
+    fn close_source_tab(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(project) = self
+            .project
+            .and_then(|index| self.snapshot.projects.get(index))
+        else {
+            return;
+        };
+        let Some(tabs) = self.files.source_tabs.get_mut(&project.id) else {
+            return;
+        };
+        let Some(index) = tabs.paths.iter().position(|tab| tab == path) else {
+            return;
+        };
+        tabs.paths.remove(index);
+        if tabs.active.as_deref() == Some(path) {
+            tabs.active = tabs.paths.get(index).or_else(|| tabs.paths.last()).cloned();
+            let next = tabs.active.clone().map(Route::Source);
+            self.read_project(next, cx);
+        } else {
+            cx.notify();
+        }
     }
 
     fn read_project(&mut self, route: Option<Route>, cx: &mut Context<Self>) {
         self.cancel_comment();
         self.files.pending = None;
         self.files.result = None;
+        self.files.diff_scroll = ScrollHandle::new();
         self.files.route = route.clone();
         self.files.sequence += 1;
         cx.notify();
@@ -366,79 +419,132 @@ impl Shell {
                         button.bg(self.palette.subtle)
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.files.tab != tab {
-                            this.files.tab = tab;
-                            this.reset_project_files(cx);
-                        }
+                        this.auto_hide_empty_changes = false;
+                        this.show_project_tab(tab, cx);
+                        cx.notify();
                     }))
             }),
         )
     }
 
-    pub(super) fn project_contents(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn project_contents(&self, width: f32, cx: &mut Context<Self>) -> AnyElement {
         if self.files.tab == Tab::Changes {
             return self.review_panel(cx);
         }
-        let Some(route) = self.files.route.as_ref() else {
-            return div().into_any_element();
-        };
-        let toolbar = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .border_b_1()
-            .border_color(self.palette.line)
-            .when(!self.files.history.is_empty(), |row| {
-                row.child(self.button("project-back", "返回").on_click(cx.listener(
-                    |this, _, _, cx| {
-                        let previous = this.files.history.pop();
-                        this.read_project(previous, cx);
-                    },
-                )))
-            })
-            .child(
-                self.text(route.title().to_owned(), 13.0, self.palette.text)
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .truncate(),
-            )
-            .when(
-                self.files.result.is_some() && self.node.is_some() && self.project.is_some(),
-                |row| {
-                    row.child(self.button("project-refresh", "刷新").on_click(cx.listener(
-                        |this, _, _, cx| {
-                            this.read_project(this.files.route.clone(), cx);
-                        },
-                    )))
-                },
-            );
-        let content = match &self.files.result {
-            None => self.project_note("正在读取…", false),
-            Some(Err(error)) => self.project_note(error, true),
-            Some(Ok(Contents::Directory(listing))) => {
-                self.directory(listing, cx).into_any_element()
-            }
-            Some(Ok(Contents::Changes(_))) => unreachable!("Git status is stored separately"),
-            Some(Ok(Contents::Source(file))) => self.file_preview(&file.path, &file.content),
-            Some(Ok(Contents::Diff(_))) => unreachable!("diffs belong to the review tab"),
+        let wide = width >= 570.0;
+        let content = match (&self.files.route, &self.files.result) {
+            (None, _) => self.project_note("选择文件以查看源码。", false),
+            (_, None) => self.project_note("正在读取…", false),
+            (_, Some(Err(error))) => self.project_note(error, true),
+            (_, Some(Ok(Contents::Source(file)))) => self.file_preview(&file.path, &file.content),
+            _ => unreachable!("only source files are opened in source tabs"),
         };
         div()
             .flex()
-            .flex_col()
+            .when(!wide, |panel| panel.flex_col())
             .flex_1()
-            .min_h(px(0.0))
-            .child(toolbar)
+            .min_h_0()
+            .child(self.file_tree(wide, cx))
             .child(
                 div()
-                    .id(("project-content", self.files.sequence))
+                    .flex()
+                    .flex_col()
                     .flex_1()
-                    .min_h(px(0.0))
-                    .overflow_scroll()
-                    .child(content),
+                    .min_w_0()
+                    .min_h_0()
+                    .children(self.source_tab_strip(cx))
+                    .child(
+                        div()
+                            .id(("project-content", self.files.sequence))
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_scroll()
+                            .child(content),
+                    ),
             )
             .into_any_element()
+    }
+
+    fn source_tab_strip(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let project = self
+            .project
+            .and_then(|index| self.snapshot.projects.get(index))?;
+        let tabs = self
+            .files
+            .source_tabs
+            .get(&project.id)
+            .filter(|tabs| !tabs.paths.is_empty())?;
+        let palette = self.palette;
+        let keyboard = self.navigation_keyboard_enabled() && self.overlay.is_none();
+        Some(
+            div()
+                .id("source-tabs")
+                .flex()
+                .flex_none()
+                .overflow_x_scroll()
+                .bg(palette.bg)
+                .border_b_1()
+                .border_color(palette.line)
+                .children(tabs.paths.iter().enumerate().map(|(index, path)| {
+                    let active = tabs.active.as_ref() == Some(path);
+                    let name = path.rsplit('/').next().unwrap_or(path);
+                    let open = path.clone();
+                    let close = path.clone();
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .border_b_2()
+                        .border_color(if active {
+                            palette.text
+                        } else {
+                            gpui::transparent_black()
+                        })
+                        .child(
+                            self.navigation_tooltip(
+                                self.button(("open-source-tab", index), "")
+                                    .h(px(28.0))
+                                    .px(px(11.0))
+                                    .child(
+                                        self.text(
+                                            name.to_owned(),
+                                            11.0,
+                                            if active { palette.text } else { palette.muted },
+                                        )
+                                        .font_family("Menlo")
+                                        .min_w_0()
+                                        .truncate(),
+                                    )
+                                    .max_w(px(160.0))
+                                    .truncate()
+                                    .tab_index(0)
+                                    .tab_stop(keyboard)
+                                    .focus(|button| button.bg(palette.hover))
+                                    .on_click(cx.listener(move |shell, _, _, cx| {
+                                        shell.open_source(&open, cx);
+                                    })),
+                                path.clone(),
+                            ),
+                        )
+                        .child(
+                            self.navigation_tooltip(
+                                self.button(("close-source-tab", index), "")
+                                    .w(px(22.0))
+                                    .h(px(25.0))
+                                    .px_0()
+                                    .child(icon("x", 11.0, palette.muted))
+                                    .tab_index(0)
+                                    .tab_stop(keyboard)
+                                    .focus(|button| button.bg(palette.hover))
+                                    .on_click(cx.listener(move |shell, _, _, cx| {
+                                        shell.close_source_tab(&close, cx)
+                                    })),
+                                format!("关闭 {name}"),
+                            ),
+                        )
+                }))
+                .into_any_element(),
+        )
     }
 
     fn project_note(&self, message: &str, error: bool) -> AnyElement {
@@ -452,68 +558,14 @@ impl Shell {
             .into_any_element()
     }
 
-    fn directory(&self, listing: &FileListing, cx: &mut Context<Self>) -> Div {
-        div()
-            .p_2()
-            .when(listing.entries.is_empty(), |body| {
-                body.child(self.project_note("目录为空。", false))
-            })
-            .children(listing.entries.iter().enumerate().map(|(index, entry)| {
-                let target = if entry.kind == "directory" {
-                    Route::Directory {
-                        path: entry.path.clone(),
-                        cursor: None,
-                    }
-                } else {
-                    Route::Source(entry.path.clone())
-                };
-                let title = if entry.kind == "directory" {
-                    format!("{}/", entry.name)
-                } else {
-                    entry.name.clone()
-                };
-                div()
-                    .id(("file", index))
-                    .rounded(px(6.0))
-                    .px_3()
-                    .py_2()
-                    .cursor_pointer()
-                    .hover(|row| row.bg(self.palette.hover))
-                    .child(self.text(title, 13.0, self.palette.text).truncate())
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| {
-                            this.open_project_path(target.clone(), cx)
-                        }),
-                    )
-            }))
-            .when_some(
-                listing
-                    .pagination
-                    .as_ref()
-                    .and_then(|page| page.next_cursor.as_ref()),
-                |body, cursor| {
-                    let next = Route::Directory {
-                        path: listing.path.clone(),
-                        cursor: Some(cursor.clone()),
-                    };
-                    body.child(
-                        self.button("directory-next-page", "下一页")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.open_project_path(next.clone(), cx);
-                            })),
-                    )
-                },
-            )
-    }
-
-    fn can_run_review(&self) -> bool {
+    pub(super) fn can_run_review(&self) -> bool {
         self.session_controls().send
             && self.review_after_bind.is_none()
             && (!self.preferences.detached_review
                 || (self.can_create_session() && self.creation_readback.is_none()))
     }
 
-    fn run_review(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn run_review(&mut self, cx: &mut Context<Self>) {
         let Some((node, project)) = self.node.as_ref().zip(self.project) else {
             return;
         };
@@ -848,7 +900,11 @@ impl Shell {
                 })
             })
             .collect::<Vec<_>>();
-        let gutter = (view.gutter_digits as f32 * 7.0 + 8.0).max(23.0);
+        let gutter = px((view.gutter_digits as f32 * 7.0 + 8.0).max(23.0));
+        let feedback_width = px(22.0);
+        let scroll = self.files.diff_scroll.clone();
+        let viewport_width = scroll.bounds().size.width;
+        let pinned_x = -scroll.offset().x;
         let rows = view.rows.iter().enumerate().filter_map(|(index, row)| {
             let first = row.line.tokens.first().map_or("", |token| token.text);
             if view.structured && row.line.kind == "meta" && !first.starts_with("@@") {
@@ -863,11 +919,10 @@ impl Shell {
             if view.structured && first.starts_with("@@") {
                 return Some(
                     div()
-                        .px(px(7.0))
                         .line_height(px(24.0))
                         .text_color(palette.muted)
                         .bg(palette.subtle)
-                        .child(body),
+                        .child(div().relative().left(pinned_x).px(px(7.0)).child(body)),
                 );
             }
             let (background, color) = match row.line.kind {
@@ -880,49 +935,81 @@ impl Shell {
                 .map(|number| ("新", number))
                 .or_else(|| row.old_number.map(|number| ("旧", number)));
             let line = div()
+                .relative()
                 .flex()
-                .items_center()
                 .min_h(px(22.5))
                 .line_height(px(22.5))
                 .bg(background)
                 .text_color(color)
+                .child(
+                    div()
+                        .flex_none()
+                        .pl(px(2.0))
+                        .pr(px(7.0))
+                        .when(view.structured, |text| {
+                            text.pl(gutter * 2.0 + px(2.0)).pr(feedback_width + px(7.0))
+                        })
+                        .child(body),
+                )
                 .when(view.structured, |line| {
-                    line.children([row.old_number, row.new_number].map(|number| {
+                    line.child(
                         div()
+                            .absolute()
+                            .left(pinned_x)
+                            .top_0()
+                            .bottom_0()
                             .flex()
-                            .justify_end()
-                            .flex_none()
-                            .w(px(gutter))
-                            .pr(px(5.0))
+                            .bg(background)
                             .text_size(px(10.0))
                             .text_color(palette.muted)
-                            .child(number.map(|number| number.to_string()).unwrap_or_default())
-                    }))
+                            .children([row.old_number, row.new_number].map(|number| {
+                                div().flex().justify_end().w(gutter).pr(px(5.0)).child(
+                                    number.map(|number| number.to_string()).unwrap_or_default(),
+                                )
+                            })),
+                    )
                 })
-                .child(div().flex_none().pl(px(2.0)).pr(px(7.0)).child(body))
                 .when_some(
-                    anchor.zip(observed.as_ref()),
+                    anchor
+                        .zip(observed.as_ref())
+                        .filter(|_| viewport_width > feedback_width),
                     |line, ((side, number), observed)| {
                         let observed = Rc::clone(observed);
                         let scope = if staged { "已暂存" } else { "工作区" };
                         let location = format!("{} · {side}行 {number} · {scope}", diff.path);
                         line.child(
-                            self.icon_button("line-feedback", "plus", 11.0)
-                                .id(("line-feedback", index))
-                                .ml_auto()
-                                .mr_1()
-                                .flex_none()
-                                .h(px(22.0))
-                                .on_click(cx.listener(move |shell, _, window, cx| {
-                                    shell.open_comment(
-                                        Rc::clone(&observed),
-                                        staged,
-                                        index,
-                                        location.clone(),
-                                        window,
-                                        cx,
-                                    );
-                                })),
+                            div()
+                                .absolute()
+                                .left(pinned_x + viewport_width - feedback_width)
+                                .top_0()
+                                .bottom_0()
+                                .bg(background)
+                                .child(
+                                    self.navigation_tooltip(
+                                        self.button(("line-feedback", index), "")
+                                            .w(feedback_width)
+                                            .h(px(22.0))
+                                            .px_0()
+                                            .child(icon("plus", 13.0, palette.muted))
+                                            .tab_index(0)
+                                            .tab_stop(
+                                                self.navigation_keyboard_enabled()
+                                                    && self.overlay.is_none(),
+                                            )
+                                            .focus(|button| button.bg(palette.hover))
+                                            .on_click(cx.listener(move |shell, _, window, cx| {
+                                                shell.open_comment(
+                                                    Rc::clone(&observed),
+                                                    staged,
+                                                    index,
+                                                    location.clone(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            })),
+                                        "添加行反馈",
+                                    ),
+                                ),
                         )
                     },
                 );
@@ -937,6 +1024,9 @@ impl Shell {
                         })
                         .map(|item| {
                             self.text(item.comment.clone(), 11.0, palette.text)
+                                .relative()
+                                .left(pinned_x)
+                                .w(viewport_width)
                                 .whitespace_normal()
                                 .bg(palette.subtle)
                                 .px_2()
@@ -947,15 +1037,27 @@ impl Shell {
         });
         div()
             .id("diff-scroll")
+            .flex()
+            .flex_col()
+            .items_start()
             .overflow_scroll()
+            .track_scroll(&scroll)
             .max_h(px(460.0))
             .border_t_1()
             .border_color(palette.line)
             .child(
                 div()
+                    .on_children_prepainted(move |_, window, cx| {
+                        if scroll.bounds().size.width != viewport_width
+                            || -scroll.offset().x != pinned_x
+                        {
+                            window.defer(cx, |window, _| window.refresh());
+                        }
+                    })
                     .flex()
                     .flex_col()
-                    .w_full()
+                    .flex_none()
+                    .min_w(relative(1.0))
                     .font_family("Menlo")
                     .text_size(px(11.0))
                     .whitespace_nowrap()

@@ -78,6 +78,14 @@ impl Buffer {
         self.finish_composition();
     }
 
+    pub(super) fn completion_text(&self) -> Option<(&str, usize)> {
+        (self.is_committed() && self.selection().is_empty()).then_some((&self.text, self.head))
+    }
+
+    pub(super) fn replace_completion(&mut self, range: Range<usize>, value: &str) {
+        self.replace(Some(to_utf16(&self.text, range)), value);
+    }
+
     pub fn append_paragraphs(&mut self, paragraphs: &str) {
         if paragraphs.is_empty() {
             return;
@@ -188,6 +196,9 @@ impl Shell {
     }
 
     fn workbench_buffer(&self) -> Option<&Buffer> {
+        if let Some(input) = self.runtime_path() {
+            return Some(input);
+        }
         if self.session_management.open() {
             return self
                 .session_management
@@ -209,6 +220,9 @@ impl Shell {
     fn buffer_mut(&mut self) -> &mut Buffer {
         if self.search_input_open() {
             return &mut self.search.buffer;
+        }
+        if self.runtime_dialog_open() {
+            return self.runtime_path_mut();
         }
         let key = self.draft_key();
         if self.session_management.open() {
@@ -236,17 +250,25 @@ impl Shell {
 
     fn text_input(&self, search_field: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let focus = if search_field {
-            &self.search.focus
+            self.search.focus.clone()
+        } else if self.runtime_dialog_open() {
+            self.focus.clone().tab_stop(true)
         } else {
-            &self.focus
+            self.focus.clone()
         };
         div()
             .when(search_field, |input| input.flex_1().min_w_0().tab_index(0))
             .when(!search_field, |input| input.flex_none())
             .px(px(4.0))
-            .text_size(px(if search_field { 13.0 } else { 15.0 }))
+            .text_size(px(
+                if search_field || self.runtime_dialog_open() || self.project_form.open {
+                    13.0
+                } else {
+                    15.0
+                },
+            ))
             .line_height(px(22.0))
-            .track_focus(focus)
+            .track_focus(&focus)
             .cursor(CursorStyle::IBeam)
             .on_key_down(cx.listener(Self::input_key))
             .when(search_field, |input| {
@@ -339,6 +361,19 @@ impl Shell {
         }
         let secret = self.search_is_masked();
         if self.composer_is_marked() {
+            return;
+        }
+        if self.runtime_dialog_open() && key == "enter" {
+            if !event.is_held && !modifiers.modified() {
+                self.verify_runtime(window, cx);
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if !modifiers.modified()
+            && (self.file_reference_key(key, cx) || self.composer_command_key(key, window, cx))
+        {
+            cx.stop_propagation();
             return;
         }
         if self.search_input_open() && matches!(key, "enter" | "down") {
@@ -719,6 +754,8 @@ impl Element for InputElement {
                     "搜索会话、项目或操作"
                 }
                 .into()
+            } else if shell.runtime_dialog_open() {
+                "选择已有程序，或下载后自动填入".into()
             } else if shell.session_management.editing() {
                 "输入会话名称".into()
             } else if shell.project_form.open {
@@ -773,7 +810,8 @@ impl Element for InputElement {
         let mut style = Style::default();
         style.size.width = relative(1.0).into();
         let search = self.search_field;
-        let short_field = shell.project_form.open || shell.session_management.editing();
+        let path_form = shell.project_form.open || shell.runtime_dialog_open();
+        let session_name = shell.session_management.editing();
         let id = window.request_measured_layout(style, {
             let text = text.clone();
             let runs = runs.clone();
@@ -782,14 +820,18 @@ impl Element for InputElement {
                     AvailableSpace::Definite(width) => Some(width),
                     _ => None,
                 });
-                let lines = shape(window, text.clone(), font_size, &runs, width);
-                let height = text_height(&lines, line_height);
                 let height = if search {
                     line_height
-                } else if short_field {
-                    height.clamp(px(24.0), px(66.0))
+                } else if path_form {
+                    px(24.0)
                 } else {
-                    height.clamp(px(47.0), px(126.0))
+                    let lines = shape(window, text.clone(), font_size, &runs, width);
+                    let height = text_height(&lines, line_height);
+                    if session_name {
+                        height.clamp(px(24.0), px(66.0))
+                    } else {
+                        height.clamp(px(47.0), px(126.0))
+                    }
                 };
                 size(width.unwrap_or(px(0.0)), height)
             }

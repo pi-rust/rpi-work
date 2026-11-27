@@ -21,7 +21,7 @@ function check(mode) {
         if (mode === 'drift') result = Buffer.concat([result, Buffer.from('changed')]);
       }
       if (mode === 'missing-script' && name.endsWith('/.github/workflows/build.yml') && typeof result === 'string') {
-        result = result.replace('./tools/dev/build-ui-web.ps1', './scripts/build-ui-web.ps1');
+        result = result.replace('./apps/work-gpui/bundle-macos.sh', './apps/work-gpui/missing-bundle.sh');
       }
       return result;
     };

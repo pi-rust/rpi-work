@@ -1,10 +1,11 @@
 //! Native layout for the shared Markdown presentation tree.
 
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 
 use gpui::{
-    AnyElement, ClickEvent, ClipboardItem, Div, FontStyle, FontWeight, HighlightStyle, MouseButton,
-    SharedString, StrikethroughStyle, StyledText, UnderlineStyle, div, prelude::*, px,
+    AnyElement, App, ClickEvent, ClipboardItem, Div, FontStyle, FontWeight, HighlightStyle,
+    IntoElement, MouseButton, RenderOnce, ScrollHandle, SharedString, StrikethroughStyle,
+    StyledText, Task, UnderlineStyle, Window, div, prelude::*, px,
 };
 use work_viewmodel::conversation::markdown::{CodeToken, Element as Tag, MarkdownView, Node};
 
@@ -12,17 +13,27 @@ use super::Shell;
 use crate::theme::Palette;
 
 impl Shell {
-    pub(super) fn rich_answer(&self, key: &str, view: &MarkdownView) -> impl IntoElement {
+    pub(super) fn rich_answer(
+        &self,
+        key: &str,
+        view: &MarkdownView,
+        progress: bool,
+    ) -> impl IntoElement {
         let render = Markdown {
             palette: self.palette,
             font_size: self.preferences.font_size(),
             code_numbers: self.preferences.code_numbers,
-            spacing: if self.preferences.compact { 12.0 } else { 16.0 },
+            keyboard: self.navigation_keyboard_enabled() && self.overlay.is_none(),
+            spacing: if self.preferences.compact { 12.0 } else { 20.0 },
         };
         div()
             .id(SharedString::from(key.to_owned()))
             .min_w(px(0.0))
-            .text_color(self.palette.text)
+            .text_color(if progress {
+                self.palette.muted
+            } else {
+                self.palette.text
+            })
             .text_size(px(render.font_size))
             .line_height(px(self.preferences.line_height()))
             .child(render.blocks(&view.nodes, render.spacing))
@@ -30,12 +41,71 @@ impl Shell {
                 answer.child(self.text("内容较复杂，已按原文显示。", 12.0, self.palette.muted))
             })
     }
+
+    pub(super) fn tool_output(
+        &self,
+        id: &'static str,
+        source: &str,
+        path: Option<&str>,
+    ) -> impl IntoElement {
+        let palette = self.palette;
+        let mut display = String::new();
+        let mut highlights = Vec::new();
+        if let Some(path) = path {
+            for (index, line) in
+                work_viewmodel::conversation::code_tokens::tokenize_file(source, path)
+                    .into_iter()
+                    .enumerate()
+            {
+                if index > 0 {
+                    display.push('\n');
+                }
+                for token in line {
+                    let start = display.len();
+                    display.push_str(token.text);
+                    highlights.push((
+                        start..display.len(),
+                        HighlightStyle {
+                            color: Some(palette.code_token(token.class)),
+                            ..Default::default()
+                        },
+                    ));
+                }
+            }
+        } else {
+            display.push_str(source.strip_suffix('\n').unwrap_or(source));
+        }
+        ReadingScroll {
+            id,
+            keyboard: self.navigation_keyboard_enabled() && self.overlay.is_none(),
+            focus: palette.muted,
+            viewport: div()
+                .flex()
+                .items_start()
+                .min_w_0()
+                .max_h(px(320.0))
+                .rounded(px(4.0))
+                .border_1()
+                .border_color(gpui::transparent_black())
+                .font_family("Menlo")
+                .text_color(palette.text)
+                .text_size(px(12.0))
+                .line_height(px(19.0))
+                .whitespace_nowrap()
+                .child(
+                    div()
+                        .flex_none()
+                        .child(StyledText::new(display).with_highlights(highlights)),
+                ),
+        }
+    }
 }
 
 struct Markdown {
     palette: Palette,
     font_size: f32,
     code_numbers: bool,
+    keyboard: bool,
     spacing: f32,
 }
 
@@ -84,6 +154,7 @@ impl Markdown {
                     _ => self.font_size,
                 };
                 div()
+                    .mt(px(4.0))
                     .text_size(px(size))
                     .line_height(px(size * 1.45))
                     .font_weight(FontWeight::SEMIBOLD)
@@ -104,7 +175,7 @@ impl Markdown {
     }
 
     fn list(&self, items: &[Node], start: Option<u64>) -> Div {
-        div().flex().flex_col().gap(px(4.0)).pl(px(3.0)).children(
+        div().flex().flex_col().gap(px(6.0)).pl(px(4.0)).children(
             items.iter().enumerate().filter_map(|(index, item)| {
                 let Node::Element {
                     tag: Tag::Li,
@@ -161,14 +232,15 @@ impl Markdown {
             })
             .collect();
         let columns = rows.iter().map(|row| row.len()).max().unwrap_or(1);
-        div()
-            .id("table")
+        let row_count = rows.len();
+        let border = self.palette.line;
+        let focus = self.palette.muted;
+        let viewport = div()
             .min_w(px(0.0))
             .max_h(px(560.0))
-            .overflow_scroll()
             .rounded(px(9.0))
             .border_1()
-            .border_color(self.palette.line)
+            .border_color(border)
             .child(
                 div()
                     .flex()
@@ -179,8 +251,12 @@ impl Markdown {
                         div()
                             .id(("row", row))
                             .flex()
-                            .border_b_1()
-                            .border_color(self.palette.line)
+                            .when(row + 1 < row_count, |row| {
+                                row.border_b_1().border_color(self.palette.line)
+                            })
+                            .when(row == 0, |row| {
+                                row.rounded_t(px(8.0)).bg(self.palette.subtle)
+                            })
                             .children(cells.iter().enumerate().filter_map(|(index, cell)| {
                                 let Node::Element { tag, children, .. } = cell else {
                                     return None;
@@ -194,14 +270,19 @@ impl Markdown {
                                         .text_size(px(13.0))
                                         .line_height(px(20.0))
                                         .when(*tag == Tag::Th, |cell| {
-                                            cell.bg(self.palette.subtle)
-                                                .font_weight(FontWeight::SEMIBOLD)
+                                            cell.font_weight(FontWeight::SEMIBOLD)
                                         })
                                         .child(self.inline(index, children)),
                                 )
                             }))
                     })),
-            )
+            );
+        ReadingScroll {
+            id: "table",
+            viewport,
+            keyboard: self.keyboard,
+            focus,
+        }
     }
 
     fn code(&self, code: &str, language: &str, tokens: &[CodeToken]) -> impl IntoElement {
@@ -248,59 +329,54 @@ impl Markdown {
                     .items_center()
                     .justify_between()
                     .h(px(39.0))
-                    .px(px(10.0))
+                    .px(px(12.0))
+                    .bg(self.palette.bg)
                     .border_b_1()
                     .border_color(self.palette.line)
                     .text_size(px(11.0))
                     .text_color(self.palette.muted)
-                    .child(language.to_owned())
-                    .child(
-                        div()
-                            .id("copy-code")
-                            .cursor_pointer()
-                            .rounded(px(4.0))
-                            .px_2()
-                            .py_1()
-                            .hover(|style| style.bg(self.palette.hover))
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(copy.to_string()))
-                            })
-                            .text_size(px(12.0))
-                            .child("复制代码"),
-                    ),
+                    .gap_2()
+                    .child(div().min_w_0().truncate().child(language.to_owned()))
+                    .child(CopyCode {
+                        code: copy,
+                        keyboard: self.keyboard,
+                        palette: self.palette,
+                    }),
             )
-            .child(
-                div()
-                    .id("code-scroll")
-                    .overflow_scroll()
+            .child(ReadingScroll {
+                id: "code-scroll",
+                keyboard: self.keyboard,
+                focus: self.palette.muted,
+                viewport: div()
+                    .flex()
+                    .items_start()
                     .max_h(px(560.0))
-                    .px(px(15.0))
-                    .py(px(12.0))
+                    .rounded_b(px(9.0))
+                    .border_2()
+                    .border_color(gpui::transparent_black())
+                    .px(px(13.0))
+                    .py(px(10.0))
                     .font_family("Menlo")
                     .text_size(px(13.0))
                     .line_height(px(23.4))
                     .whitespace_nowrap()
+                    .when_some(numbers, |row, numbers| {
+                        row.child(
+                            div()
+                                .flex_none()
+                                .pr(px(12.0))
+                                .min_w(px(35.0))
+                                .text_size(px(11.0))
+                                .text_color(self.palette.muted)
+                                .child(StyledText::new(numbers)),
+                        )
+                    })
                     .child(
                         div()
-                            .flex()
-                            .when_some(numbers, |row, numbers| {
-                                row.child(
-                                    div()
-                                        .flex_none()
-                                        .pr(px(12.0))
-                                        .min_w(px(23.0))
-                                        .text_size(px(11.0))
-                                        .text_color(self.palette.muted)
-                                        .child(StyledText::new(numbers)),
-                                )
-                            })
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .child(StyledText::new(display).with_highlights(highlights)),
-                            ),
+                            .flex_none()
+                            .child(StyledText::new(display).with_highlights(highlights)),
                     ),
-            )
+            })
     }
 
     fn inline(&self, id: usize, nodes: &[Node]) -> AnyElement {
@@ -339,6 +415,103 @@ impl Markdown {
                 }
             })
             .into_any_element()
+    }
+}
+
+#[derive(IntoElement)]
+struct ReadingScroll {
+    id: &'static str,
+    viewport: Div,
+    keyboard: bool,
+    focus: gpui::Hsla,
+}
+
+impl RenderOnce for ReadingScroll {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let state = window.use_keyed_state(self.id, cx, |_, _| ScrollHandle::new());
+        let scroll = state.read(cx).clone();
+        self.viewport
+            .id(self.id)
+            .overflow_scroll()
+            .track_scroll(&scroll)
+            .tab_index(0)
+            .tab_stop(self.keyboard)
+            .focus(|style| style.border_color(self.focus))
+            .when(self.keyboard, |viewport| {
+                viewport.on_key_down(move |event, window, cx| {
+                    let key = &event.keystroke;
+                    if key.modifiers.modified() {
+                        return;
+                    }
+                    let max = scroll.max_offset();
+                    let current = scroll.offset();
+                    let mut next = current;
+                    let line = px(24.0);
+                    let page = (scroll.bounds().size.height - line).max(line);
+                    match key.key.as_str() {
+                        "left" => next.x += line,
+                        "right" => next.x -= line,
+                        "up" => next.y += line,
+                        "down" => next.y -= line,
+                        "pageup" => next.y += page,
+                        "pagedown" => next.y -= page,
+                        _ => return,
+                    }
+                    next.x = next.x.clamp(-max.width, px(0.0));
+                    next.y = next.y.clamp(-max.height, px(0.0));
+                    if next != current {
+                        scroll.set_offset(next);
+                        window.refresh();
+                        window.prevent_default();
+                        cx.stop_propagation();
+                    }
+                })
+            })
+    }
+}
+
+#[derive(IntoElement)]
+struct CopyCode {
+    code: SharedString,
+    keyboard: bool,
+    palette: Palette,
+}
+
+impl RenderOnce for CopyCode {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let reset = window.use_state(cx, |_, _| None::<Task<()>>);
+        let copied = reset.read(cx).is_some();
+        let palette = self.palette;
+        div()
+            .id("copy-code")
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .w(px(68.0))
+            .h(px(26.0))
+            .tab_index(0)
+            .tab_stop(self.keyboard)
+            .cursor_pointer()
+            .rounded(px(4.0))
+            .hover(|style| style.bg(palette.hover))
+            .focus(|style| style.bg(palette.hover))
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(self.code.to_string()));
+                reset.update(cx, |reset, cx| {
+                    let timer = cx.background_executor().timer(Duration::from_secs(2));
+                    *reset = Some(cx.spawn(async move |state, cx| {
+                        timer.await;
+                        let _ = state.update(cx, |reset, cx| {
+                            *reset = None;
+                            cx.notify();
+                        });
+                    }));
+                    cx.notify();
+                });
+            })
+            .text_size(px(12.0))
+            .child(if copied { "已复制" } else { "复制代码" })
     }
 }
 

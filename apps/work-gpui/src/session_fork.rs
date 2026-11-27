@@ -1,6 +1,6 @@
 //! Fork the observed native session and verify the destination in the node catalog.
 
-use gpui::{Context, Div, Stateful, Task, div, prelude::*, px};
+use gpui::{Context, Div, Stateful, Task, div, prelude::*};
 use work_client::{WorkspaceClient, canonical_entry_id};
 use work_viewmodel::config_requests::bounded;
 
@@ -244,18 +244,16 @@ impl Shell {
         &self,
         key: &str,
         anchor: &str,
+        progress: bool,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
         let anchor = anchor.to_owned();
         let palette = self.palette;
         let button = self
-            .button(gpui::SharedString::from(format!("fork-reply/{key}")), "")
-            .w(px(27.0))
-            .mt_2()
-            .px_0()
-            .tab_index(0)
-            .tab_stop(self.navigation_keyboard_enabled() && self.overlay.is_none())
-            .focus(|button| button.bg(palette.hover))
+            .reply_action(
+                gpui::SharedString::from(format!("fork-reply/{key}")),
+                progress,
+            )
             .child(icon("git-branch", 15.0, palette.muted))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.focus_composer(window);

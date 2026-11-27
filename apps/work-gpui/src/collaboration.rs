@@ -12,9 +12,180 @@ pub(super) struct Panel {
     discovery: Option<Task<()>>,
     nearby: Option<Result<Vec<DiscoveredNode>, ()>>,
     copied: Option<String>,
+    local: Option<work_host::http::Sharing>,
+    local_pending: Option<Task<()>>,
+    local_error: Option<String>,
 }
 
 impl Shell {
+    pub(super) fn refresh_local_sharing(
+        &mut self,
+        change: Option<(&'static str, bool)>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(node) = self.node.as_ref().filter(|node| node.is_local()) else {
+            return;
+        };
+        if self.collaboration.local_pending.is_some() {
+            return;
+        }
+        self.collaboration.local_error = None;
+        let result = node.local_sharing(change);
+        self.collaboration.local_pending = Some(cx.spawn(async move |this, cx| {
+            let result = result.await;
+            let _ = this.update(cx, |shell, cx| {
+                let panel = &mut shell.collaboration;
+                panel.local_pending = None;
+                match result {
+                    Ok((sharing, error)) => {
+                        panel.local = Some(sharing);
+                        panel.local_error = error;
+                    }
+                    Err(error) => panel.local_error = Some(error.to_string()),
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    pub(super) fn collaboration_address(&self) -> Option<String> {
+        if self.node.as_ref()?.is_local() {
+            let sharing = self
+                .collaboration
+                .local
+                .as_ref()
+                .filter(|sharing| sharing.enabled)?;
+            normalize_address(&sharing.app_url, false).ok()
+        } else {
+            normalize_address(&self.snapshot.node, false).ok()
+        }
+    }
+
+    pub(super) fn collaboration_identity(&self) -> Option<&str> {
+        if self.node.as_ref()?.is_local() {
+            let identity = &self.collaboration.local.as_ref()?.node_id;
+            (!identity.is_empty()).then_some(identity.as_str())
+        } else {
+            self.snapshot.node_id.as_deref()
+        }
+    }
+
+    fn local_sharing_settings(&self, cx: &Context<Self>) -> Div {
+        let palette = self.palette;
+        let panel = &self.collaboration;
+        let busy = panel.local_pending.is_some();
+        let status = if busy {
+            "正在读取本机共享状态…"
+        } else {
+            "尚未读取本机共享状态。"
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .when_some(panel.local.as_ref(), |body, sharing| {
+                body.child(self.local_access_row(
+                    "允许远程协作",
+                    &sharing.status,
+                    "node.sharing.write",
+                    sharing.listening.then_some(sharing.enabled),
+                    cx,
+                ))
+                .child(self.local_access_row(
+                    "允许 Web 访问",
+                    &sharing.web.status,
+                    "node.web.write",
+                    sharing.web.listening.then_some(sharing.web.enabled),
+                    cx,
+                ))
+                .when(!sharing.warning.is_empty(), |body| {
+                    body.child(self.text(sharing.warning.clone(), 13.0, palette.danger))
+                })
+                .when(sharing.web.enabled, |body| {
+                    body.when_some(
+                        normalize_address(&sharing.web.url, false).ok(),
+                        |body, address| {
+                            body.child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(self.node_address(&address).flex_1())
+                                    .child(self.copy_node_address(&address, cx)),
+                            )
+                        },
+                    )
+                })
+            })
+            .when(panel.local.is_none(), |body| {
+                body.child(self.text(status, 13.0, palette.muted))
+            })
+            .when_some(panel.local_error.as_ref(), |body, error| {
+                body.child(self.text(error.clone(), 13.0, palette.danger))
+            })
+            .child(
+                div().flex().child(
+                    self.button("refresh-local-sharing", "刷新状态")
+                        .tab_index(0)
+                        .tab_stop(!busy)
+                        .focus(|button| button.bg(palette.hover))
+                        .when(!busy, |button| {
+                            button.on_click(
+                                cx.listener(|shell, _, _, cx| {
+                                    shell.refresh_local_sharing(None, cx)
+                                }),
+                            )
+                        }),
+                ),
+            )
+    }
+
+    fn local_access_row(
+        &self,
+        label: &str,
+        status: &str,
+        capability: &'static str,
+        enabled: Option<bool>,
+        cx: &Context<Self>,
+    ) -> Div {
+        let palette = self.palette;
+        let busy = self.collaboration.local_pending.is_some();
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .py_2()
+            .border_t_1()
+            .border_color(palette.line)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(
+                        self.text(label.to_owned(), 14.0, palette.text)
+                            .font_weight(FontWeight::SEMIBOLD),
+                    )
+                    .child(self.text(status.to_owned(), 12.0, palette.muted)),
+            )
+            .when_some(enabled, |row, enabled| {
+                row.child(
+                    self.button(capability, if enabled { "停用" } else { "开启" })
+                        .border_1()
+                        .border_color(palette.line)
+                        .tab_index(0)
+                        .tab_stop(!busy)
+                        .focus(|button| button.bg(palette.hover))
+                        .when(busy, |button| button.opacity(0.6))
+                        .when(!busy, |button| {
+                            button.on_click(cx.listener(move |shell, _, _, cx| {
+                                shell.refresh_local_sharing(Some((capability, !enabled)), cx)
+                            }))
+                        }),
+                )
+            })
+    }
+
     fn refresh_nearby_nodes(&mut self, cx: &mut Context<Self>) {
         let Some(node) = self.node.as_ref() else {
             return;
@@ -48,8 +219,8 @@ impl Shell {
             return self.node_share_form(compact, cx);
         }
         let node = self.node.as_ref();
-        let address = normalize_address(&self.snapshot.node, false).ok();
-        let identity = self.snapshot.node_id.as_deref();
+        let address = self.collaboration_address();
+        let identity = self.collaboration_identity();
         let loading = self.collaboration.discovery.is_some();
         let nearby = match &self.collaboration.nearby {
             Some(Ok(nodes)) if !loading => {
@@ -165,20 +336,48 @@ impl Shell {
                                 .when_some(address.as_ref(), |row, address| {
                                     row.child(self.copy_node_address(address, cx))
                                 })
-                                .when(cfg!(target_os = "macos") && identity.is_some(), |row| {
-                                    row.child(
-                                        self.button("show-address-qr", "地址二维码")
-                                            .border_1()
-                                            .border_color(palette.line)
-                                            .tab_index(0)
-                                            .focus(|button| button.bg(palette.hover))
-                                            .on_click(cx.listener(|shell, _, window, cx| {
-                                                shell.show_node_share(window, cx)
-                                            })),
-                                    )
-                                }),
+                                .when(
+                                    cfg!(target_os = "macos")
+                                        && identity.is_some()
+                                        && address.is_some(),
+                                    |row| {
+                                        row.child(
+                                            self.button("show-address-qr", "地址二维码")
+                                                .border_1()
+                                                .border_color(palette.line)
+                                                .tab_index(0)
+                                                .focus(|button| button.bg(palette.hover))
+                                                .on_click(cx.listener(|shell, _, window, cx| {
+                                                    shell.show_node_share(false, window, cx)
+                                                })),
+                                        )
+                                        .when(
+                                            node.is_local(),
+                                            |row| {
+                                                row.child(
+                                                    self.button(
+                                                        "issue-authorization-qr",
+                                                        "一次性授权",
+                                                    )
+                                                    .border_1()
+                                                    .border_color(palette.line)
+                                                    .tab_index(0)
+                                                    .focus(|button| button.bg(palette.hover))
+                                                    .on_click(cx.listener(
+                                                        |shell, _, window, cx| {
+                                                            shell.show_node_share(true, window, cx)
+                                                        },
+                                                    )),
+                                                )
+                                            },
+                                        )
+                                    },
+                                ),
                         ),
                 )
+            })
+            .when(node.is_some_and(|node| node.is_local()), |body| {
+                body.child(self.local_sharing_settings(cx))
             })
             .when(node.is_some_and(|node| !node.is_local()), |body| {
                 body.child(self.text(
@@ -327,7 +526,7 @@ impl Shell {
             .truncate()
     }
 
-    fn copy_node_address(&self, address: &str, cx: &mut Context<Self>) -> impl IntoElement {
+    fn copy_node_address(&self, address: &str, cx: &Context<Self>) -> impl IntoElement {
         let palette = self.palette;
         let copied = self.collaboration.copied.as_deref() == Some(address);
         let address = address.to_owned();

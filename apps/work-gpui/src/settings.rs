@@ -122,7 +122,7 @@ impl Preferences {
     }
 
     pub(super) fn line_height(&self) -> f32 {
-        self.font_size() * if self.compact { 1.4 } else { 1.65 }
+        self.font_size() * if self.compact { 1.55 } else { 1.65 }
     }
 }
 
@@ -379,6 +379,20 @@ impl Shell {
         self.settings.save_failed = self.preferences.persist().is_err();
     }
 
+    pub(crate) fn open_connection_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.section = Section::Collaboration;
+        self.open_settings(window, cx);
+        self.show_node_connection(None, window, cx);
+    }
+
+    pub(super) fn open_provider_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.section = Section::Configuration;
+        self.settings
+            .content_scroll
+            .set_offset(point(px(0.0), px(0.0)));
+        self.open_settings(window, cx);
+    }
+
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.open || !self.navigation_keyboard_enabled() {
             return;
@@ -399,6 +413,7 @@ impl Shell {
         }
         if self.settings.section == Section::Collaboration {
             self.read_connection_history();
+            self.refresh_local_sharing(None, cx);
         }
         if !self.settings.section.resource_kinds().is_empty() {
             self.read_resource_catalog(cx);
@@ -448,6 +463,7 @@ impl Shell {
         }
         if destination.section == Section::Collaboration {
             self.read_connection_history();
+            self.refresh_local_sharing(None, cx);
         }
         if !destination.section.resource_kinds().is_empty() {
             self.read_resource_catalog(cx);
@@ -560,6 +576,9 @@ impl Shell {
                     .field
                     .map_or(destination.section.label(), Field::label);
                 self.setting_navigation_button(("settings-match", index))
+                    .when(!compact && destination.field.is_some(), |button| {
+                        button.h(px(42.0))
+                    })
                     .when(index == 0, |button| {
                         button.track_focus(&self.settings.first_result)
                     })
@@ -593,7 +612,7 @@ impl Shell {
                     .items_center()
                     .gap_1()
                     .px_2()
-                    .h(px(36.0))
+                    .h(px(if compact { 36.0 } else { 32.0 }))
                     .flex_none()
                     .bg(palette.bg)
                     .rounded(px(8.0))
@@ -616,7 +635,13 @@ impl Shell {
         let palette = self.palette;
         self.button(id, "")
             .w_full()
-            .h(px(44.0))
+            .h(px(
+                if self.navigation_layout == super::NavigationLayout::Drawer {
+                    44.0
+                } else {
+                    32.0
+                },
+            ))
             .gap_2()
             .justify_start()
             .tab_index(0)
@@ -681,68 +706,70 @@ impl Shell {
         {
             self.settings.content_scroll.scroll_to_item(index + 1);
         }
-        let nav =
-            div()
-                .flex()
-                .flex_col()
-                .flex_none()
-                .gap_2()
-                .p_3()
-                .bg(palette.side)
-                .when(!compact, |nav| {
-                    nav.w(px((dialog_width / 3.0).min(275.0)))
-                        .border_r_1()
-                        .border_color(palette.line)
-                })
-                .when(compact, |nav| nav.border_b_1().border_color(palette.line))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .child(
-                            self.text("设置", 16.0, palette.text)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .pl_2(),
-                        )
-                        .when(compact && !form_open, |bar| {
-                            bar.child(
-                                self.button("settings-browse", "浏览分类")
-                                    .h(px(44.0))
-                                    .gap_1()
-                                    .track_focus(&self.settings.browse_focus)
-                                    .tab_index(0)
-                                    .focus(|button| button.bg(palette.hover))
-                                    .child(icon("chevron-down", 14.0, palette.muted))
-                                    .on_click(cx.listener(|shell, _, window, cx| {
-                                        shell.settings.browse = !shell.settings.browse;
-                                        if shell.settings.browse {
-                                            shell.search.focus.focus(window);
-                                        } else {
-                                            shell.search.clear();
-                                            shell.settings.browse_focus.focus(window);
-                                        }
-                                        cx.notify();
-                                    })),
-                            )
-                        })
-                        .child(
-                            self.icon_button("settings-close", "x", 44.0)
+        let nav = div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap_2()
+            .p_3()
+            .bg(palette.side)
+            .when(!compact, |nav| {
+                nav.w(px((dialog_width / 3.0).min(275.0)))
+                    .rounded_l(px(19.0))
+                    .border_r_1()
+                    .border_color(palette.line)
+            })
+            .when(compact, |nav| nav.border_b_1().border_color(palette.line))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .child(
+                        self.text("设置", 16.0, palette.text)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .pl_2(),
+                    )
+                    .when(compact && !form_open, |bar| {
+                        bar.child(
+                            self.button("settings-browse", "浏览分类")
                                 .h(px(44.0))
-                                .track_focus(&self.settings.close_focus)
+                                .gap_1()
+                                .track_focus(&self.settings.browse_focus)
                                 .tab_index(0)
-                                .border_1()
-                                .border_color(gpui::transparent_black())
-                                .focus(|button| button.border_color(palette.strong_line))
+                                .focus(|button| button.bg(palette.hover))
+                                .child(icon("chevron-down", 14.0, palette.muted))
                                 .on_click(cx.listener(|shell, _, window, cx| {
-                                    shell.close_settings(window, cx)
+                                    shell.settings.browse = !shell.settings.browse;
+                                    if shell.settings.browse {
+                                        shell.search.focus.focus(window);
+                                    } else {
+                                        shell.search.clear();
+                                        shell.settings.browse_focus.focus(window);
+                                    }
+                                    cx.notify();
                                 })),
-                        ),
-                )
-                .when(!form_open && (!compact || self.settings.browse), |nav| {
-                    nav.child(self.settings_navigation(compact, height, window, cx))
-                });
+                        )
+                    })
+                    .child(
+                        self.icon_button("settings-close", "x", if compact { 44.0 } else { 30.0 })
+                            .h(px(if compact { 44.0 } else { 30.0 }))
+                            .track_focus(&self.settings.close_focus)
+                            .tab_index(0)
+                            .border_1()
+                            .border_color(gpui::transparent_black())
+                            .focus(|button| button.border_color(palette.strong_line))
+                            .on_click(
+                                cx.listener(|shell, _, window, cx| {
+                                    shell.close_settings(window, cx)
+                                }),
+                            ),
+                    ),
+            )
+            .when(!form_open && (!compact || self.settings.browse), |nav| {
+                nav.child(self.settings_navigation(compact, height, window, cx))
+            });
         div()
             .id("settings-scrim")
             .absolute()
@@ -839,7 +866,9 @@ impl Shell {
                                             .tab_stop(false)
                                     })
                                     .child(self.text(
-                                        if self.node_share.open {
+                                        if self.node_share.open && self.node_share.authorization {
+                                            "一次性授权"
+                                        } else if self.node_share.open {
                                             "节点地址二维码"
                                         } else {
                                             section.label()
@@ -891,7 +920,7 @@ impl Shell {
                         ("settings-steer", "引导当前任务", Delivery::Steer),
                     ]
                     .map(|(id, label, delivery)| {
-                        self.setting_choice(id, label, self.preferences.follow_up == delivery)
+                        self.setting_option(id, label, self.preferences.follow_up == delivery, 94.0)
                             .on_click(cx.listener(move |shell, _, window, cx| {
                                 shell.preferences.follow_up = delivery;
                                 shell.save_preferences(window, cx);
@@ -908,13 +937,18 @@ impl Shell {
                         ("settings-projects-flat", "平铺", true),
                     ]
                     .map(|(id, label, flat)| {
-                        self.setting_choice(id, label, self.preferences.navigation.flat == flat)
-                            .on_click(cx.listener(move |shell, _, _, cx| {
-                                shell.preferences.navigation.flat = flat;
-                                shell.project_menu = None;
-                                shell.save_device_preferences();
-                                cx.notify();
-                            }))
+                        self.setting_option(
+                            id,
+                            label,
+                            self.preferences.navigation.flat == flat,
+                            82.0,
+                        )
+                        .on_click(cx.listener(move |shell, _, _, cx| {
+                            shell.preferences.navigation.flat = flat;
+                            shell.project_menu = None;
+                            shell.save_device_preferences();
+                            cx.notify();
+                        }))
                     }),
                 ),
             ),
@@ -931,12 +965,17 @@ impl Shell {
                     ("settings-review-detached", "独立会话", true),
                 ]
                 .map(|(id, label, detached)| {
-                    self.setting_choice(id, label, self.preferences.detached_review == detached)
-                        .on_click(cx.listener(move |shell, _, _, cx| {
-                            shell.preferences.detached_review = detached;
-                            shell.save_device_preferences();
-                            cx.notify();
-                        }))
+                    self.setting_option(
+                        id,
+                        label,
+                        self.preferences.detached_review == detached,
+                        68.0,
+                    )
+                    .on_click(cx.listener(move |shell, _, _, cx| {
+                        shell.preferences.detached_review = detached;
+                        shell.save_device_preferences();
+                        cx.notify();
+                    }))
                 }),
             ),
         )
@@ -963,7 +1002,7 @@ impl Shell {
                         ("settings-dark", "深色", ColorMode::Dark),
                     ]
                     .map(|(id, label, color)| {
-                        self.setting_choice(id, label, self.preferences.color == color)
+                        self.setting_option(id, label, self.preferences.color == color, 68.0)
                             .on_click(cx.listener(move |shell, _, window, cx| {
                                 shell.preferences.color = color;
                                 shell.save_preferences(window, cx);
@@ -1024,11 +1063,18 @@ impl Shell {
                         .flex()
                         .gap_1()
                         .children([(first, false), (second, true)].map(|(label, value)| {
-                            self.setting_choice((id, usize::from(value)), label, value == active)
-                                .on_click(cx.listener(move |shell, _, window, cx| {
+                            self.setting_option(
+                                (id, usize::from(value)),
+                                label,
+                                value == active,
+                                56.0,
+                            )
+                            .on_click(cx.listener(
+                                move |shell, _, window, cx| {
                                     apply(&mut shell.preferences, value);
                                     shell.save_preferences(window, cx);
-                                }))
+                                },
+                            ))
                         })),
                 )
             }),
@@ -1193,6 +1239,19 @@ impl Shell {
         )
     }
 
+    fn setting_option(
+        &self,
+        id: impl Into<ElementId>,
+        label: &str,
+        selected: bool,
+        width: f32,
+    ) -> gpui::Stateful<Div> {
+        self.setting_choice(id, label, selected).when(
+            self.navigation_layout != super::NavigationLayout::Drawer,
+            |button| button.w(px(width)),
+        )
+    }
+
     fn setting_choice(
         &self,
         id: impl Into<gpui::ElementId>,
@@ -1209,7 +1268,13 @@ impl Shell {
             .when(target, |button| {
                 button.track_focus(&self.settings.target_focus)
             })
-            .h(px(44.0))
+            .h(px(
+                if self.navigation_layout == super::NavigationLayout::Drawer {
+                    44.0
+                } else {
+                    34.0
+                },
+            ))
             .gap_1()
             .tab_index(0)
             .border_1()

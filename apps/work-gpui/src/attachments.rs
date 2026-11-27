@@ -83,7 +83,7 @@ fn load(paths: Vec<PathBuf>) -> Result<Vec<Attachment>, String> {
 }
 
 impl Shell {
-    fn pick_attachments(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn pick_attachments(&mut self, cx: &mut Context<Self>) {
         let Some(index) = self.session.filter(|_| self.supports_attachments()) else {
             return;
         };
@@ -128,18 +128,6 @@ impl Shell {
             .and_then(|frame| frame.access.as_ref())
             .is_some_and(|access| {
                 access.supports_prompt_content() && access.supports_command("prompt")
-            })
-    }
-
-    pub(super) fn add_attachments_button(&self, cx: &Context<Self>) -> impl IntoElement {
-        let ready = self.supports_attachments()
-            && self
-                .session
-                .is_some_and(|index| !self.selecting_attachments.contains(&index));
-        self.icon_button("add-attachments", "plus", 24.0)
-            .when(!ready, |button| button.opacity(0.4).cursor_default())
-            .when(ready, |button| {
-                button.on_click(cx.listener(|shell, _, _, cx| shell.pick_attachments(cx)))
             })
     }
 

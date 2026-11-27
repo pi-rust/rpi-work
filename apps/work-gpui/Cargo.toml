@@ -29,6 +29,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 unicode-segmentation = "1"
 work-client = { path = "../../crates/client/work-client" }
 work-core = { path = "../../crates/foundation/work-core" }
+work-host = { path = "../../crates/host/work-host" }
 work-viewmodel = { path = "../../crates/client/work-viewmodel" }
 
 [build-dependencies]

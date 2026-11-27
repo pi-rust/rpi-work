@@ -1,15 +1,10 @@
-name: Workbench and Rust checks
+name: GPUI desktop and Rust checks
 
 on:
   push:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
-    inputs:
-      legacy_ui:
-        description: Build archived Dioxus packages for reference
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -27,11 +22,12 @@ env:
 
 jobs:
   gpui:
-    name: GPUI / macOS
+    name: GPUI desktop / macOS arm64
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
+        shell: bash
         working-directory: apps/work-gpui
     steps:
       - uses: actions/checkout@v6
@@ -40,9 +36,42 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/work-gpui -> target
+          shared-key: gpui-macos-arm64
+          cache-on-failure: true
       - run: cargo fmt -- --check
-      - run: cargo test
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build GPUI release
+        run: cargo build --locked --release
+      - name: Package and verify the macOS application
+        working-directory: ${{ github.workspace }}
+        run: |
+          dist=target/ci-dist
+          app="$RUNNER_TEMP/RPI Work.app"
+          archive=rpi-work-macos-arm64.zip
+          bash ./apps/work-gpui/bundle-macos.sh apps/work-gpui/target/release/work-gpui "$app"
+          mkdir -p "$dist"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$dist/$archive"
+          cd "$dist"
+          unzip -tq "$archive"
+          extracted=$(mktemp -d "$RUNNER_TEMP/work-gpui-verify.XXXXXXXX")
+          ditto -x -k "$archive" "$extracted"
+          codesign --verify --strict "$extracted/RPI Work.app"
+          test "$(lipo -archs "$extracted/RPI Work.app/Contents/MacOS/work-gpui")" = arm64
+          shasum -a 256 "$archive" > "$archive.sha256"
+          shasum -a 256 -c "$archive.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rpi-work-macos-arm64
+          path: |
+            target/ci-dist/rpi-work-macos-arm64.zip
+            target/ci-dist/rpi-work-macos-arm64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
 
   checks:
     name: Rust checks
@@ -55,7 +84,6 @@ jobs:
       - name: Check repository structure and workflow script paths
         run: |
           node --test tests/structure/check-structure.test.cjs
-          node --test tests/structure/unified-ui.test.cjs tests/structure/remembered-connection.test.cjs
           node tools/review/check-structure.cjs
           node tools/review/check-node-boundaries.cjs
       - name: Install Linux desktop dependencies
@@ -81,208 +109,3 @@ jobs:
       - name: Verify desktop runtime setup and recovery
         run: cargo test --locked -p work-host --features test-fixtures --test setup_flow
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-  desktop:
-    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui
-    name: Desktop / ${{ matrix.target }}
-    needs: [checks, web]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix:
-        include:
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - name: Install Linux desktop dependencies
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev lld
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: desktop-${{ matrix.target }}
-          cache-on-failure: true
-      - uses: actions/download-artifact@v7
-        with:
-          name: rpi-work-builtin-web
-          path: target/parity-web
-      - name: Compile release UI and CLI with built-in Web
-        env:
-          RPI_WORK_BUILTIN_WEB_DIR: ${{ github.workspace }}/target/parity-web
-        run: cargo build --locked --release --target ${{ matrix.target }} -p work-ui -p work-cli
-      - name: Verify embedded Web resources
-        env:
-          RPI_WORK_BUILTIN_WEB_DIR: ${{ github.workspace }}/target/parity-web
-        run: cargo test --locked --release --target ${{ matrix.target }} -p work-node-host --lib web_assets::tests
-      - name: Package binaries and checksums
-        run: ./scripts/ci/package-build.ps1 -Target '${{ matrix.target }}'
-      - uses: actions/upload-artifact@v7
-        with:
-          name: rpi-work-${{ matrix.target }}
-          path: target/ci-dist/*
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-  android:
-    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui
-    name: Android / ARM64 APK
-    needs: checks
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;28.2.13676358'
-          log-accepted-android-sdk-licenses: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: android-arm64
-          cache-on-failure: true
-      - name: Install verified Dioxus CLI 0.7.10
-        shell: bash
-        run: |
-          mkdir -p "$RUNNER_TEMP/dioxus-cli"
-          curl --fail --location --retry 3 \
-            https://github.com/DioxusLabs/dioxus/releases/download/v0.7.10/dx-x86_64-unknown-linux-gnu.tar.gz \
-            --output "$RUNNER_TEMP/dioxus-cli/dx.tar.gz"
-          echo "4363e4ed2a3f1eb7f4d38d2d59aed59ce43271c44c16b425e92c89a64761fbe7  $RUNNER_TEMP/dioxus-cli/dx.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/dioxus-cli/dx.tar.gz" -C "$RUNNER_TEMP/dioxus-cli"
-          echo "$RUNNER_TEMP/dioxus-cli" >> "$GITHUB_PATH"
-      - name: Configure NDK
-        run: |
-          $ndk = Join-Path $env:ANDROID_HOME 'ndk/28.2.13676358'
-          "NDK_HOME=$ndk" >> $env:GITHUB_ENV
-          "ANDROID_NDK_HOME=$ndk" >> $env:GITHUB_ENV
-      - name: Verify Android toolchain isolation
-        run: ./tests/structure/android-toolchain.ps1
-      - name: Compile and verify installable APK
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: |
-          if ($env:ANDROID_KEYSTORE_BASE64) {
-            $keyFile = Join-Path $env:RUNNER_TEMP 'rpi-work-signing.p12'
-            [IO.File]::WriteAllBytes($keyFile, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
-            $env:ANDROID_KEYSTORE = $keyFile
-          }
-          try { ./scripts/ci/build-android.ps1 } finally {
-            if ($keyFile -and (Test-Path -LiteralPath $keyFile)) { Remove-Item -LiteralPath $keyFile }
-          }
-      - uses: actions/upload-artifact@v7
-        with:
-          name: rpi-work-android-arm64-apk
-          path: target/ci-dist/*aarch64-linux-android*.apk*
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-  release:
-    name: Publish signed update release
-    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui && startsWith(github.ref, 'refs/tags/v')
-    needs: [checks, desktop, android, web]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - name: Download this run's verified packages
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir target/release-artifacts
-      - name: Create and sign update manifest
-        env:
-          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-        run: python3 scripts/ci/create-update-manifest.py --artifacts target/release-artifacts --output target/release-upload --tag "$GITHUB_REF_NAME" --notes docs/release-notes.md
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Verify signatures and packages with the client implementation
-        run: cargo run --locked -p work-update --bin verify-update -- target/release-upload
-      - name: Publish complete release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/publish-release.py
-
-  web:
-    if: github.event_name == 'workflow_dispatch' && inputs.legacy_ui
-    name: Web / wasm32
-    needs: checks
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: web-wasm32
-          cache-on-failure: true
-      - name: Check WASM-specific code
-        run: cargo clippy --locked -p work-ui --target wasm32-unknown-unknown -- -D warnings
-      - name: Install the wasm-bindgen CLI matching Cargo.lock
-        run: ./scripts/ci/install-wasm-bindgen.ps1
-      - name: Compile release browser application
-        run: ./tools/dev/build-ui-web.ps1 -BindgenPath (Get-Command wasm-bindgen -ErrorAction Stop).Source
-      - uses: actions/upload-artifact@v7
-        with:
-          name: rpi-work-builtin-web
-          path: target/parity-web/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Package standalone and rpi-web assets
-        run: ./scripts/ci/package-build.ps1 -Target wasm32-unknown-unknown
-      - uses: actions/upload-artifact@v7
-        with:
-          name: rpi-work-web
-          path: target/ci-dist/*
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0

@@ -1,15 +1,14 @@
-# GitHub 多平台编译
+# GitHub 桌面编译
 
-> 当前 GPUI 入口见 [GPUI 工作台](../../apps/work-gpui/README.md)。下文的 Dioxus 安装包构建属于历史工作流，可手动触发。
+**GPUI desktop and Rust checks** 在推送到 `main` 或 `master`、提交 PR 或手动运行时触发。`macos-15` runner 使用 `apps/work-gpui/Cargo.lock`，运行格式检查、单测和严格 Clippy，然后为 `aarch64-apple-darwin` 编译 release。共享 Rust 检查在 Linux 上并行运行。 [工作流配置](../../.github/workflows/build.yml)
 
-工作流：`.github/workflows/build.yml`，名称 **Build all platforms**。
+打包步骤复用本地 GPUI 脚本生成 `RPI Work.app`，为应用添加临时签名。上传前检查 ZIP 完整性，解包核对应用签名及 arm64 架构，并校验 SHA-256。 [打包脚本](../../apps/work-gpui/bundle-macos.sh)
 
-- 推送到 `main` / `master`、推送 `v*` 标签、PR，以及 Actions 的 **Run workflow** 都会触发。
-- 先检查格式、执行 locked workspace tests 和严格 Clippy，再编译各平台 release。
-- Cargo 缓存按架构与用途隔离；同分支新提交会取消旧任务；单个平台失败不会取消其他平台。
-- 编译任务只需仓库读取权限，不调用真实模型。Android固定签名与更新清单使用仓库Secrets；`v*` 标签的发布任务在全部构建成功后，以最小写权限创建签名Release，不部署服务端。
+在成功运行的 **Artifacts** 中下载 `rpi-work-macos-arm64`。制品保留 14 天，内含 `rpi-work-macos-arm64.zip` 及对应 SHA-256 文件。在 macOS 上解开内层 ZIP 即可获得 `RPI Work.app`。 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [本机编译说明](../../apps/work-gpui/README.md#构建与平台)
 
-## 平台和制品
+旧版 Dioxus 的桌面、Android 和 Web 打包步骤以下列历史资料为准，可用仓库脚本本地复现。
+
+## 历史 Dioxus 平台和制品
 
 | 平台 | 架构 / Rust target | Runner | 内容 |
 | --- | --- | --- | --- |
@@ -22,7 +21,7 @@
 | Android | ARM64 / `aarch64-linux-android` | `ubuntu-24.04` | 固定签名APK及SHA-256；无密钥的PR为dev包 |
 | Web / 手机浏览器 | `wasm32-unknown-unknown` | `ubuntu-24.04` | ZIP：独立静态资源与 rpi-web assets 两种目录 |
 
-从 [GitHub Actions](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) 选择成功运行，在 **Artifacts** 下载对应平台。桌面与Web制品包含版本化压缩包及 `.sha256`，包内 `build-info.json` 记录版本、target、profile、Git commit、Rust 版本和打包时间；Android提供APK及 `.sha256`。macOS/Linux 的内层 tar.gz 保留可执行权限。
+旧流水线的桌面与 Web 制品包含版本化压缩包及 `.sha256`，包内 `build-info.json` 记录版本、target、profile、Git commit、Rust 版本和打包时间。Android 制品包含 APK 及 `.sha256`。macOS 和 Linux 的内层 tar.gz 保留可执行权限。
 
 桌面包未配置发行签名，也不是 Windows MSI 或 macOS DMG。Windows 需要 WebView2；Linux 动态依赖 GTK 3、WebKitGTK 4.1、libxdo 和兼容 glibc，当前基线为 Ubuntu 24.04。macOS `.app` 未配置 Apple 签名或公证。
 
@@ -73,7 +72,7 @@ node tests/e2e/verify-connection-panel.cjs
 
 ## 本机复现
 
-脚本使用跨平台 PowerShell 7（`pwsh`）。在对应原生系统上执行；Linux 先安装 workflow 中列出的开发依赖。
+以下 Dioxus 脚本使用 PowerShell 7（`pwsh`）。在对应原生系统上执行。Linux 先安装共享 Rust 检查所用的系统依赖。
 
 ```powershell
 # Windows x64 示例；其他平台换用表中的原生 target。

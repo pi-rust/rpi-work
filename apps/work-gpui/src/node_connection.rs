@@ -6,13 +6,14 @@ use work_viewmodel::connection::{
 };
 
 use super::Shell;
-use crate::data::Node;
+use crate::data::{Node, NodeAuthorization};
 
 #[derive(Default)]
 pub(super) struct Form {
     pub(super) open: bool,
     pub(super) password: bool,
     target: Option<(String, Option<String>)>,
+    authorization: Option<NodeAuthorization>,
     pending: Option<Task<()>>,
     scanning: bool,
     notice: Option<String>,
@@ -42,6 +43,7 @@ impl Shell {
         self.node_connection.open = true;
         self.node_connection.notice = None;
         self.node_connection.target = target;
+        self.node_connection.authorization = None;
         self.search.clear();
         self.search.focus.focus(window);
         if self.node_connection.target.is_some() {
@@ -62,32 +64,36 @@ impl Shell {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("选择节点地址二维码图片".into()),
+            prompt: Some("选择节点二维码图片".into()),
         });
         let background = cx.background_executor().clone();
         self.node_connection.pending = Some(cx.spawn_in(window, async move |this, cx| {
-            let result = match selection.await {
-                Ok(Ok(Some(paths))) => match paths.into_iter().next() {
-                    Some(path) => {
-                        background
-                            .spawn(
-                                async move { super::node_share::scan_node_address(path).map(Some) },
-                            )
-                            .await
-                    }
-                    None => Ok(None),
-                },
-                Ok(Ok(None)) => Ok(None),
-                _ => Err("无法选择二维码图片。".into()),
-            };
+            let result =
+                match selection.await {
+                    Ok(Ok(Some(paths))) => match paths.into_iter().next() {
+                        Some(path) => background
+                            .spawn(async move { super::node_share::scan_node_code(path).map(Some) })
+                            .await,
+                        None => Ok(None),
+                    },
+                    Ok(Ok(None)) => Ok(None),
+                    _ => Err("无法选择二维码图片。".into()),
+                };
             let _ = cx.update(|window, cx| {
                 let _ = this.update(cx, |shell, cx| {
                     shell.node_connection.pending = None;
                     shell.node_connection.scanning = false;
                     match result {
-                        Ok(Some(address)) => {
+                        Ok(Some(super::node_share::NodeCode::Address(address))) => {
                             shell.search.clear();
                             shell.search.buffer.replace(None, &address);
+                        }
+                        Ok(Some(super::node_share::NodeCode::Authorization(address, code))) => {
+                            shell.node_connection.target = Some((address, None));
+                            shell.node_connection.authorization = Some(code);
+                            shell.focus_settings_title(window);
+                            cx.notify();
+                            return;
                         }
                         Ok(None) => {
                             shell.cancel_node_connection(window, cx);
@@ -107,6 +113,7 @@ impl Shell {
         self.node_connection.open = false;
         self.node_connection.password = false;
         self.node_connection.target = None;
+        self.node_connection.authorization = None;
         self.node_connection.pending = None;
         self.node_connection.scanning = false;
         self.node_connection.notice = None;
@@ -159,11 +166,12 @@ impl Shell {
         window.prevent_default();
         self.node_connection.notice = None;
         let authenticating = credential.is_some();
+        let authorization = self.node_connection.authorization.take();
         let endpoint = address.clone();
         let pin = expected.clone();
         let connect = cx
             .background_executor()
-            .spawn(async move { Node::open(endpoint, pin, credential) });
+            .spawn(async move { Node::open(endpoint, pin, credential, authorization) });
         self.node_connection.pending = Some(cx.spawn_in(window, async move |this, cx| {
             let result = connect.await;
             let _ = cx.update(|window, cx| {
@@ -220,12 +228,15 @@ impl Shell {
         let palette = self.palette;
         let form = &self.node_connection;
         let busy = form.pending.is_some();
+        let has_authorization = form.authorization.is_some();
         div()
             .flex()
             .flex_col()
             .gap_3()
             .child(self.text(
-                if form.password {
+                if has_authorization {
+                    "确认一次性授权"
+                } else if form.password {
                     "节点密码"
                 } else {
                     "节点地址"
@@ -236,17 +247,19 @@ impl Shell {
             .when_some(form.target.as_ref(), |body, (address, _)| {
                 body.child(self.text(address.clone(), 12.0, palette.muted).min_w_0())
             })
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .h(px(38.0))
-                    .px_2()
-                    .rounded(px(8.0))
-                    .border_1()
-                    .border_color(palette.strong_line)
-                    .child(self.search_input_element(cx)),
-            )
+            .when(!has_authorization, |body| {
+                body.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .h(px(38.0))
+                        .px_2()
+                        .rounded(px(8.0))
+                        .border_1()
+                        .border_color(palette.strong_line)
+                        .child(self.search_input_element(cx)),
+                )
+            })
             .when(busy, |body| {
                 let status = if form.scanning {
                     "正在识别二维码…"
@@ -266,27 +279,27 @@ impl Shell {
                     .justify_end()
                     .gap_2()
                     .child(
-                        self.button("cancel-node-connection", "取消")
+                        self.dialog_button("cancel-node-connection", "取消", true, false)
                             .tab_index(0)
-                            .focus(|button| button.bg(palette.hover))
                             .on_click(cx.listener(|shell, _, window, cx| {
                                 shell.cancel_node_connection(window, cx)
                             })),
                     )
                     .when(!busy, |actions| {
                         actions.child(
-                            self.button(
+                            self.dialog_button(
                                 "submit-node-connection",
-                                if form.password {
+                                if has_authorization {
+                                    "授权并打开"
+                                } else if form.password {
                                     "登录并打开"
                                 } else {
                                     "连接"
                                 },
+                                true,
+                                true,
                             )
-                            .border_1()
-                            .border_color(palette.line)
                             .tab_index(0)
-                            .focus(|button| button.bg(palette.hover))
                             .on_click(cx.listener(
                                 |shell, _, window, cx| shell.submit_node_connection(window, cx),
                             )),
