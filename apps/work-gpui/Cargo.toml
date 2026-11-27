@@ -34,3 +34,7 @@ work-viewmodel = { path = "../../crates/client/work-viewmodel" }
 
 [build-dependencies]
 cc = "1"
+
+[patch.crates-io]
+# GPUI's zed-async-tar still requires xattr 0.2, which uses libc::ENOATTR on Linux.
+xattr = { path = "compat/xattr" }

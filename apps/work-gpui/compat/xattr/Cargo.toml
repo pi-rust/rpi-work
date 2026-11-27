@@ -1,0 +1,13 @@
+[package]
+name = "xattr"
+version = "0.2.3"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[features]
+default = ["unsupported"]
+unsupported = ["xattr-current/unsupported"]
+
+[dependencies]
+xattr-current = { package = "xattr", version = "1", default-features = false }
