@@ -512,7 +512,7 @@ mod tests {
             let text = format!("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n{tail}");
             let view = present(&text, "x");
             assert!(!view.structured, "{tail}");
-            assert!(numbers(&view).is_empty());
+            assert_eq!(numbers(&view), [], "{tail}");
             assert_eq!(view.rows.len(), text.lines().count());
         }
     }
@@ -528,7 +528,7 @@ mod tests {
         ] {
             let view = present(text, "x");
             assert!(!view.structured);
-            assert!(numbers(&view).is_empty());
+            assert_eq!(numbers(&view), []);
             assert_eq!(
                 view.rows
                     .iter()
@@ -562,8 +562,9 @@ mod tests {
             source.lines().collect::<Vec<_>>()
         );
         let duplicated = source.to_owned() + "\\ No newline at end of file\n";
-        assert!(!present(&duplicated, "界").structured);
-        assert!(numbers(&present(&duplicated, "界")).is_empty());
+        let view = present(&duplicated, "界");
+        assert!(!view.structured);
+        assert_eq!(numbers(&view), []);
     }
     #[test]
     fn empty_and_large_patches_keep_the_existing_full_literal_budget() {

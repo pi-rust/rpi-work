@@ -71,7 +71,7 @@ mod tests {
         assert_eq!(lines[0].number, Some(1));
         assert_eq!(lines[0].tokens[0].text, "pub");
         assert_eq!(lines[0].tokens[0].class, "code-token-keyword");
-        assert!(lines[1].tokens.is_empty());
+        assert_eq!(lines[1].tokens, []);
         assert_eq!(lines[2].number, Some(3));
     }
     #[test]
@@ -106,7 +106,7 @@ mod tests {
                 assert_eq!(rows[0].kind, "plain");
                 assert_eq!(rows[0].number, None);
                 assert_eq!(rows[0].tokens[0].text, source);
-                assert!(rows[0].tokens[0].class.is_empty());
+                assert_eq!(rows[0].tokens[0].class, "");
             }
         }
     }

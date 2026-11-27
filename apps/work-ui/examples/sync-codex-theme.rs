@@ -1,9 +1,6 @@
 //! Keep Codex's built-in CSS identical to the Rust/portable theme tokens.
 use std::{env, fs, path::PathBuf};
-
-#[allow(dead_code)]
-#[path = "../../../crates/client/work-viewmodel/src/theme/theme_contract.rs"]
-mod theme_contract;
+use work_viewmodel::theme::theme_contract;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/shared/theme/codex.css");

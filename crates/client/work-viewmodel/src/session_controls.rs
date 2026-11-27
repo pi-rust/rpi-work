@@ -216,7 +216,7 @@ mod tests {
                 && !view.model
                 && !view.thinking
         );
-        assert!(!view.reason.is_empty());
+        assert_ne!(view.reason, "");
     }
 
     fn access() -> SessionAccess {
