@@ -171,6 +171,63 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+  android:
+    name: Flutter Android / arm64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: '3.50.1'
+          cache: true
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - name: Analyze and test the Flutter client
+        working-directory: apps/work-mobile
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub
+          flutter test --no-pub
+      - name: Build the ARM64 APK
+        working-directory: apps/work-mobile
+        shell: bash
+        run: |
+          version_args=()
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)$ ]]; then
+              echo 'Expected a stable vMAJOR.MINOR.PATCH tag with minor and patch below 100.' >&2
+              exit 1
+            fi
+            code=$((BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 10000 + BASH_REMATCH[3] * 100 + 1))
+            # Flutter adds 2000 to the ARM64 split's versionCode.
+            if (( code + 2000 > 2100000000 )); then
+              echo 'Android versionCode exceeds its supported range.' >&2
+              exit 1
+            fi
+            version_args=(--build-name "${GITHUB_REF_NAME#v}" --build-number "$code")
+          fi
+          flutter build apk --release --no-pub --split-per-abi --target-platform android-arm64 "${version_args[@]}"
+      - name: Sign and verify the APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ github.ref_type == 'tag' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ github.ref_type == 'tag' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+        run: bash ./scripts/ci/package-flutter-android.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rpi-work-android-arm64
+          path: target/ci-dist/rpi-work-android-arm64*.apk*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
   checks:
     name: Rust checks
     runs-on: ubuntu-24.04
@@ -209,9 +266,9 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   release:
-    name: Publish GPUI desktop release
+    name: Publish desktop and Android release
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
-    needs: [gpui, checks]
+    needs: [gpui, android, checks]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -233,6 +290,12 @@ jobs:
           python3 ./scripts/ci/create-update-manifest.py --gpui \
             --artifacts target/release-assets --output target/release-upload \
             --tag "$GITHUB_REF_NAME" --notes apps/work-gpui/RELEASE.md
+      - name: Verify the Android release checksum
+        working-directory: target/release-assets
+        run: |
+          apk=rpi-work-android-arm64.apk
+          sha256sum -- "$apk" | diff - "$apk.sha256"
+          cp -- "$apk" "$apk.sha256" ../release-upload/
       - name: Verify draft assets and publish the release
         shell: bash
         env:
@@ -240,7 +303,7 @@ jobs:
         run: |
           tag=$GITHUB_REF_NAME
           cd target/release-upload
-          assets=(gpui-update.json gpui-update.json.sig)
+          assets=(gpui-update.json gpui-update.json.sig rpi-work-android-arm64.apk rpi-work-android-arm64.apk.sha256)
           for archive in rpi-work-macos-{x64,arm64}.zip rpi-work-linux-{x64,arm64}.tar.gz rpi-work-windows-{x64,arm64}.zip; do
             assets+=("$archive" "$archive.sha256")
           done
