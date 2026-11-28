@@ -321,7 +321,8 @@ impl Shell {
     }
 
     fn search_is_masked(&self) -> bool {
-        self.node_connection.password || self.provider_settings.masking_credential()
+        self.node_connection.password
+            || self.provider_settings.masking_credential()
             || self.chat_integrations.masking_credential()
     }
 

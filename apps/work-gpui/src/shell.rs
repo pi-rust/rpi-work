@@ -5,6 +5,8 @@
 pub(crate) mod attachments;
 #[path = "browser.rs"]
 mod browser;
+#[path = "chat_integrations.rs"]
+mod chat_integrations;
 #[path = "collaboration.rs"]
 mod collaboration;
 #[path = "composer_commands.rs"]
@@ -15,10 +17,6 @@ pub(crate) mod composer_config;
 mod desktop_plugins;
 #[path = "draft_storage.rs"]
 mod draft_storage;
-#[path = "chat_integrations.rs"]
-mod chat_integrations;
-#[path = "rpi_hosts.rs"]
-mod rpi_hosts;
 #[path = "composer.rs"]
 pub(crate) mod editor;
 #[path = "feature_entries.rs"]
@@ -53,6 +51,8 @@ mod resource_settings;
 mod review;
 #[path = "rich_text.rs"]
 mod rich_text;
+#[path = "rpi_hosts.rs"]
+mod rpi_hosts;
 #[path = "session_action.rs"]
 pub(crate) mod session_action;
 #[path = "session_context.rs"]

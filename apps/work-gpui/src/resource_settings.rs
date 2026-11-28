@@ -338,25 +338,23 @@ impl Shell {
                                 self.text(project.name.clone(), 13.0, palette.muted).mt_1()
                             })),
                     )
-                    .when(
-                        project.is_some() && self.node.is_some(),
-                        |heading| {
-                            let actions = [
-                                tab.kind().and_then(|_| self.resource_configuration_button(cx)),
-                                tab.kind()
-                                    .and_then(|kind| self.resource_install_button(kind, cx)),
-                                Some(self.resource_refresh(cx)),
-                            ];
-                            heading.child(
-                                div().flex().flex_wrap().justify_end().gap_2().children(
-                                    actions
-                                        .into_iter()
-                                        .flatten()
-                                        .map(|button| button.h(px(34.0))),
-                                ),
-                            )
-                        },
-                    ),
+                    .when(project.is_some() && self.node.is_some(), |heading| {
+                        let actions = [
+                            tab.kind()
+                                .and_then(|_| self.resource_configuration_button(cx)),
+                            tab.kind()
+                                .and_then(|kind| self.resource_install_button(kind, cx)),
+                            Some(self.resource_refresh(cx)),
+                        ];
+                        heading.child(
+                            div().flex().flex_wrap().justify_end().gap_2().children(
+                                actions
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|button| button.h(px(34.0))),
+                            ),
+                        )
+                    }),
             )
             .children(self.resource_install_notice(tab.kind()))
             .child(self.resource_toolbar(tab, stacked, window, cx))

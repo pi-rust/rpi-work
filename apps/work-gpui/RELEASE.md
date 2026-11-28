@@ -1,4 +1,4 @@
-## RPI Work v0.1.24
+## RPI Work v0.1.25
 
 - 新增 rpi Host 管理，可查看本机持久化 Host area 和 Agent 状态，在 macOS 终端进入 Host 或连接已有 Agent。
 - 新增飞书和企业微信机器人配置、可控的功能入口，以及支持斜杠提示词模板的桌面插件。
