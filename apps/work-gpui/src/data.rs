@@ -1,5 +1,7 @@
 //! Workbench data from an authenticated Work node or the layout sample.
 
+use std::sync::Arc;
+
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinHandle};
@@ -83,7 +85,7 @@ pub struct Snapshot {
     pub projects: Vec<ProjectItem>,
     pub sessions: Vec<SessionItem>,
     /// Canonical history messages (the `Value` shape the client already uses).
-    pub history: Vec<Value>,
+    pub history: Arc<Vec<Value>>,
     /// Append-only run projection blocks for the selected session.
     pub blocks: Vec<MessageBlock>,
     pub metrics: Metrics,
@@ -103,7 +105,7 @@ impl Snapshot {
             mode: "已连接节点".into(),
             projects: projects.into_iter().map(ProjectItem::from).collect(),
             sessions: sessions.into_iter().map(SessionItem::from).collect(),
-            history: Vec::new(),
+            history: Arc::default(),
             blocks: Vec::new(),
             metrics: Metrics::default(),
             context: Context::default(),
@@ -174,11 +176,11 @@ impl Snapshot {
                     activity: Some(SessionActivity::Inactive),
                 },
             ],
-            history: vec![json!({
+            history: Arc::new(vec![json!({
                 "id": "user-dark",
                 "role": "user",
                 "content": "帮我为工作台增加一个深色主题，并保持手机端可用。",
-            })],
+            })]),
             blocks: vec![
                 MessageBlock::Text {
                     id: "answer".into(),
@@ -233,6 +235,17 @@ pub(crate) struct NodeAuthorization {
     pub(crate) ticket: String,
     pub(crate) node_id: String,
     pub(crate) expires_at: u64,
+}
+
+pub enum Prompt {
+    Text(String),
+    Attachments {
+        content: Value,
+        project_files: Option<(
+            std::path::PathBuf,
+            Vec<crate::shell::attachments::Attachment>,
+        )>,
+    },
 }
 
 pub struct Node {
@@ -396,13 +409,13 @@ impl Node {
         })
     }
 
-    pub(super) fn discover_nearby(
-        &self,
-    ) -> JoinHandle<Result<Vec<work_client::DiscoveredNode>, ClientError>> {
-        self.runtime.spawn(work_viewmodel::config_requests::bounded(
-            "发现附近节点",
-            work_client::discover_nodes(),
-        ))
+    pub(super) fn discover_nearby() -> Result<Vec<work_client::DiscoveredNode>, String> {
+        Self::runtime()?
+            .block_on(work_viewmodel::config_requests::bounded(
+                "发现附近节点",
+                work_client::discover_nodes(),
+            ))
+            .map_err(|error| error.to_string())
     }
 
     pub(super) fn prepare_node_share(
@@ -716,6 +729,13 @@ impl Node {
             .spawn(async move { request.run(&client).await })
     }
 
+    pub fn rename_project(&self, id: String, name: String) -> JoinHandle<Result<Project, String>> {
+        let client = self.client.clone();
+        self.runtime.spawn(async move {
+            crate::shell::project_management::rename(&client, &id, &name).await
+        })
+    }
+
     pub fn read_project(
         &self,
         id: String,
@@ -745,21 +765,27 @@ impl Node {
     pub fn prompt(
         &self,
         id: String,
-        text: String,
-    ) -> JoinHandle<Result<HostResponse<Value>, ClientError>> {
+        input: Prompt,
+    ) -> JoinHandle<Result<Result<HostResponse<Value>, ClientError>, String>> {
         let client = self.client.clone();
-        self.runtime
-            .spawn(async move { client.prompt(&id, &text).await })
-    }
-
-    pub fn prompt_content(
-        &self,
-        id: String,
-        content: Value,
-    ) -> JoinHandle<Result<HostResponse<Value>, ClientError>> {
-        let client = self.client.clone();
-        self.runtime
-            .spawn(async move { client.prompt_content(&id, &content).await })
+        self.runtime.spawn(async move {
+            Ok(match input {
+                Prompt::Text(text) => client.prompt(&id, &text).await,
+                Prompt::Attachments {
+                    content,
+                    project_files,
+                } => {
+                    if let Some((root, items)) = project_files {
+                        tokio::task::spawn_blocking(move || {
+                            crate::shell::attachments::stage_project_attachments(&root, &items)
+                        })
+                        .await
+                        .map_err(|_| "准备项目附件失败。".to_owned())??;
+                    }
+                    client.prompt_content(&id, &content).await
+                }
+            })
+        })
     }
 
     pub(super) fn read_runtime_state(
@@ -831,7 +857,7 @@ impl Node {
 
 pub struct SessionFrame {
     pub session_id: String,
-    pub history: Vec<Value>,
+    pub history: Arc<Vec<Value>>,
     pub projection: RunProjection,
     pub access: Option<SessionAccess>,
     pub dialogs: Vec<PendingDialog>,
@@ -847,7 +873,7 @@ impl SessionFrame {
     ) -> Self {
         Self {
             session_id: connection.session_id().into(),
-            history: connection.messages().to_vec(),
+            history: Arc::new(connection.messages().to_vec()),
             projection: connection.projection().clone(),
             access: access.cloned(),
             dialogs: connection.pending_dialogs().to_vec(),

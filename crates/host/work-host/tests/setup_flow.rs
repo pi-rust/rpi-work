@@ -36,6 +36,11 @@ fn child(mode: &str) {
             "RPI_SETUP_FIXTURE_MARKER",
             directory.path().join("probe-location"),
         );
+    if mode == "missing" {
+        command
+            .env_remove("RPI_WORK_RPI_BIN")
+            .env("PATH", directory.path());
+    }
     if mode == "download" {
         command.env_remove("RPI_WORK_RPI_BIN");
         command
@@ -59,6 +64,11 @@ fn child(mode: &str) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn missing_runtime_waits_for_an_explicit_choice() {
+    child("missing");
 }
 
 #[test]
@@ -122,6 +132,27 @@ fn setup_worker() {
         .unwrap();
     runtime.block_on(async {
         let setup = DesktopSetup::new();
+        if mode == "missing" {
+            let application = std::env::current_exe().unwrap();
+            // The desktop lookup can still find a Homebrew or bundle-sibling runtime.
+            if work_node_runtime::desktop::find_runtime("rpi", None, application.parent().unwrap())
+                .is_some()
+            {
+                eprintln!("Skipping missing-runtime check because a local rpi is available");
+                return;
+            }
+            let installation = work_update::native::rpi_runtime::install_dir().unwrap();
+            for _ in 0..2 {
+                setup.begin(Selection::Automatic);
+                wait(&setup, Phase::NeedsRuntime).await;
+                let status = setup.snapshot();
+                assert!(!status.busy() && status.can_install);
+                assert!(!installation.exists());
+                assert!(work_host::client().is_none());
+            }
+            setup.shutdown();
+            return;
+        }
         if mode == "repair" {
             setup.begin(Selection::Automatic);
             wait(&setup, Phase::Failed).await;
@@ -129,7 +160,7 @@ fn setup_worker() {
             assert!(work_host::client().is_none());
         }
         setup.begin(if mode == "download" {
-            Selection::Automatic
+            Selection::Managed
         } else {
             Selection::File(executable.clone())
         });
@@ -165,7 +196,9 @@ fn setup_worker() {
                 let status = setup.snapshot();
                 assert!(semver::Version::parse(status.version.as_deref().unwrap()).is_ok());
                 let binary = status.path.unwrap();
-                assert!(binary.starts_with(root.join("rpi-work/runtime")));
+                assert!(
+                    binary.starts_with(work_update::native::rpi_runtime::install_dir().unwrap())
+                );
                 assert!(std::fs::metadata(binary).unwrap().len() > 1_000_000);
             } else if mode == "real" {
                 assert!(

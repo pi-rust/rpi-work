@@ -119,9 +119,14 @@ impl Shell {
         cx.notify();
     }
 
-    pub(super) fn file_tree(&self, wide: bool, cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn file_tree(
+        &self,
+        wide: bool,
+        height: f32,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let palette = self.palette;
-        let keyboard = self.navigation_keyboard_enabled() && self.overlay.is_none();
+        let keyboard = self.project_keyboard_enabled();
         let project = self
             .project
             .and_then(|index| self.snapshot.projects.get(index));
@@ -137,7 +142,11 @@ impl Shell {
             .min_w_0()
             .border_color(palette.line)
             .when(wide, |tree| tree.w(px(152.0)).h_full().border_r_1())
-            .when(!wide, |tree| tree.w_full().max_h(px(215.0)).border_b_1())
+            .when(!wide, |tree| {
+                tree.w_full()
+                    .max_h(px((height * 0.32).min(215.0)))
+                    .border_b_1()
+            })
             .child(
                 div()
                     .flex()
@@ -210,7 +219,7 @@ impl Shell {
             return div();
         };
         let palette = self.palette;
-        let keyboard = self.navigation_keyboard_enabled() && self.overlay.is_none();
+        let keyboard = self.project_keyboard_enabled();
         let listing = directory.listing.as_ref();
         let next = listing
             .and_then(|listing| listing.pagination.as_ref())

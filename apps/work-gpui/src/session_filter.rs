@@ -100,18 +100,18 @@ impl Shell {
         let palette = self.palette;
         let active = self.session_filter.filter != Filter::All || self.session_filter.menu_open;
         self.navigation_tooltip(
-            self.icon_button("filter-sessions", "list-checks", 25.0)
-                .h(px(25.0))
-                .when(active, |button| button.bg(palette.hover))
-                .track_focus(&self.session_filter.trigger)
-                .tab_index(0)
-                .tab_stop(self.navigation_keyboard_enabled())
-                .focus(|button| button.bg(palette.hover))
-                .on_click(cx.listener(|shell, _, _, cx| {
-                    shell.project_menu = None;
-                    shell.session_filter.menu_open = !shell.session_filter.menu_open;
-                    cx.notify();
-                })),
+            self.navigation_control(
+                self.icon_button("filter-sessions", "list-checks", 25.0),
+                true,
+            )
+            .h(px(28.0))
+            .when(active, |button| button.bg(palette.hover))
+            .track_focus(&self.session_filter.trigger)
+            .on_click(cx.listener(|shell, _, _, cx| {
+                shell.project_menu = None;
+                shell.session_filter.menu_open = !shell.session_filter.menu_open;
+                cx.notify();
+            })),
             "筛选会话",
         )
     }

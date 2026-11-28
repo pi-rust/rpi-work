@@ -11,10 +11,24 @@ mod collaboration;
 mod composer_commands;
 #[path = "composer_config.rs"]
 pub(crate) mod composer_config;
+#[path = "desktop_plugins.rs"]
+mod desktop_plugins;
+#[path = "draft_storage.rs"]
+mod draft_storage;
+#[path = "chat_integrations.rs"]
+mod chat_integrations;
+#[path = "rpi_hosts.rs"]
+mod rpi_hosts;
 #[path = "composer.rs"]
 pub(crate) mod editor;
+#[path = "feature_entries.rs"]
+mod feature_entries;
+#[path = "file_format.rs"]
+mod file_format;
 #[path = "file_reference.rs"]
 mod file_reference;
+#[path = "message_attachments.rs"]
+mod message_attachments;
 #[path = "message_queue.rs"]
 mod message_queue;
 #[path = "navigation.rs"]
@@ -49,6 +63,8 @@ mod session_filter;
 pub(crate) mod session_fork;
 #[path = "session_management.rs"]
 pub(crate) mod session_management;
+#[path = "session_storage.rs"]
+mod session_storage;
 #[path = "settings.rs"]
 mod settings;
 #[path = "startup.rs"]
@@ -60,6 +76,7 @@ mod workbench_search;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -71,7 +88,9 @@ use rpi_extcore::reply::ReplyKind;
 use serde_json::Value;
 use work_client::{ClientError, LocalError};
 use work_core::{MessageBlock, RunPhase, RunProjection, SettlementOutcome};
-use work_viewmodel::conversation::transcript_view::{self, ActivityItem, Part, ToolView};
+use work_viewmodel::conversation::transcript_view::{
+    self, ActivityItem, ContentRef, Part, ToolView,
+};
 use work_viewmodel::conversation::{markdown, tool_display};
 use work_viewmodel::observability::metrics::{percent, tokens};
 use work_viewmodel::session_controls::{
@@ -80,7 +99,7 @@ use work_viewmodel::session_controls::{
 use work_viewmodel::session_receipts::{command_admission, interpret_receipt};
 use work_viewmodel::transcript::TranscriptOrder;
 
-use crate::data::{Creation, Node, SessionFrame, Snapshot};
+use crate::data::{Creation, Node, Prompt, SessionFrame, Snapshot};
 use crate::icons::icon;
 use crate::prompt::Draft;
 use crate::theme::Palette;
@@ -134,6 +153,8 @@ const READING_INSET: f32 = 24.0;
 const PROGRESS_REPLY_GROUP: &str = "progress-reply";
 const COMPACT_NAVIGATION_WIDTH: f32 = 700.0;
 const EXPANDED_NAVIGATION_WIDTH: f32 = 1200.0;
+const NAVIGATION_WIDTH: f32 = 275.0;
+const DONATION_URL: &str = "https://rpi.laofu.online/support.html";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NavigationLayout {
@@ -169,11 +190,17 @@ enum DraftKey {
 struct WelcomeSend {
     revision: u64,
     message: String,
+    last_attachment: Option<u64>,
+    attachment_count: usize,
 }
 
 impl WelcomeSend {
     fn matches(&self, draft: &Draft) -> bool {
-        draft.can_send() && draft.input.revision == self.revision && draft.message() == self.message
+        draft.can_send()
+            && draft.input.revision == self.revision
+            && draft.message() == self.message
+            && draft.last_attachment() == self.last_attachment
+            && draft.attachments.len() == self.attachment_count
     }
 }
 
@@ -202,12 +229,16 @@ impl CreationError {
 enum Row {
     User {
         key: String,
+        durable_key: bool,
         text: String,
+        attachments: Vec<ContentRef>,
     },
     Assistant {
         key: String,
+        durable_key: bool,
         source: String,
         view: Rc<markdown::MarkdownView>,
+        attachments: Vec<ContentRef>,
         reply: Option<ReplyActions>,
     },
     Activity {
@@ -229,6 +260,15 @@ impl Row {
         match self {
             Self::User { key, .. } | Self::Assistant { key, .. } | Self::Activity { key, .. } => {
                 key
+            }
+        }
+    }
+
+    fn has_durable_key(&self) -> bool {
+        match self {
+            Self::User { durable_key, .. } | Self::Assistant { durable_key, .. } => *durable_key,
+            Self::Activity { items, .. } => {
+                matches!(items.first(), Some(ActivityItem::Tool { block, .. }) if !block.id.is_empty())
             }
         }
     }
@@ -279,6 +319,8 @@ pub struct Shell {
     resource_use_skill_focus: FocusHandle,
     resource_settings: resource_settings::Panel,
     provider_settings: provider_settings::Panel,
+    chat_integrations: chat_integrations::Panel,
+    rpi_hosts: rpi_hosts::Panel,
     search: editor::SearchInput,
     workbench_search: workbench_search::Panel,
     session_context: session_context::Panel,
@@ -286,10 +328,12 @@ pub struct Shell {
     queue: message_queue::Panel,
     dark: bool,
     navigation_layout: NavigationLayout,
-    navigation_open: bool,
+    navigation_open: Option<bool>,
+    navigation: navigation::Panel,
     overview_open: bool,
     auto_hide_empty_changes: bool,
     inspector_full: bool,
+    inspector_focus: FocusHandle,
     inspector_width: Option<f32>,
     resizing_inspector: bool,
     overlay: Option<Overlay>,
@@ -298,7 +342,7 @@ pub struct Shell {
     files: project_files::Panel,
     comment: Option<review::Comment>,
     project_form: project_management::Form,
-    project_menu: Option<usize>,
+    project_menu: Option<navigation::ProjectMenu>,
     welcome_project_picker: bool,
     question: Option<question::Question>,
     session_management: session_management::Panel,
@@ -308,6 +352,7 @@ pub struct Shell {
     browser: browser::Tabs,
     composer_config: composer_config::Panel,
     composer_commands: composer_commands::Menu,
+    desktop_plugins: desktop_plugins::Catalog,
     file_references: file_reference::Panel,
     creating_session: Option<Task<()>>,
     review_after_bind: Option<usize>,
@@ -316,14 +361,20 @@ pub struct Shell {
     creation_readback: Option<(usize, String)>,
     navigation_revision: u64,
     rows: Vec<Row>,
+    transcript_history: Arc<Vec<Value>>,
     project: Option<usize>,
     session: Option<usize>,
     transcript_session: Option<usize>,
     transcript_scroll: ScrollHandle,
+    transcript_focus: FocusHandle,
     reading: transcript::Reading,
     _ratings_observer: gpui::Subscription,
     drafts: HashMap<DraftKey, Draft>,
-    selecting_attachments: HashSet<usize>,
+    draft_storage: Option<draft_storage::Storage>,
+    _draft_observer: gpui::Subscription,
+    _save_on_release: gpui::Subscription,
+    _save_on_quit: gpui::Subscription,
+    selecting_attachments: HashSet<DraftKey>,
     focus: FocusHandle,
     input_layout: Option<editor::Layout>,
     input_dragging: bool,
@@ -372,11 +423,14 @@ impl Shell {
             PendingRequests::default(),
             &[],
         );
+        let (settings, preferences) = settings::Panel::new(cx);
         let mut shell = Self {
             session: session.filter(|_| fixture),
             transcript_session: session.filter(|_| fixture),
             transcript_scroll: ScrollHandle::new(),
+            transcript_focus: cx.focus_handle(),
             project,
+            transcript_history: snapshot.history.clone(),
             snapshot,
             node,
             startup: None,
@@ -389,8 +443,8 @@ impl Shell {
             observation: None,
             run_timing: session_context::RunTiming::default(),
             palette: Palette::from_preset("codex", false, false),
-            preferences: settings::Preferences::load(),
-            settings: settings::Panel::new(cx),
+            preferences,
+            settings,
             collaboration: collaboration::Panel::default(),
             node_connection: node_connection::Form::default(),
             node_share: node_share::Share::default(),
@@ -399,6 +453,8 @@ impl Shell {
             resource_use_skill_focus: cx.focus_handle().tab_stop(true),
             resource_settings: resource_settings::Panel::default(),
             provider_settings: provider_settings::Panel::default(),
+            chat_integrations: chat_integrations::Panel::default(),
+            rpi_hosts: rpi_hosts::Panel::default(),
             search: editor::SearchInput::new(cx),
             workbench_search: workbench_search::Panel::new(cx),
             session_context: session_context::Panel::new(cx),
@@ -406,10 +462,12 @@ impl Shell {
             queue: message_queue::Panel::default(),
             dark: false,
             navigation_layout: NavigationLayout::Expanded,
-            navigation_open: true,
-            overview_open: true,
+            navigation_open: None,
+            navigation: navigation::Panel::new(cx),
+            overview_open: false,
             auto_hide_empty_changes: true,
             inspector_full: false,
+            inspector_focus: cx.focus_handle(),
             inspector_width: None,
             resizing_inspector: false,
             overlay: None,
@@ -428,6 +486,11 @@ impl Shell {
             browser: browser::Tabs::default(),
             composer_config: composer_config::Panel::default(),
             composer_commands: composer_commands::Menu::default(),
+            desktop_plugins: if fixture {
+                desktop_plugins::Catalog::default()
+            } else {
+                desktop_plugins::Catalog::load_local()
+            },
             file_references: file_reference::Panel::default(),
             creating_session: None,
             review_after_bind: None,
@@ -439,6 +502,16 @@ impl Shell {
             reading: transcript::Reading::default(),
             _ratings_observer: cx.observe_global::<reply_ratings::Ratings>(|_, cx| cx.notify()),
             drafts: HashMap::new(),
+            draft_storage: (!fixture).then(draft_storage::Storage::new).flatten(),
+            _draft_observer: cx.observe_self(|shell, _| shell.persist_drafts()),
+            _save_on_release: cx.on_release(|shell, _| {
+                shell.persist_drafts();
+                shell.save_reading_state();
+            }),
+            _save_on_quit: cx.on_app_quit(|shell, _| {
+                shell.save_reading_state();
+                std::future::ready(())
+            }),
             selecting_attachments: HashSet::new(),
             focus: cx.focus_handle(),
             input_layout: None,
@@ -448,9 +521,7 @@ impl Shell {
         };
         shell.apply_appearance(appearance, true);
         if !fixture {
-            if session.is_some() {
-                shell.change_session(session, cx);
-            }
+            shell.change_session(session, cx);
             shell.show_project_tab(project_files::Tab::Changes, cx);
         }
         shell
@@ -546,6 +617,7 @@ impl Shell {
         self.node.is_some()
             && self.project.is_some()
             && self.creating_session.is_none()
+            && !self.selecting_attachments.contains(&self.draft_key())
             && !self.session_fork.in_flight()
             && !matches!(self.creation_error, Some(CreationError::Unknown))
     }
@@ -607,10 +679,7 @@ impl Shell {
                                 && existing.is_none()
                                 && !shell.snapshot.sessions[index].archived
                             {
-                                if let Some(mut draft) = shell.drafts.remove(&welcome_key) {
-                                    draft.input.finish_composition();
-                                    shell.drafts.insert(DraftKey::Session(index), draft);
-                                }
+                                shell.move_draft(welcome_key, DraftKey::Session(index));
                             }
                             shell.select_session(index, cx);
                             if existing.is_none()
@@ -674,6 +743,7 @@ impl Shell {
     fn change_session(&mut self, session: Option<usize>, cx: &mut Context<Self>) {
         let changed = self.session != session;
         if !changed && self.load_error.is_none() {
+            self.restore_draft(self.draft_key());
             cx.notify();
             return;
         }
@@ -693,6 +763,9 @@ impl Shell {
             }
             self.input_layout = None;
             self.input_dragging = false;
+            if let Some(index) = session {
+                self.load_reading_state(index);
+            }
             self.reading.switch(
                 self.session,
                 session,
@@ -703,9 +776,11 @@ impl Shell {
             if self.node.is_some() {
                 self.transcript_session = None;
                 self.rows.clear();
+                self.transcript_history = Arc::default();
             }
         }
         self.session = session;
+        self.restore_draft(self.draft_key());
         if changed && session.is_none() {
             self.auto_hide_empty_changes = true;
             if self.files.tab == project_files::Tab::Changes && self.files.changes_empty().is_some()
@@ -833,6 +908,7 @@ impl Shell {
             &self.rows,
         );
         self.rows = rows;
+        self.transcript_history = frame.history.clone();
         self.observation = Some(observation);
         self.transcript_session = Some(index);
         if std::env::var_os("RPI_GPUI_TRACE").is_some() {
@@ -953,6 +1029,8 @@ impl Shell {
                 SessionCreation::Send(WelcomeSend {
                     revision: draft.input.revision,
                     message: draft.message(),
+                    last_attachment: draft.last_attachment(),
+                    attachment_count: draft.attachments.len(),
                 }),
                 cx,
             );
@@ -970,8 +1048,9 @@ impl Shell {
         let Some(frame) = self.frame.as_ref().filter(|_| self.session_controls().send) else {
             return;
         };
-        let draft = self.drafts.entry(DraftKey::Session(index)).or_default();
-        if !review && !draft.can_send() {
+        let key = DraftKey::Session(index);
+        let draft = self.drafts.entry(key).or_default();
+        if !review && (!draft.can_send() || self.selecting_attachments.contains(&key)) {
             return;
         }
         let message = if review {
@@ -980,7 +1059,7 @@ impl Shell {
             draft.message()
         };
         let id = frame.session_id.clone();
-        let request = if !review && !draft.attachments.is_empty() {
+        let input = if !review && !draft.attachments.is_empty() {
             if !frame
                 .access
                 .as_ref()
@@ -998,10 +1077,37 @@ impl Shell {
                     return;
                 }
             };
-            draft.attachment_notice = None;
-            node.prompt_content(id, blocks)
+            let project_files = if draft
+                .attachments
+                .iter()
+                .any(|file| file.project_bytes() > 0)
+            {
+                let Some(project) = self
+                    .snapshot
+                    .sessions
+                    .get(index)
+                    .filter(|_| node.is_local())
+                    .and_then(|session| {
+                        self.snapshot
+                            .projects
+                            .iter()
+                            .find(|project| project.id == session.project_id)
+                    })
+                else {
+                    draft.attachment_notice = Some("二进制附件需要发送到它所属的本机项目。".into());
+                    cx.notify();
+                    return;
+                };
+                Some((project.path.clone().into(), draft.attachments.clone()))
+            } else {
+                None
+            };
+            Prompt::Attachments {
+                content: blocks,
+                project_files,
+            }
         } else {
-            node.prompt(id, message)
+            Prompt::Text(message)
         };
         if self
             .actions
@@ -1012,20 +1118,25 @@ impl Shell {
         }
         self.queue.clear_notice(index);
         draft.begin(!review);
+        if !review && let Some(storage) = &mut self.draft_storage {
+            storage.persist(key, &self.drafts, &self.queue);
+        }
+        let request = node.prompt(id, input);
         cx.spawn(async move |this, cx| {
             let result = request.await;
             this.update(cx, |shell, cx| {
                 let draft = shell.drafts.entry(DraftKey::Session(index)).or_default();
                 match result {
-                    Ok(Ok(reply)) => match command_admission(reply, Some("prompt"), false) {
+                    Ok(Ok(Ok(reply))) => match command_admission(reply, Some("prompt"), false) {
                         Some(Ok(())) => draft.accept(),
                         Some(Err(reason)) => draft.reject(reason),
                         None => draft.unknown(None),
                     },
-                    Ok(Err(ClientError::OperationOutcomeUnknown { operation })) => {
+                    Ok(Ok(Err(ClientError::OperationOutcomeUnknown { operation }))) => {
                         draft.unknown(Some(operation))
                     }
-                    Ok(Err(error)) if rejected(&error) => draft.reject(error.to_string()),
+                    Ok(Ok(Err(error))) if rejected(&error) => draft.reject(error.to_string()),
+                    Ok(Err(error)) => draft.reject(error),
                     _ => draft.unknown(None),
                 }
                 if std::env::var_os("RPI_GPUI_TRACE").is_some() {
@@ -1171,13 +1282,22 @@ impl Shell {
             .child(label.to_owned())
     }
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
+        let lists = self.navigation_lists(window, cx);
         div()
             .flex()
             .flex_col()
             .flex_none()
-            .w(px(275.0))
+            .id("navigation-sidebar")
+            .track_focus(&self.navigation.scope)
+            .tab_group()
+            .on_mouse_down_out(cx.listener(|shell, _, _, cx| {
+                if shell.close_session_filter_menu() {
+                    cx.notify();
+                }
+            }))
+            .w(px(NAVIGATION_WIDTH))
             .h_full()
             .min_h(px(0.0))
             .px(px(9.0))
@@ -1202,21 +1322,36 @@ impl Shell {
                             .flex()
                             .items_center()
                             .child(
-                                self.icon_button("workbench-search-button", "search", 25.0)
-                                    .h(px(25.0))
-                                    .on_click(cx.listener(|shell, _, window, cx| {
-                                        shell.open_workbench_search(window, cx)
-                                    })),
+                                self.navigation_tooltip(
+                                    self.navigation_control(
+                                        self.icon_button("workbench-search-button", "search", 25.0),
+                                        true,
+                                    )
+                                    .track_focus(&self.navigation.first)
+                                    .h(px(28.0))
+                                    .on_click(cx.listener(
+                                        |shell, _, window, cx| {
+                                            shell.open_workbench_search(window, cx)
+                                        },
+                                    )),
+                                    "搜索项目和会话",
+                                ),
                             )
                             .when(self.node.is_some(), |tools| {
                                 tools.child(self.session_filter_button(cx))
                             })
                             .child(
-                                self.icon_button("fold-navigation", "panel-left", 25.0)
-                                    .h(px(25.0))
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.close_navigation(cx)),
-                                    ),
+                                self.navigation_tooltip(
+                                    self.navigation_control(
+                                        self.icon_button("fold-navigation", "panel-left", 25.0),
+                                        true,
+                                    )
+                                    .h(px(28.0))
+                                    .on_click(cx.listener(
+                                        |shell, _, window, cx| shell.close_navigation(window, cx),
+                                    )),
+                                    "收起侧栏",
+                                ),
                             )
                             .children(
                                 self.session_filter_controls(cx)
@@ -1225,7 +1360,9 @@ impl Shell {
                     ),
             )
             .when(self.node.is_some() && self.project.is_some(), |sidebar| {
-                let enabled = self.can_create_session();
+                let checking = self.creation_readback.is_some();
+                let enabled =
+                    self.creating_session.is_none() && (!checking || self.can_create_session());
                 let label = if self.creating_session.is_some() {
                     "正在读取…"
                 } else if self.creation_readback.is_some() {
@@ -1235,7 +1372,7 @@ impl Shell {
                 };
                 sidebar
                     .child(
-                        self.button("new-session", "")
+                        self.navigation_control(self.button("new-session", ""), enabled)
                             .justify_start()
                             .gap(px(8.0))
                             .h(px(30.0))
@@ -1245,10 +1382,15 @@ impl Shell {
                                     .font_weight(FontWeight::MEDIUM),
                             )
                             .when(enabled, |button| {
-                                button.on_click(cx.listener(|shell, _, window, cx| {
-                                    shell.close_resource_page();
-                                    shell.focus_composer(window);
-                                    shell.create_session(SessionCreation::New, cx);
+                                button.on_click(cx.listener(move |shell, _, window, cx| {
+                                    if checking {
+                                        shell.close_resource_page();
+                                        shell.dismiss_drawer(window);
+                                        shell.focus_composer(window);
+                                        shell.create_session(SessionCreation::New, cx);
+                                    } else {
+                                        shell.open_new_conversation(window, cx);
+                                    }
                                 }))
                             })
                             .when(!enabled, |button| button.opacity(0.6).cursor_default()),
@@ -1262,17 +1404,7 @@ impl Shell {
                         })
                     })
             })
-            .child(
-                div()
-                    .id("navigation-scroll")
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .overflow_y_scroll()
-                    .pt(px(16.0))
-                    .child(self.navigation_lists(cx)),
-            )
+            .child(lists)
             .when(self.startup.is_some(), |sidebar| {
                 sidebar.child(self.runtime_card(cx))
             })
@@ -1282,24 +1414,73 @@ impl Shell {
             .when(self.overlay == Some(Overlay::Navigation), |sidebar| {
                 sidebar
                     .child(
-                        self.button("mobile-resources", "")
-                            .h(px(44.0))
+                        self.navigation_control(self.button("mobile-resources", ""), true)
+                            .h(px(36.0))
                             .gap_2()
                             .justify_start()
-                            .tab_index(0)
-                            .tab_stop(!self.settings.open && self.navigation_keyboard_enabled())
-                            .focus(|button| button.bg(palette.subtle))
                             .child(icon("blocks", 16.0, palette.muted))
                             .child(self.text("技能与插件", 13.0, palette.text))
                             .on_click(cx.listener(|shell, _, window, cx| {
                                 shell.open_resource_page(window, cx);
                             })),
                     )
+                    .when(
+                        self.preferences.entries.shows(feature_entries::Entry::Goal),
+                        |sidebar| {
+                            sidebar.child(
+                                self.navigation_control(self.button("mobile-goal", ""), true)
+                                    .h(px(36.0))
+                                    .gap_2()
+                                    .justify_start()
+                                    .child(icon("flag", 16.0, palette.muted))
+                                    .child(self.text("目标模式", 13.0, palette.text))
+                                    .on_click(cx.listener(|shell, _, window, cx| {
+                                        shell.open_feature_settings(window, cx);
+                                    })),
+                            )
+                        },
+                    )
+                    .when(
+                        self.preferences
+                            .entries
+                            .shows(feature_entries::Entry::Collaboration),
+                        |sidebar| {
+                            sidebar.child(
+                                self.navigation_control(
+                                    self.button("mobile-collaboration", ""),
+                                    true,
+                                )
+                                .h(px(36.0))
+                                .gap_2()
+                                .justify_start()
+                                .child(icon("globe", 16.0, palette.muted))
+                                .child(self.text("工作协同", 13.0, palette.text))
+                                .on_click(cx.listener(
+                                    |shell, _, window, cx| {
+                                        shell.dismiss_drawer(window);
+                                        shell.open_collaboration_settings(window, cx);
+                                    },
+                                )),
+                            )
+                        },
+                    )
                     .child(
-                        self.button("mobile-settings", "设置")
+                        self.navigation_control(self.button("mobile-donate", ""), true)
+                            .h(px(36.0))
+                            .gap_2()
+                            .justify_start()
+                            .child(icon("thumbs-up", 16.0, palette.muted))
+                            .child(self.text("捐赠", 13.0, palette.text))
+                            .on_click(|_, _, cx| cx.open_url(DONATION_URL)),
+                    )
+                    .child(
+                        self.navigation_control(self.button("mobile-settings", ""), true)
+                            .track_focus(&self.navigation.last)
+                            .h(px(36.0))
                             .gap_2()
                             .justify_start()
                             .child(icon("settings", 16.0, palette.muted))
+                            .child(self.text("设置", 13.0, palette.text))
                             .on_click(cx.listener(|shell, _, window, cx| {
                                 shell.overlay = None;
                                 shell.open_settings(window, cx);
@@ -1319,11 +1500,20 @@ impl Shell {
         &self,
         index: usize,
         session: &crate::data::SessionItem,
+        depth: usize,
+        nested: bool,
         cx: &Context<Self>,
     ) -> gpui::Stateful<Div> {
         let palette = self.palette;
         let selected = self.session == Some(index);
         let title = session.display_title();
+        let activity = match session.activity {
+            Some(work_core::api::SessionActivity::Running) => Some(("执行中", palette.muted)),
+            Some(work_core::api::SessionActivity::AwaitingApproval) => {
+                Some(("待审批", palette.danger))
+            }
+            _ => None,
+        };
         let label = self
             .snapshot
             .projects
@@ -1334,64 +1524,86 @@ impl Shell {
                 |project| format!("{} · {title}", project.name),
             );
         self.navigation_tooltip(
-            div()
-                .id(("session", index))
-                .tab_index(0)
-                .tab_stop(self.navigation_keyboard_enabled())
-                .focus(|row| row.bg(palette.hover))
-                .flex()
-                .items_center()
-                .h(px(30.0))
-                .pl(px(11.0))
-                .pr(px(10.0))
-                .rounded(px(10.0))
-                .cursor_pointer()
-                .hover(move |style| style.bg(palette.hover))
-                .when(selected, |row| {
-                    row.bg(palette.hover).font_weight(FontWeight::MEDIUM)
-                })
-                .child(
-                    self.text(
-                        title.to_owned(),
-                        14.0,
-                        if selected {
-                            palette.text
-                        } else {
-                            palette.muted
-                        },
-                    )
+            self.navigation_control(
+                self.button(
+                    (if nested { "project-session" } else { "session" }, index),
+                    "",
+                ),
+                true,
+            )
+            .w_full()
+            .justify_start()
+            .min_w_0()
+            .h(px(30.0))
+            .pl(navigation::tree_inset(depth + usize::from(nested)))
+            .pr(px(10.0))
+            .gap_1()
+            .when(selected, |row| {
+                row.bg(palette.hover)
+                    .border_color(palette.line)
+                    .font_weight(FontWeight::MEDIUM)
+            })
+            .child(icon("message-circle", 13.0, palette.muted))
+            .child(
+                self.text(title.to_owned(), 13.0, palette.text)
+                    .flex()
+                    .flex_col()
                     .flex_1()
+                    .w_0()
+                    .min_w_0()
                     .truncate(),
-                )
-                .when(session.pinned, |row| {
-                    row.child(icon("pin", 13.0, palette.muted))
-                }),
+            )
+            .when(session.pinned, |row| {
+                row.child(icon("pin", 12.0, palette.muted))
+            })
+            .when_some(activity, |row, (label, color)| {
+                row.child(self.text(label, 11.0, color).flex_none())
+            }),
             label,
         )
-        .on_click(cx.listener(move |shell, _, window, cx| {
-            shell.select_session(index, cx);
-            shell.focus_composer(window);
-        }))
+        .on_click(
+            cx.listener(move |shell, event: &gpui::ClickEvent, window, cx| {
+                let drawer = shell.overlay == Some(Overlay::Navigation);
+                shell.select_session(index, cx);
+                if drawer || event.mouse_position().is_some() {
+                    shell.focus_composer(window);
+                }
+            }),
+        )
     }
 
-    fn close_navigation(&mut self, cx: &mut Context<Self>) {
+    fn desktop_navigation_open(&self) -> bool {
+        self.navigation_open
+            .unwrap_or(self.navigation_layout == NavigationLayout::Expanded)
+    }
+
+    fn close_navigation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.project_menu = None;
         self.close_session_filter_menu();
         if self.overlay == Some(Overlay::Navigation) {
             self.overlay = None;
         } else {
-            self.navigation_open = false;
+            self.navigation_open = Some(false);
         }
+        self.navigation.toggle.focus(window);
         cx.notify();
     }
 
-    fn toggle_navigation(&mut self, narrow: bool, cx: &mut Context<Self>) {
+    fn toggle_navigation(&mut self, narrow: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if narrow && self.overlay == Some(Overlay::Navigation)
+            || !narrow && self.desktop_navigation_open()
+        {
+            self.close_navigation(window, cx);
+            return;
+        }
+        self.project_menu = None;
         self.close_session_filter_menu();
+        self.navigation.reopen();
         if narrow {
-            self.overlay =
-                (self.overlay != Some(Overlay::Navigation)).then_some(Overlay::Navigation);
+            self.overlay = Some(Overlay::Navigation);
+            self.navigation.first.focus(window);
         } else {
-            self.navigation_open = !self.navigation_open;
+            self.navigation_open = Some(true);
         }
         cx.notify();
     }
@@ -1424,7 +1636,7 @@ impl Shell {
             WorkbenchShortcut::NewConversation => self.open_new_conversation(window, cx),
             WorkbenchShortcut::Search => self.open_workbench_search(window, cx),
             WorkbenchShortcut::Navigation => {
-                self.toggle_navigation(width <= px(700.0), cx);
+                self.toggle_navigation(width <= px(COMPACT_NAVIGATION_WIDTH), window, cx);
             }
             WorkbenchShortcut::Browser => {
                 self.toggle_inspector(self.browser_panel_tab(), width <= px(900.0), window, cx);
@@ -1449,12 +1661,19 @@ impl Shell {
     fn dismiss_drawer(&mut self, window: &mut Window) -> bool {
         let width = window.viewport_size().width;
         let visible = match self.overlay {
-            Some(Overlay::Navigation) => width <= px(700.0),
+            Some(Overlay::Navigation) => width <= px(COMPACT_NAVIGATION_WIDTH),
             Some(Overlay::Inspector) => width <= px(900.0),
             None => false,
         };
         if visible {
+            let navigation = self.overlay == Some(Overlay::Navigation);
             self.overlay = None;
+            self.project_menu = None;
+            self.close_session_filter_menu();
+            if navigation {
+                self.navigation.toggle.focus(window);
+                return true;
+            }
             if self.resource_page_open() {
                 self.search.focus.focus(window);
             } else {
@@ -1482,8 +1701,12 @@ impl Shell {
         let returning = self.return_from_resources(window, cx);
         let same = self.files.tab == tab;
         if narrow {
-            self.overlay =
-                (!(same && self.overlay == Some(Overlay::Inspector))).then_some(Overlay::Inspector);
+            if same && self.overlay == Some(Overlay::Inspector) {
+                self.dismiss_drawer(window);
+            } else {
+                self.overlay = Some(Overlay::Inspector);
+                self.inspector_focus.focus(window);
+            }
         } else {
             self.overview_open = returning || !same || !self.desktop_inspector_open();
             self.auto_hide_empty_changes = false;
@@ -1494,13 +1717,25 @@ impl Shell {
 
     fn rail(&self, inspector_overlay: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
-        let dock_button = |tab, id, shape, cx: &mut Context<Self>| {
-            self.icon_button(id, shape, 34.0)
-                .h(px(34.0))
-                .rounded(px(9.0))
-                .on_click(cx.listener(move |this, _, window, cx| {
+        let inspector_open = if inspector_overlay {
+            self.overlay == Some(Overlay::Inspector)
+        } else {
+            self.desktop_inspector_open()
+        };
+        let rail_button = |id, shape, label, active| {
+            self.navigation_tooltip(
+                self.navigation_control(self.icon_button(id, shape, 34.0), true)
+                    .h(px(34.0))
+                    .when(active, |button| button.bg(palette.hover)),
+                label,
+            )
+        };
+        let dock_button = |tab, id, shape, label, cx: &mut Context<Self>| {
+            rail_button(id, shape, label, inspector_open && self.files.tab == tab).on_click(
+                cx.listener(move |this, _, window, cx| {
                     this.toggle_inspector(tab, inspector_overlay, window, cx)
-                }))
+                }),
+            )
         };
         div()
             .flex()
@@ -1512,53 +1747,86 @@ impl Shell {
             .gap(px(5.0))
             .bg(palette.titlebar)
             .child(
-                self.icon_button("rail-conversation", "terminal", 34.0)
-                    .h(px(34.0))
-                    .when(!self.resource_page_open(), |button| {
-                        button.bg(palette.hover)
-                    })
-                    .on_click(cx.listener(|shell, _, window, cx| {
-                        if !shell.return_from_resources(window, cx) {
-                            shell.focus_composer(window);
-                        }
-                    })),
+                rail_button(
+                    "rail-conversation",
+                    "terminal",
+                    "对话",
+                    !self.resource_page_open(),
+                )
+                .on_click(cx.listener(|shell, _, window, cx| {
+                    if !shell.return_from_resources(window, cx) {
+                        shell.focus_composer(window);
+                    }
+                })),
             )
             .child(
-                self.icon_button("rail-navigation", "folder", 34.0)
-                    .h(px(34.0))
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_navigation(false, cx))),
-            )
-            .child(
-                self.navigation_tooltip(
-                    self.icon_button("rail-resources", "blocks", 34.0)
-                        .h(px(34.0))
-                        .when(self.resource_page_open(), |button| button.bg(palette.hover))
-                        .tab_index(0)
-                        .tab_stop(!self.settings.open && self.navigation_keyboard_enabled())
-                        .focus(|button| button.bg(palette.subtle))
-                        .on_click(cx.listener(|shell, _, window, cx| {
-                            shell.open_resource_page(window, cx);
-                        })),
-                    "技能与插件",
+                rail_button(
+                    "rail-navigation",
+                    "folder",
+                    "切换侧栏",
+                    self.desktop_navigation_open(),
+                )
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.toggle_navigation(false, window, cx)),
                 ),
+            )
+            .child(
+                rail_button(
+                    "rail-resources",
+                    "blocks",
+                    "技能与插件",
+                    self.resource_page_open(),
+                )
+                .on_click(cx.listener(|shell, _, window, cx| {
+                    shell.open_resource_page(window, cx);
+                })),
+            )
+            .when(
+                self.preferences.entries.shows(feature_entries::Entry::Goal),
+                |rail| {
+                    rail.child(
+                        rail_button("rail-goal", "flag", "目标模式", false).on_click(cx.listener(
+                            |shell, _, window, cx| shell.open_feature_settings(window, cx),
+                        )),
+                    )
+                },
+            )
+            .when(
+                self.preferences
+                    .entries
+                    .shows(feature_entries::Entry::Collaboration),
+                |rail| {
+                    rail.child(
+                        rail_button("rail-collaboration", "globe", "工作协同", false).on_click(
+                            cx.listener(|shell, _, window, cx| {
+                                shell.open_collaboration_settings(window, cx)
+                            }),
+                        ),
+                    )
+                },
             )
             .child(div().w(px(22.0)).h(px(1.0)).my(px(5.0)).bg(palette.line))
             .child(dock_button(
-                project_files::Tab::Overview,
+                self.browser_panel_tab(),
                 "rail-project",
                 "globe",
+                "浏览器",
                 cx,
             ))
             .child(dock_button(
                 project_files::Tab::Files,
                 "rail-files",
                 "code-xml",
+                "代码",
                 cx,
             ))
             .child(div().flex_1())
             .child(
-                self.icon_button("settings", "settings", 34.0)
-                    .h(px(34.0))
+                rail_button("rail-donate", "thumbs-up", "捐赠", false)
+                    .on_click(|_, _, cx| cx.open_url(DONATION_URL)),
+            )
+            .child(
+                rail_button("settings", "settings", "设置", false)
                     .on_click(cx.listener(|this, _, window, cx| this.open_settings(window, cx))),
             )
     }
@@ -1604,24 +1872,43 @@ impl Shell {
                         .into_iter()
                         .filter(|_| !compact)
                         .map(|(forward, id, shape, enabled)| {
-                            self.icon_button(id, shape, 26.0)
-                                .h(px(26.0))
-                                .when(!enabled, |button| button.opacity(0.35).cursor_default())
-                                .when(enabled, |button| {
-                                    button.on_click(cx.listener(move |this, _, window, cx| {
-                                        this.step_history(forward, window, cx)
-                                    }))
-                                })
+                            self.navigation_tooltip(
+                                self.navigation_control(self.icon_button(id, shape, 26.0), enabled)
+                                    .h(px(26.0))
+                                    .when(!enabled, |button| button.opacity(0.35).cursor_default())
+                                    .when(enabled, |button| {
+                                        button.on_click(cx.listener(move |this, _, window, cx| {
+                                            this.step_history(forward, window, cx)
+                                        }))
+                                    }),
+                                if forward { "前进" } else { "后退" },
+                            )
                         }),
                     )
-                    .child(self.icon_button("navigation", "panel-left", 28.0).on_click(
-                        cx.listener(move |this, _, _, cx| this.toggle_navigation(compact, cx)),
-                    )),
+                    .child(
+                        self.navigation_tooltip(
+                            self.navigation_control(
+                                self.icon_button("navigation", "panel-left", 28.0),
+                                true,
+                            )
+                            .track_focus(&self.navigation.toggle)
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    this.toggle_navigation(compact, window, cx)
+                                },
+                            )),
+                            "切换侧栏",
+                        ),
+                    ),
             )
             .child(
                 div()
                     .absolute()
-                    .left(px(if compact { 112.0 } else { width * 0.22 }))
+                    .left(px(if compact {
+                        112.0
+                    } else {
+                        (width * 0.22).max(166.0)
+                    }))
                     .right(px(if compact { 100.0 } else { width * 0.22 }))
                     .top_0()
                     .bottom_0()
@@ -1700,7 +1987,8 @@ impl Shell {
                                 } else {
                                     self.desktop_inspector_open()
                                 };
-                            self.button(id, "")
+                            let button = self
+                                .navigation_control(self.button(id, ""), true)
                                 .gap(px(6.0))
                                 .when(compact, |button| button.w(px(28.0)).px_0())
                                 .child(icon(
@@ -1721,10 +2009,11 @@ impl Shell {
                                         .flatten(),
                                     |button, counts| button.child(self.git_line_counts(counts)),
                                 )
-                                .when(active, |button| button.bg(palette.subtle))
+                                .when(active, |button| button.bg(palette.hover))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.toggle_inspector(tab, overlay, window, cx)
-                                }))
+                                }));
+                            self.navigation_tooltip(button, label)
                         }),
                     ),
                 )
@@ -1757,7 +2046,13 @@ impl Shell {
             )
     }
 
-    fn overview(&self, width: f32, overlay: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn overview(
+        &self,
+        width: f32,
+        height: f32,
+        overlay: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let palette = self.palette;
         let project = self
             .project
@@ -1770,6 +2065,10 @@ impl Shell {
             .filter(|session| project.is_some_and(|project| project.id == session.project_id))
             .count();
         div()
+            .id("project-inspector")
+            .tab_index(0)
+            .tab_stop(false)
+            .track_focus(&self.inspector_focus)
             .flex()
             .flex_col()
             .flex_none()
@@ -1805,25 +2104,49 @@ impl Shell {
                             .gap(px(2.0))
                             .when(!overlay, |row| {
                                 row.child(
-                                    self.icon_button("inspector-full", "panel-right", 26.0)
-                                        .on_click(cx.listener(|this, _, window, cx| {
+                                    self.navigation_tooltip(
+                                        self.navigation_control(
+                                            self.icon_button("inspector-full", "panel-right", 26.0),
+                                            self.project_keyboard_enabled(),
+                                        )
+                                        .when(self.inspector_full, |button| {
+                                            button.bg(palette.subtle)
+                                        }),
+                                        if self.inspector_full {
+                                            "还原项目面板宽度"
+                                        } else {
+                                            "展开项目面板"
+                                        },
+                                    )
+                                    .on_click(cx.listener(
+                                        |this, _, _, cx| {
                                             this.inspector_full = !this.inspector_full;
-                                            this.focus_composer(window);
                                             cx.notify();
-                                        })),
+                                        },
+                                    )),
                                 )
                             })
-                            .child(self.icon_button("close-overview", "x", 26.0).on_click(
-                                cx.listener(move |this, _, _, cx| {
-                                    if overlay {
-                                        this.overlay = None;
-                                    } else {
-                                        this.overview_open = false;
-                                        this.auto_hide_empty_changes = false;
-                                    }
-                                    cx.notify();
-                                }),
-                            )),
+                            .child(
+                                self.navigation_tooltip(
+                                    self.icon_button("close-overview", "x", 26.0),
+                                    "关闭项目面板",
+                                )
+                                .tab_index(0)
+                                .tab_stop(self.project_keyboard_enabled())
+                                .focus(|button| button.bg(palette.hover))
+                                .on_click(cx.listener(
+                                    move |this, _, window, cx| {
+                                        if overlay {
+                                            this.dismiss_drawer(window);
+                                        } else {
+                                            this.overview_open = false;
+                                            this.auto_hide_empty_changes = false;
+                                            this.focus_composer(window);
+                                        }
+                                        cx.notify();
+                                    },
+                                )),
+                            ),
                     ),
             )
             .child(if let Some(id) = self.files.tab.browser_id() {
@@ -1861,7 +2184,7 @@ impl Shell {
                     })
                     .into_any_element()
             } else {
-                self.project_contents(width, cx)
+                self.project_contents(width, height, cx)
             })
     }
 
@@ -1892,11 +2215,13 @@ impl Shell {
             .rows
             .iter()
             .filter(|_| show_rows)
-            .map(|row| row.key().to_owned())
+            .map(|row| (row.key().to_owned(), row.has_durable_key()))
             .collect();
-        let reading_layout = self
-            .reading
-            .layout(self.transcript_scroll.clone(), row_keys);
+        let reading_layout =
+            self.reading
+                .layout(self.transcript_scroll.clone(), row_keys, cx.weak_entity());
+        let has_messages = show_rows && !self.rows.is_empty();
+        let keyboard = self.navigation_keyboard_enabled() && self.overlay.is_none();
         let rows = self
             .rows
             .iter()
@@ -1905,25 +2230,37 @@ impl Shell {
             .map(|(index, row)| {
                 let previous = index.checked_sub(1).and_then(|index| self.rows.get(index));
                 let content = match row {
-                    Row::User { text, .. } => div()
+                    Row::User {
+                        text, attachments, ..
+                    } => div()
                         .flex()
                         .flex_col()
+                        .gap(px(8.0))
                         .when(!classic, |row| row.items_end())
-                        .child(
-                            self.text(text.clone(), font_size, palette.text)
-                                .line_height(px(self.preferences.line_height()))
-                                .when(!classic, |text| {
-                                    text.max_w(px(prompt_width))
-                                        .px(px(16.0))
-                                        .py(px(if compact { 8.0 } else { 11.0 }))
-                                        .rounded(px(16.0))
-                                        .bg(palette.subtle)
-                                })
-                                .when(classic, |text| text.font_weight(FontWeight::MEDIUM)),
-                        )
+                        .when(!text.trim().is_empty(), |row| {
+                            row.child(
+                                self.text(text.clone(), font_size, palette.text)
+                                    .line_height(px(self.preferences.line_height()))
+                                    .when(!classic, |text| {
+                                        text.max_w(px(prompt_width))
+                                            .px(px(16.0))
+                                            .py(px(if compact { 8.0 } else { 11.0 }))
+                                            .rounded(px(16.0))
+                                            .bg(palette.subtle)
+                                    })
+                                    .when(classic, |text| text.font_weight(FontWeight::MEDIUM)),
+                            )
+                        })
+                        .when(!attachments.is_empty(), |row| {
+                            row.child(self.attachment_cards(attachments, prompt_width))
+                        })
                         .into_any_element(),
                     Row::Assistant {
-                        key, view, reply, ..
+                        key,
+                        view,
+                        attachments,
+                        reply,
+                        ..
                     } => {
                         let following = &self.rows[index + 1..];
                         let progress = !classic
@@ -1943,7 +2280,12 @@ impl Shell {
                             );
                         div()
                             .when(progress, |row| row.group(PROGRESS_REPLY_GROUP))
-                            .child(self.rich_answer(key, view, progress))
+                            .when(!view.nodes.is_empty(), |row| {
+                                row.child(self.rich_answer(key, view, progress))
+                            })
+                            .when(!attachments.is_empty(), |row| {
+                                row.child(self.attachment_cards(attachments, reading_width))
+                            })
                             .when_some(reply.as_ref(), |row, reply| {
                                 row.child(
                                     div()
@@ -1951,11 +2293,19 @@ impl Shell {
                                         .items_center()
                                         .gap(px(5.0))
                                         .mt(px(if compact || progress { 6.0 } else { 10.0 }))
-                                        .child(self.copy_reply_button(
-                                            key,
-                                            reply.parts.clone(),
-                                            progress,
-                                        ))
+                                        .when(
+                                            reply
+                                                .parts
+                                                .iter()
+                                                .any(|part| !part.copy_text.trim().is_empty()),
+                                            |actions| {
+                                                actions.child(self.copy_reply_button(
+                                                    key,
+                                                    reply.parts.clone(),
+                                                    progress,
+                                                ))
+                                            },
+                                        )
                                         .children(reply.entry_id.as_ref().map(|entry| {
                                             self.reply_rating_buttons(entry, progress, cx)
                                         }))
@@ -1979,14 +2329,58 @@ impl Shell {
                     } => self.activity_group(key, label, *collapsed, *attention, items, cx),
                 };
                 div()
+                    .id(SharedString::from(row.key().to_owned()))
                     .min_w_0()
                     .mt(px(row.spacing_before(previous, compact)))
                     .child(content)
             });
-        div()
+        let transcript = div()
             .id("transcript")
             .flex_1()
-            .min_h(px(0.0))
+            .min_h_0()
+            .w_full()
+            .border_1()
+            .border_color(gpui::transparent_black())
+            .when(has_messages && keyboard, |region| {
+                region
+                    .track_focus(&self.transcript_focus)
+                    .tab_index(0)
+                    .focus(|style| style.border_color(palette.muted))
+                    .on_key_down(
+                        cx.listener(|shell, event: &gpui::KeyDownEvent, window, cx| {
+                            if !shell.transcript_focus.is_focused(window) {
+                                return;
+                            }
+                            let key = &event.keystroke;
+                            let modifiers = key.modifiers;
+                            if modifiers.control
+                                || modifiers.alt
+                                || modifiers.shift
+                                || modifiers.platform
+                            {
+                                return;
+                            }
+                            let scroll = &shell.transcript_scroll;
+                            let current = scroll.offset().y;
+                            let bottom = -scroll.max_offset().height;
+                            let line = px(24.0);
+                            let page = (scroll.bounds().size.height - line).max(line);
+                            let next = match key.key.as_str() {
+                                "up" => current + line,
+                                "down" => current - line,
+                                "pageup" => current + page,
+                                "pagedown" => current - page,
+                                "home" => px(0.0),
+                                "end" => bottom,
+                                _ => return,
+                            };
+                            shell.reading.scroll_to(scroll, next.clamp(bottom, px(0.0)));
+                            window.prevent_default();
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            })
             .overflow_y_scroll()
             .track_scroll(&self.transcript_scroll)
             .px(px(inset))
@@ -2013,11 +2407,52 @@ impl Shell {
                                 },
                             )))
                     })
-                    .when(
-                        self.load_error.is_none() && (!show_rows || self.rows.is_empty()),
-                        |column| column.child(self.text(empty_text, 14.0, palette.muted)),
-                    ),
-            )
+                    .when(self.load_error.is_none() && !has_messages, |column| {
+                        column.child(self.text(empty_text, 14.0, palette.muted))
+                    }),
+            );
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .child(transcript)
+            .when(has_messages && self.reading.later_content(), |region| {
+                region.child(
+                    div()
+                        .absolute()
+                        .bottom(px(8.0))
+                        .left_0()
+                        .right_0()
+                        .flex()
+                        .justify_center()
+                        .child(
+                            self.button("transcript-latest", "")
+                                .h(px(32.0))
+                                .px_3()
+                                .gap(px(5.0))
+                                .rounded_full()
+                                .bg(palette.bg)
+                                .border_1()
+                                .border_color(palette.strong_line)
+                                .shadow_md()
+                                .tab_index(0)
+                                .tab_stop(keyboard)
+                                .focus(|button| {
+                                    button.bg(palette.hover).border_color(palette.muted)
+                                })
+                                .child(icon("chevron-down", 14.0, palette.muted))
+                                .child(self.text("回到最新消息", 12.0, palette.text))
+                                .on_click(cx.listener(|shell, _, window, cx| {
+                                    let scroll = &shell.transcript_scroll;
+                                    shell.reading.scroll_to(scroll, -scroll.max_offset().height);
+                                    shell.transcript_focus.focus(window);
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            })
             .into_any_element()
     }
 
@@ -2186,6 +2621,7 @@ impl Shell {
                         shell
                             .reading
                             .set_open(shell.session, state_key.clone(), !open);
+                        shell.schedule_reading_save(cx);
                         cx.notify();
                     })),
             )
@@ -2239,6 +2675,7 @@ impl Shell {
             output,
             status,
             status_label,
+            attachments,
             ..
         } = block;
         let open = self.reading.is_open(self.session, key, false);
@@ -2276,28 +2713,32 @@ impl Shell {
                         .when(has_arguments, |result| {
                             result.pt(px(8.0)).border_t_1().border_color(palette.line)
                         })
-                        .child(if output.trim().is_empty() {
-                            self.text(
-                                match *status {
-                                    "completed" | "failed" | "cancelled" => "无输出",
-                                    _ => "暂无输出",
-                                },
-                                12.0,
-                                palette.muted,
-                            )
-                            .into_any_element()
-                        } else {
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(px(4.0))
-                                .child(self.text("工具结果", 11.0, palette.muted))
-                                .child(self.tool_output(
-                                    "tool-result",
-                                    output,
-                                    tool_display::is_read(name).then_some(target.as_str()),
+                        .when(
+                            output.trim().is_empty() && attachments.is_empty(),
+                            |result| {
+                                result.child(self.text(
+                                    match *status {
+                                        "completed" | "failed" | "cancelled" => "无输出",
+                                        _ => "暂无输出",
+                                    },
+                                    12.0,
+                                    palette.muted,
                                 ))
-                                .into_any_element()
+                            },
+                        )
+                        .when(
+                            !output.trim().is_empty() || !attachments.is_empty(),
+                            |result| result.child(self.text("工具结果", 11.0, palette.muted)),
+                        )
+                        .when(!output.trim().is_empty(), |result| {
+                            result.child(self.tool_output(
+                                "tool-result",
+                                output,
+                                tool_display::is_read(name).then_some(target.as_str()),
+                            ))
+                        })
+                        .when(!attachments.is_empty(), |result| {
+                            result.child(self.attachment_cards(attachments, READING_WIDTH))
                         }),
                 )
         });
@@ -2371,6 +2812,7 @@ impl Shell {
                             if !open {
                                 shell.reading.set_open(shell.session, group.clone(), true);
                             }
+                            shell.schedule_reading_save(cx);
                             cx.notify();
                         }
                     })),
@@ -2555,13 +2997,48 @@ impl Shell {
             .children(below)
     }
 
+    fn restored_draft_notice(&self, cx: &mut Context<Self>) -> Div {
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .px(px(4.0))
+            .child(self.text(
+                "上次发送结果未确认。请先检查会话和后续消息。",
+                12.0,
+                self.palette.muted,
+            ))
+            .child(
+                self.navigation_control(
+                    self.button("confirm-restored-draft", "允许再次发送"),
+                    self.navigation_keyboard_enabled() && self.overlay.is_none(),
+                )
+                .on_click(cx.listener(|shell, _, window, cx| {
+                    let key = shell.draft_key();
+                    if let Some(draft) = shell.drafts.get_mut(&key) {
+                        draft.confirm_restored_delivery = false;
+                        shell.focus_composer(window);
+                        cx.notify();
+                    }
+                })),
+            )
+    }
+
     fn composer(&self, inset: f32, reading_width: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
-        let draft = self.drafts.get(&self.draft_key());
+        let key = self.draft_key();
+        let draft = self.drafts.get(&key);
         let controls = self.session_controls();
         let welcome = self.node.is_some() && self.project.is_some() && self.session.is_none();
+        let loading_attachments = self.selecting_attachments.contains(&key);
+        let draft_save_failed = self
+            .draft_storage
+            .as_ref()
+            .is_some_and(|storage| storage.save_failed(key));
         let can_send = self.welcome_can_send()
             || controls.send
+                && !loading_attachments
                 && draft.is_some_and(|draft| {
                     draft.can_send()
                         && (draft.attachments.is_empty() || self.supports_attachments())
@@ -2580,6 +3057,7 @@ impl Shell {
                     .filter(|draft| draft.message_over_limit())
                     .map(|_| "消息、项目文件引用和反馈合计超过长度上限")
             })
+            .or_else(|| loading_attachments.then_some("正在读取附件…"))
             .or_else(|| draft.and_then(|draft| draft.attachment_notice.as_deref()))
             .or_else(|| match welcome {
                 true if self.creating_session.is_some() => Some("正在创建并核对新会话…"),
@@ -2671,6 +3149,17 @@ impl Shell {
                                         .py_1(),
                                 )
                             })
+                            .when(draft_save_failed, |composer| {
+                                composer.child(
+                                    self.text("无法保存本机草稿。", 12.0, palette.muted)
+                                        .px(px(4.0))
+                                        .py_1(),
+                                )
+                            })
+                            .when(
+                                draft.is_some_and(|draft| draft.confirm_restored_delivery),
+                                |composer| composer.child(self.restored_draft_notice(cx)),
+                            )
                             .when(
                                 welcome
                                     && matches!(
@@ -2797,7 +3286,13 @@ impl Render for Shell {
         let navigation_layout = NavigationLayout::for_width(width);
         if self.navigation_layout != navigation_layout {
             self.navigation_layout = navigation_layout;
-            self.navigation_open = navigation_layout == NavigationLayout::Expanded;
+            self.navigation.reopen();
+            if self.navigation.scope.contains_focused(window, cx)
+                && (navigation_layout == NavigationLayout::Drawer
+                    || !self.desktop_navigation_open())
+            {
+                self.navigation.toggle.focus(window);
+            }
             if self.overlay == Some(Overlay::Navigation) {
                 self.overlay = None;
             }
@@ -2807,8 +3302,8 @@ impl Render for Shell {
         let compact = navigation_layout == NavigationLayout::Drawer;
         let overlay = width <= 900.0;
         let rail = if compact { 0.0 } else { 52.0 };
-        let navigation = if !compact && self.navigation_open {
-            275.0
+        let navigation = if !compact && self.desktop_navigation_open() {
+            NAVIGATION_WIDTH
         } else {
             0.0
         };
@@ -2870,7 +3365,9 @@ impl Render for Shell {
                         && !modifiers.alt
                         && !modifiers.control
                     {
-                        if modifiers.shift {
+                        if shell.overlay == Some(Overlay::Navigation) {
+                            shell.navigation.tab(modifiers.shift, window, cx);
+                        } else if modifiers.shift {
                             window.focus_prev();
                         } else {
                             window.focus_next();
@@ -2887,7 +3384,7 @@ impl Render for Shell {
                             || shell.cancel_comment()
                             || shell.composer_config.close_menu()
                             || shell.dismiss_session_filter_menu(window)
-                            || shell.project_menu.take().is_some()
+                            || shell.dismiss_project_menu(window)
                             || std::mem::take(&mut shell.welcome_project_picker)
                             || shell.dismiss_drawer(window)
                             || shell.return_from_resources(window, cx))
@@ -2902,6 +3399,9 @@ impl Render for Shell {
             .size(relative(1.0))
             .bg(palette.bg)
             .child(self.header(width, cx))
+            .when_some(self.update_notice(cx), |body, notice| {
+                body.child(div().flex().justify_end().px_3().py_1().child(notice))
+            })
             .child(
                 div()
                     .id("workbench-body")
@@ -2910,7 +3410,9 @@ impl Render for Shell {
                     .flex_1()
                     .min_h(px(0.0))
                     .when(!compact, |body| body.child(self.rail(overlay, cx)))
-                    .when(navigation > 0.0, |body| body.child(self.sidebar(cx)))
+                    .when(navigation > 0.0, |body| {
+                        body.child(self.sidebar(window, cx))
+                    })
                     .when_some(self.resource_page, |body, tab| {
                         body.child(self.resource_page(tab, remaining, window, cx))
                     })
@@ -2948,6 +3450,7 @@ impl Render for Shell {
                                 .h_full()
                                 .child(self.overview(
                                     if full { remaining } else { dock_width },
+                                    height,
                                     false,
                                     cx,
                                 ))
@@ -2965,9 +3468,9 @@ impl Render for Shell {
                                     .inset_0()
                                     .bg(gpui::rgba(0x00000028))
                                     .occlude()
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                    .on_click(cx.listener(|this, _, window, cx| {
                                         this.close_session_filter_menu();
-                                        this.overlay = None;
+                                        this.dismiss_drawer(window);
                                         cx.notify();
                                     })),
                             )
@@ -2979,24 +3482,31 @@ impl Render for Shell {
                                         .top_0()
                                         .bottom_0()
                                         .occlude()
-                                        .child(self.sidebar(cx)),
+                                        .child(self.sidebar(window, cx)),
                                 )
                             })
                             .when(
                                 self.overlay == Some(Overlay::Inspector),
                                 |body| {
-                                    body.child(div().absolute().right_0().top_0().bottom_0().child(
-                                        self.overview(
-                                            if self.files.is_overview() {
-                                                (width - 20.0).min(560.0)
-                                            } else {
-                                                (width - 20.0)
-                                                    .min((width * 0.38).clamp(360.0, 560.0))
-                                            },
-                                            true,
-                                            cx,
-                                        ),
-                                    ))
+                                    body.child(
+                                        div()
+                                            .absolute()
+                                            .right_0()
+                                            .top_0()
+                                            .bottom_0()
+                                            .occlude()
+                                            .child(self.overview(
+                                                if self.files.is_overview() {
+                                                    (width - 20.0).min(560.0)
+                                                } else {
+                                                    (width - 20.0)
+                                                        .min((width * 0.38).clamp(360.0, 560.0))
+                                                },
+                                                height,
+                                                true,
+                                                cx,
+                                            )),
+                                    )
                                 },
                             )
                         },
@@ -3017,6 +3527,9 @@ impl Render for Shell {
                         cx.listener(|this, _, _, _| this.resizing_inspector = false),
                     ),
             )
+            .when_some(self.project_menu_overlay(cx), |body, menu| {
+                body.child(gpui::deferred(menu).with_priority(5))
+            })
             .when(self.runtime_dialog_open(), |body| {
                 body.child(gpui::deferred(self.runtime_dialog(cx)).with_priority(130))
             })
@@ -3094,13 +3607,14 @@ fn present_rows(
     previous: &[Row],
 ) -> (Vec<Row>, RunObservation) {
     let ordered = order.update(scope, history, blocks);
-    let conversation = transcript_view::present(
+    let conversation = transcript_view::present_with_attachments(
         &ordered,
         history,
         blocks,
         projection.map(|run| &run.phase),
         projection.map(|run| &run.connection),
         pending,
+        Some(message_attachments::claims),
     );
     let previous: HashMap<_, _> = previous
         .iter()
@@ -3120,10 +3634,13 @@ fn present_rows(
                 key,
                 reading_key,
                 text,
+                attachments,
                 ..
             } => rows.push(Row::User {
+                durable_key: reading_key.is_some(),
                 key: reading_key.unwrap_or(key),
                 text,
+                attachments,
             }),
             Part::Message {
                 key,
@@ -3131,8 +3648,10 @@ fn present_rows(
                 fork_entry_id,
                 rating_entry_id,
                 text,
+                attachments,
                 ..
             } => {
+                let durable_key = reading_key.is_some();
                 let key = reading_key.unwrap_or(key);
                 let view = previous
                     .get(key.as_str())
@@ -3159,8 +3678,10 @@ fn present_rows(
                 };
                 rows.push(Row::Assistant {
                     key,
+                    durable_key,
                     source: text,
                     view,
+                    attachments,
                     reply,
                 });
             }

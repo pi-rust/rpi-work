@@ -278,27 +278,33 @@ impl Shell {
                         .pl_2()
                         .rounded(px(5.0))
                         .bg(palette.subtle)
-                        .child(icon("code-xml", 12.0, palette.muted))
+                        .child(icon("code-xml", 13.0, palette.muted).flex_none())
                         .child(
-                            self.text(item.path.clone(), 11.0, palette.text)
+                            self.text(item.path.clone(), 12.0, palette.text)
                                 .min_w_0()
                                 .truncate(),
                         )
                         .child(
                             self.navigation_tooltip(
-                                self.button(("remove-file-reference", id), "")
-                                    .h(px(22.0))
-                                    .px_1()
-                                    .child(icon("x", 12.0, palette.muted))
-                                    .on_click(cx.listener(move |shell, _, window, cx| {
+                                self.navigation_control(
+                                    self.button(("remove-file-reference", id), "")
+                                        .w(px(22.0))
+                                        .px_0()
+                                        .child(icon("x", 14.0, palette.muted)),
+                                    self.overlay.is_none(),
+                                )
+                                .h(px(24.0))
+                                .on_click(cx.listener(
+                                    move |shell, _, window, cx| {
                                         if let Some(draft) = shell.drafts.get_mut(&key) {
                                             draft.references.retain(|item| item.id != id);
                                             draft.attachment_notice = None;
                                         }
                                         shell.focus_composer(window);
                                         cx.notify();
-                                    })),
-                                format!("移除 {}", item.path),
+                                    },
+                                )),
+                                format!("移除文件引用 {}", item.path),
                             ),
                         )
                 }))

@@ -4,7 +4,10 @@ use work_core::api::realtime::OperationRef;
 use work_core::{ConnectionState, RunPhase};
 use work_viewmodel::{diff_view::DraftFeedback, session_controls::PendingRequests};
 
-use crate::shell::{attachments::Attachment, editor::Buffer};
+use crate::shell::{
+    attachments::{Attachment, MAX_PROJECT_TOTAL},
+    editor::Buffer,
+};
 
 const MAX_FEEDBACK: usize = 32;
 const MAX_DRAFT: usize = 32_000;
@@ -33,6 +36,7 @@ pub(crate) struct FileReference {
 #[derive(Default)]
 pub struct Draft {
     pub input: Buffer,
+    pub(crate) confirm_restored_delivery: bool,
     skill_instruction: Option<String>,
     pub feedback: Vec<Feedback>,
     next_feedback: u64,
@@ -83,6 +87,17 @@ impl Draft {
             self.attachment_notice = Some("每条消息最多添加 63 个附件。".into());
             return;
         }
+        if self
+            .attachments
+            .iter()
+            .chain(&files)
+            .map(Attachment::project_bytes)
+            .sum::<usize>()
+            > MAX_PROJECT_TOTAL
+        {
+            self.attachment_notice = Some("项目附件总大小超过 48 MiB。".into());
+            return;
+        }
         // Ensure the whole selection fits the real ordered content contract before editing the draft.
         let blocks = self
             .attachments
@@ -121,14 +136,13 @@ impl Draft {
                     incomplete = true;
                     continue;
                 };
-                attachments.push(Attachment {
-                    id: 0,
-                    name: format!("恢复的图片 {}", attachments.len() + 1),
-                    block: PromptBlock::Image {
+                attachments.push(Attachment::inline(
+                    format!("恢复的图片 {}", attachments.len() + 1),
+                    PromptBlock::Image {
                         data: data.into(),
                         mime_type: media_type.into(),
                     },
-                });
+                ));
             }
         }
         let previous_attachments = self.attachments.len();
@@ -231,7 +245,8 @@ impl Draft {
     }
 
     pub fn can_send(&self) -> bool {
-        self.input.is_committed()
+        !self.confirm_restored_delivery
+            && self.input.is_committed()
             && (self.input.can_send()
                 || !self.references.is_empty()
                 || !self.feedback.is_empty()
@@ -254,6 +269,10 @@ impl Draft {
             saw_activity: false,
             settled: false,
         });
+    }
+
+    pub(crate) fn last_attachment(&self) -> Option<u64> {
+        self.attachments.last().map(|item| item.id)
     }
 
     pub(crate) fn submitted(&self) -> SubmittedDraft {
@@ -305,6 +324,12 @@ impl Draft {
             request.stage = Stage::Unknown(operation);
         }
         self.notice = Some("发送结果未知，草稿已保留".into());
+    }
+
+    pub(crate) fn delivery_unconfirmed(&self) -> bool {
+        self.request.as_ref().is_some_and(|request| {
+            request.draft.is_some() && matches!(request.stage, Stage::Sending | Stage::Unknown(_))
+        })
     }
 
     pub fn receipt(&self) -> Option<&OperationRef> {
@@ -430,11 +455,8 @@ mod tests {
     #[test]
     fn acknowledgement_retains_attachments_added_after_submission() {
         use rpi_extcore::prompt::PromptBlock;
-        let item = |name: &str| Attachment {
-            id: 0,
-            name: name.into(),
-            block: PromptBlock::Text { text: name.into() },
-        };
+        let item =
+            |name: &str| Attachment::inline(name.into(), PromptBlock::Text { text: name.into() });
         let mut draft = Draft::default();
         draft.add_attachments(vec![item("first")]);
         assert!(draft.can_send());

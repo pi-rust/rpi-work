@@ -105,7 +105,8 @@ impl Node {
 /// Only explicit HTTP(S) links may navigate, on a user gesture. Relative paths,
 /// credentials, controls, backslashes and external application schemes cannot
 /// gain file/platform capabilities by appearing inside an answer.
-fn safe_href(value: &str) -> Option<String> {
+#[must_use]
+pub fn safe_href(value: &str) -> Option<String> {
     if value.contains('\\') || value.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return None;
     }

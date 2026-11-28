@@ -137,6 +137,11 @@ impl Shell {
             return;
         }
         self.close_resource_page();
+        if self.overlay == Some(super::Overlay::Navigation) {
+            self.dismiss_drawer(window);
+        }
+        self.project_menu = None;
+        self.close_session_filter_menu();
         self.read_session_management_capabilities(cx);
         if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
             draft.input.finish_composition();
@@ -350,12 +355,12 @@ impl Shell {
     }
 
     pub(super) fn archives_button(&self, cx: &Context<Self>) -> impl IntoElement {
-        self.button("archived-sessions", "")
+        self.navigation_control(self.button("archived-sessions", ""), true)
             .justify_start()
             .gap_2()
             .mb_2()
             .child(icon("folder", 15.0, self.palette.muted))
-            .child(self.text("已归档会话", 12.0, self.palette.muted))
+            .child(self.text("已归档", 12.0, self.palette.muted))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_session_management(Dialog::Archives, window, cx);
             }))
@@ -372,7 +377,7 @@ impl Shell {
         let rename = enabled && panel.supports("session_organization");
         let title = match dialog {
             Dialog::Actions(_) => "会话操作",
-            Dialog::Archives => "已归档会话",
+            Dialog::Archives => "已归档",
         };
         let mut content = div()
             .id("session-management")
@@ -501,7 +506,12 @@ impl Shell {
                             ),
                     );
             }
-            Dialog::Archives => content = content.child(self.archived_sessions(None, cx)),
+            Dialog::Archives => {
+                content = content
+                    .children(self.archived_project_rows(cx))
+                    .child(self.text("已归档会话", 13.0, palette.muted))
+                    .child(self.archived_sessions(None, cx));
+            }
         }
         Some(
             div()

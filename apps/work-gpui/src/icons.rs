@@ -32,15 +32,34 @@ impl AssetSource for Icons {
             "blocks" => {
                 r#"<rect width="7" height="7" x="14" y="3" rx="1"/><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"/>"#
             }
+            "flag" => r#"<path d="M4 22V3m0 1c6-5 10 5 16 0v11c-6 5-10-5-16 0"/>"#,
             "file-diff" => {
                 r#"<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/>"#
             }
             "file-text" => {
                 r#"<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/>"#
             }
+            "image" => {
+                r#"<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4-4L7 21"/>"#
+            }
+            "play" => r#"<path d="M8 5v14l11-7Z"/>"#,
+            "file-pdf" => {
+                r#"<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm0 0v6h6M8 17c2-1 4-4 4-7 0 2 1 5 4 6-3-1-6 0-8 1Z"/>"#
+            }
+            "file-spreadsheet" => {
+                r#"<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm0 0v6h6"/><rect x="7" y="11" width="10" height="7" rx="1"/><path d="M12 11v7m-5-3.5h10"/>"#
+            }
+            "presentation" => {
+                r#"<rect x="3" y="4" width="18" height="13" rx="2"/><path d="m7 13 3-3 3 2 4-4m-5 9v4m-3 0h6"/>"#
+            }
+            "headphones" => {
+                r#"<path d="M3 14v-2a9 9 0 0 1 18 0v2"/><rect x="3" y="13" width="4" height="7" rx="1.5"/><rect x="17" y="13" width="4" height="7" rx="1.5"/>"#
+            }
             "ellipsis" => {
                 r#"<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>"#
             }
+            "pencil" => r#"<path d="m14 6 4 4M3 21l1-5L16 4a2.8 2.8 0 0 1 4 4L8 20z"/>"#,
+            "info" => r#"<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>"#,
             "pin" => {
                 r#"<path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5l-3 4v2h14v-2zM12 15v7"/>"#
             }
@@ -59,6 +78,7 @@ impl AssetSource for Icons {
             "appearance" => r#"<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/>"#,
             "chevron-right" => r#"<path d="m9 6 6 6-6 6"/>"#,
             "chevron-down" => r#"<path d="m6 9 6 6 6-6"/>"#,
+            "check" => r#"<path d="m5 12 4 4L19 6"/>"#,
             "x" => r#"<path d="M18 6 6 18"/><path d="m6 6 12 12"/>"#,
             "arrow-up" => r#"<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>"#,
             "square" => r#"<rect x="5" y="5" width="14" height="14" rx="2"/>"#,

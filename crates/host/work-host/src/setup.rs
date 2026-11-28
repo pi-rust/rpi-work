@@ -19,6 +19,7 @@ use work_update::native::rpi_runtime::{self, RuntimeInstallProgress};
 pub enum Phase {
     #[default]
     Checking,
+    NeedsRuntime,
     Resolving,
     Downloading,
     Verifying,
@@ -43,7 +44,15 @@ pub struct Status {
 impl Status {
     #[must_use]
     pub fn busy(&self) -> bool {
-        !matches!(self.phase, Phase::Ready | Phase::Failed | Phase::Cancelled)
+        !matches!(
+            self.phase,
+            Phase::NeedsRuntime | Phase::Ready | Phase::Failed | Phase::Cancelled
+        )
+    }
+
+    #[must_use]
+    pub fn can_cancel(&self) -> bool {
+        self.busy() && self.phase != Phase::Starting
     }
 }
 
@@ -71,7 +80,7 @@ pub struct DesktopSetup {
 struct Failure {
     message: String,
     can_install: bool,
-    cancelled: bool,
+    phase: Phase,
 }
 
 impl Failure {
@@ -79,7 +88,7 @@ impl Failure {
         Self {
             message,
             can_install: true,
-            cancelled: false,
+            phase: Phase::Failed,
         }
     }
 
@@ -87,7 +96,7 @@ impl Failure {
         Self {
             message,
             can_install: false,
-            cancelled: false,
+            phase: Phase::Failed,
         }
     }
 
@@ -95,15 +104,23 @@ impl Failure {
         Self {
             message: error.message,
             can_install: error.can_install,
-            cancelled: false,
+            phase: Phase::Failed,
+        }
+    }
+
+    fn missing_runtime() -> Self {
+        Self {
+            message: "没有找到 rpi。请选择下载并安装，或指定已有的 rpi 路径。".into(),
+            can_install: true,
+            phase: Phase::NeedsRuntime,
         }
     }
 
     fn cancelled() -> Self {
         Self {
-            message: "已暂停准备运行环境，可随时重试或连接远程节点。".into(),
-            can_install: false,
-            cancelled: true,
+            message: "已取消准备运行环境。可以重新下载，或指定已有的 rpi 路径。".into(),
+            can_install: true,
+            phase: Phase::Cancelled,
         }
     }
 }
@@ -174,11 +191,7 @@ impl DesktopSetup {
                 }
                 Err(error) if !control.closed => {
                     let mut status = setup.snapshot();
-                    status.phase = if error.cancelled {
-                        Phase::Cancelled
-                    } else {
-                        Phase::Failed
-                    };
+                    status.phase = error.phase;
                     status.message = error.message;
                     status.can_install = error.can_install;
                     setup.status.send_replace(status);
@@ -189,14 +202,12 @@ impl DesktopSetup {
     }
 
     pub fn cancel(&self) {
-        if matches!(self.snapshot().phase, Phase::Starting | Phase::Ready) {
-            return;
-        }
-        if let Some(cancel) = &self
+        let control = self
             .control
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .cancel
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.snapshot().can_cancel()
+            && let Some(cancel) = &control.cancel
         {
             cancel.send_replace(true);
         }
@@ -236,11 +247,8 @@ impl DesktopSetup {
         selection: Selection,
         mut cancel: watch::Receiver<bool>,
     ) -> Result<crate::LocalGuard, Failure> {
-        let selected = resolve(&selection).map_err(Failure::runtime)?;
         let mut prepared = None;
-        let path = if let Some(path) = selected {
-            path
-        } else {
+        let path = if matches!(selection, Selection::Managed) {
             let mut retry = 0u32;
             loop {
                 ensure_running(&cancel)?;
@@ -267,10 +275,15 @@ impl DesktopSetup {
                             () = tokio::time::sleep(Duration::from_secs(u64::from(retry) * 2)) => {}
                         }
                     }
-                    Err(error) => return Err(Failure::startup(error.to_string())),
+                    Err(error) => return Err(Failure::runtime(error.to_string())),
                 }
             }
+        } else {
+            resolve(&selection)
+                .map_err(Failure::runtime)?
+                .ok_or_else(Failure::missing_runtime)?
         };
+        ensure_running(&cancel)?;
         let path = std::fs::canonicalize(path)
             .map_err(|error| Failure::runtime(format!("无法定位 rpi 程序：{error}")))?;
         let mut status = self.snapshot();
@@ -287,18 +300,23 @@ impl DesktopSetup {
                 "下载程序的版本与发布信息不一致，原有版本已保留。".into(),
             ));
         }
-        ensure_running(&cancel)?;
+        {
+            // Serialize the final cancellation check with cancel() before activation.
+            let _control = self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            ensure_running(&cancel)?;
+            self.update(Phase::Starting, "正在启动本机工作空间…");
+        }
         let path = if let Some(runtime) = prepared {
-            self.update(Phase::Installing, "正在启用已验证的 rpi…");
-            runtime.activate().map_err(Failure::startup)?
+            runtime.activate().map_err(Failure::runtime)?
         } else {
             path
         };
         let mut status = self.snapshot();
         status.path = Some(path.clone());
         status.version = Some(version);
-        status.phase = Phase::Starting;
-        status.message = "正在启动本机工作空间…".into();
         self.status.send_replace(status);
         ensure_running(&cancel)?;
         let guard = crate::try_start_with(crate::LaunchOverrides {
@@ -319,7 +337,7 @@ impl DesktopSetup {
         let mut status = self.snapshot();
         (status.phase, status.message) = match event {
             RuntimeInstallProgress::Resolving => {
-                (Phase::Resolving, "未检测到 rpi，正在获取安装包信息…".into())
+                (Phase::Resolving, "正在获取 rpi 安装包信息…".into())
             }
             RuntimeInstallProgress::Downloading { received, total } => {
                 status.received = received;
@@ -372,8 +390,22 @@ fn save_preference(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Resolve the active desktop runtime or look up the configured local installation.
+pub fn runtime_executable() -> Result<PathBuf, String> {
+    if let Some(owner) = work_node_host::client() {
+        return std::fs::canonicalize(owner.runtime_executable())
+            .map_err(|_| "无法定位工作台使用的 rpi 程序。".into());
+    }
+    resolve(&Selection::Automatic)?
+        .and_then(|path| path.canonicalize().ok())
+        .ok_or_else(|| "找不到本机 rpi 程序。".into())
+}
+
 fn resolve(selection: &Selection) -> Result<Option<PathBuf>, String> {
     let path = match selection {
+        Selection::File(path) if path.is_dir() => {
+            Some(path.join(if cfg!(windows) { "rpi.exe" } else { "rpi" }))
+        }
         Selection::File(path) => Some(path.clone()),
         Selection::Managed => return Ok(None),
         Selection::Automatic => {

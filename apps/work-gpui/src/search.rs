@@ -4,12 +4,13 @@ use gpui::{
     Context, FocusHandle, FontWeight, MouseButton, ScrollHandle, Window, div, point, prelude::*, px,
 };
 
-use super::{Overlay, Shell, project_files::Tab};
+use super::{DONATION_URL, Overlay, Shell, project_files::Tab};
 use crate::icons::icon;
 
 pub(super) struct Panel {
     pub(super) open: bool,
-    first_result: FocusHandle,
+    close_focus: FocusHandle,
+    result_focus: Vec<FocusHandle>,
     scroll: ScrollHandle,
 }
 
@@ -17,7 +18,8 @@ impl Panel {
     pub(super) fn new(cx: &Context<Shell>) -> Self {
         Self {
             open: false,
-            first_result: cx.focus_handle(),
+            close_focus: cx.focus_handle(),
+            result_focus: Vec::new(),
             scroll: ScrollHandle::new(),
         }
     }
@@ -31,7 +33,10 @@ enum Target {
     Browser,
     Files,
     Settings,
+    SettingsFile,
+    Collaboration,
     Context,
+    Donate,
 }
 
 struct ResultRow<'a> {
@@ -51,6 +56,9 @@ impl Shell {
             return;
         }
         self.close_resource_page();
+        if self.overlay == Some(super::Overlay::Navigation) {
+            self.dismiss_drawer(window);
+        }
         self.project_menu = None;
         self.close_session_filter_menu();
         self.composer_config.close_menu();
@@ -131,11 +139,23 @@ impl Shell {
                 (Target::Browser, "打开浏览器", "globe"),
                 (Target::Files, "打开代码工作区", "code-xml"),
                 (Target::Settings, "打开设置", "settings"),
+                (Target::SettingsFile, "编辑设置 JSON", "file-text"),
+                (Target::Collaboration, "打开工作协同", "globe"),
                 (Target::Context, "查看上下文", "list-checks"),
+                (Target::Donate, "捐赠", "thumbs-up"),
             ]
             .into_iter()
             .filter(|(target, title, _)| {
-                (!matches!(target, Target::Context) || self.session.is_some()) && matches(title, "")
+                (!matches!(target, Target::Context) || self.session.is_some())
+                    && matches(
+                        title,
+                        match target {
+                            Target::SettingsFile => "设置文件",
+                            Target::Collaboration => "连接节点 远程 设备",
+                            Target::Donate => "赞助 捐助 donate sponsor",
+                            _ => "",
+                        },
+                    )
             })
             .map(|(target, title, glyph)| ResultRow {
                 target,
@@ -165,6 +185,10 @@ impl Shell {
             if select {
                 self.activate_provider_input(window, cx);
             }
+        } else if self.chat_integrations.editing() {
+            if select {
+                self.finish_chat_field(window, cx);
+            }
         } else if self.settings.open {
             self.activate_settings_search(select, window, cx);
         } else if self.resource_install_field_label().is_some() {
@@ -181,9 +205,11 @@ impl Shell {
             if select {
                 self.select_workbench_result(target, window, cx);
             } else {
-                self.workbench_search.scroll.scroll_to_item(0);
-                self.workbench_search.first_result.focus(window);
-                cx.notify();
+                if let Some(first) = self.workbench_search.result_focus.first() {
+                    first.focus(window);
+                    self.workbench_search.scroll.scroll_to_item(0);
+                    cx.notify();
+                }
             }
         }
     }
@@ -227,6 +253,9 @@ impl Shell {
                 }
             }
             Target::Settings => self.open_settings(window, cx),
+            Target::SettingsFile => self.edit_settings_file(window, cx),
+            Target::Collaboration => self.open_collaboration_settings(window, cx),
+            Target::Donate => cx.open_url(DONATION_URL),
             Target::Context => {
                 // Let this key release finish before focusing the dialog's Close button.
                 let revision = self.navigation_revision;
@@ -239,13 +268,68 @@ impl Shell {
         }
     }
 
+    fn tab_workbench_search(&self, backwards: bool, window: &mut Window) {
+        let panel = &self.workbench_search;
+        let stops: Vec<_> = [&panel.close_focus, &self.search.focus]
+            .into_iter()
+            .chain(&panel.result_focus)
+            .collect();
+        let current = stops.iter().position(|focus| focus.is_focused(window));
+        let count = stops.len();
+        let next = match (backwards, current) {
+            (true, Some(index)) => (index + count - 1) % count,
+            (false, Some(index)) => (index + 1) % count,
+            (true, None) => count - 1,
+            (false, None) => 0,
+        };
+        stops[next].focus(window);
+        if let Some(row) = next.checked_sub(2) {
+            panel.scroll.scroll_to_item(row);
+        }
+    }
+
     pub(super) fn workbench_search_dialog(
-        &self,
+        &mut self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let palette = self.palette;
+        let mut result_focus = std::mem::take(&mut self.workbench_search.result_focus);
         let results = self.workbench_search_results();
+        result_focus.resize_with(results.len(), || cx.focus_handle());
+        let rows: Vec<_> = results
+            .into_iter()
+            .zip(&result_focus)
+            .enumerate()
+            .map(|(index, (row, focus))| {
+                self.button(("workbench-search-result", index), "")
+                    .track_focus(focus)
+                    .focus(|button| button.bg(palette.hover).border_color(palette.muted))
+                    .border_1()
+                    .border_color(gpui::transparent_black())
+                    .h(px(38.0))
+                    .gap_2()
+                    .justify_start()
+                    .child(icon(row.glyph, 15.0, palette.muted))
+                    .child(
+                        self.text(row.title.to_owned(), 14.0, palette.text)
+                            .flex_1()
+                            .min_w_0()
+                            .truncate(),
+                    )
+                    .when(!row.detail.is_empty(), |button| {
+                        button.child(
+                            self.text(row.detail.to_owned(), 12.0, palette.muted)
+                                .max_w(px(120.0))
+                                .truncate(),
+                        )
+                    })
+                    .on_click(cx.listener(move |shell, _, window, cx| {
+                        shell.select_workbench_result(row.target, window, cx)
+                    }))
+            })
+            .collect();
+        self.workbench_search.result_focus = result_focus;
         div()
             .id("workbench-search-scrim")
             .absolute()
@@ -264,11 +348,8 @@ impl Shell {
                             shell.close_workbench_search(window, cx);
                         }
                         "tab" if !modifiers.alt && !modifiers.control && !modifiers.platform => {
-                            if modifiers.shift {
-                                window.focus_prev();
-                            } else {
-                                window.focus_next();
-                            }
+                            shell.tab_workbench_search(modifiers.shift, window);
+                            window.prevent_default();
                             cx.notify();
                         }
                         _ => return,
@@ -306,8 +387,12 @@ impl Shell {
                             )
                             .child(
                                 self.icon_button("close-workbench-search", "x", 32.0)
-                                    .tab_index(0)
-                                    .focus(|button| button.bg(palette.hover))
+                                    .track_focus(&self.workbench_search.close_focus)
+                                    .border_1()
+                                    .border_color(gpui::transparent_black())
+                                    .focus(|button| {
+                                        button.bg(palette.hover).border_color(palette.muted)
+                                    })
                                     .on_click(cx.listener(|shell, _, window, cx| {
                                         shell.close_workbench_search(window, cx)
                                     })),
@@ -325,7 +410,7 @@ impl Shell {
                             .rounded(px(8.0))
                             .border_1()
                             .border_color(if self.search.focus.is_focused(window) {
-                                palette.strong_line
+                                palette.muted
                             } else {
                                 palette.line
                             })
@@ -345,39 +430,12 @@ impl Shell {
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .when(results.is_empty(), |list| {
+                            .when(rows.is_empty(), |list| {
                                 list.child(
                                     self.text("没有匹配的结果。", 13.0, palette.muted).py_2(),
                                 )
                             })
-                            .children(results.into_iter().enumerate().map(|(index, row)| {
-                                self.button(("workbench-search-result", index), "")
-                                    .when(index == 0, |button| {
-                                        button.track_focus(&self.workbench_search.first_result)
-                                    })
-                                    .tab_index(0)
-                                    .focus(|button| button.bg(palette.subtle))
-                                    .h(px(38.0))
-                                    .gap_2()
-                                    .justify_start()
-                                    .child(icon(row.glyph, 15.0, palette.muted))
-                                    .child(
-                                        self.text(row.title.to_owned(), 14.0, palette.text)
-                                            .flex_1()
-                                            .min_w_0()
-                                            .truncate(),
-                                    )
-                                    .when(!row.detail.is_empty(), |button| {
-                                        button.child(
-                                            self.text(row.detail.to_owned(), 11.0, palette.muted)
-                                                .max_w(px(120.0))
-                                                .truncate(),
-                                        )
-                                    })
-                                    .on_click(cx.listener(move |shell, _, window, cx| {
-                                        shell.select_workbench_result(row.target, window, cx)
-                                    }))
-                            })),
+                            .children(rows),
                     ),
             )
     }

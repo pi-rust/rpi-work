@@ -5,7 +5,7 @@ use work_viewmodel::connection::{
     NodeHistory, NodePassword, native_path, normalize_address, persist_native,
 };
 
-use super::Shell;
+use super::{Shell, collaboration::activate_open_node};
 use crate::data::{Node, NodeAuthorization};
 
 #[derive(Default)]
@@ -34,23 +34,33 @@ impl Shell {
         self.node_connection.history = read_history();
     }
 
+    pub(super) fn clear_connection_history(&mut self, cx: &mut Context<Self>) {
+        let history = NodeHistory::default();
+        self.node_connection.notice = Some(if persist_native(&history) {
+            self.node_connection.history = history;
+            "已清除最近连接。正在使用的窗口仍可继续工作。".into()
+        } else {
+            "无法清除最近连接。".into()
+        });
+        cx.notify();
+    }
+
     pub(super) fn show_node_connection(
         &mut self,
         target: Option<(String, Option<String>)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.reset_node_connection();
+        self.show_settings_form();
         self.node_connection.open = true;
-        self.node_connection.notice = None;
-        self.node_connection.target = target;
-        self.node_connection.authorization = None;
         self.search.clear();
-        self.search.focus.focus(window);
-        if self.node_connection.target.is_some() {
-            self.submit_node_connection(window, cx);
-        } else {
-            cx.notify();
+        if let Some((address, _)) = &target {
+            self.search.buffer.replace(None, address);
         }
+        self.node_connection.target = target;
+        self.search.focus.focus(window);
+        cx.notify();
     }
 
     #[cfg(target_os = "macos")]
@@ -133,11 +143,22 @@ impl Shell {
         {
             return;
         }
-        let (address, expected) = if let Some(target) = self.node_connection.target.clone() {
+        let (address, expected) = if (self.node_connection.password
+            || self.node_connection.authorization.is_some())
+            && let Some(target) = self.node_connection.target.clone()
+        {
             target
         } else {
             match normalize_address(&self.search.buffer.text, false) {
-                Ok(address) => (address, None),
+                Ok(address) => {
+                    let expected = self
+                        .node_connection
+                        .target
+                        .as_ref()
+                        .filter(|(target, _)| target == &address)
+                        .and_then(|(_, identity)| identity.clone());
+                    (address, expected)
+                }
                 Err(error) => {
                     self.node_connection.notice = Some(error);
                     cx.notify();
@@ -145,7 +166,7 @@ impl Shell {
                 }
             }
         };
-        if normalize_address(&self.snapshot.node, false).ok().as_ref() == Some(&address) {
+        if self.is_current_node(&address, expected.as_deref()) {
             self.node_connection.notice = Some("此节点已在当前窗口打开。".into());
             cx.notify();
             return;
@@ -167,6 +188,7 @@ impl Shell {
         self.node_connection.notice = None;
         let authenticating = credential.is_some();
         let authorization = self.node_connection.authorization.take();
+        let using_authorization = authorization.is_some();
         let endpoint = address.clone();
         let pin = expected.clone();
         let connect = cx
@@ -180,6 +202,18 @@ impl Shell {
                     match result {
                         Ok(Some((snapshot, node))) => {
                             let id = snapshot.node_id.clone();
+                            if shell.is_current_node(&address, id.as_deref()) {
+                                shell.cancel_node_connection(window, cx);
+                                shell.node_connection.notice =
+                                    Some("此节点已在当前窗口打开。".into());
+                                return;
+                            }
+                            if activate_open_node(&address, id.as_deref(), window, cx) {
+                                shell.cancel_node_connection(window, cx);
+                                shell.node_connection.notice =
+                                    Some("已切换到此节点的工作台窗口。".into());
+                                return;
+                            }
                             if crate::open_workbench(snapshot, Some(node), cx).is_ok() {
                                 let mut history = read_history();
                                 history.remember_with_identity(&address, id.as_deref());
@@ -208,8 +242,7 @@ impl Shell {
                             } else {
                                 error
                             });
-                            // A failed recent or discovered target returns to address entry.
-                            if !authenticating {
+                            if using_authorization {
                                 shell.node_connection.target = None;
                                 shell.search.clear();
                                 shell.search.buffer.replace(None, &address);
@@ -244,10 +277,19 @@ impl Shell {
                 14.0,
                 palette.text,
             ))
-            .when_some(form.target.as_ref(), |body, (address, _)| {
-                body.child(self.text(address.clone(), 12.0, palette.muted).min_w_0())
+            .when(form.password || has_authorization, |body| {
+                body.when_some(form.target.as_ref(), |body, (address, _)| {
+                    body.child(self.text(address.clone(), 12.0, palette.muted).min_w_0())
+                })
             })
-            .when(!has_authorization, |body| {
+            .when(!form.password && !has_authorization, |body| {
+                body.child(self.text(
+                    "输入对方提供的 RPI Work 节点地址。确认连接后会在独立窗口打开。",
+                    13.0,
+                    palette.muted,
+                ))
+            })
+            .when(!has_authorization && !busy, |body| {
                 body.child(
                     div()
                         .flex()
@@ -261,6 +303,11 @@ impl Shell {
                 )
             })
             .when(busy, |body| {
+                let body = if !form.scanning && !form.password && !has_authorization {
+                    body.child(self.text(self.search.buffer.text.clone(), 12.0, palette.muted))
+                } else {
+                    body
+                };
                 let status = if form.scanning {
                     "正在识别二维码…"
                 } else if form.password {
@@ -277,7 +324,19 @@ impl Shell {
                 div()
                     .flex()
                     .justify_end()
+                    .flex_wrap()
                     .gap_2()
+                    .when(form.password && !busy, |actions| {
+                        actions.child(
+                            self.dialog_button("edit-node-address", "更换地址", true, false)
+                                .tab_index(0)
+                                .on_click(cx.listener(|shell, _, window, cx| {
+                                    let target = shell.node_connection.target.clone();
+                                    shell.show_node_connection(target, window, cx);
+                                    shell.search.buffer.select_all();
+                                })),
+                        )
+                    })
                     .child(
                         self.dialog_button("cancel-node-connection", "取消", true, false)
                             .tab_index(0)

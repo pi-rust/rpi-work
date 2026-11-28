@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "workbench.starter",
+  "name": "工作台模板示例",
+  "contributions": [
+    {
+      "type": "promptTemplate",
+      "command": "summarize",
+      "label": "整理当前会话",
+      "text": "请总结当前会话，分别列出已完成的工作、已确认的决定和仍待解决的问题。"
+    },
+    {
+      "type": "promptTemplate",
+      "command": "test-plan",
+      "label": "拟定测试计划",
+      "text": "请根据当前改动拟定测试计划。列出核心流程、边界条件及每项测试的预期结果。"
+    }
+  ]
+}

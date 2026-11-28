@@ -558,7 +558,7 @@ mod tests {
     fn acceptance_does_not_clear_the_request_before_authoritative_state() {
         let mut frame = SessionFrame {
             session_id: "session".into(),
-            history: Vec::new(),
+            history: Default::default(),
             projection: RunProjection::new("session"),
             access: None,
             dialogs: Vec::new(),

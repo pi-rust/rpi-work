@@ -26,6 +26,7 @@ impl Field {
 pub(super) struct Form {
     pub(super) open: bool,
     field: Field,
+    rename: Option<String>,
     name: Buffer,
     path: Buffer,
     folders: Option<ProjectFolders>,
@@ -136,6 +137,24 @@ impl Registration {
     }
 }
 
+pub(crate) async fn rename(
+    client: &WorkspaceClient,
+    id: &str,
+    name: &str,
+) -> Result<Project, String> {
+    match bounded("重命名项目", client.rename_project(id, name)).await {
+        Ok(project) if project.id == id && project.name == name => return Ok(project),
+        Err(error) if rejected(&error) => return Err(error.to_string()),
+        _ => {}
+    }
+    bounded("核对项目名称", client.projects())
+        .await
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|project| project.id == id && project.name == name)
+        .ok_or_else(|| "节点尚未确认项目的新名称。".into())
+}
+
 impl Shell {
     pub(super) fn dismiss_project_form(&mut self) -> bool {
         if !self.project_form.open {
@@ -150,7 +169,7 @@ impl Shell {
     }
 
     pub(super) fn next_project_field(&mut self, cx: &mut Context<Self>) {
-        if self.project_form.editable() {
+        if self.project_form.editable() && self.project_form.rename.is_none() {
             let field = if self.project_form.field == Field::Name {
                 Field::Path
             } else {
@@ -252,6 +271,10 @@ impl Shell {
         if !form.open || form.registering || form.browsing.is_some() {
             return;
         }
+        if let Some(id) = form.rename.clone() {
+            self.submit_project_rename(id, cx);
+            return;
+        }
         let request = if let Some(lookup) = form.unverified.clone() {
             Registration::Verify(lookup)
         } else if form.valid() {
@@ -319,28 +342,125 @@ impl Shell {
         cx.notify();
     }
 
-    pub(super) fn add_project_button(&self, cx: &Context<Self>) -> impl IntoElement {
-        self.icon_button("add-project", "plus", 24.0)
-            .on_click(cx.listener(|shell, _, window: &mut Window, cx| {
-                shell.close_resource_page();
-                shell.project_menu = None;
-                shell.cancel_comment();
-                if let Some(draft) = shell.drafts.get_mut(&shell.draft_key()) {
-                    draft.input.finish_composition();
+    pub(super) fn open_project_rename(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.project_form.registering || self.project_form.unverified.is_some() {
+            self.open_project_form(window, cx);
+            return;
+        }
+        let project = &self.snapshot.projects[index];
+        let mut name = Buffer::default();
+        name.replace(None, &project.name);
+        name.select_all();
+        self.project_form = Form {
+            rename: Some(project.id.clone()),
+            name,
+            ..Form::default()
+        };
+        self.open_project_form(window, cx);
+    }
+
+    fn submit_project_rename(&mut self, id: String, cx: &mut Context<Self>) {
+        let Some(node) = &self.node else { return };
+        let form = &mut self.project_form;
+        if !form.name.can_send()
+            || form.name.text.trim().chars().count() > 50
+            || form.name.text.chars().any(char::is_control)
+        {
+            form.error = Some("请输入有效的项目名称（最多 50 字）。".into());
+            cx.notify();
+            return;
+        }
+        let name = form.name.text.trim().to_owned();
+        if self
+            .snapshot
+            .projects
+            .iter()
+            .any(|project| project.id == id && project.name == name)
+        {
+            self.dismiss_project_form();
+            self.project_form = Form::default();
+            cx.notify();
+            return;
+        }
+        let work = node.rename_project(id, name);
+        form.registering = true;
+        form.error = None;
+        cx.spawn(async move |this, cx| {
+            let result = work.await.unwrap_or_else(|error| Err(error.to_string()));
+            let _ = this.update(cx, |shell, cx| {
+                shell.project_form.registering = false;
+                match result {
+                    Ok(project) => {
+                        if let Some(item) = shell
+                            .snapshot
+                            .projects
+                            .iter_mut()
+                            .find(|item| item.id == project.id)
+                        {
+                            item.name = project.name;
+                        }
+                        shell.dismiss_project_form();
+                        shell.project_form = Form::default();
+                    }
+                    Err(error) => shell.project_form.error = Some(error),
                 }
-                shell.project_form.open = true;
-                shell.focus_composer(window);
-                shell.input_layout = None;
                 cx.notify();
-            }))
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn open_project_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_resource_page();
+        if self.overlay == Some(Overlay::Navigation) {
+            self.dismiss_drawer(window);
+        }
+        self.project_menu = None;
+        self.close_session_filter_menu();
+        self.cancel_comment();
+        if let Some(draft) = self.drafts.get_mut(&self.draft_key()) {
+            draft.input.finish_composition();
+        }
+        self.project_form.open = true;
+        self.focus_composer(window);
+        self.input_layout = None;
+        cx.notify();
+    }
+
+    pub(super) fn add_project_button(&self, cx: &Context<Self>) -> impl IntoElement {
+        self.navigation_tooltip(
+            self.navigation_control(self.icon_button("add-project", "plus", 28.0), true),
+            "添加项目",
+        )
+        .on_click(cx.listener(|shell, _, window: &mut Window, cx| {
+            if shell.project_form.rename.is_some() && !shell.project_form.registering {
+                shell.project_form = Form::default();
+            }
+            shell.open_project_form(window, cx);
+        }))
     }
 
     pub(super) fn render_project_form(&self, cx: &mut Context<Self>) -> Div {
         let palette = self.palette;
         let form = &self.project_form;
         let local = self.node.as_ref().is_some_and(|node| node.is_local());
+        let renaming = form.rename.is_some();
+        let heading = if renaming {
+            "重命名项目"
+        } else {
+            "添加项目"
+        };
         let mut fields = Vec::new();
         for (field, label) in [(Field::Name, "名称"), (Field::Path, "项目路径")] {
+            if renaming && field == Field::Path {
+                continue;
+            }
             let buffer = form.field(field);
             let active = form.editable() && form.field == field;
             let value = if buffer.text.is_empty() {
@@ -432,6 +552,8 @@ impl Shell {
             "正在核对…"
         } else if form.unverified.is_some() {
             "核对项目列表"
+        } else if renaming {
+            "保存名称"
         } else {
             "添加项目"
         };
@@ -466,7 +588,7 @@ impl Shell {
                             .items_center()
                             .justify_between()
                             .child(
-                                self.text("添加项目", 15.0, palette.text)
+                                self.text(heading, 15.0, palette.text)
                                     .font_weight(gpui::FontWeight::SEMIBOLD),
                             )
                             .child(
@@ -475,42 +597,46 @@ impl Shell {
                                     .on_click(close),
                             ),
                     )
-                    .child(self.text(
-                        "将已有项目加入工作台，添加后即可开始对话。",
-                        12.0,
-                        palette.muted,
-                    ))
+                    .when(!renaming, |dialog| {
+                        dialog.child(self.text(
+                            "将已有项目加入工作台，添加后即可开始对话。",
+                            12.0,
+                            palette.muted,
+                        ))
+                    })
                     .children(fields.drain(..1))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(self.text("所属节点", 13.0, palette.text))
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .h(px(34.0))
-                                    .px(px(9.0))
-                                    .border_1()
-                                    .border_color(palette.line)
-                                    .rounded(px(6.0))
-                                    .bg(palette.subtle)
-                                    .child(
-                                        self.text(
-                                            if local {
-                                                "此电脑".into()
-                                            } else {
-                                                self.snapshot.node.clone()
-                                            },
-                                            13.0,
-                                            palette.muted,
-                                        )
-                                        .truncate(),
-                                    ),
-                            ),
-                    )
+                    .when(!renaming, |dialog| {
+                        dialog.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(self.text("所属节点", 13.0, palette.text))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .h(px(34.0))
+                                        .px(px(9.0))
+                                        .border_1()
+                                        .border_color(palette.line)
+                                        .rounded(px(6.0))
+                                        .bg(palette.subtle)
+                                        .child(
+                                            self.text(
+                                                if local {
+                                                    "此电脑".into()
+                                                } else {
+                                                    self.snapshot.node.clone()
+                                                },
+                                                13.0,
+                                                palette.muted,
+                                            )
+                                            .truncate(),
+                                        ),
+                                ),
+                        )
+                    })
                     .children(fields)
                     .when(form.browsing.is_some(), |dialog| {
                         dialog.child(self.text(

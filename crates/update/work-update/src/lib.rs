@@ -167,8 +167,7 @@ async fn bounded(response: reqwest::Response, limit: usize) -> Result<Vec<u8>, S
     Ok(bytes)
 }
 
-pub async fn check(current: &str) -> Result<Option<Release>, String> {
-    let client = http_client()?;
+async fn latest_metadata(client: &reqwest::Client) -> Result<Option<serde_json::Value>, String> {
     let response = client
         .get(format!(
             "https://api.github.com/repos/{REPOSITORY}/releases/latest"
@@ -179,9 +178,19 @@ pub async fn check(current: &str) -> Result<Option<Release>, String> {
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
-    let metadata: serde_json::Value =
-        serde_json::from_slice(&bounded(response, MAX_MANIFEST).await?)
-            .map_err(|e| e.to_string())?;
+    serde_json::from_slice(&bounded(response, MAX_MANIFEST).await?)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+pub async fn check(current: &str) -> Result<Option<Release>, String> {
+    let client = http_client()?;
+    let Some(metadata) = latest_metadata(&client).await? else {
+        return Ok(None);
+    };
+    if has_asset(&metadata, GPUI_MANIFEST) && !has_asset(&metadata, "update.json") {
+        return Ok(None);
+    }
     let tag = metadata["tag_name"].as_str().ok_or("发布信息缺少版本")?;
     let version = tag.strip_prefix('v').ok_or("发布标签无效")?;
     if Version::parse(version).map_err(|_| "发布版本号无效")?
@@ -215,36 +224,51 @@ pub async fn check(current: &str) -> Result<Option<Release>, String> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let base = format!("{RELEASES_URL}/download/{tag}");
-        // URLs are constructed from the fixed repository; remote metadata cannot select an arbitrary host.
-        let manifest = bounded(
-            client
-                .get(format!("{base}/update.json"))
-                .send()
-                .await
-                .map_err(|e| e.to_string())?,
-            MAX_MANIFEST,
-        )
-        .await?;
-        let signature = bounded(
-            client
-                .get(format!("{base}/update.json.sig"))
-                .send()
-                .await
-                .map_err(|e| e.to_string())?,
-            256,
-        )
-        .await?;
-        let manifest = verify_manifest(
-            &manifest,
-            std::str::from_utf8(&signature).map_err(|_| "签名编码无效")?,
-            PUBLIC_KEY,
-        )?;
-        if manifest.version != version {
-            return Err("发布标签和签名清单版本不一致".into());
-        }
+        let manifest = signed_manifest(&client, version, "update.json").await?;
         select_release(manifest, current, target())
     }
+}
+
+const GPUI_MANIFEST: &str = "gpui-update.json";
+
+fn has_asset(metadata: &serde_json::Value, name: &str) -> bool {
+    metadata["assets"].as_array().is_some_and(|assets| {
+        assets
+            .iter()
+            .any(|asset| asset["name"].as_str() == Some(name))
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn signed_manifest(
+    client: &reqwest::Client,
+    version: &str,
+    name: &str,
+) -> Result<Manifest, String> {
+    let url = format!("{RELEASES_URL}/download/v{version}/{name}");
+    let manifest = bounded(
+        client.get(&url).send().await.map_err(|e| e.to_string())?,
+        MAX_MANIFEST,
+    )
+    .await?;
+    let signature = bounded(
+        client
+            .get(format!("{url}.sig"))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?,
+        256,
+    )
+    .await?;
+    let manifest = verify_manifest(
+        &manifest,
+        std::str::from_utf8(&signature).map_err(|_| "签名编码无效")?,
+        PUBLIC_KEY,
+    )?;
+    if manifest.version != version {
+        return Err("发布标签和签名清单版本不一致".into());
+    }
+    Ok(manifest)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

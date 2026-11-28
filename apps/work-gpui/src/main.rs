@@ -8,6 +8,7 @@ mod icons;
 mod prompt;
 mod shell;
 mod theme;
+mod updates;
 
 use gpui::{
     App, AppContext as _, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point,
@@ -16,6 +17,19 @@ use gpui::{
 use shell::Shell;
 
 fn main() {
+    if std::env::args_os().nth(1).as_deref()
+        == Some(std::ffi::OsStr::new(work_update::native::gpui::APPLY_FLAG))
+    {
+        let result = std::env::args_os()
+            .nth(2)
+            .ok_or_else(|| "缺少更新安装计划".to_owned())
+            .and_then(|path| work_update::native::gpui::run_helper(std::path::Path::new(&path)));
+        if let Err(error) = result {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     if matches!(arguments.as_slice(), [flag] if flag == "--help" || flag == "-h") {
         println!("{HELP}");
@@ -46,6 +60,7 @@ fn main() {
     Application::new()
         .with_assets(icons::Icons)
         .run(move |cx: &mut App| {
+            updates::Updates::initialize(arguments, cx);
             if let Some((snapshot, node)) = workspace {
                 open_workbench(snapshot, node, cx).expect("open workbench window");
             } else {
@@ -62,7 +77,7 @@ fn open_workbench(
 ) -> gpui::Result<gpui::WindowHandle<Shell>> {
     cx.open_window(window_options(cx), |window, cx| {
         let view = cx.new(|cx| Shell::new(snapshot, node, window.appearance(), cx));
-        prepare_workbench(&view, window, cx);
+        prepare_workbench(&view, window, cx, true);
         view
     })
 }
@@ -81,14 +96,32 @@ fn window_options(cx: &App) -> WindowOptions {
     }
 }
 
-fn prepare_workbench(view: &gpui::Entity<Shell>, window: &mut gpui::Window, cx: &mut App) {
+fn prepare_workbench(
+    view: &gpui::Entity<Shell>,
+    window: &mut gpui::Window,
+    cx: &mut App,
+    ready: bool,
+) {
     let workbench = view.downgrade();
     window
         .observe_window_appearance(move |_, cx| {
             let _ = workbench.update(cx, |_, cx| cx.notify());
         })
         .detach();
-    view.read(cx).focus_composer(window);
+    view.update(cx, |shell, cx| {
+        cx.observe_global::<updates::Updates>(|_, cx| cx.notify())
+            .detach();
+        if ready {
+            updates::Updates::start(shell.automatic_updates(), cx);
+        }
+        cx.observe_window_activation(window, |shell, window, cx| {
+            if window.is_window_active() {
+                shell.collaboration_activated(cx);
+            }
+        })
+        .detach();
+        shell.focus_composer(window);
+    });
 }
 
 enum Target {

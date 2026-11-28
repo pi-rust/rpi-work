@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import tempfile
 import tomllib
@@ -21,32 +23,58 @@ TARGETS = {
 }
 
 
-def create(root: Path, tag: str, notes: str, key_pem: str, output: Path) -> dict:
+GPUI_ARTIFACTS = {
+    "x86_64-pc-windows-msvc": "rpi-work-windows-x64.zip",
+    "aarch64-pc-windows-msvc": "rpi-work-windows-arm64.zip",
+    "x86_64-apple-darwin": "rpi-work-macos-x64.zip",
+    "aarch64-apple-darwin": "rpi-work-macos-arm64.zip",
+    "x86_64-unknown-linux-gnu": "rpi-work-linux-x64.tar.gz",
+    "aarch64-unknown-linux-gnu": "rpi-work-linux-arm64.tar.gz",
+}
+
+
+def create(root: Path, tag: str, notes: str, key_pem: str, output: Path, *, gpui: bool = False) -> dict:
     repo = Path(__file__).resolve().parents[2]
-    version = tomllib.loads((repo / "apps/work-ui/Cargo.toml").read_text())["package"]["version"]
+    app = "work-gpui" if gpui else "work-ui"
+    version = tomllib.loads((repo / "apps" / app / "Cargo.toml").read_text())["package"]["version"]
     if tag != f"v{version}":
-        raise ValueError("Release tag must match the work-ui package version")
+        raise ValueError(f"Release tag must match the {app} package version")
+    if gpui and not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}", version):
+        raise ValueError("GPUI updates require a stable version")
+
+    packages = GPUI_ARTIFACTS if gpui else {
+        target: f"rpi-work-{version}-{target}.{extension}"
+        for target, extension in TARGETS.items()
+    }
     output.mkdir(parents=True, exist_ok=True)
     artifacts = {}
-    import shutil
-    for target, extension in TARGETS.items():
-        name = f"rpi-work-{version}-{target}.{extension}"
+    for target, name in packages.items():
         matches = list(root.rglob(name))
         if len(matches) != 1:
             raise ValueError(f"Expected exactly one {name}, found {len(matches)}")
         source = matches[0]
-        digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        if source.with_name(name + ".sha256").read_text().split()[0] != digest:
-            raise ValueError(f"Checksum mismatch: {name}")
         size = source.stat().st_size
         if not 0 < size <= 256 * 1024 * 1024:
             raise ValueError(f"Invalid package size: {name}")
+        with source.open("rb") as package:
+            digest = hashlib.file_digest(package, "sha256").hexdigest()
+        checksum = source.with_name(name + ".sha256").read_text()
+        if gpui:
+            checksum_matches = checksum.rstrip("\n") == f"{digest}  {name}"
+        else:
+            checksum_matches = checksum.split()[:1] == [digest]
+        if not checksum_matches:
+            raise ValueError(f"Checksum mismatch: {name}")
         artifacts[target] = {"name": name, "size": size, "sha256": digest}
         shutil.copyfile(source, output / name)
         (output / (name + ".sha256")).write_text(f"{digest}  {name}\n", encoding="ascii")
     manifest = {"schema": 1, "version": version, "notes": notes, "artifacts": artifacts}
-    document = output / "update.json"
-    document.write_bytes((json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode())
+    manifest_name = "gpui-update.json" if gpui else "update.json"
+    document = output / manifest_name
+    encoded = (json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    if gpui and len(encoded) > 256 * 1024:
+        raise ValueError("GPUI update manifest exceeds the client size limit")
+    document.write_bytes(encoded)
     with tempfile.TemporaryDirectory(prefix="rpi-update-sign-") as tmp:
         private = Path(tmp) / "private.pem"
         private.write_text(key_pem, encoding="ascii")
@@ -57,7 +85,7 @@ def create(root: Path, tag: str, notes: str, key_pem: str, output: Path) -> dict
             raise ValueError("Signing key does not match the public key embedded in the client")
         signature = Path(tmp) / "signature.bin"
         subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(private), "-in", str(document), "-out", str(signature)], check=True, capture_output=True)
-        (output / "update.json.sig").write_text(base64.b64encode(signature.read_bytes()).decode() + "\n", encoding="ascii")
+        (output / f"{manifest_name}.sig").write_text(base64.b64encode(signature.read_bytes()).decode() + "\n", encoding="ascii")
     return manifest
 
 
@@ -67,9 +95,13 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--notes", type=Path, required=True)
+    parser.add_argument("--gpui", action="store_true", help="sign the GPUI desktop packages")
     args = parser.parse_args()
     private_key = os.environ.get("UPDATE_SIGNING_KEY", "")
     if not private_key:
         raise SystemExit("UPDATE_SIGNING_KEY secret is required; unsigned releases are not published")
-    manifest = create(args.artifacts, args.tag, args.notes.read_text(encoding="utf-8"), private_key, args.output)
+    manifest = create(
+        args.artifacts, args.tag, args.notes.read_text(encoding="utf-8"), private_key, args.output,
+        gpui=args.gpui,
+    )
     print(f"Verified and signed {len(manifest['artifacts'])} platform packages for {args.tag}")

@@ -1,5 +1,6 @@
 use crate::{MAX_DOWNLOAD, Release, http_client};
 
+pub mod gpui;
 pub mod rpi_runtime;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -68,36 +69,7 @@ pub async fn download(
     fs::create_dir(&directory).map_err(|e| e.to_string())?;
     let partial = directory.join("download.part");
     let result = async {
-        let mut response = http_client()?
-            .get(release.download_url())
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?;
-        if response
-            .content_length()
-            .is_some_and(|size| size != release.artifact.size)
-        {
-            return Err("更新下载大小与签名清单不一致".into());
-        }
-        let mut output = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&partial)
-            .map_err(|e| e.to_string())?;
-        let mut received = 0u64;
-        while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
-            received += chunk.len() as u64;
-            if received > release.artifact.size || received > MAX_DOWNLOAD {
-                return Err("更新下载超过大小限制".into());
-            }
-            output.write_all(&chunk).map_err(|e| e.to_string())?;
-            progress(received, release.artifact.size);
-        }
-        output.sync_all().map_err(|e| e.to_string())?;
-        drop(output);
-        verify_download(&partial, release)?;
+        fetch_archive(release, &partial, &mut progress).await?;
         if release.target.contains("android") {
             fs::rename(&partial, directory.join("update.apk")).map_err(|e| e.to_string())?;
         } else {
@@ -116,6 +88,43 @@ pub async fn download(
         let _ = fs::remove_dir_all(&directory);
     }
     result
+}
+
+async fn fetch_archive(
+    release: &Release,
+    partial: &Path,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<(), String> {
+    let mut response = http_client()?
+        .get(release.download_url())
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?;
+    if response
+        .content_length()
+        .is_some_and(|size| size != release.artifact.size)
+    {
+        return Err("更新下载大小与签名清单不一致".into());
+    }
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(partial)
+        .map_err(|e| e.to_string())?;
+    let mut received = 0u64;
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        received += chunk.len() as u64;
+        if received > release.artifact.size || received > MAX_DOWNLOAD {
+            return Err("更新下载超过大小限制".into());
+        }
+        output.write_all(&chunk).map_err(|e| e.to_string())?;
+        progress(received, release.artifact.size);
+    }
+    output.sync_all().map_err(|e| e.to_string())?;
+    drop(output);
+    verify_download(partial, release)
 }
 
 fn safe_path(path: &Path) -> bool {

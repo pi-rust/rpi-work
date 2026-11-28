@@ -146,6 +146,12 @@ pub(super) struct Panel {
 }
 
 impl Panel {
+    pub(super) fn enqueue_unconfirmed(&self, index: usize) -> bool {
+        self.requests
+            .get(&index)
+            .is_some_and(|request| matches!(request.action, Action::Enqueue(_)))
+    }
+
     pub(super) fn pending_count(&self) -> Option<u64> {
         (!self.read_failed).then_some(self.snapshot.as_ref()?.count)
     }
@@ -351,7 +357,8 @@ impl Shell {
         let (Some(node), Some(frame)) = (&self.node, &self.frame) else {
             return;
         };
-        let task = node.queue_command(frame.session_id.clone(), payload);
+        let session_id = frame.session_id.clone();
+        let enqueue = matches!(action, Action::Enqueue(_));
         self.queue.notices.remove(&index);
         self.queue.requests.insert(
             index,
@@ -363,6 +370,10 @@ impl Shell {
                 checking: false,
             },
         );
+        if enqueue && let Some(storage) = &mut self.draft_storage {
+            storage.persist(super::DraftKey::Session(index), &self.drafts, &self.queue);
+        }
+        let task = node.queue_command(session_id, payload);
         cx.spawn(async move |this, cx| {
             let reply = task.await;
             let _ = this.update(cx, move |shell, cx| {
@@ -709,7 +720,7 @@ mod tests {
         );
         let mut frame = SessionFrame {
             session_id: "session".into(),
-            history: Vec::new(),
+            history: Default::default(),
             projection: RunProjection::new("session"),
             access: None,
             dialogs: Vec::new(),

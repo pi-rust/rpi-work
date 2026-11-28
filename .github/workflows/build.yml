@@ -97,6 +97,8 @@ jobs:
       - run: cargo test --locked --target ${{ matrix.target }}
       - run: cargo clippy --locked --target ${{ matrix.target }} --all-targets -- -D warnings
       - name: Build GPUI release from source
+        env:
+          RPI_WORK_GPUI_DISTRIBUTION: '1'
         run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Package and verify the macOS application
         if: runner.os == 'macOS'
@@ -213,37 +215,34 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Verify release version
-        shell: bash
-        run: |
-          version=$(awk -F '"' '/^version = / { print $2; exit }' apps/work-gpui/Cargo.toml)
-          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          [[ "$GITHUB_REF_NAME" == "v$version" ]] || {
-            printf 'Release tag %s must match GPUI version v%s\n' "$GITHUB_REF_NAME" "$version" >&2
-            exit 1
-          }
       - uses: actions/download-artifact@v7
         with:
           pattern: rpi-work-*
           path: target/release-assets
           merge-multiple: true
-      - name: Verify packages and publish Release
+      - name: Verify packages and sign the GPUI update manifest
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          python3 ./scripts/ci/create-update-manifest.py --gpui \
+            --artifacts target/release-assets --output target/release-upload \
+            --tag "$GITHUB_REF_NAME" --notes apps/work-gpui/RELEASE.md
+      - name: Verify draft assets and publish the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=$GITHUB_REF_NAME
-          cd target/release-assets
-          assets=()
+          cd target/release-upload
+          assets=(gpui-update.json gpui-update.json.sig)
           for archive in rpi-work-macos-{x64,arm64}.zip rpi-work-linux-{x64,arm64}.tar.gz rpi-work-windows-{x64,arm64}.zip; do
-            expected=$(sha256sum "$archive")
-            actual=$(tr -d '\r' < "$archive.sha256")
-            [[ "$expected" == "$actual" ]] || {
-              printf 'Checksum mismatch for %s\n' "$archive" >&2
-              exit 1
-            }
             assets+=("$archive" "$archive.sha256")
           done
+          expected_assets=$(for asset in "${assets[@]}"; do
+            size=$(stat -c %s -- "$asset") || exit 1
+            printf '%s\t%s\tuploaded\n' "$asset" "$size"
+          done)
 
           if draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft); then
             [[ "$draft" == 'true' ]] || {
@@ -255,6 +254,7 @@ jobs:
               --title "RPI Work $tag" --notes-file ../../apps/work-gpui/RELEASE.md
           fi
           gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
-          published_assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
-          diff -u <(printf '%s\n' "${assets[@]}" | sort) <(printf '%s\n' "$published_assets" | sort)
+          uploaded_assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | [.name, .size, .state] | @tsv')
+          diff -u <(printf '%s\n' "$expected_assets" | sort) <(printf '%s\n' "$uploaded_assets" | sort)
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest

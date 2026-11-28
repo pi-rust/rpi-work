@@ -2,6 +2,71 @@ use super::*;
 use crate::transcript::TranscriptOrder;
 use serde_json::json;
 
+#[test]
+fn native_attachments_keep_order_and_tool_ownership_without_serializing_payloads() {
+    let history = [
+        json!({"role":"user","entryId":"u","content":{"type":"image","data":"user-payload"}}),
+        json!({"role":"assistant","entryId":"a","content":[
+            {"type":"text","text":"before"},
+            {"type":"video","data":"video-payload"},
+            {"type":"toolCall","id":"call","name":"render"},
+            {"type":"file","data":"file-payload"},
+            {"type":"text","text":"after"},
+        ]}),
+        json!({"role":"toolResult","toolCallId":"call","isError":false,"content":[
+            {"type":"image","data":"tool-payload"},
+        ]}),
+    ];
+    let rows = TranscriptOrder::default().update("scope", &history, &[]);
+    let view = present_with_attachments(
+        &rows,
+        &history,
+        &[],
+        None,
+        None,
+        PendingRequests::default(),
+        Some(|value, _| matches!(value["type"].as_str(), Some("image" | "file" | "video"))),
+    );
+    let [
+        Part::Message {
+            attachments: user, ..
+        },
+        Part::Message { text: before, .. },
+        Part::Message {
+            attachments: video, ..
+        },
+        Part::Activity { items, .. },
+        Part::Message {
+            attachments: file, ..
+        },
+        Part::Message {
+            text: after,
+            rating_entry_id,
+            ..
+        },
+    ] = view.parts.as_slice()
+    else {
+        panic!("unexpected transcript layout")
+    };
+    let [ActivityItem::Tool { block, .. }] = items.as_slice() else {
+        panic!("expected one tool")
+    };
+    for (refs, data) in [
+        (user, "user-payload"),
+        (video, "video-payload"),
+        (file, "file-payload"),
+        (&block.attachments, "tool-payload"),
+    ] {
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].get(&history).unwrap()["data"], data);
+    }
+    assert_eq!(
+        (before.as_str(), after.as_str(), rating_entry_id.as_deref()),
+        ("before", "after", Some("a"))
+    );
+    assert!(!serde_json::to_string(&view).unwrap().contains("-payload"));
+}
+
 fn view(
     history: &[Value],
     blocks: &[MessageBlock],

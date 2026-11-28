@@ -13,6 +13,7 @@ use crate::data::{Node, Snapshot};
 
 pub(crate) fn open(cx: &mut App) -> gpui::Result<()> {
     let setup = DesktopSetup::new();
+    crate::updates::Updates::set_local_owner(Arc::clone(&setup), cx);
     let owner = Arc::clone(&setup);
     cx.on_app_quit(move |cx| {
         let owner = Arc::clone(&owner);
@@ -22,7 +23,7 @@ pub(crate) fn open(cx: &mut App) -> gpui::Result<()> {
     .detach();
     cx.open_window(crate::window_options(cx), |window, cx| {
         let view = cx.new(|cx| Shell::new(Snapshot::disconnected(), None, window.appearance(), cx));
-        crate::prepare_workbench(&view, window, cx);
+        crate::prepare_workbench(&view, window, cx, false);
         view.update(cx, |shell, cx| shell.start_runtime(setup, window, cx));
         view
     })?;
@@ -39,7 +40,9 @@ pub(super) struct Setup {
     open: bool,
     reveal_failure: bool,
     choosing: bool,
+    editing_path: bool,
     downloading: bool,
+    cancelling: bool,
     loading: bool,
     read_error: Option<String>,
     _updates: Task<()>,
@@ -58,15 +61,21 @@ impl Setup {
     }
 
     fn can_download(&self) -> bool {
-        !self.busy()
-            && self.status.version.is_none()
-            && (self.status.can_install
-                || self.status.phase == Phase::Cancelled
-                || self.downloading)
+        !self.busy() && self.status.version.is_none() && self.status.can_install
+    }
+
+    fn cancel(&mut self) {
+        if self.status.can_cancel() && !self.cancelling {
+            self.path.finish_composition();
+            self.owner.cancel();
+            self.cancelling = true;
+        }
     }
 
     fn begin(&mut self, selection: Selection) {
         self.downloading = matches!(selection, Selection::Managed);
+        self.cancelling = false;
+        self.read_error = None;
         self.owner.begin(selection);
         self.status = self.owner.snapshot();
     }
@@ -110,13 +119,12 @@ impl Shell {
                         {
                             setup.select_path(path);
                         }
-                        setup.downloading |= status.phase == Phase::Resolving;
+                        if !status.can_cancel() {
+                            setup.cancelling = false;
+                        }
                         setup.status = status;
                         if setup.reveal_failure
-                            && matches!(
-                                setup.status.phase,
-                                Phase::Resolving | Phase::Downloading | Phase::Failed
-                            )
+                            && matches!(setup.status.phase, Phase::NeedsRuntime | Phase::Failed)
                         {
                             setup.reveal_failure = false;
                             setup.open = true;
@@ -144,7 +152,9 @@ impl Shell {
             open: false,
             reveal_failure: true,
             choosing: false,
+            editing_path: false,
             downloading: false,
+            cancelling: false,
             loading: false,
             read_error: None,
             _updates: task,
@@ -170,12 +180,11 @@ impl Shell {
     }
 
     pub(super) fn verify_runtime(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(setup) = self.startup.as_mut().filter(|setup| {
-            setup.open
-                && !setup.busy()
-                && setup.status.phase != Phase::Ready
-                && setup.path.is_committed()
-        }) && let Some(path) = setup.executable_path()
+        if let Some(setup) = self
+            .startup
+            .as_mut()
+            .filter(|setup| setup.open && setup.editing_path && setup.can_verify())
+            && let Some(path) = setup.executable_path()
         {
             setup.focus.focus(window);
             setup.begin(Selection::File(path));
@@ -223,7 +232,7 @@ impl Shell {
         let view = window.replace_root(cx, |window, cx| {
             Shell::new(snapshot, node, window.appearance(), cx)
         });
-        crate::prepare_workbench(&view, window, cx);
+        crate::prepare_workbench(&view, window, cx, true);
         if connect {
             view.update(cx, |shell, cx| shell.open_connection_settings(window, cx));
         }
@@ -236,7 +245,11 @@ impl Shell {
         if setup.choosing || setup.loading || setup.status.phase == Phase::Starting {
             return;
         }
-        setup.owner.cancel();
+        if setup.status.can_cancel() {
+            setup.cancel();
+            cx.notify();
+            return;
+        }
         setup.reveal_failure = false;
         setup.open = false;
         setup.path.finish_composition();
@@ -283,11 +296,6 @@ impl Shell {
                     };
                     setup.choosing = false;
                     if let Some(path) = selection {
-                        let path = if directory {
-                            path.join(if cfg!(windows) { "rpi.exe" } else { "rpi" })
-                        } else {
-                            path
-                        };
                         setup.select_path(path);
                     }
                     shell.focus_composer(window);
@@ -303,13 +311,7 @@ impl Shell {
         let palette = self.palette;
         let status = match setup.status.phase {
             Phase::Ready => "rpi 已配置",
-            Phase::Failed
-                if setup.status.can_install
-                    && setup.status.path.is_none()
-                    && !setup.downloading =>
-            {
-                "未找到 rpi"
-            }
+            Phase::NeedsRuntime => "未找到 rpi",
             Phase::Failed | Phase::Cancelled => "rpi 待配置",
             Phase::Checking if !setup.open => "正在检查 rpi…",
             _ => "正在设置 rpi…",
@@ -357,7 +359,7 @@ impl Shell {
                             if setup.status.phase == Phase::Ready {
                                 "查看配置"
                             } else {
-                                "下载引导"
+                                "配置 rpi"
                             },
                             !setup.busy(),
                             false,
@@ -374,7 +376,7 @@ impl Shell {
                         row.child(
                             self.runtime_button(
                                 "runtime-locate",
-                                "选择已有 rpi",
+                                "选择已有路径",
                                 !setup.busy(),
                                 false,
                             )
@@ -400,6 +402,7 @@ impl Shell {
         };
         setup.open = true;
         setup.reveal_failure = false;
+        setup.editing_path = edit_path;
         if edit_path {
             self.focus_composer(window);
         } else {
@@ -433,6 +436,13 @@ impl Shell {
             "正在选择 rpi 安装位置…"
         } else {
             setup.read_error.as_deref().unwrap_or(&setup.status.message)
+        };
+        let message = if setup.cancelling {
+            "正在取消…"
+        } else if setup.downloading && setup.status.phase == Phase::Cancelled {
+            "已取消下载。可以重新下载，或选择已有路径。"
+        } else {
+            message
         };
         let failed = setup.read_error.is_some() || setup.status.phase == Phase::Failed;
         let close = self
@@ -481,78 +491,84 @@ impl Shell {
             .when(editable, |field| field.child(self.input_element(cx)))
             .when(!editable, |field| {
                 let value = if setup.path.text.is_empty() {
-                    "选择已有程序，或下载后自动填入".into()
+                    "输入 rpi 程序或安装目录的路径".into()
                 } else {
                     setup.path.text.clone()
                 };
                 field.child(self.text(value, 13.0, palette.muted).px_1().truncate())
             });
-        let choose_file = self
-            .runtime_button("runtime-choose-file", "选择 rpi 程序", editable, false)
-            .on_click(
-                cx.listener(|shell, _, window, cx| shell.choose_runtime_path(false, window, cx)),
+        let download = self
+            .runtime_button(
+                "runtime-download",
+                if setup.downloading {
+                    "重新下载 rpi"
+                } else {
+                    "下载并安装 rpi"
+                },
+                downloadable,
+                true,
+            )
+            .on_click(cx.listener(|shell, _, window, cx| {
+                if let Some(setup) = shell.startup.as_mut().filter(|setup| setup.can_download()) {
+                    setup.path.finish_composition();
+                    setup.editing_path = false;
+                    setup.focus.focus(window);
+                    setup.begin(Selection::Managed);
+                    cx.notify();
+                }
+            }));
+        let choices = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .when(downloadable, |row| row.child(download))
+            .child(
+                self.runtime_button("runtime-use-path", "选择已有路径", !busy, false)
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.show_runtime_dialog(true, window, cx);
+                    })),
             );
         let options = div()
             .flex()
             .flex_col()
-            .gap_1()
+            .gap_2()
             .child(self.text("rpi 路径", 12.0, palette.text))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(path)
-                    .child(choose_file),
-            )
+            .child(path)
             .when(!ready, |options| {
-                let download = self
-                    .runtime_button(
-                        "runtime-download",
-                        if setup.downloading && failed {
-                            "重试下载"
-                        } else {
-                            "下载并安装 rpi"
-                        },
-                        downloadable,
-                        true,
-                    )
-                    .when(downloadable, |button| {
-                        button.on_click(cx.listener(|shell, _, window, cx| {
-                            if let Some(setup) =
-                                shell.startup.as_mut().filter(|setup| setup.can_download())
-                            {
-                                setup.focus.focus(window);
-                                setup.begin(Selection::Managed);
-                                cx.notify();
-                            }
-                        }))
-                    });
-                let choose_dir = self
-                    .runtime_button("runtime-choose-dir", "选择 rpi 目录", editable, false)
-                    .on_click(cx.listener(|shell, _, window, cx| {
-                        shell.choose_runtime_path(true, window, cx)
-                    }));
-                let releases = self
-                    .button("runtime-releases", "官方发布页")
-                    .px(px(4.0))
-                    .underline()
-                    .tab_index(0)
-                    .tab_stop(true)
-                    .focus(|button| button.bg(palette.hover))
-                    .on_click(|_, _, cx| {
-                        cx.open_url("https://github.com/bigfish1913/pi-rust/releases")
-                    });
                 options.child(
                     div()
                         .flex()
                         .flex_wrap()
-                        .items_center()
                         .gap_2()
-                        .mt_1()
-                        .child(download)
-                        .child(choose_dir)
-                        .child(releases),
+                        .child(
+                            self.runtime_button(
+                                "runtime-choose-file",
+                                "选择 rpi 程序",
+                                editable,
+                                false,
+                            )
+                            .on_click(cx.listener(
+                                |shell, _, window, cx| shell.choose_runtime_path(false, window, cx),
+                            )),
+                        )
+                        .child(
+                            self.runtime_button(
+                                "runtime-choose-dir",
+                                "选择安装目录",
+                                editable,
+                                false,
+                            )
+                            .on_click(cx.listener(
+                                |shell, _, window, cx| shell.choose_runtime_path(true, window, cx),
+                            )),
+                        )
+                        .child(
+                            self.runtime_button("runtime-verify", "验证 rpi", verifiable, true)
+                                .on_click(cx.listener(|shell, _, window, cx| {
+                                    shell.verify_runtime(window, cx);
+                                })),
+                        ),
                 )
             });
         let actions = div()
@@ -561,7 +577,7 @@ impl Shell {
             .justify_end()
             .gap_2()
             .mt_1()
-            .when(closable && !ready, |row| {
+            .when(!busy && !ready, |row| {
                 row.child(
                     self.runtime_button("runtime-remote", "连接远程节点", true, false)
                         .on_click(cx.listener(|shell, _, window, cx| {
@@ -580,28 +596,36 @@ impl Shell {
                         })),
                 )
             })
-            .when(!ready, |row| {
-                let recheck = self
-                    .runtime_button("runtime-recheck", "重新检测", !busy, false)
-                    .when(!busy, |button| {
-                        button.on_click(cx.listener(|shell, _, window, cx| {
+            .when(!busy && !ready, |row| {
+                row.child(
+                    self.runtime_button("runtime-recheck", "重新检测", true, false)
+                        .on_click(cx.listener(|shell, _, window, cx| {
                             if let Some(setup) =
                                 shell.startup.as_mut().filter(|setup| !setup.busy())
                             {
+                                setup.path.finish_composition();
+                                setup.editing_path = false;
                                 setup.focus.focus(window);
                                 setup.begin(Selection::Automatic);
                                 cx.notify();
                             }
-                        }))
-                    });
-                let verify = self
-                    .runtime_button("runtime-verify", "验证 rpi", verifiable, true)
-                    .when(verifiable, |button| {
-                        button.on_click(cx.listener(|shell, _, window, cx| {
-                            shell.verify_runtime(window, cx);
-                        }))
-                    });
-                row.child(recheck).child(verify)
+                        })),
+                )
+            })
+            .when(setup.status.can_cancel(), |row| {
+                let label = if setup.cancelling {
+                    "正在取消…"
+                } else if setup.downloading {
+                    "取消下载"
+                } else {
+                    "取消检查"
+                };
+                row.child(
+                    self.runtime_button("runtime-cancel", label, !setup.cancelling, false)
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.close_runtime_dialog(window, cx);
+                        })),
+                )
             })
             .when(ready, |row| {
                 row.child(
@@ -666,37 +690,41 @@ impl Shell {
             .child(heading)
             .child(self.text("验证 rpi 后打开本机工作区。", 12.0, palette.muted))
             .child(phase)
-            .child(options)
-            .when(setup.status.phase == Phase::Downloading, |dialog| {
-                let progress = setup
-                    .status
-                    .received
-                    .saturating_mul(100)
-                    .checked_div(setup.status.total)
-                    .map(|percent| percent.min(100));
-                let label = progress.map_or_else(
-                    || {
-                        format!(
-                            "正在下载 · {:.1} MB",
-                            setup.status.received as f64 / 1_000_000.0
-                        )
-                    },
-                    |percent| format!("正在下载 · {percent}%"),
-                );
-                dialog
-                    .child(self.text(label, 12.0, palette.muted))
-                    .when_some(progress, |dialog, percent| {
-                        dialog.child(
-                            div().h(px(5.0)).rounded(px(3.0)).bg(palette.subtle).child(
-                                div()
-                                    .h_full()
-                                    .w(relative(percent as f32 / 100.0))
-                                    .rounded(px(3.0))
-                                    .bg(palette.text),
-                            ),
-                        )
-                    })
-            })
+            .when(!busy && !ready, |dialog| dialog.child(choices))
+            .when(ready || setup.editing_path, |dialog| dialog.child(options))
+            .when(
+                setup.status.phase == Phase::Downloading && !setup.cancelling,
+                |dialog| {
+                    let progress = setup
+                        .status
+                        .received
+                        .saturating_mul(100)
+                        .checked_div(setup.status.total)
+                        .map(|percent| percent.min(100));
+                    let label = progress.map_or_else(
+                        || {
+                            format!(
+                                "正在下载 · {:.1} MB",
+                                setup.status.received as f64 / 1_000_000.0
+                            )
+                        },
+                        |percent| format!("正在下载 · {percent}%"),
+                    );
+                    dialog
+                        .child(self.text(label, 12.0, palette.muted))
+                        .when_some(progress, |dialog, percent| {
+                            dialog.child(
+                                div().h(px(5.0)).rounded(px(3.0)).bg(palette.subtle).child(
+                                    div()
+                                        .h_full()
+                                        .w(relative(percent as f32 / 100.0))
+                                        .rounded(px(3.0))
+                                        .bg(palette.text),
+                                ),
+                            )
+                        })
+                },
+            )
             .child(actions);
         div()
             .absolute()

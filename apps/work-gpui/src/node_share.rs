@@ -216,6 +216,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.show_settings_form();
         self.node_share = Share {
             open: true,
             authorization,

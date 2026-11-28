@@ -47,7 +47,7 @@ impl Tabs {
 impl Shell {
     pub(super) fn browser_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.palette;
-        let tabs = gpui::div().flex().items_center().gap_1();
+        let tabs = gpui::div().flex().flex_none().items_center().gap_1();
         #[cfg(not(target_os = "macos"))]
         let _ = (cx, palette);
         #[cfg(target_os = "macos")]
@@ -62,19 +62,30 @@ impl Shell {
                     .rounded(px(7.0))
                     .when(self.files.tab == tab, |row| row.bg(palette.subtle))
                     .child(
-                        self.button("browser-tab", "")
-                            .id(("browser-tab", id))
-                            .gap(px(5.0))
-                            .child(icon("globe", 13.0, palette.muted))
-                            .child(self.text(format!("网页 {id}"), 12.0, palette.text))
-                            .on_click(
-                                cx.listener(move |shell, _, _, cx| shell.show_project_tab(tab, cx)),
-                            ),
+                        self.navigation_control(
+                            self.button(("browser-tab", id), ""),
+                            self.project_keyboard_enabled(),
+                        )
+                        .gap(px(5.0))
+                        .child(icon("globe", 13.0, palette.muted))
+                        .child(self.text(format!("网页 {id}"), 12.0, palette.text))
+                        .on_click(
+                            cx.listener(move |shell, _, _, cx| shell.show_project_tab(tab, cx)),
+                        ),
                     )
                     .child(
-                        self.icon_button("close-browser-tab", "x", 20.0)
-                            .id(("close-browser-tab", id))
-                            .on_click(cx.listener(move |shell, _, window, cx| {
+                        self.navigation_tooltip(
+                            self.navigation_control(
+                                self.button(("close-browser-tab", id), "")
+                                    .w(px(24.0))
+                                    .px_0()
+                                    .child(icon("x", 14.0, palette.muted)),
+                                self.project_keyboard_enabled(),
+                            ),
+                            format!("关闭网页 {id}"),
+                        )
+                        .on_click(cx.listener(
+                            move |shell, _, window, cx| {
                                 if let Some(index) =
                                     shell.browser.items.iter().position(|(key, _)| *key == id)
                                 {
@@ -92,16 +103,24 @@ impl Shell {
                                             .map_or(Tab::Overview, |(key, _)| Tab::Browser(*key));
                                         shell.show_project_tab(next, cx);
                                     }
+                                    shell.inspector_focus.focus(window);
                                     cx.notify();
                                 }
-                            })),
+                            },
+                        )),
                     )
             }))
             .child(
-                self.icon_button("add-browser-tab", "plus", 24.0)
-                    .on_click(cx.listener(|shell, _, window, cx| {
-                        shell.add_browser_tab(window, cx);
-                    })),
+                self.navigation_tooltip(
+                    self.navigation_control(
+                        self.icon_button("add-browser-tab", "plus", 24.0),
+                        self.project_keyboard_enabled(),
+                    ),
+                    "新建网页标签",
+                )
+                .on_click(cx.listener(|shell, _, window, cx| {
+                    shell.add_browser_tab(window, cx);
+                })),
             );
         tabs
     }

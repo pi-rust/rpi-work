@@ -112,6 +112,11 @@ struct Markdown {
 impl Markdown {
     fn blocks(&self, nodes: &[Node], gap: f32) -> Div {
         let mut column = div().flex().flex_col().min_w(px(0.0)).gap(px(gap));
+        if let Some(card) =
+            super::message_attachments::markdown_link(nodes, self.palette, self.keyboard)
+        {
+            return column.child(card);
+        }
         let mut inline_start = 0;
         for (index, node) in nodes.iter().enumerate() {
             if let Some(block) = self.block(node) {
@@ -146,7 +151,10 @@ impl Markdown {
         };
         let block = match tag {
             Tag::Div => self.blocks(children, self.spacing),
-            Tag::P => div().child(self.inline(0, children)),
+            Tag::P => {
+                super::message_attachments::markdown_link(children, self.palette, self.keyboard)
+                    .unwrap_or_else(|| div().child(self.inline(0, children)))
+            }
             Tag::H1 | Tag::H2 | Tag::H3 | Tag::H4 | Tag::H5 | Tag::H6 => {
                 let size = match tag {
                     Tag::H1 => self.font_size + 4.0,
@@ -233,6 +241,7 @@ impl Markdown {
             .collect();
         let columns = rows.iter().map(|row| row.len()).max().unwrap_or(1);
         let row_count = rows.len();
+        let cell_font_size = self.font_size - 3.0;
         let border = self.palette.line;
         let focus = self.palette.muted;
         let viewport = div()
@@ -267,8 +276,8 @@ impl Markdown {
                                         .min_w(px(0.0))
                                         .px(px(10.0))
                                         .py(px(7.0))
-                                        .text_size(px(13.0))
-                                        .line_height(px(20.0))
+                                        .text_size(px(cell_font_size))
+                                        .line_height(px(cell_font_size + 7.0))
                                         .when(*tag == Tag::Th, |cell| {
                                             cell.font_weight(FontWeight::SEMIBOLD)
                                         })
@@ -316,6 +325,7 @@ impl Markdown {
             })
             .collect();
         let display = SharedString::from(display.to_owned());
+        let code_font_size = self.font_size - 3.0;
         div()
             .min_w(px(0.0))
             .overflow_hidden()
@@ -357,8 +367,8 @@ impl Markdown {
                     .px(px(13.0))
                     .py(px(10.0))
                     .font_family("Menlo")
-                    .text_size(px(13.0))
-                    .line_height(px(23.4))
+                    .text_size(px(code_font_size))
+                    .line_height(px(code_font_size * 1.8))
                     .whitespace_nowrap()
                     .when_some(numbers, |row, numbers| {
                         row.child(
@@ -366,7 +376,7 @@ impl Markdown {
                                 .flex_none()
                                 .pr(px(12.0))
                                 .min_w(px(35.0))
-                                .text_size(px(11.0))
+                                .text_size(px(code_font_size - 2.0))
                                 .text_color(self.palette.muted)
                                 .child(StyledText::new(numbers)),
                         )
@@ -419,11 +429,11 @@ impl Markdown {
 }
 
 #[derive(IntoElement)]
-struct ReadingScroll {
-    id: &'static str,
-    viewport: Div,
-    keyboard: bool,
-    focus: gpui::Hsla,
+pub(super) struct ReadingScroll {
+    pub(super) id: &'static str,
+    pub(super) viewport: Div,
+    pub(super) keyboard: bool,
+    pub(super) focus: gpui::Hsla,
 }
 
 impl RenderOnce for ReadingScroll {
@@ -471,10 +481,10 @@ impl RenderOnce for ReadingScroll {
 }
 
 #[derive(IntoElement)]
-struct CopyCode {
-    code: SharedString,
-    keyboard: bool,
-    palette: Palette,
+pub(super) struct CopyCode {
+    pub(super) code: SharedString,
+    pub(super) keyboard: bool,
+    pub(super) palette: Palette,
 }
 
 impl RenderOnce for CopyCode {
@@ -511,6 +521,7 @@ impl RenderOnce for CopyCode {
                 });
             })
             .text_size(px(12.0))
+            .text_color(if copied { palette.text } else { palette.muted })
             .child(if copied { "已复制" } else { "复制代码" })
     }
 }

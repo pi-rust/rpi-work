@@ -333,7 +333,7 @@ pub fn presets() -> Vec<Theme> {
             "中性灰紫、方正细节与等宽标题。",
             ["system", "code", "square"],
             palette([
-                "#f9f9fc", "#f0eff5", "#f3f2f8", "#ffffff", "#2f293d", "#6d637c", "#e1dce9",
+                "#f9f9fc", "#f0eff5", "#f3f2f8", "#ffffff", "#2f293d", "#695f78", "#e1dce9",
                 "#eceaf3", "#7550b3", "#eee6fa", "#e9e2f4",
             ]),
             palette([
@@ -757,6 +757,13 @@ mod tests {
     fn presets_are_valid() {
         for theme in presets() {
             assert!(parse_theme(&theme_value(&theme)).is_ok());
+            for (mode, palette) in [("light", &theme.light), ("dark", &theme.dark)] {
+                assert!(
+                    contrast(&palette.muted, &palette.selected) >= 4.5,
+                    "{} {mode} muted text on selected background",
+                    theme.id
+                );
+            }
         }
     }
     #[test]

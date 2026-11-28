@@ -222,6 +222,12 @@ impl LocalWorkspace {
         Self::with_session_dir(executable, data, None)
     }
 
+    /// The configured executable used by this local workspace.
+    #[must_use]
+    pub fn runtime_executable(&self) -> &Path {
+        &self.inner.executable
+    }
+
     /// Override the host transcript directory (useful for isolated installations
     /// and smoke tests). None preserves access to legacy native transcripts.
     pub fn with_session_dir(

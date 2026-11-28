@@ -20,7 +20,7 @@ pub struct StartupFailure {
     pub message: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub searched: Vec<PathBuf>,
-    /// The GUI may offer an automatic runtime install for this failure.
+    /// The GUI may offer a runtime install for this failure.
     pub can_install: bool,
 }
 

@@ -4,7 +4,10 @@ use gpui::{Context, Div, FontWeight, ScrollHandle, Task, Window, div, point, pre
 use work_core::api::{NativeCatalog, NativeKind, NativeResource};
 use work_viewmodel::resources::catalog::{display_name, installation_origin, installed_resources};
 
-use super::{DraftKey, Shell};
+use super::{
+    DraftKey, Shell,
+    feature_entries::{self, Entry, Installation},
+};
 use crate::icons::icon;
 
 #[path = "resource_configuration.rs"]
@@ -71,6 +74,45 @@ enum Inspection {
 impl Shell {
     pub(super) fn resource_page_open(&self) -> bool {
         self.resource_page.is_some()
+    }
+
+    pub(super) fn extension_status(&self, name: &str) -> &'static str {
+        if self.node.is_none() {
+            return "连接节点后检查。";
+        }
+        if self.project.is_none() {
+            return "选择项目后检查。";
+        }
+        if self.resource_settings.pending.is_some() {
+            return "正在检查节点目录…";
+        }
+        match &self.resource_settings.catalog {
+            Some(Ok(catalog)) => match feature_entries::installation(catalog, name) {
+                Installation::Installed => "节点目录已确认安装。",
+                Installation::Unverified => "节点发现了对应的库文件，安装状态待确认。",
+                Installation::Missing => "当前项目和节点全局目录中未找到。",
+            },
+            Some(Err(())) => "无法读取节点目录，安装状态未知。",
+            None => "尚未检查节点目录。",
+        }
+    }
+
+    pub(super) fn confirmed_extension(&self, name: &str) -> bool {
+        self.resource_settings
+            .catalog
+            .as_ref()
+            .is_some_and(|result| {
+                result.as_ref().is_ok_and(|catalog| {
+                    feature_entries::installation(catalog, name) == Installation::Installed
+                })
+            })
+    }
+
+    pub(super) fn hide_mcp_tab(&mut self) {
+        if self.resource_page == Some(ResourceTab::Mcp) {
+            self.resource_page = Some(ResourceTab::Skills);
+            self.clear_resource_detail();
+        }
     }
 
     pub(super) fn open_resource_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -297,10 +339,10 @@ impl Shell {
                             })),
                     )
                     .when(
-                        project.is_some() && self.node.is_some() && tab.kind().is_some(),
+                        project.is_some() && self.node.is_some(),
                         |heading| {
                             let actions = [
-                                self.resource_configuration_button(cx),
+                                tab.kind().and_then(|_| self.resource_configuration_button(cx)),
                                 tab.kind()
                                     .and_then(|kind| self.resource_install_button(kind, cx)),
                                 Some(self.resource_refresh(cx)),
@@ -321,7 +363,22 @@ impl Shell {
             .child(if let Some(kind) = tab.kind() {
                 self.resource_page_content(tab, kind, viewport_width <= 1200.0, stacked, cx)
             } else {
-                div().child(self.text("当前节点未提供 MCP 服务目录。", 14.0, palette.muted))
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .children(feature_entries::MCP_PACKAGES.map(|package| {
+                        self.text(
+                            format!("{package} · {}", self.extension_status(package)),
+                            14.0,
+                            palette.text,
+                        )
+                    }))
+                    .child(self.text(
+                        "MCP 服务的配置和连接状态需在节点上查看。",
+                        13.0,
+                        palette.muted,
+                    ))
             })
     }
 
@@ -348,31 +405,38 @@ impl Shell {
                     .p(px(3.0))
                     .rounded(px(8.0))
                     .bg(palette.subtle)
-                    .children(tabs.map(|entry| {
-                        self.button(("resource-tab", entry as usize), "")
-                            .px_3()
-                            .tab_index(0)
-                            .border_1()
-                            .border_color(gpui::transparent_black())
-                            .when(tab == entry, |button| button.bg(palette.bg).shadow_sm())
-                            .focus(|button| button.border_color(palette.strong_line))
-                            .child(self.text(
-                                entry.label(),
-                                13.0,
-                                if tab == entry {
-                                    palette.text
-                                } else {
-                                    palette.muted
-                                },
-                            ))
-                            .on_click(cx.listener(move |shell, _, _, cx| {
-                                if shell.resource_page != Some(entry) {
-                                    shell.resource_page = Some(entry);
-                                    shell.clear_resource_detail();
-                                    cx.notify();
-                                }
-                            }))
-                    })),
+                    .children(
+                        tabs.into_iter()
+                            .filter(|entry| {
+                                *entry != ResourceTab::Mcp
+                                    || self.preferences.entries.shows(Entry::Mcp)
+                            })
+                            .map(|entry| {
+                                self.button(("resource-tab", entry as usize), "")
+                                    .px_3()
+                                    .tab_index(0)
+                                    .border_1()
+                                    .border_color(gpui::transparent_black())
+                                    .when(tab == entry, |button| button.bg(palette.bg).shadow_sm())
+                                    .focus(|button| button.border_color(palette.strong_line))
+                                    .child(self.text(
+                                        entry.label(),
+                                        13.0,
+                                        if tab == entry {
+                                            palette.text
+                                        } else {
+                                            palette.muted
+                                        },
+                                    ))
+                                    .on_click(cx.listener(move |shell, _, _, cx| {
+                                        if shell.resource_page != Some(entry) {
+                                            shell.resource_page = Some(entry);
+                                            shell.clear_resource_detail();
+                                            cx.notify();
+                                        }
+                                    }))
+                            }),
+                    ),
             )
             .child(
                 div()

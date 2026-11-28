@@ -250,7 +250,7 @@ impl Shell {
 
     fn text_input(&self, search_field: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let focus = if search_field {
-            self.search.focus.clone()
+            self.search.focus.clone().tab_stop(self.settings.open)
         } else if self.runtime_dialog_open() {
             self.focus.clone().tab_stop(true)
         } else {
@@ -322,6 +322,7 @@ impl Shell {
 
     fn search_is_masked(&self) -> bool {
         self.node_connection.password || self.provider_settings.masking_credential()
+            || self.chat_integrations.masking_credential()
     }
 
     fn active_input_layout(&self) -> Option<&Layout> {
@@ -406,6 +407,15 @@ impl Shell {
             return;
         }
         if super::primary_modifier(modifiers) && !modifiers.alt && !modifiers.shift {
+            if key == "v"
+                && self.navigation_keyboard_enabled()
+                && self.overlay.is_none()
+                && self.paste_attachments(cx)
+            {
+                window.prevent_default();
+                cx.stop_propagation();
+                return;
+            }
             let buffer = self.buffer_mut();
             let selected = buffer.selection();
             match key {
@@ -425,7 +435,9 @@ impl Shell {
                 }
                 "v" => {
                     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                        let text = if self.provider_settings.masking_credential() {
+                        let text = if self.provider_settings.masking_credential()
+                            || self.chat_integrations.masking_credential()
+                        {
                             text
                         } else {
                             let text = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -559,7 +571,10 @@ impl EntityInputHandler for Shell {
         if self.node_connection_busy() || self.node_share_busy() {
             return;
         }
-        if self.search_input_open() && !self.provider_settings.masking_credential() {
+        if self.search_input_open()
+            && !self.provider_settings.masking_credential()
+            && !self.chat_integrations.masking_credential()
+        {
             self.buffer_mut()
                 .replace(utf16, &value.replace(['\r', '\n'], " "));
         } else {
@@ -738,7 +753,11 @@ impl Element for InputElement {
             if self.search_field {
                 if shell.provider_settings.masking_credential() {
                     "输入 API 密钥"
-                } else if let Some(label) = shell.provider_settings.field_label() {
+                } else if let Some(label) = shell
+                    .provider_settings
+                    .field_label()
+                    .or_else(|| shell.chat_integrations.field_label())
+                {
                     label
                 } else if shell.node_connection.password {
                     "输入此节点的密码"
@@ -755,7 +774,7 @@ impl Element for InputElement {
                 }
                 .into()
             } else if shell.runtime_dialog_open() {
-                "选择已有程序，或下载后自动填入".into()
+                "输入 rpi 程序或安装目录的路径".into()
             } else if shell.session_management.editing() {
                 "输入会话名称".into()
             } else if shell.project_form.open {

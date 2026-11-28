@@ -1,14 +1,17 @@
 # Agent 扩展与 UI 扩展
 
-## 三种不同的扩展机制
+## 扩展机制
 
-当前源码同时存在原生资源管理、动态组件面板与惰性设计资源。它们分别有自己的契约，不能用一个“已安装/已启用”状态代表全部能力。
+原生资源、动态组件、惰性设计和桌面插件分别有自己的来源与加载状态。
 
 | 机制 | 格式与入口 | 当前能力 | 不代表什么 |
 | --- | --- | --- | --- |
 | 原生 Agent 资源 | rpi 原生 Package / Skill / 扩展；资源页与会话资源配置 | typed `native_*` 管理、精确配置、实际 readback、恢复及源码测试/本地发布 | 安装不等于本会话 loaded；旧设计 pin 不等于 applied |
 | Work 自定义组件 | `work-component-api::Bundle`；设置 → 节点组件 | 内置/HTTPS 下载/粘贴、授权、安装/卸载、按需加载自定义 HTML 面板 | 不安装 DLL、不选择节点宿主；不授予父页面 DOM 或网络凭据 |
 | Work 惰性设计 | `rpi-work-design-package` 内的 `extension.design.json` | Agent-only / UI-only / combined、校验、静态预览、原文导出及旧 desired pins | 不编译、安装、加载或执行源码 |
+| GPUI 桌面插件 | 本机设置目录 `gpui-plugins` 中的版本化 JSON，设置 → 插件 → 桌面插件 | 加载 `promptTemplate` 贡献项，在斜杠菜单中填入当前草稿 | 清单只提供文本，发送沿用当前会话的正常流程 |
+
+GPUI 清单由桌面客户端读取，作用域为当前设备。模板填充同时支持本机和远程会话。增加贡献项类型时，由 GPUI 定义该类型可接收的字段和宿主行为。使用入口见 [桌面插件](../../apps/work-gpui/README.md#桌面插件)。
 
 原生闭环见[资源架构](resources.md)与[使用指南](../guides/native-resource-authoring.md)；自定义 UI 的隔离/动作/授权协议见[组件组合](component-composition.md)。下文的 schema、pins、静态 widget 和旧 applied 类型均专指**惰性设计**，不是整个应用的原生或动态 UI 能力上限。
 
