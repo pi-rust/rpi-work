@@ -391,6 +391,9 @@ fn save_preference(path: &Path) -> Result<(), String> {
 }
 
 /// Resolve the active desktop runtime or look up the configured local installation.
+///
+/// # Errors
+/// Returns an error when the executable is missing or its path cannot be resolved.
 pub fn runtime_executable() -> Result<PathBuf, String> {
     if let Some(owner) = work_node_host::client() {
         return std::fs::canonicalize(owner.runtime_executable())
