@@ -3,6 +3,8 @@
 //! Everything renderer-independent comes from `work-viewmodel`; this binary only
 //! provides windowing, layout and input.
 
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod data;
 mod icons;
 mod prompt;

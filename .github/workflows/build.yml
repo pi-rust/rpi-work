@@ -156,6 +156,11 @@ jobs:
           if ($signature -ne 0x4550 -or $machine -ne [int]$env:GPUI_MACHINE) {
             throw ('Unexpected PE signature or architecture: 0x{0:x}' -f $machine)
           }
+          # The optional header starts after the 4-byte signature and 20-byte COFF header.
+          $subsystem = [BitConverter]::ToUInt16($bytes, ($header + 24 + 68))
+          if ($subsystem -ne 2) {
+            throw ('Expected IMAGE_SUBSYSTEM_WINDOWS_GUI (2), found {0}' -f $subsystem)
+          }
           $hash = (Get-FileHash -LiteralPath "$dist/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $archive" | Set-Content -LiteralPath "$dist/$archive.sha256" -Encoding ascii
       - uses: actions/upload-artifact@v7
