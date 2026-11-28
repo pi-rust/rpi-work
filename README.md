@@ -1,6 +1,6 @@
 # RPI Work
 
-> 以 Rust 和 GPUI 构建的原生桌面 Agent 工作台。GPUI 是当前唯一维护的 UI 入口。
+> RPI Work 提供 Rust/GPUI 桌面工作台和 Flutter 移动端。
 
 [English README](README.en.md) · [下载最新版](https://github.com/pi-rust/rpi-work/releases/latest) · [全部版本](https://github.com/pi-rust/rpi-work/releases) · [构建状态](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [文档](#文档)
 
@@ -33,6 +33,7 @@ task desktop -- --connect http://127.0.0.1:13031
 ## 架构
 
 - [`apps/work-gpui`](apps/work-gpui)：原生桌面工作台，使用独立 Rust workspace。
+- Flutter 移动端支持 Android 和 iOS，通过扫码连接节点。参见 [移动端使用与构建](apps/work-mobile/README.md)。
 - `work-client` 与 `work-viewmodel`：共享客户端、会话投影、转写和主题契约。
 - `work-node-runtime`、`work-node-service` 与 `work-node-host`：节点数据所有权、Agent 执行和认证传输。
 - `work-cli`：独立 CLI 和无头节点入口。

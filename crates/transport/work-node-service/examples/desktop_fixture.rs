@@ -33,7 +33,8 @@ async fn main() {
         owner.rename_session(&session,"Shared desktop session").await.unwrap();
         let password=std::env::var("WORK_FIXTURE_PASSWORD").unwrap_or_else(|_| "111111".into());
         let node_id=std::env::var("WORK_FIXTURE_NODE_ID").unwrap_or_else(|_| "browser-native-owner-fixture".into());
-        let mut server=HttpServer::start(owner.clone(),ServerConfig{bind:"127.0.0.1:0".parse().unwrap(),password,allowed_hosts:vec![],node_id:node_id.clone(),allow_sharing:true,assets,web_proxy}).unwrap();
+        let allowed_hosts=std::env::var("WORK_FIXTURE_ALLOWED_HOST").into_iter().collect();
+        let mut server=HttpServer::start(owner.clone(),ServerConfig{bind:"127.0.0.1:0".parse().unwrap(),password,allowed_hosts,node_id:node_id.clone(),allow_sharing:true,assets,web_proxy}).unwrap();
         let sharing = server.sharing_control();
         emit(json!({"ready":true,"url":format!("http://{}/",server.address()),"nodeId":node_id,"sessionId":session,"projectId":project.id,"webProxy":web_proxy}));
         let (send,mut commands)=tokio::sync::mpsc::unbounded_channel();

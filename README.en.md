@@ -1,6 +1,6 @@
 # RPI Work
 
-> A native desktop Agent workbench built with Rust and GPUI. GPUI is the sole maintained UI entry point.
+> RPI Work provides a Rust/GPUI desktop workbench and a Flutter mobile client.
 
 [中文 README](README.md) · [Latest release](https://github.com/pi-rust/rpi-work/releases/latest) · [All releases](https://github.com/pi-rust/rpi-work/releases) · [CI](https://github.com/pi-rust/rpi-work/actions/workflows/build.yml) · [Documentation](#documentation)
 
@@ -33,6 +33,7 @@ Set `RPI_WORK_PASSWORD` in the environment or `.env.local` when the node require
 ## Architecture
 
 - [`apps/work-gpui`](apps/work-gpui) is the native desktop UI in a standalone Rust workspace.
+- The Flutter client connects Android and iOS to a node using a one-time QR code. See the [mobile setup and build guide](apps/work-mobile/README.md).
 - `work-client` and `work-viewmodel` provide the shared protocol client, session projection, transcript presentation, and theme tokens.
 - `work-node-runtime`, `work-node-service`, and `work-node-host` own data, Agent execution, and authenticated transport.
 - `work-cli` provides the CLI and the headless node entry point.

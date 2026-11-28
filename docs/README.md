@@ -6,6 +6,7 @@
 - [项目结构与开发入口](guides/project-structure.md)
 - [开发规范与 review 清单](guides/development-standards.md)
 - [构建与平台产物（含 Android NDK 检查）](guides/ci-builds.md)
+- [Flutter 移动端使用与构建](../apps/work-mobile/README.md)
 - [电脑、Web 与 Android 连接](guides/node-connection.md)
 - [桌面宿主 HTTP、共享与 Web 登录](guides/desktop-http.md)
 - [真实聊天接入](guides/live-chat.md)
